@@ -28,21 +28,92 @@ zip -r zotero-local-crud.xpi manifest.json bootstrap.js
 
 Then install the generated `.xpi` file.
 
-### Docker / Headless Installation
+### Docker Setup
 
-For headless Zotero in Docker, mount the plugin directly into the extensions directory:
+For running Zotero in Docker (using linuxserver/zotero image):
 
-```yaml
-# docker-compose.yml
-volumes:
-  - ./zotero-local-crud:/config/.zotero/zotero/<profile>.default/extensions/zotero-local-crud@localhost:ro
+1. **Directory structure:**
+```
+services/zotero/
+├── docker-compose.yml
+├── custom-cont-init.d/
+│   └── 20-install-plugins    # Init script to install plugin
+├── zotero-local-crud/
+│   ├── manifest.json
+│   └── bootstrap.js
+└── data/                     # Zotero config/data
 ```
 
-Replace `<profile>` with your Zotero profile name (check `/config/.zotero/zotero/profiles.ini`).
+2. **docker-compose.yml:**
+```yaml
+services:
+  zotero:
+    image: lscr.io/linuxserver/zotero:latest
+    container_name: zotero
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./data:/config
+      - ./custom-cont-init.d:/custom-cont-init.d:ro
+      - ./zotero-local-crud:/opt/zotero-plugins/zotero-local-crud:ro
+    ports:
+      - "3001:3001"      # Web GUI
+      - "23119:23120"    # Zotero HTTP API
+```
+
+3. **custom-cont-init.d/20-install-plugins:**
+```bash
+#!/usr/bin/with-contenv bash
+# Install Zotero plugins as XPI files to distribution/extensions directory
+
+PLUGIN_SOURCE="/opt/zotero-plugins/zotero-local-crud"
+DIST_EXTENSIONS_DIR="/opt/zotero/distribution/extensions"
+
+echo "**** Setting up Zotero plugins ****"
+
+if ! command -v zip &> /dev/null; then
+    apt-get update -qq && apt-get install -y -qq zip >/dev/null 2>&1
+fi
+
+mkdir -p "$DIST_EXTENSIONS_DIR"
+
+PLUGIN_ID="zotero-local-crud@localhost"
+XPI_FILE="$DIST_EXTENSIONS_DIR/$PLUGIN_ID.xpi"
+
+if [ -d "$PLUGIN_SOURCE" ]; then
+    rm -f "$XPI_FILE"
+    cd "$PLUGIN_SOURCE"
+    zip -r "$XPI_FILE" manifest.json bootstrap.js
+    chmod 644 "$XPI_FILE"
+    chown -R abc:abc /opt/zotero/distribution
+    echo "**** Created XPI at: $XPI_FILE ****"
+else
+    echo "**** Plugin source not found ****"
+fi
+```
+
+4. **Start the container:**
+```bash
+docker compose up -d
+# Wait ~60 seconds for Zotero to fully start
+curl http://localhost:23119/local-crud/ping
+```
+
+### Development Workflow (Docker)
+
+When editing the plugin code, you must restart with a clean profile:
+
+```bash
+docker compose exec zotero rm -rf /config/.zotero
+docker compose restart
+# Wait 60 seconds for full startup
+```
+
+See `notes.md` for detailed development notes.
 
 ### Git Subtree (for embedding in other repos)
-
-To include this plugin as a subtree in another repository:
 
 ```bash
 # Add as subtree
@@ -72,7 +143,7 @@ Returns plugin status and version info.
   "status": "ok",
   "plugin": "zotero-local-crud",
   "version": "1.0.0",
-  "zoteroVersion": "7.0.0",
+  "zoteroVersion": "7.0.30",
   "timestamp": "2024-12-16T12:00:00.000Z",
   "libraryID": 1
 }
@@ -111,15 +182,26 @@ Content-Type: application/json
 {
   "key": "XYZ12345",
   "itemID": 123,
-  "version": 1,
+  "version": 0,
   "itemType": "book"
 }
 ```
 
-### Read Item
+### Get/Update/Delete Item
+
+All item operations use a single POST endpoint with an `action` field:
 
 ```bash
-GET /local-crud/item?key=XYZ12345
+POST /local-crud/item
+Content-Type: application/json
+```
+
+#### Get Item
+```json
+{
+  "action": "get",
+  "key": "XYZ12345"
+}
 ```
 
 **Response (200):**
@@ -128,36 +210,29 @@ GET /local-crud/item?key=XYZ12345
   "key": "XYZ12345",
   "itemID": 123,
   "itemType": "book",
-  "version": 1,
+  "version": 0,
   "libraryID": 1,
   "dateAdded": "2024-12-16 12:00:00",
   "dateModified": "2024-12-16 12:00:00",
   "fields": {
     "title": "Example Book",
-    "date": "2024",
-    "publisher": "Example Press"
+    "date": "2024"
   },
   "creators": [...],
-  "tags": [{"tag": "tag1"}, {"tag": "tag2"}],
-  "collections": [123]
+  "tags": [{"tag": "tag1"}],
+  "collections": []
 }
 ```
 
-### Update Item
-
-```bash
-PATCH /local-crud/item?key=XYZ12345
-Content-Type: application/json
-```
-
-**Request Body:**
+#### Update Item
 ```json
 {
+  "action": "update",
+  "key": "XYZ12345",
   "fields": {
     "title": "Updated Title"
   },
-  "tags": ["new-tag"],
-  "creators": [...]
+  "tags": ["new-tag"]
 }
 ```
 
@@ -167,15 +242,17 @@ Only include the properties you want to update. Tags, creators, and collections 
 ```json
 {
   "key": "XYZ12345",
-  "version": 2,
+  "version": 0,
   "dateModified": "2024-12-16 13:00:00"
 }
 ```
 
-### Delete Item
-
-```bash
-DELETE /local-crud/item?key=XYZ12345
+#### Delete Item
+```json
+{
+  "action": "delete",
+  "key": "XYZ12345"
+}
 ```
 
 **Response:** `204 No Content`
@@ -253,31 +330,27 @@ curl http://localhost:23119/local-crud/ping
 # Create a book
 curl -X POST http://localhost:23119/local-crud/items \
   -H "Content-Type: application/json" \
-  -d '{
-    "itemType": "book",
-    "fields": {"title": "My Book", "date": "2024"}
-  }'
+  -d '{"itemType": "book", "fields": {"title": "My Book", "date": "2024"}}'
 
 # Get an item
-curl "http://localhost:23119/local-crud/item?key=XYZ12345"
+curl -X POST http://localhost:23119/local-crud/item \
+  -H "Content-Type: application/json" \
+  -d '{"action": "get", "key": "XYZ12345"}'
 
 # Update an item
-curl -X PATCH "http://localhost:23119/local-crud/item?key=XYZ12345" \
+curl -X POST http://localhost:23119/local-crud/item \
   -H "Content-Type: application/json" \
-  -d '{"fields": {"title": "New Title"}}'
+  -d '{"action": "update", "key": "XYZ12345", "fields": {"title": "New Title"}}'
 
 # Delete an item
-curl -X DELETE "http://localhost:23119/local-crud/item?key=XYZ12345"
+curl -X POST http://localhost:23119/local-crud/item \
+  -H "Content-Type: application/json" \
+  -d '{"action": "delete", "key": "XYZ12345"}'
 
 # Search for items
 curl -X POST http://localhost:23119/local-crud/search \
   -H "Content-Type: application/json" \
-  -d '{
-    "conditions": [
-      {"condition": "quicksearch-everything", "value": "machine learning"}
-    ],
-    "limit": 10
-  }'
+  -d '{"conditions": [{"condition": "quicksearch-everything", "value": "machine learning"}], "limit": 10}'
 ```
 
 ### Python Example
@@ -285,8 +358,10 @@ curl -X POST http://localhost:23119/local-crud/search \
 ```python
 import httpx
 
+BASE_URL = "http://localhost:23119"
+
 async def example():
-    async with httpx.AsyncClient(base_url="http://localhost:23119") as client:
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
         # Create item
         response = await client.post("/local-crud/items", json={
             "itemType": "book",
@@ -295,14 +370,30 @@ async def example():
         key = response.json()["key"]
 
         # Read item
-        item = await client.get(f"/local-crud/item?key={key}")
+        item = await client.post("/local-crud/item", json={
+            "action": "get",
+            "key": key
+        })
         print(item.json())
+
+        # Update item
+        await client.post("/local-crud/item", json={
+            "action": "update",
+            "key": key,
+            "fields": {"title": "Updated Title"}
+        })
 
         # Search
         results = await client.post("/local-crud/search", json={
-            "conditions": [{"condition": "title", "value": "My Book"}]
+            "conditions": [{"condition": "title", "value": "Updated"}]
         })
         print(results.json())
+
+        # Delete
+        await client.post("/local-crud/item", json={
+            "action": "delete",
+            "key": key
+        })
 ```
 
 ## Compatibility

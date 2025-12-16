@@ -2,19 +2,13 @@
   "manifest_version": 2,
   "name": "Zotero Local CRUD API",
   "version": "1.0.0",
-  "description": "HTTP REST API for local Zotero CRUD operations. Provides endpoints for creating, reading, updating, and deleting items without requiring cloud sync.",
-  "author": "Dave C Beck",
-  "homepage_url": "https://github.com/thala/zotero-local-crud",
-  "icons": {
-    "48": "icon.png",
-    "96": "icon@2x.png"
-  },
+  "description": "HTTP REST API for local Zotero CRUD operations",
   "applications": {
     "zotero": {
       "id": "zotero-local-crud@localhost",
-      "update_url": "",
-      "strict_min_version": "6.999",
-      "strict_max_version": "7.0.*"
+      "update_url": "https://raw.githubusercontent.com/DaveCBeck/zotero-local-crud/main/updates.json",
+      "strict_min_version": "7.0",
+      "strict_max_version": "7.1.*"
     }
   }
 }

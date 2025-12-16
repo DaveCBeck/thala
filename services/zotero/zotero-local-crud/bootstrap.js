@@ -5,12 +5,10 @@
  * operations on the local Zotero library without requiring cloud sync.
  *
  * Endpoints:
- *   GET  /local-crud/ping           - Health check
- *   POST /local-crud/items          - Create item
- *   GET  /local-crud/item?key=...   - Read item
- *   PATCH /local-crud/item?key=...  - Update item
- *   DELETE /local-crud/item?key=... - Delete item
- *   POST /local-crud/search         - Search items
+ *   GET  /local-crud/ping    - Health check
+ *   POST /local-crud/items   - Create item
+ *   POST /local-crud/item    - Get/Update/Delete item (action in body)
+ *   POST /local-crud/search  - Search items
  */
 
 var LocalCrudAPI;
@@ -247,22 +245,37 @@ CreateItemEndpoint.prototype = {
 };
 
 /**
- * GET/PATCH/DELETE /local-crud/item?key=XXXXXXXX
+ * POST /local-crud/item
  * Read, update, or delete an item
+ *
+ * Request body:
+ * {
+ *   "action": "get" | "update" | "delete",
+ *   "key": "XXXXXXXX",
+ *   "fields": {...},  // for update
+ *   "creators": [...], // for update
+ *   "tags": [...]      // for update
+ * }
  */
 var ItemEndpoint = function() {};
 ItemEndpoint.prototype = {
-    supportedMethods: ["GET", "PATCH", "DELETE"],
+    supportedMethods: ["POST"],
     supportedDataTypes: ["application/json"],
     permitBookmarklet: false,
 
     init: async function(request) {
         try {
-            // Get key from query params
-            var key = request.query?.key;
+            var data = parseJSON(request.data);
+
+            if (data === null) {
+                return jsonResponse(400, { error: "Invalid JSON in request body" });
+            }
+
+            var key = data.key;
+            var action = data.action || "get";
 
             if (!key) {
-                return jsonResponse(400, { error: "key parameter is required" });
+                return jsonResponse(400, { error: "key is required in request body" });
             }
 
             // Get item by key
@@ -273,16 +286,16 @@ ItemEndpoint.prototype = {
                 return jsonResponse(404, { error: "Item not found", key: key });
             }
 
-            // Route to appropriate handler
-            switch (request.method) {
-                case "GET":
+            // Route to appropriate handler based on action
+            switch (action) {
+                case "get":
                     return this.handleGet(item);
-                case "PATCH":
-                    return await this.handlePatch(item, request.data);
-                case "DELETE":
+                case "update":
+                    return await this.handleUpdate(item, data);
+                case "delete":
                     return await this.handleDelete(item);
                 default:
-                    return jsonResponse(405, { error: "Method not allowed" });
+                    return jsonResponse(400, { error: "Invalid action. Use: get, update, delete" });
             }
 
         } catch (e) {
@@ -295,13 +308,7 @@ ItemEndpoint.prototype = {
         return jsonResponse(200, serializeItem(item));
     },
 
-    handlePatch: async function(item, requestData) {
-        var updates = parseJSON(requestData);
-
-        if (updates === null) {
-            return jsonResponse(400, { error: "Invalid JSON in request body" });
-        }
-
+    handleUpdate: async function(item, updates) {
         // Update fields
         if (updates.fields) {
             for (let [field, value] of Object.entries(updates.fields)) {
