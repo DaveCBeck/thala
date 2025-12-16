@@ -1,0 +1,39 @@
+# Zotero instance with Selkies-based headless GUI and debug-bridge API
+# Ports:
+#   - 3001: HTTPS web GUI (Selkies)
+#   - 23119: Debug-bridge API (Better BibTeX)
+# Data: Persistent storage in ./data volume
+
+services:
+  zotero:
+    image: lscr.io/linuxserver/zotero:latest
+    container_name: zotero
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      # Persistent data directory (contains zotero.sqlite and storage/)
+      - ./data:/config
+      # Custom init script for port forwarding
+      - ./custom-cont-init.d:/custom-cont-init.d:ro
+    ports:
+      # HTTPS GUI via Selkies (web-based access)
+      - "3001:3001"
+      # Debug-bridge API - mapped via socat (host 23119 -> container 23120 -> Zotero 23119)
+      - "23119:23120"
+    shm_size: "1gb"
+    mem_limit: 2G
+    networks:
+      - zotero-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:23119/connector/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  zotero-net:
+    driver: bridge

@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Unified management script for all Docker services
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_DIR="${SCRIPT_DIR}/backups"
+
+# Service directories (order matters for startup - databases first)
+SERVICES=(
+    "elasticsearch-coherence"
+    "elasticsearch-forgotten"
+    "chroma"
+    "zotero"
+)
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log()   { echo -e "${GREEN}[+]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
+error() { echo -e "${RED}[x]${NC} $1"; }
+
+cmd_up() {
+    log "Starting all services..."
+    for svc in "${SERVICES[@]}"; do
+        log "Starting $svc..."
+        docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
+    done
+    log "All services started."
+    cmd_status
+}
+
+cmd_down() {
+    log "Stopping all services..."
+    for svc in "${SERVICES[@]}"; do
+        log "Stopping $svc..."
+        docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" down
+    done
+    log "All services stopped."
+}
+
+cmd_status() {
+    echo ""
+    echo "Service Status:"
+    echo "==============="
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero)" || echo "No services running"
+    echo ""
+}
+
+cmd_logs() {
+    local svc="${1:-}"
+    if [[ -z "$svc" ]]; then
+        warn "Usage: $0 logs <service>"
+        warn "Services: ${SERVICES[*]}"
+        exit 1
+    fi
+    docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" logs -f
+}
+
+cmd_backup() {
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local backup_path="${BACKUP_DIR}/${timestamp}"
+    mkdir -p "$backup_path"
+
+    log "Creating backup at ${backup_path}..."
+
+    # Stop services for consistent backup
+    warn "Stopping services for consistent backup..."
+    cmd_down 2>/dev/null || true
+
+    # Backup bind-mounted data (chroma, zotero)
+    for svc in chroma zotero; do
+        if [[ -d "${SCRIPT_DIR}/${svc}/data" ]]; then
+            log "Backing up ${svc} data..."
+            tar -czf "${backup_path}/${svc}-data.tar.gz" -C "${SCRIPT_DIR}/${svc}" data
+        fi
+    done
+
+    # Backup Docker named volumes (elasticsearch)
+    for svc in elasticsearch-coherence elasticsearch-forgotten; do
+        local volume_name="${svc//-/_}_esdata"
+        if docker volume inspect "$volume_name" &>/dev/null; then
+            log "Backing up ${svc} volume..."
+            docker run --rm -v "${volume_name}:/source:ro" -v "${backup_path}:/backup" \
+                alpine tar -czf "/backup/${svc}-esdata.tar.gz" -C /source .
+        fi
+    done
+
+    log "Backup complete: ${backup_path}"
+    ls -lh "$backup_path"
+
+    # Restart services
+    log "Restarting services..."
+    cmd_up
+}
+
+cmd_restore() {
+    local backup_path="${1:-}"
+    if [[ -z "$backup_path" || ! -d "$backup_path" ]]; then
+        warn "Usage: $0 restore <backup-path>"
+        warn "Available backups:"
+        ls -1 "${BACKUP_DIR}" 2>/dev/null || echo "  No backups found"
+        exit 1
+    fi
+
+    warn "This will REPLACE current data with backup from: $backup_path"
+    read -p "Are you sure? (yes/no): " confirm
+    [[ "$confirm" != "yes" ]] && { echo "Aborted."; exit 1; }
+
+    cmd_down 2>/dev/null || true
+
+    # Restore bind-mounted data
+    for svc in chroma zotero; do
+        if [[ -f "${backup_path}/${svc}-data.tar.gz" ]]; then
+            log "Restoring ${svc} data..."
+            rm -rf "${SCRIPT_DIR}/${svc}/data"
+            tar -xzf "${backup_path}/${svc}-data.tar.gz" -C "${SCRIPT_DIR}/${svc}"
+        fi
+    done
+
+    # Restore Docker volumes
+    for svc in elasticsearch-coherence elasticsearch-forgotten; do
+        local volume_name="${svc//-/_}_esdata"
+        if [[ -f "${backup_path}/${svc}-esdata.tar.gz" ]]; then
+            log "Restoring ${svc} volume..."
+            docker volume rm "$volume_name" 2>/dev/null || true
+            docker volume create "$volume_name"
+            docker run --rm -v "${volume_name}:/dest" -v "${backup_path}:/backup:ro" \
+                alpine sh -c "tar -xzf /backup/${svc}-esdata.tar.gz -C /dest"
+        fi
+    done
+
+    log "Restore complete. Starting services..."
+    cmd_up
+}
+
+cmd_reset() {
+    warn "This will DESTROY all service data and start fresh!"
+    warn "Services: ${SERVICES[*]}"
+    read -p "Type 'reset' to confirm: " confirm
+    [[ "$confirm" != "reset" ]] && { echo "Aborted."; exit 1; }
+
+    log "Stopping and removing all services..."
+    for svc in "${SERVICES[@]}"; do
+        docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" down -v 2>/dev/null || true
+    done
+
+    # Remove bind-mounted data
+    for svc in chroma zotero; do
+        if [[ -d "${SCRIPT_DIR}/${svc}/data" ]]; then
+            log "Removing ${svc} data..."
+            rm -rf "${SCRIPT_DIR}/${svc}/data"
+        fi
+    done
+
+    log "Reset complete. Run '$0 up' to start fresh."
+}
+
+cmd_help() {
+    cat <<EOF
+Usage: $0 <command> [args]
+
+Commands:
+  up        Start all services
+  down      Stop all services
+  status    Show service status
+  logs      Follow logs for a service (e.g., $0 logs zotero)
+  backup    Create timestamped backup of all data
+  restore   Restore from backup (e.g., $0 restore backups/20251216-120000)
+  reset     Stop services and DELETE all data (requires confirmation)
+  help      Show this help
+
+Services: ${SERVICES[*]}
+EOF
+}
+
+# Main
+case "${1:-}" in
+    up)      cmd_up ;;
+    down)    cmd_down ;;
+    status)  cmd_status ;;
+    logs)    cmd_logs "$2" ;;
+    backup)  cmd_backup ;;
+    restore) cmd_restore "$2" ;;
+    reset)   cmd_reset ;;
+    help|-h|--help) cmd_help ;;
+    *)       cmd_help; exit 1 ;;
+esac

@@ -1,0 +1,13 @@
+#!/usr/bin/with-contenv bash
+# Forward Zotero connector port from localhost to all interfaces
+# This allows external access to the debug-bridge API
+# Internal port 23120 maps to Zotero's 23119 (to avoid conflict)
+
+echo "**** Installing socat for port forwarding ****"
+apt-get update -qq && apt-get install -y -qq socat >/dev/null 2>&1
+
+echo "**** Starting port forwarding for Zotero connector (23120 -> 23119) ****"
+# Run socat in background to forward 0.0.0.0:23120 -> 127.0.0.1:23119
+nohup socat TCP-LISTEN:23120,bind=0.0.0.0,reuseaddr,fork TCP:127.0.0.1:23119 &
+
+echo "**** Port forwarding configured ****"

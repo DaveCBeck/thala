@@ -1,0 +1,43 @@
+# Elasticsearch instance for who_i_was & forgotten_store indices
+# Port: 9202
+# Indices: who_i_was, forgotten_store (isolated within this instance)
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: es-forgotten
+    environment:
+      - discovery.type=single-node
+      - cluster.name=forgotten-cluster
+      - node.name=es-forgotten-node
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - "9202:9200"
+    mem_limit: 1GB
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks:
+      - es-forgotten-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 120
+
+volumes:
+  esdata:
+    driver: local
+
+networks:
+  es-forgotten-net:
+    driver: bridge

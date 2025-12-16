@@ -1,0 +1,51 @@
+# Coding infrastructure
+.claude/
+.context/
+dev.md
+claude.md
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Service data directories
+services/chroma/data/
+services/zotero/data/
+services/elasticsearch/data/
+services/backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+*.log
+
+# Misc
+tmp/
+temp/
+*.bak

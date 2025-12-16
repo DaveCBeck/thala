@@ -1,0 +1,18 @@
+# Chroma Configuration (v1.0.0+)
+# See: https://docs.trychroma.com/guides/deploy/docker
+
+# Server settings
+port: 8000
+listen_address: "0.0.0.0"
+max_payload_size_bytes: 41943040  # ~40MB
+
+# CORS - allow all origins for development
+# For production, restrict to specific domains: ["https://yourdomain.com"]
+cors_allow_origins: ["*"]
+
+# Data persistence
+persist_path: "/data"
+
+# Development settings
+# WARNING: Set to false in production - allows database reset via API
+allow_reset: true
