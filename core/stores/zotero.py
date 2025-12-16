@@ -211,13 +211,20 @@ class ZoteroStore:
         """
         client = await self._get_client()
 
-        response = await client.get("/local-crud/item", params={"key": zotero_key})
+        response = await client.post(
+            "/local-crud/item",
+            json={"action": "get", "key": zotero_key},
+        )
 
         if response.status_code == 404:
             return None
 
         response.raise_for_status()
         data = response.json()
+
+        # Check for error in response body
+        if "error" in data and data["error"] == "Item not found":
+            return None
 
         return ZoteroItem.model_validate(data)
 
@@ -234,7 +241,7 @@ class ZoteroStore:
         """
         client = await self._get_client()
 
-        payload = {}
+        payload = {"action": "update", "key": zotero_key}
         if updates.fields is not None:
             payload["fields"] = updates.fields
         if updates.creators is not None:
@@ -252,13 +259,13 @@ class ZoteroStore:
         if updates.collections is not None:
             payload["collections"] = updates.collections
 
-        response = await client.patch(
-            "/local-crud/item",
-            params={"key": zotero_key},
-            json=payload,
-        )
+        response = await client.post("/local-crud/item", json=payload)
 
         if response.status_code == 404:
+            return False
+
+        data = response.json()
+        if "error" in data and data["error"] == "Item not found":
             return False
 
         response.raise_for_status()
@@ -277,10 +284,19 @@ class ZoteroStore:
         """
         client = await self._get_client()
 
-        response = await client.delete("/local-crud/item", params={"key": zotero_key})
+        response = await client.post(
+            "/local-crud/item",
+            json={"action": "delete", "key": zotero_key},
+        )
 
         if response.status_code == 404:
             return False
+
+        # Check for error in response body
+        if response.status_code == 200:
+            data = response.json()
+            if "error" in data and data["error"] == "Item not found":
+                return False
 
         # 204 No Content is success
         if response.status_code == 204:

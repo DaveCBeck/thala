@@ -88,3 +88,55 @@ Docker services in `services/`. Manage all with:
 | Zotero | 3001, 23119 | Reference manager (headless + API) |
 
 See `docs/stack.md` for versions.
+
+## Setup
+
+### 1. Python Environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Services
+
+Start the Docker services:
+
+```bash
+# Elasticsearch
+cd services/elasticsearch && docker compose up -d
+
+# ChromaDB
+cd services/chroma && docker compose up -d
+
+# Zotero
+cd services/zotero && docker compose up -d
+```
+
+### 3. Zotero Plugin Setup
+
+The `zotero-local-crud` plugin provides HTTP CRUD access to the local Zotero library. It's automatically installed via init scripts.
+
+**First-time setup:**
+
+1. Start Zotero:
+   ```bash
+   cd services/zotero && docker compose up -d
+   ```
+
+2. Wait ~60 seconds for Zotero to fully start, then verify:
+   ```bash
+   curl http://localhost:23119/local-crud/ping
+   ```
+
+**Development (after editing plugin code):**
+
+When editing plugin code, do a full restart with profile reset:
+```bash
+docker compose exec zotero rm -rf /config/.zotero
+docker compose restart
+# Wait 60 seconds for full startup
+```
+
+See `services/zotero/zotero-local-crud/notes.md` for detailed development notes.

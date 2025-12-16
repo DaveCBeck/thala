@@ -1,0 +1,38 @@
+#!/usr/bin/with-contenv bash
+# Install Zotero plugins as XPI files to distribution/extensions directory
+
+PLUGIN_SOURCE="/opt/zotero-plugins/zotero-local-crud"
+DIST_EXTENSIONS_DIR="/opt/zotero/distribution/extensions"
+
+echo "**** Setting up Zotero plugins ****"
+
+# Install zip if not available
+if ! command -v zip &> /dev/null; then
+    echo "**** Installing zip ****"
+    apt-get update -qq && apt-get install -y -qq zip >/dev/null 2>&1
+fi
+
+# Create distribution extensions directory if it doesn't exist
+mkdir -p "$DIST_EXTENSIONS_DIR"
+
+PLUGIN_ID="zotero-local-crud@localhost"
+XPI_FILE="$DIST_EXTENSIONS_DIR/$PLUGIN_ID.xpi"
+
+if [ -d "$PLUGIN_SOURCE" ]; then
+    # Create XPI from source files
+    rm -f "$XPI_FILE"
+    rm -rf "$DIST_EXTENSIONS_DIR/$PLUGIN_ID"
+
+    cd "$PLUGIN_SOURCE"
+    zip -r "$XPI_FILE" manifest.json bootstrap.js
+    chmod 644 "$XPI_FILE"
+    # Zotero needs write access to parent dir to create trash dir during install
+    chown -R abc:abc /opt/zotero/distribution
+
+    echo "**** Created XPI at: $XPI_FILE ****"
+    ls -la "$XPI_FILE"
+else
+    echo "**** Plugin source not found at $PLUGIN_SOURCE ****"
+fi
+
+echo "**** Plugin setup complete ****"

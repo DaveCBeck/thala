@@ -1,7 +1,7 @@
-# Zotero instance with Selkies-based headless GUI and debug-bridge API
+# Zotero instance with Selkies-based headless GUI and local-crud API
 # Ports:
 #   - 3001: HTTPS web GUI (Selkies)
-#   - 23119: Debug-bridge API (Better BibTeX)
+#   - 23119: Local CRUD API (zotero-local-crud plugin)
 # Data: Persistent storage in ./data volume
 
 services:
@@ -17,12 +17,12 @@ services:
       - ./data:/config
       # Custom init script for port forwarding
       - ./custom-cont-init.d:/custom-cont-init.d:ro
-      # Local CRUD API plugin (headless installation)
-      - ./zotero-local-crud:/config/.zotero/zotero/z6cgifer.default/extensions/zotero-local-crud@localhost:ro
+      # Local CRUD API plugin source (mounted for proxy file installation)
+      - ./zotero-local-crud:/opt/zotero-plugins/zotero-local-crud:ro
     ports:
       # HTTPS GUI via Selkies (web-based access)
       - "3001:3001"
-      # Debug-bridge API - mapped via socat (host 23119 -> container 23120 -> Zotero 23119)
+      # Local CRUD API - mapped via socat (host 23119 -> container 23120 -> Zotero 23119)
       - "23119:23120"
     shm_size: "1gb"
     mem_limit: 2G
