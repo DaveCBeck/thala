@@ -17,6 +17,8 @@ services:
       - ./data:/config
       # Custom init script for port forwarding
       - ./custom-cont-init.d:/custom-cont-init.d:ro
+      # Local CRUD API plugin (headless installation)
+      - ./zotero-local-crud:/config/.zotero/zotero/z6cgifer.default/extensions/zotero-local-crud@localhost:ro
     ports:
       # HTTPS GUI via Selkies (web-based access)
       - "3001:3001"
@@ -28,7 +30,7 @@ services:
       - zotero-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:23119/connector/ping"]
+      test: ["CMD", "curl", "-f", "http://localhost:23119/local-crud/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
