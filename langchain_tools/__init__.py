@@ -8,14 +8,12 @@ Two tools are provided:
 
 from .base import StoreManager, get_store_manager
 from .search_memory import (
-    SearchMemoryTool,
-    SearchMemoryInput,
-    SearchMemoryOutput,
+    search_memory,
     MemorySearchResult,
+    SearchMemoryOutput,
 )
 from .expand_context import (
-    ExpandContextTool,
-    ExpandContextInput,
+    expand_context,
     ExpandedContext,
 )
 
@@ -24,12 +22,10 @@ __all__ = [
     "StoreManager",
     "get_store_manager",
     # search_memory tool
-    "SearchMemoryTool",
-    "SearchMemoryInput",
-    "SearchMemoryOutput",
+    "search_memory",
     "MemorySearchResult",
+    "SearchMemoryOutput",
     # expand_context tool
-    "ExpandContextTool",
-    "ExpandContextInput",
+    "expand_context",
     "ExpandedContext",
 ]

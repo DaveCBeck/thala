@@ -158,13 +158,17 @@ python -m mcp_server.server
 
 ## LangChain Tools
 
-The `langchain_tools/` package provides tools for LangChain agents:
+The `langchain_tools/` package provides tools for LangChain 1.x agents:
 
 - **`search_memory`**: Cross-store semantic search (top_of_mind, coherence, store, who_i_was)
 - **`expand_context`**: Deep retrieval by UUID, zotero_key, or content snippet
 
 ```python
-from langchain_tools import SearchMemoryTool, ExpandContextTool
+from langchain.agents import create_agent
+from langchain_tools import search_memory, expand_context
 
-tools = [SearchMemoryTool(), ExpandContextTool()]
+agent = create_agent(
+    model="claude-sonnet-4-5-20250929",
+    tools=[search_memory, expand_context],
+)
 ```
