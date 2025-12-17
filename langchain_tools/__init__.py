@@ -7,6 +7,7 @@ Tools provided:
 - web_search: Search the web for information
 - scrape_url: Scrape a webpage to markdown
 - map_website: Discover URLs on a website
+- process_document: Document extraction and summarization pipeline
 """
 
 from .base import StoreManager, get_store_manager
@@ -28,6 +29,10 @@ from .firecrawl import (
     ScrapeOutput,
     MapOutput,
 )
+from .document_processing import (
+    process_document,
+    DocumentProcessingOutput,
+)
 
 __all__ = [
     # Store management
@@ -48,4 +53,7 @@ __all__ = [
     "WebSearchOutput",
     "ScrapeOutput",
     "MapOutput",
+    # document_processing tool
+    "process_document",
+    "DocumentProcessingOutput",
 ]

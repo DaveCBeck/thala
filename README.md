@@ -162,13 +162,34 @@ The `langchain_tools/` package provides tools for LangChain 1.x agents:
 
 - **`search_memory`**: Cross-store semantic search (top_of_mind, coherence, store, who_i_was)
 - **`expand_context`**: Deep retrieval by UUID, zotero_key, or content snippet
+- **`process_document`**: Document extraction and summarization pipeline
 
 ```python
 from langchain.agents import create_agent
-from langchain_tools import search_memory, expand_context
+from langchain_tools import search_memory, expand_context, process_document
 
 agent = create_agent(
     model="claude-sonnet-4-5-20250929",
-    tools=[search_memory, expand_context],
+    tools=[search_memory, expand_context, process_document],
 )
+```
+
+## Document Processing Workflow
+
+The `workflows/document_processing/` package provides a LangGraph-based document processing pipeline using Anthropic Claude models:
+
+- **Sonnet**: Standard summarization and metadata extraction
+- **Opus + extended thinking**: Complex chapter analysis
+
+```python
+from workflows.document_processing import process_document, process_documents_with_batch_api
+
+# Single document
+result = await process_document("/path/to/doc.pdf")
+
+# Multiple documents with 50% cost savings via Batch API
+results = await process_documents_with_batch_api([
+    {"id": "doc1", "content": "...", "title": "Doc 1"},
+    {"id": "doc2", "content": "...", "title": "Doc 2"},
+])
 ```
