@@ -5,10 +5,14 @@ Shared utilities and store access for LangChain tools.
 import os
 from typing import Optional
 
+from dotenv import load_dotenv
+
 from core.stores.elasticsearch import ElasticsearchStores
 from core.stores.chroma import ChromaStore
 from core.stores.zotero import ZoteroStore
 from core.embedding import EmbeddingService
+
+load_dotenv()
 
 
 class StoreManager:

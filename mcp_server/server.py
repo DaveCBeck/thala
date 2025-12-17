@@ -12,7 +12,10 @@ import os
 import sys
 from typing import Any
 
+from dotenv import load_dotenv
 from mcp.server import Server
+
+load_dotenv()
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 

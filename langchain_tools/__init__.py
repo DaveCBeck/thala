@@ -1,9 +1,12 @@
 """
 LangChain tools for Thala memory system.
 
-Two tools are provided:
+Tools provided:
 - search_memory: Cross-store semantic search
 - expand_context: Deep-dive retrieval ("more about that")
+- web_search: Search the web for information
+- scrape_url: Scrape a webpage to markdown
+- map_website: Discover URLs on a website
 """
 
 from .base import StoreManager, get_store_manager
@@ -15,6 +18,15 @@ from .search_memory import (
 from .expand_context import (
     expand_context,
     ExpandedContext,
+)
+from .firecrawl import (
+    web_search,
+    scrape_url,
+    map_website,
+    WebSearchResult,
+    WebSearchOutput,
+    ScrapeOutput,
+    MapOutput,
 )
 
 __all__ = [
@@ -28,4 +40,12 @@ __all__ = [
     # expand_context tool
     "expand_context",
     "ExpandedContext",
+    # firecrawl tools
+    "web_search",
+    "scrape_url",
+    "map_website",
+    "WebSearchResult",
+    "WebSearchOutput",
+    "ScrapeOutput",
+    "MapOutput",
 ]

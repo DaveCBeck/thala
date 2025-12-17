@@ -4,3 +4,5 @@ elasticsearch[async]>=8.17.0
 httpx>=0.25.0
 mcp>=1.0.0
 langchain>=1.2.0
+firecrawl-py>=1.0.0
+python-dotenv>=1.0.0
