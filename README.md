@@ -41,12 +41,14 @@ thala/
 │   ├── elasticsearch/
 │   └── chroma/
 ├── mcp_server/               # MCP server exposing store APIs
+├── langchain_tools/          # LangChain tools (search_memory, expand_context)
 ├── mcps/
 │   ├── zotero/
 │   ├── firecrawl/
 │   ├── search/
 │   └── deep-research/
 ├── core/
+│   ├── embedding.py          # Embedding service (OpenAI/Ollama)
 │   ├── ingest/               # Sources → Zotero → stores pipeline
 │   ├── executive/            # Conscious: user-initiated tasks
 │   ├── subconscious/         # Background: coherence, patterns, goals
@@ -153,3 +155,16 @@ python -m mcp_server.server
 **Tools available:** 27 tools across stores (CRUD for top_of_mind, coherence, store, zotero; read-only for who_i_was, forgotten).
 
 **Embedding config:** Set `THALA_EMBEDDING_PROVIDER` (openai/ollama) and `THALA_EMBEDDING_MODEL`.
+
+## LangChain Tools
+
+The `langchain_tools/` package provides tools for LangChain agents:
+
+- **`search_memory`**: Cross-store semantic search (top_of_mind, coherence, store, who_i_was)
+- **`expand_context`**: Deep retrieval by UUID, zotero_key, or content snippet
+
+```python
+from langchain_tools import SearchMemoryTool, ExpandContextTool
+
+tools = [SearchMemoryTool(), ExpandContextTool()]
+```

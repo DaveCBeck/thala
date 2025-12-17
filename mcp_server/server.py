@@ -23,7 +23,7 @@ from core.stores.chroma import ChromaStore
 from core.stores.elasticsearch import ElasticsearchStores
 from core.stores.zotero import ZoteroStore
 
-from .embedding import EmbeddingService
+from core.embedding import EmbeddingService
 from .errors import NotFoundError, StoreConnectionError, ToolError
 
 # Configure logging

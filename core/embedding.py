@@ -1,11 +1,29 @@
-"""Embedding generation service for MCP tools."""
+"""
+Embedding generation service for stores.
+
+Supports OpenAI and Ollama providers.
+"""
 
 import os
 from abc import ABC, abstractmethod
+from typing import Any
 
 import httpx
 
-from .errors import EmbeddingError
+
+class EmbeddingError(Exception):
+    """Error generating embeddings."""
+
+    def __init__(self, message: str, provider: str | None = None):
+        self.message = message
+        self.provider = provider
+        self.details: dict[str, Any] = {}
+        if provider:
+            self.details["provider"] = provider
+        super().__init__(
+            f"Embedding generation failed: {message}. "
+            "Check embedding provider configuration and API keys."
+        )
 
 
 class EmbeddingProvider(ABC):
