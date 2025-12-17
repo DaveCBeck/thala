@@ -40,6 +40,7 @@ thala/
 │   ├── zotero/
 │   ├── elasticsearch/
 │   └── chroma/
+├── mcp_server/               # MCP server exposing store APIs
 ├── mcps/
 │   ├── zotero/
 │   ├── firecrawl/
@@ -140,3 +141,15 @@ docker compose restart
 ```
 
 See `services/zotero/zotero-local-crud/notes.md` for detailed development notes.
+
+## MCP Server
+
+The `mcp_server/` package exposes all stores via MCP (Model Context Protocol) for LLM tool use.
+
+```bash
+python -m mcp_server.server
+```
+
+**Tools available:** 27 tools across stores (CRUD for top_of_mind, coherence, store, zotero; read-only for who_i_was, forgotten).
+
+**Embedding config:** Set `THALA_EMBEDDING_PROVIDER` (openai/ollama) and `THALA_EMBEDDING_MODEL`.

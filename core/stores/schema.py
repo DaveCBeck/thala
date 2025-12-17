@@ -36,6 +36,11 @@ class BaseRecord(BaseModel):
         max_length=8,
         description="8-char Zotero key, only for external sources"
     )
+    content: str = Field(description="Main text content for embedding")
+    metadata: dict = Field(
+        default_factory=dict,
+        description="Flexible metadata (source, related topics, etc.)"
+    )
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     embedding_model: Optional[str] = Field(
