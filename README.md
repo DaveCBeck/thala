@@ -84,7 +84,7 @@ Docker services in `services/`. Manage all with:
 | Service | Port | Purpose |
 |---------|------|---------|
 | Chroma | 8000 | Vector DB for top_of_mind |
-| Elasticsearch (×2) | 9201, 9202 | Structured storage |
+| Elasticsearch (×2) | 9201, 9200 | Structured storage |
 | Zotero | 3001, 23119 | Reference manager (headless + API) |
 
 See `docs/stack.md` for versions.

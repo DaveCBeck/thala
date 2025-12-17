@@ -7,8 +7,8 @@ Technology stack and version constraints for research agents.
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
 | Chroma | chromadb/chroma:1.0.0 | 8000 | Vector database |
-| Elasticsearch (coherence) | elasticsearch:8.17.0 | 9201 | coherence, store indices |
-| Elasticsearch (forgotten) | elasticsearch:8.17.0 | 9202 | who_i_was, forgotten_store indices |
+| Elasticsearch (coherence) | elasticsearch:9.2.2 | 9201 | coherence, store indices |
+| Elasticsearch (forgotten) | elasticsearch:9.2.2 | 9200 | who_i_was, forgotten_store indices |
 | Qdrant | qdrant/qdrant:1.15.5 | 6333-6334 | Vector database |
 | Zotero | linuxserver/zotero:latest | 3001, 23119 | Reference manager (headless) |
 

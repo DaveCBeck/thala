@@ -60,13 +60,20 @@ class CoherenceRecord(BaseRecord):
 class WhoIWasRecord(BaseRecord):
     """
     Edit history - temporal record of superseded beliefs/state.
-    References internal UUIDs.
+    References internal UUIDs and stores snapshot of previous data.
     """
     source_type: SourceType = SourceType.INTERNAL
     supersedes: UUID = Field(description="UUID of the record this replaced")
     reason: Optional[str] = Field(
         None,
         description="Why this change occurred"
+    )
+    previous_data: dict = Field(
+        default_factory=dict,
+        description="Snapshot of the record before change"
+    )
+    original_store: str = Field(
+        description="Which store: 'coherence', 'top_of_mind'"
     )
 
 
@@ -89,10 +96,14 @@ class StoreRecord(BaseRecord):
 class ForgottenRecord(BaseRecord):
     """
     Archived content with reason for forgetting.
-    Preserves the original record structure.
+    Preserves the original record structure and data snapshot.
     """
     forgotten_reason: str
     forgotten_at: datetime = Field(default_factory=_utc_now)
     original_store: str = Field(
         description="Which store this came from: 'coherence', 'store'"
+    )
+    previous_data: dict = Field(
+        default_factory=dict,
+        description="Snapshot of the record before forgetting"
     )

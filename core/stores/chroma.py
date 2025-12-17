@@ -7,13 +7,16 @@ ChromaDB 1.0.0 has no native async - all calls wrapped with asyncio.to_thread().
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
 import chromadb
 from chromadb.config import Settings
 
-from .schema import BaseRecord
+from .schema import BaseRecord, WhoIWasRecord
+
+if TYPE_CHECKING:
+    from .elasticsearch import ElasticsearchStores
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ class ChromaStore:
         host: str = "localhost",
         port: int = 8000,
         collection_name: str = "knowledge",
+        es_stores: Optional["ElasticsearchStores"] = None,
     ):
         self.collection_name = collection_name
         self._client = chromadb.HttpClient(
@@ -37,6 +41,7 @@ class ChromaStore:
             ),
         )
         self._collection: Optional[chromadb.Collection] = None
+        self._es_stores = es_stores
 
     async def _get_collection(self) -> chromadb.Collection:
         """Get or create the collection (lazy init)."""
@@ -79,6 +84,55 @@ class ChromaStore:
         logger.debug(f"Added/updated record {record.id} in Chroma")
         return record.id
 
+    async def update(
+        self,
+        record: BaseRecord,
+        embedding: list[float],
+        document: str,
+        reason: str = "Updated via API",
+    ) -> UUID:
+        """
+        Update a record with history tracking.
+
+        Requires es_stores to be configured for mandatory archiving to who_i_was.
+
+        Args:
+            record: Pydantic record (must have id)
+            embedding: Vector embedding
+            document: Text content for the document
+            reason: Optional reason for the update
+
+        Returns:
+            The record's UUID
+
+        Raises:
+            RuntimeError: If es_stores not configured (archiving is mandatory)
+        """
+        if self._es_stores is None:
+            raise RuntimeError(
+                "ChromaStore.update() requires es_stores for mandatory archiving. "
+                "Use add() for new records that don't require history tracking."
+            )
+
+        # Get existing record first
+        existing = await self.get(record.id)
+
+        if existing is not None:
+            # Save snapshot to who_i_was (metadata + document)
+            who_i_was = WhoIWasRecord(
+                supersedes=record.id,
+                reason=reason,
+                previous_data={
+                    "metadata": existing["metadata"],
+                    "document": existing["document"],
+                },
+                original_store="top_of_mind",
+            )
+            await self._es_stores.who_i_was.add(who_i_was)
+
+        # Perform upsert via add()
+        return await self.add(record, embedding, document)
+
     async def get(self, record_id: UUID) -> Optional[dict]:
         """
         Get a record by UUID.
@@ -94,14 +148,14 @@ class ChromaStore:
             include=["embeddings", "metadatas", "documents"],
         )
 
-        if not results["ids"]:
+        if len(results["ids"]) == 0:
             return None
 
         return {
             "id": UUID(results["ids"][0]),
-            "embedding": results["embeddings"][0] if results["embeddings"] else None,
-            "metadata": results["metadatas"][0] if results["metadatas"] else None,
-            "document": results["documents"][0] if results["documents"] else None,
+            "embedding": results["embeddings"][0] if results["embeddings"] is not None and len(results["embeddings"]) > 0 else None,
+            "metadata": results["metadatas"][0] if results["metadatas"] is not None and len(results["metadatas"]) > 0 else None,
+            "document": results["documents"][0] if results["documents"] is not None and len(results["documents"]) > 0 else None,
         }
 
     async def search(
@@ -146,20 +200,50 @@ class ChromaStore:
             )
         ]
 
-    async def delete(self, record_id: UUID) -> bool:
+    async def delete(
+        self,
+        record_id: UUID,
+        reason: str = "Deleted via API",
+    ) -> bool:
         """
-        Delete a record by UUID.
+        Delete a record by UUID with mandatory history tracking.
+
+        Requires es_stores to be configured for mandatory archiving to who_i_was.
+
+        Args:
+            record_id: UUID of record to delete
+            reason: Optional reason for the deletion
 
         Returns:
             True if deleted, False if not found
+
+        Raises:
+            RuntimeError: If es_stores not configured (archiving is mandatory)
         """
-        collection = await self._get_collection()
+        if self._es_stores is None:
+            raise RuntimeError(
+                "ChromaStore.delete() requires es_stores for mandatory archiving."
+            )
 
         # Check if exists first
         existing = await self.get(record_id)
         if existing is None:
             return False
 
+        # Save snapshot to who_i_was (mandatory)
+        who_i_was = WhoIWasRecord(
+            supersedes=record_id,
+            reason=reason,
+            previous_data={
+                "metadata": existing["metadata"],
+                "document": existing["document"],
+            },
+            original_store="top_of_mind",
+        )
+        await self._es_stores.who_i_was.add(who_i_was)
+
+        # Then delete from Chroma
+        collection = await self._get_collection()
         await asyncio.to_thread(collection.delete, ids=[str(record_id)])
         logger.debug(f"Deleted record {record_id} from Chroma")
         return True

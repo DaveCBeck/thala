@@ -69,7 +69,7 @@ class ElasticsearchStores:
 
         # Store instances
         self.coherence = CoherenceStore(self._coherence_client, self)
-        self.store = MainStore(self._coherence_client)
+        self.store = MainStore(self._coherence_client, self)
         self.who_i_was = WhoIWasStore(self._coherence_client)
         self.forgotten = ForgottenStore(self._forgotten_client)
 
@@ -113,6 +113,8 @@ class BaseElasticsearchStore:
 
     async def add(self, record: T) -> UUID:
         """Add a record to the store."""
+        # Note: ES doesn't refresh immediately. For read-after-write consistency,
+        # pass refresh="wait_for" - but this adds latency.
         await self._client.index(
             index=self.index_name,
             id=str(record.id),
@@ -216,18 +218,19 @@ class CoherenceStore(BaseElasticsearchStore):
         """
         Update a coherence record with automatic versioning.
 
-        Creates a WhoIWasRecord before updating to preserve history.
+        Creates a WhoIWasRecord before updating to preserve history (full snapshot).
         """
         # Get current record before updating
         current = await self.get(record_id)
         if current is None:
             return False
 
-        # Create WhoIWasRecord to preserve history
+        # Create WhoIWasRecord to preserve history with full snapshot
         who_i_was = WhoIWasRecord(
             supersedes=record_id,
             reason=updates.get("_change_reason", "Updated via API"),
-            source_type=current.source_type,
+            previous_data=current.model_dump(mode="json"),
+            original_store="coherence",
         )
 
         # Remove internal fields from updates
@@ -250,12 +253,83 @@ class CoherenceStore(BaseElasticsearchStore):
         )
         return True
 
+    async def delete(self, record_id: UUID, reason: str = "Deleted via API") -> bool:
+        """
+        Delete a coherence record with history preservation.
+
+        Creates a WhoIWasRecord before deleting to preserve snapshot.
+        """
+        current = await self.get(record_id)
+        if current is None:
+            return False
+
+        # Save snapshot to who_i_was before deleting
+        who_i_was = WhoIWasRecord(
+            supersedes=record_id,
+            reason=reason,
+            previous_data=current.model_dump(mode="json"),
+            original_store="coherence",
+        )
+        await self._stores.who_i_was.add(who_i_was)
+
+        # Then delete using parent class method
+        try:
+            await self._client.delete(
+                index=self.index_name,
+                id=str(record_id),
+            )
+            logger.debug(
+                f"Deleted coherence record {record_id}, "
+                f"snapshot saved as {who_i_was.id}"
+            )
+            return True
+        except NotFoundError:
+            return False
+
 
 class MainStore(BaseElasticsearchStore):
     """Store for all relevant content - originals and compressions."""
 
     index_name = "store"
     record_class = StoreRecord
+
+    def __init__(self, client: AsyncElasticsearch, stores: "ElasticsearchStores"):
+        super().__init__(client)
+        self._stores = stores
+
+    async def delete(self, record_id: UUID, reason: str) -> bool:
+        """
+        Delete a store record with required reason, archiving to forgotten_store.
+
+        Args:
+            record_id: UUID of record to delete
+            reason: Required explanation for why this is being forgotten
+
+        Returns:
+            True if deleted, False if not found
+        """
+        current = await self.get(record_id)
+        if current is None:
+            return False
+
+        # Archive to forgotten_store with full snapshot
+        await self._stores.forgotten.forget(
+            current,
+            reason,
+            "store",
+            previous_data=current.model_dump(mode="json"),
+        )
+
+        # Then delete
+        try:
+            await self._client.delete(
+                index=self.index_name,
+                id=str(record_id),
+            )
+            logger.debug(f"Deleted store record {record_id}, archived to forgotten")
+            return True
+        except NotFoundError:
+            return False
 
 
 class WhoIWasStore(BaseElasticsearchStore):
@@ -283,6 +357,7 @@ class ForgottenStore(BaseElasticsearchStore):
         record: BaseRecord,
         reason: str,
         original_store: str,
+        previous_data: Optional[dict] = None,
     ) -> UUID:
         """
         Archive a record to the forgotten store.
@@ -291,6 +366,7 @@ class ForgottenStore(BaseElasticsearchStore):
             record: The record being forgotten
             reason: Why it's being forgotten
             original_store: Which store it came from ('coherence', 'store')
+            previous_data: Optional snapshot; defaults to record.model_dump()
 
         Returns:
             UUID of the forgotten record
@@ -300,6 +376,7 @@ class ForgottenStore(BaseElasticsearchStore):
             zotero_key=record.zotero_key,
             forgotten_reason=reason,
             original_store=original_store,
+            previous_data=previous_data or record.model_dump(mode="json"),
         )
 
         await self.add(forgotten)
