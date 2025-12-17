@@ -1,0 +1,15 @@
+# Document processing
+marker-pdf[full]>=1.0.0
+
+# API framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Data validation
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Task queue
+celery[redis]>=5.3.0
+redis>=5.0.0

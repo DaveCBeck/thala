@@ -1,0 +1,93 @@
+services:
+  marker-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/input:/data/input
+      - ./data/output:/data/output
+      - marker-cache:/root/.cache/huggingface
+    environment:
+      - TORCH_DEVICE=cuda
+      - INFERENCE_RAM=16
+      - RECOGNITION_BATCH_SIZE=256
+      - DETECTOR_BATCH_SIZE=24
+      - LAYOUT_BATCH_SIZE=32
+      - TABLE_REC_BATCH_SIZE=48
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
+
+  marker-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    volumes:
+      - ./data/input:/data/input
+      - ./data/output:/data/output
+      - marker-cache:/root/.cache/huggingface
+    environment:
+      - TORCH_DEVICE=cuda
+      - INFERENCE_RAM=16
+      - RECOGNITION_BATCH_SIZE=256
+      - DETECTOR_BATCH_SIZE=24
+      - LAYOUT_BATCH_SIZE=32
+      - TABLE_REC_BATCH_SIZE=48
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: celery -A app.tasks worker --loglevel=info --concurrency=3
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  flower:
+    image: mher/flower:2.0
+    ports:
+      - "5556:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
+
+volumes:
+  marker-cache:
+  redis-data:

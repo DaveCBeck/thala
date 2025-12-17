@@ -13,6 +13,11 @@ SERVICES=(
     "zotero"
 )
 
+# GPU services (require nvidia-container-toolkit)
+GPU_SERVICES=(
+    "marker"
+)
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -23,18 +28,49 @@ log()   { echo -e "${GREEN}[+]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; }
 
+check_nvidia() {
+    if ! command -v nvidia-smi &>/dev/null; then
+        return 1
+    fi
+    if ! docker info 2>/dev/null | grep -q "nvidia"; then
+        return 1
+    fi
+    return 0
+}
+
 cmd_up() {
     log "Starting all services..."
     for svc in "${SERVICES[@]}"; do
         log "Starting $svc..."
         docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
     done
+
+    # Start GPU services if nvidia-container-toolkit is available
+    if check_nvidia; then
+        for svc in "${GPU_SERVICES[@]}"; do
+            log "Starting GPU service: $svc..."
+            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
+        done
+    else
+        warn "Skipping GPU services (nvidia-container-toolkit not available)"
+        warn "GPU services: ${GPU_SERVICES[*]}"
+    fi
+
     log "All services started."
     cmd_status
 }
 
 cmd_down() {
     log "Stopping all services..."
+
+    # Stop GPU services first
+    for svc in "${GPU_SERVICES[@]}"; do
+        if [[ -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" ]]; then
+            log "Stopping GPU service: $svc..."
+            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" down 2>/dev/null || true
+        fi
+    done
+
     for svc in "${SERVICES[@]}"; do
         log "Stopping $svc..."
         docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" down
@@ -46,7 +82,7 @@ cmd_status() {
     echo ""
     echo "Service Status:"
     echo "==============="
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero)" || echo "No services running"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero|marker|redis|flower)" || echo "No services running"
     echo ""
 }
 
@@ -173,7 +209,8 @@ Commands:
   reset     Stop services and DELETE all data (requires confirmation)
   help      Show this help
 
-Services: ${SERVICES[*]}
+Services:     ${SERVICES[*]}
+GPU Services: ${GPU_SERVICES[*]} (require nvidia-container-toolkit)
 EOF
 }
 
