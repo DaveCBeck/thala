@@ -18,6 +18,11 @@ GPU_SERVICES=(
     "marker"
 )
 
+# VPN services (require VPN credentials)
+VPN_SERVICES=(
+    "retrieve-academic"
+)
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,6 +38,19 @@ check_nvidia() {
         return 1
     fi
     if ! docker info 2>/dev/null | grep -q "nvidia"; then
+        return 1
+    fi
+    return 0
+}
+
+check_vpn_config() {
+    local svc="${1}"
+    local env_file="${SCRIPT_DIR}/${svc}/.env"
+    if [[ ! -f "$env_file" ]]; then
+        return 1
+    fi
+    # Check for VPN credentials
+    if ! grep -q "EXPRESSVPN_USERNAME" "$env_file" 2>/dev/null; then
         return 1
     fi
     return 0
@@ -56,6 +74,21 @@ cmd_up() {
         warn "GPU services: ${GPU_SERVICES[*]}"
     fi
 
+    # Start VPN services if configured
+    local vpn_started=0
+    for svc in "${VPN_SERVICES[@]}"; do
+        if [[ -d "${SCRIPT_DIR}/${svc}" ]] && check_vpn_config "$svc"; then
+            log "Starting VPN service: $svc..."
+            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
+            ((vpn_started++))
+        fi
+    done
+    if [[ $vpn_started -eq 0 ]] && [[ ${#VPN_SERVICES[@]} -gt 0 ]]; then
+        warn "Skipping VPN services (not configured or submodule not initialized)"
+        warn "VPN services: ${VPN_SERVICES[*]}"
+        warn "Run: git submodule update --init services/<service>"
+    fi
+
     log "All services started."
     cmd_status
 }
@@ -63,7 +96,15 @@ cmd_up() {
 cmd_down() {
     log "Stopping all services..."
 
-    # Stop GPU services first
+    # Stop VPN services first
+    for svc in "${VPN_SERVICES[@]}"; do
+        if [[ -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" ]]; then
+            log "Stopping VPN service: $svc..."
+            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" down 2>/dev/null || true
+        fi
+    done
+
+    # Stop GPU services
     for svc in "${GPU_SERVICES[@]}"; do
         if [[ -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" ]]; then
             log "Stopping GPU service: $svc..."
@@ -82,7 +123,7 @@ cmd_status() {
     echo ""
     echo "Service Status:"
     echo "==============="
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero|marker|redis|flower)" || echo "No services running"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero|marker|redis|flower|retrieve-academic)" || echo "No services running"
     echo ""
 }
 
@@ -211,6 +252,7 @@ Commands:
 
 Services:     ${SERVICES[*]}
 GPU Services: ${GPU_SERVICES[*]} (require nvidia-container-toolkit)
+VPN Services: ${VPN_SERVICES[*]} (require .env with VPN credentials)
 EOF
 }
 

@@ -22,6 +22,12 @@ from .translation_server import (
     TranslationResult,
     TranslationServerClient,
 )
+from .retrieve_academic import (
+    HealthStatus as RetrieveAcademicHealthStatus,
+    RetrieveAcademicClient,
+    RetrieveJobResponse,
+    RetrieveResult,
+)
 
 __all__ = [
     # Schema
@@ -45,4 +51,9 @@ __all__ = [
     "TranslationCreator",
     "TranslationResult",
     "TranslationServerClient",
+    # Retrieve Academic
+    "RetrieveAcademicClient",
+    "RetrieveAcademicHealthStatus",
+    "RetrieveJobResponse",
+    "RetrieveResult",
 ]

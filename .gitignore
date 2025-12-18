@@ -16,6 +16,9 @@ services/zotero/data/
 services/elasticsearch/data/
 services/backups/
 
+# Note: services/retrieve-academic is a git submodule (private repo)
+# It's tracked via .gitmodules, not ignored
+
 # Python
 __pycache__/
 *.py[cod]

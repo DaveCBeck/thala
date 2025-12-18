@@ -1,0 +1,3 @@
+[submodule "services/retrieve-academic"]
+	path = services/retrieve-academic
+	url = https://github.com/DaveCBeck/retrieve-academic.git
