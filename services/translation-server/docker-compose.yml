@@ -1,0 +1,28 @@
+# Zotero Translation Server
+# Extracts bibliographic metadata from URLs using Zotero's translator framework
+#
+# API Endpoints:
+#   POST /web - Extract metadata from a webpage URL
+#   POST /search - Lookup by identifier (DOI, ISBN, PMID, arXiv ID)
+#   POST /export - Convert Zotero JSON to export format (BibTeX, RIS, etc.)
+#
+# Usage:
+#   curl -X POST -d "https://example.com/article" http://localhost:1969/web
+#
+# Reference: https://github.com/zotero/translation-server
+
+services:
+  translation-server:
+    image: zuphilip/translation-server
+    container_name: thala-translation-server
+    ports:
+      - "${TRANSLATION_PORT:-1969}:1969"
+    environment:
+      - USER_AGENT=Thala-Research/1.0 (research-workflow; +https://github.com/thala)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:1969/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

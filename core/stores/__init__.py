@@ -17,6 +17,11 @@ from .zotero import (
     ZoteroStore,
     ZoteroTag,
 )
+from .translation_server import (
+    TranslationCreator,
+    TranslationResult,
+    TranslationServerClient,
+)
 
 __all__ = [
     # Schema
@@ -36,4 +41,8 @@ __all__ = [
     "ZoteroSearchResult",
     "ZoteroStore",
     "ZoteroTag",
+    # Translation Server
+    "TranslationCreator",
+    "TranslationResult",
+    "TranslationServerClient",
 ]

@@ -11,6 +11,7 @@ Technology stack and version constraints for research agents.
 | Elasticsearch (forgotten) | elasticsearch:9.2.2 | 9200 | who_i_was, forgotten |
 | Marker | marker-gpu | 8001 | GPU-accelerated PDF processing |
 | Qdrant | qdrant/qdrant:1.15.5 | 6333-6334 | Vector database |
+| Translation Server | zuphilip/translation-server | 1969 | Zotero bibliographic metadata extraction |
 | Zotero | linuxserver/zotero:latest | 3001, 23119 | Reference manager (headless) |
 
 ## Python Dependencies

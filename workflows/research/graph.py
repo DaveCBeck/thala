@@ -39,6 +39,7 @@ from workflows.research.nodes.iterate_plan import iterate_plan
 from workflows.research.nodes.supervisor import supervisor
 from workflows.research.nodes.refine_draft import refine_draft
 from workflows.research.nodes.final_report import final_report
+from workflows.research.nodes.process_citations import process_citations
 from workflows.research.nodes.save_findings import save_findings
 from workflows.research.subgraphs.researcher import researcher_subgraph
 
@@ -149,6 +150,11 @@ def create_deep_research_graph():
         final_report,
         retry=RetryPolicy(max_attempts=2, backoff_factor=2.0),
     )
+    builder.add_node(
+        "process_citations",
+        process_citations,
+        retry=RetryPolicy(max_attempts=2, backoff_factor=2.0),
+    )
     builder.add_node("save_findings", save_findings)
 
     # Entry flow
@@ -173,7 +179,8 @@ def create_deep_research_graph():
     builder.add_edge("refine_draft", "supervisor")
 
     # Final stages
-    builder.add_edge("final_report", "save_findings")
+    builder.add_edge("final_report", "process_citations")
+    builder.add_edge("process_citations", "save_findings")
     builder.add_edge("save_findings", END)
 
     return builder.compile()
@@ -253,6 +260,7 @@ async def deep_research(
         "draft_report": None,
         "final_report": None,
         "citations": [],
+        "citation_keys": [],
         "store_record_id": None,
         "zotero_key": None,
         "errors": [],

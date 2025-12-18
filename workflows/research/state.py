@@ -191,6 +191,7 @@ class DeepResearchState(TypedDict):
     # Final output
     final_report: Optional[str]
     citations: list[dict]  # Structured citations
+    citation_keys: list[str]  # Zotero keys created for citations
 
     # Store integration
     store_record_id: Optional[str]  # UUID of saved research

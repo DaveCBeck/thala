@@ -8,6 +8,7 @@ from workflows.research.nodes.supervisor import supervisor
 from workflows.research.nodes.compress_research import compress_research
 from workflows.research.nodes.refine_draft import refine_draft
 from workflows.research.nodes.final_report import final_report
+from workflows.research.nodes.process_citations import process_citations
 from workflows.research.nodes.save_findings import save_findings
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "compress_research",
     "refine_draft",
     "final_report",
+    "process_citations",
     "save_findings",
 ]

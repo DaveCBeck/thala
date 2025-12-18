@@ -16,6 +16,7 @@ configure_langsmith()
 from core.stores.elasticsearch import ElasticsearchStores
 from core.stores.chroma import ChromaStore
 from core.stores.zotero import ZoteroStore
+from core.stores.translation_server import TranslationServerClient
 from core.embedding import EmbeddingService
 
 
@@ -30,6 +31,7 @@ class StoreManager:
     _es_stores: Optional[ElasticsearchStores] = None
     _chroma: Optional[ChromaStore] = None
     _zotero: Optional[ZoteroStore] = None
+    _translation: Optional[TranslationServerClient] = None
     _embedding: Optional[EmbeddingService] = None
 
     def __init__(
@@ -40,6 +42,8 @@ class StoreManager:
         chroma_port: Optional[int] = None,
         zotero_host: Optional[str] = None,
         zotero_port: Optional[int] = None,
+        translation_host: Optional[str] = None,
+        translation_port: Optional[int] = None,
     ):
         """
         Initialize StoreManager with optional custom hosts.
@@ -63,6 +67,12 @@ class StoreManager:
         )
         self._zotero_port = zotero_port or int(os.environ.get(
             "THALA_ZOTERO_PORT", "23119"
+        ))
+        self._translation_host = translation_host or os.environ.get(
+            "THALA_TRANSLATION_HOST", "localhost"
+        )
+        self._translation_port = translation_port or int(os.environ.get(
+            "THALA_TRANSLATION_PORT", "1969"
         ))
 
     @property
@@ -97,6 +107,16 @@ class StoreManager:
         return self._zotero
 
     @property
+    def translation(self) -> TranslationServerClient:
+        """Get Translation Server client (lazy init)."""
+        if self._translation is None:
+            self._translation = TranslationServerClient(
+                host=self._translation_host,
+                port=self._translation_port,
+            )
+        return self._translation
+
+    @property
     def embedding(self) -> EmbeddingService:
         """Get embedding service (lazy init)."""
         if self._embedding is None:
@@ -111,6 +131,8 @@ class StoreManager:
             await self._embedding.close()
         if self._zotero is not None:
             await self._zotero.close()
+        if self._translation is not None:
+            await self._translation.close()
 
 
 # Singleton instance for convenience
