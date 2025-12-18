@@ -1,0 +1,26 @@
+{
+  "index_patterns": ["forgotten"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "id": { "type": "keyword" },
+        "source_type": { "type": "keyword" },
+        "zotero_key": { "type": "keyword" },
+        "content": { "type": "text" },
+        "metadata": { "type": "object", "enabled": true },
+        "created_at": { "type": "date" },
+        "updated_at": { "type": "date" },
+        "embedding_model": { "type": "keyword" },
+        "forgotten_reason": { "type": "text" },
+        "forgotten_at": { "type": "date" },
+        "original_store": { "type": "keyword" },
+        "previous_data": { "type": "object", "enabled": false }
+      }
+    }
+  }
+}

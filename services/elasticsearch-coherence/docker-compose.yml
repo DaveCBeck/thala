@@ -1,6 +1,6 @@
 # Elasticsearch instance for coherence & store indices
 # Port: 9201
-# Indices: coherence, store (isolated within this instance)
+# Indices: coherence, store_l0, store_l1, store_l2
 
 services:
   elasticsearch:

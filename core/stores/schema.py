@@ -47,6 +47,10 @@ class BaseRecord(BaseModel):
         None,
         description="Model used to generate embeddings, if any"
     )
+    embedding: Optional[list[float]] = Field(
+        None,
+        description="Embedding vector for semantic search"
+    )
 
 
 class CoherenceRecord(BaseRecord):

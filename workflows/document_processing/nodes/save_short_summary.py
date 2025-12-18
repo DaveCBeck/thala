@@ -73,10 +73,11 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
 
         # Generate embedding
         embedding = await store_manager.embedding.embed(short_summary)
+        record.embedding = embedding
         record.embedding_model = store_manager.embedding.model
 
         # Save to Elasticsearch
-        await store_manager.es_stores.store.create(record)
+        await store_manager.es_stores.store.add(record)
         logger.info(f"Saved short summary record: {record_id}")
 
         # Create reference for state

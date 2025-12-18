@@ -64,7 +64,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: celery -A app.tasks worker --loglevel=info --concurrency=3
+    command: celery -A app.tasks worker --loglevel=info --pool=solo
 
   redis:
     image: redis:7-alpine

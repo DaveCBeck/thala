@@ -3,6 +3,7 @@
 .context/
 dev.md
 claude.md
+test_data/
 
 # Environment variables
 .env

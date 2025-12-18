@@ -1,20 +1,28 @@
 """
 Update the initial store record with processed content.
+
+Documents go to Elasticsearch `store` only. Chroma (top_of_mind) is reserved
+for user-curated active context, not automatically populated.
 """
 
+import logging
 from uuid import UUID
 
 from langchain_tools.base import get_store_manager
+
+logger = logging.getLogger(__name__)
 
 
 async def update_store(state: dict) -> dict:
     """
     Update the initial store record with processed content.
 
-    Updates:
-    - StoreRecord content with full markdown
-    - Generates embedding
-    - Adds chunks to Chroma for vector search
+    Updates the StoreRecord in Elasticsearch with:
+    - Full markdown content
+    - Processing metadata (word_count, page_count, ocr_method)
+
+    Note: Documents are NOT added to Chroma. The `top_of_mind` store (Chroma)
+    is reserved for user-curated active context only.
     """
     store_manager = get_store_manager()
     processing_result = state["processing_result"]
@@ -26,7 +34,8 @@ async def update_store(state: dict) -> dict:
     # Get the initial record ID
     record_id = UUID(store_records[0]["id"])
 
-    # Update Elasticsearch record
+    # Update Elasticsearch record with full content and metadata
+    # Original documents are stored in store_l0 (compression_level=0)
     await store_manager.es_stores.store.update(
         record_id,
         {
@@ -34,60 +43,22 @@ async def update_store(state: dict) -> dict:
             "metadata": {
                 "word_count": processing_result["word_count"],
                 "page_count": processing_result["page_count"],
-                "ocr_method": processing_result["ocr_method"],
+                "ocr_method": processing_result.get("ocr_method", "none"),
+                "chunk_count": len(processing_result.get("chunks", [])),
                 "processing_status": "completed",
             },
         },
+        compression_level=0,
     )
 
-    # Get the updated record for embedding
-    updated_record = await store_manager.es_stores.store.get(record_id)
-    if not updated_record:
-        raise ValueError(f"Record {record_id} not found after update")
-
-    # Generate embedding for full content
-    embedding = await store_manager.embedding.embed(processing_result["markdown"])
-
-    # Add to Chroma for vector search
-    await store_manager.chroma.add(
-        record=updated_record,
-        embedding=embedding,
-        document=processing_result["markdown"],
+    logger.info(
+        f"Updated store record {record_id}: "
+        f"{processing_result['word_count']} words, "
+        f"{processing_result['page_count']} pages, "
+        f"{len(processing_result.get('chunks', []))} chunks"
     )
 
-    # Also add chunks to Chroma for granular search
-    for chunk in processing_result.get("chunks", []):
-        chunk_text = chunk.get("text", "")
-        if not chunk_text:
-            continue
-
-        chunk_embedding = await store_manager.embedding.embed(chunk_text)
-
-        # Create a pseudo-record for the chunk (shares parent metadata)
-        from core.stores.schema import StoreRecord, SourceType
-        from uuid import uuid4
-
-        chunk_record = StoreRecord(
-            id=uuid4(),
-            source_type=SourceType.INTERNAL,
-            content=chunk_text,
-            compression_level=0,
-            source_ids=[record_id],  # Link to parent
-            metadata={
-                "parent_id": str(record_id),
-                "heading": chunk.get("heading"),
-                "level": chunk.get("level"),
-                "chunk_type": "heading_section",
-            },
-        )
-
-        await store_manager.chroma.add(
-            record=chunk_record,
-            embedding=chunk_embedding,
-            document=chunk_text,
-        )
-
-    # Update store records with content preview
+    # Return updated store records info
     updated_store_records = [{
         "id": str(record_id),
         "compression_level": 0,

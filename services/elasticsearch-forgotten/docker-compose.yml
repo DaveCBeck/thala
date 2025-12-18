@@ -1,6 +1,6 @@
-# Elasticsearch instance for who_i_was & forgotten_store indices
+# Elasticsearch instance for who_i_was & forgotten indices
 # Port: 9200
-# Indices: who_i_was, forgotten_store (isolated within this instance)
+# Indices: who_i_was, forgotten
 
 services:
   elasticsearch:

@@ -24,7 +24,6 @@ async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
         if not processing_result:
             logger.error("No processing_result in state")
             return {
-                "current_status": "summary_failed",
                 "errors": [{"node": "summary_agent", "error": "No processing result"}],
             }
 
@@ -50,14 +49,13 @@ async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
 
         logger.info(f"Generated summary ({len(summary.split())} words)")
 
+        # Don't update current_status here - parallel nodes would conflict
         return {
             "short_summary": summary.strip(),
-            "current_status": "summary_complete",
         }
 
     except Exception as e:
         logger.error(f"Summary generation failed: {e}")
         return {
-            "current_status": "summary_failed",
             "errors": [{"node": "summary_agent", "error": str(e)}],
         }

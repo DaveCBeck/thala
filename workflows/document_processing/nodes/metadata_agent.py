@@ -50,7 +50,6 @@ async def check_metadata(state: DocumentProcessingState) -> dict[str, Any]:
         if not processing_result:
             logger.error("No processing_result in state")
             return {
-                "current_status": "metadata_failed",
                 "errors": [{"node": "metadata_agent", "error": "No processing result"}],
             }
 
@@ -74,20 +73,19 @@ async def check_metadata(state: DocumentProcessingState) -> dict[str, Any]:
         # Clean up metadata - remove null values
         cleaned = {k: v for k, v in metadata.items() if v is not None}
 
+        # Don't update current_status here - parallel nodes would conflict
         return {
             "metadata_updates": cleaned,
-            "current_status": "metadata_complete",
         }
 
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse metadata JSON: {e}, returning empty dict")
         return {
             "metadata_updates": {},
-            "current_status": "metadata_parse_failed",
+            "errors": [{"node": "metadata_agent", "error": f"JSON parse error: {e}"}],
         }
     except Exception as e:
         logger.error(f"Metadata extraction failed: {e}")
         return {
-            "current_status": "metadata_failed",
             "errors": [{"node": "metadata_agent", "error": str(e)}],
         }
