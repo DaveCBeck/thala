@@ -165,14 +165,16 @@ The `langchain_tools/` package provides tools for LangChain 1.x agents:
 - **`search_memory`**: Cross-store semantic search (top_of_mind, coherence, store, who_i_was)
 - **`expand_context`**: Deep retrieval by UUID, zotero_key, or content snippet
 - **`process_document`**: Document extraction and summarization pipeline
+- **`deep_research`**: Comprehensive research with memory integration and web search
+- **`web_search`**, **`scrape_url`**, **`map_website`**: Firecrawl web tools
 
 ```python
 from langchain.agents import create_agent
-from langchain_tools import search_memory, expand_context, process_document
+from langchain_tools import search_memory, expand_context, process_document, deep_research
 
 agent = create_agent(
     model="claude-sonnet-4-5-20250929",
-    tools=[search_memory, expand_context, process_document],
+    tools=[search_memory, expand_context, process_document, deep_research],
 )
 ```
 

@@ -8,6 +8,7 @@ Tools provided:
 - scrape_url: Scrape a webpage to markdown
 - map_website: Discover URLs on a website
 - process_document: Document extraction and summarization pipeline
+- deep_research: Comprehensive research with memory integration
 """
 
 from .base import StoreManager, get_store_manager
@@ -33,6 +34,10 @@ from .document_processing import (
     process_document,
     DocumentProcessingOutput,
 )
+from .deep_research import (
+    deep_research,
+    DeepResearchOutput,
+)
 
 __all__ = [
     # Store management
@@ -56,4 +61,7 @@ __all__ = [
     # document_processing tool
     "process_document",
     "DocumentProcessingOutput",
+    # deep_research tool
+    "deep_research",
+    "DeepResearchOutput",
 ]

@@ -103,16 +103,27 @@ async def web_search(query: str, limit: int = 5) -> dict:
         response = await client.search(query, limit=limit)
 
         results = []
-        web_results = response.get("data", []) if isinstance(response, dict) else []
-
-        for item in web_results:
-            results.append(
-                WebSearchResult(
-                    title=item.get("title", ""),
-                    url=item.get("url", ""),
-                    description=item.get("description"),
+        # Handle SearchData object from firecrawl v2
+        if hasattr(response, "web") and response.web:
+            for item in response.web:
+                results.append(
+                    WebSearchResult(
+                        title=getattr(item, "title", "") or "",
+                        url=getattr(item, "url", "") or "",
+                        description=getattr(item, "description", None),
+                    )
                 )
-            )
+        # Fallback for dict response (older API)
+        elif isinstance(response, dict):
+            web_results = response.get("data", [])
+            for item in web_results:
+                results.append(
+                    WebSearchResult(
+                        title=item.get("title", ""),
+                        url=item.get("url", ""),
+                        description=item.get("description"),
+                    )
+                )
 
         output = WebSearchOutput(
             query=query,
@@ -154,10 +165,19 @@ async def scrape_url(url: str, include_links: bool = False) -> dict:
     try:
         response = await client.scrape(url, formats=formats)
 
-        markdown = response.get("markdown", "") if isinstance(response, dict) else ""
-        links = []
-        if include_links:
-            links = response.get("links", []) if isinstance(response, dict) else []
+        # Handle Document object from firecrawl v2
+        if hasattr(response, "markdown"):
+            markdown = response.markdown or ""
+            links = []
+            if include_links and hasattr(response, "links"):
+                links = response.links or []
+        # Fallback for dict response (older API)
+        elif isinstance(response, dict):
+            markdown = response.get("markdown", "")
+            links = response.get("links", []) if include_links else []
+        else:
+            markdown = ""
+            links = []
 
         output = ScrapeOutput(
             url=url,
@@ -197,7 +217,11 @@ async def map_website(url: str, limit: int = 50) -> dict:
         response = await client.map(url, limit=limit)
 
         urls = []
-        if isinstance(response, dict):
+        # Handle MapData object from firecrawl v2
+        if hasattr(response, "links") and response.links:
+            urls = [item.url for item in response.links if hasattr(item, "url")]
+        # Fallback for dict response (older API)
+        elif isinstance(response, dict):
             urls = response.get("links", []) or response.get("urls", [])
         elif isinstance(response, list):
             urls = response
