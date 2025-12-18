@@ -69,6 +69,7 @@ class WebSearchResult(TypedDict):
     title: str
     description: Optional[str]
     content: Optional[str]  # Scraped content if fetched
+    source_metadata: Optional[dict]  # Structured metadata for academic sources (OpenAlex)
 
 
 class ResearchFinding(TypedDict):

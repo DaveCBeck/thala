@@ -167,6 +167,8 @@ The `langchain_tools/` package provides tools for LangChain 1.x agents:
 - **`process_document`**: Document extraction and summarization pipeline
 - **`deep_research`**: Comprehensive research with memory integration and web search
 - **`web_search`**, **`scrape_url`**, **`map_website`**: Firecrawl web tools
+- **`perplexity_search`**, **`check_fact`**: Perplexity AI search and fact verification
+- **`openalex_search`**: Academic literature search (240M+ scholarly works)
 
 ```python
 from langchain.agents import create_agent

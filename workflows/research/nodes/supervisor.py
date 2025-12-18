@@ -25,6 +25,7 @@ from workflows.research.state import (
 )
 from workflows.research.prompts import SUPERVISOR_DIFFUSION_SYSTEM, get_today_str
 from workflows.shared.llm_utils import ModelTier, get_llm
+from langchain_tools.perplexity import check_fact
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,18 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
         elif "researchcomplete" in content_lower or "research_complete" in content_lower:
             action = "research_complete"
 
+        elif "checkfact" in content_lower or "check_fact" in content_lower or "verify_claim" in content_lower:
+            action = "check_fact"
+            # Extract the claim to verify
+            claim_match = re.search(r'"claim"\s*:\s*"([^"]*)"', content, re.DOTALL)
+            if claim_match:
+                action_data["claim"] = claim_match.group(1)
+            else:
+                # Try to find quoted text after "verify" or "check"
+                verify_match = re.search(r'(?:verify|check|fact.?check)[:\s]+["\']([^"\']+)["\']', content, re.IGNORECASE)
+                if verify_match:
+                    action_data["claim"] = verify_match.group(1)
+
         else:
             # Default: if we have few findings, conduct research; else complete
             if len(findings) < 2:
@@ -242,6 +255,53 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 },
                 "current_status": "refine_draft",
             }
+
+        elif action == "check_fact":
+            claim = action_data.get("claim")
+            if claim:
+                logger.info(f"Supervisor: check_fact for claim: '{claim[:50]}...'")
+
+                try:
+                    fact_result = await check_fact.ainvoke({
+                        "claim": claim,
+                        "context": brief.get("topic", ""),
+                    })
+
+                    verdict = fact_result.get("verdict", "unverifiable")
+                    confidence = fact_result.get("confidence", 0.0)
+                    explanation = fact_result.get("explanation", "")
+
+                    logger.info(
+                        f"Fact-check result: {verdict} (confidence: {confidence:.2f})"
+                    )
+
+                    # Continue with research, incorporating the fact-check result
+                    # The fact-check adds context but doesn't change the flow
+                    return {
+                        "diffusion": diffusion,
+                        "current_status": "fact_checked",
+                        "errors": [{
+                            "node": "supervisor",
+                            "type": "fact_check",
+                            "claim": claim,
+                            "verdict": verdict,
+                            "confidence": confidence,
+                            "explanation": explanation,
+                        }],
+                    }
+                except Exception as fact_error:
+                    logger.warning(f"Fact-check failed: {fact_error}")
+                    # Continue without fact-check result
+                    return {
+                        "diffusion": diffusion,
+                        "current_status": "supervising",
+                    }
+            else:
+                logger.warning("check_fact action without claim - continuing")
+                return {
+                    "diffusion": diffusion,
+                    "current_status": "supervising",
+                }
 
         elif action == "research_complete":
             logger.info("Supervisor: research_complete")

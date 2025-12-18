@@ -4,9 +4,12 @@ LangChain tools for Thala memory system.
 Tools provided:
 - search_memory: Cross-store semantic search
 - expand_context: Deep-dive retrieval ("more about that")
-- web_search: Search the web for information
+- web_search: Search the web for information (Firecrawl)
 - scrape_url: Scrape a webpage to markdown
 - map_website: Discover URLs on a website
+- perplexity_search: AI-powered web search (Perplexity)
+- check_fact: Fact verification using Perplexity
+- openalex_search: Academic literature search (OpenAlex)
 - process_document: Document extraction and summarization pipeline
 - deep_research: Comprehensive research with memory integration
 """
@@ -29,6 +32,19 @@ from .firecrawl import (
     WebSearchOutput,
     ScrapeOutput,
     MapOutput,
+)
+from .perplexity import (
+    perplexity_search,
+    check_fact,
+    PerplexitySearchResult,
+    PerplexitySearchOutput,
+    FactCheckOutput,
+)
+from .openalex import (
+    openalex_search,
+    OpenAlexWork,
+    OpenAlexAuthor,
+    OpenAlexSearchOutput,
 )
 from .document_processing import (
     process_document,
@@ -58,6 +74,17 @@ __all__ = [
     "WebSearchOutput",
     "ScrapeOutput",
     "MapOutput",
+    # perplexity tools
+    "perplexity_search",
+    "check_fact",
+    "PerplexitySearchResult",
+    "PerplexitySearchOutput",
+    "FactCheckOutput",
+    # openalex tools
+    "openalex_search",
+    "OpenAlexWork",
+    "OpenAlexAuthor",
+    "OpenAlexSearchOutput",
     # document_processing tool
     "process_document",
     "DocumentProcessingOutput",

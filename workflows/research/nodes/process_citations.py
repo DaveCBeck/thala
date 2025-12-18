@@ -245,6 +245,7 @@ async def _process_single_citation(
     translation_client: TranslationServerClient,
     store_manager,
     scraped_content_map: dict,
+    source_metadata_map: dict,
     semaphore: asyncio.Semaphore,
 ) -> tuple[str, Optional[str]]:
     """
@@ -265,6 +266,37 @@ async def _process_single_citation(
                 logger.info(f"Found existing Zotero item {existing_key} for: {url[:50]}...")
                 return (url, existing_key)
 
+            # Check if we have OpenAlex metadata for this URL
+            source_metadata = source_metadata_map.get(url)
+            if source_metadata and source_metadata.get("source_type") == "openalex":
+                # Use OpenAlex metadata directly - skip Translation Server
+                logger.info(f"Using OpenAlex metadata for: {url[:50]}...")
+
+                enhanced_metadata = {
+                    "title": citation.get("title") or source_metadata.get("title"),
+                    "authors": [
+                        a.get("name") for a in source_metadata.get("authors", [])
+                        if a.get("name")
+                    ],
+                    "date": source_metadata.get("publication_date"),
+                    "publication_title": source_metadata.get("source_name"),
+                    "abstract": source_metadata.get("abstract"),
+                    "doi": source_metadata.get("doi"),
+                    "item_type": "journalArticle",  # Academic source
+                }
+
+                # Use DOI for Zotero URL if available
+                zotero_url = source_metadata.get("doi") or url
+                zotero_key = await _create_zotero_item(zotero_url, enhanced_metadata, store_manager)
+
+                if zotero_key:
+                    logger.info(f"Created Zotero item {zotero_key} (OpenAlex) for: {url[:50]}...")
+                else:
+                    logger.warning(f"Failed to create Zotero item for: {url[:50]}...")
+
+                return (url, zotero_key)
+
+            # Standard flow: Translation Server + LLM enhancement
             # Small delay to be polite to translation server
             await asyncio.sleep(0.3)
 
@@ -376,18 +408,33 @@ async def process_citations(state: DeepResearchState) -> dict[str, Any]:
 
     store_manager = get_store_manager()
 
-    # Build scraped content map from findings
+    # Build scraped content map and source metadata map from findings
     scraped_content_map = {}
+    source_metadata_map = {}
     for finding in findings:
         for source in finding.get("sources", []):
             url = source.get("url", "")
             content = source.get("content")
-            if url and content:
-                scraped_content_map[url] = content
+            source_metadata = source.get("source_metadata")
+
+            if url:
+                if content:
+                    scraped_content_map[url] = content
+                if source_metadata:
+                    source_metadata_map[url] = source_metadata
+
                 # Also map normalized URL
                 normalized = _normalize_url(url)
                 if normalized != url:
-                    scraped_content_map[normalized] = content
+                    if content:
+                        scraped_content_map[normalized] = content
+                    if source_metadata:
+                        source_metadata_map[normalized] = source_metadata
+
+    logger.debug(
+        f"Built maps: {len(scraped_content_map)} scraped, "
+        f"{len(source_metadata_map)} with source_metadata"
+    )
 
     # Process all citations concurrently (with limit)
     translation_client = TranslationServerClient()
@@ -400,6 +447,7 @@ async def process_citations(state: DeepResearchState) -> dict[str, Any]:
                 translation_client,
                 store_manager,
                 scraped_content_map,
+                source_metadata_map,
                 semaphore,
             )
             for citation in citations
