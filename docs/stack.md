@@ -27,6 +27,9 @@ Technology stack and version constraints for research agents.
 | elasticsearch[async] | >=8.17.0 | Elasticsearch async client |
 | httpx | >=0.25.0 | Async HTTP client |
 | mcp | >=1.0.0 | Model Context Protocol |
+| firecrawl-py | >=1.0.0 | Web scraping API |
+| playwright | >=1.40.0 | Browser automation (scraper fallback) |
+| html2text | >=2024.2.26 | HTML to markdown conversion |
 
 ## Target Environment
 

@@ -149,6 +149,8 @@ async def scrape_url(url: str, include_links: bool = False) -> dict:
     Use this to read the full content of a specific URL. Works on most websites
     including those with JavaScript-rendered content.
 
+    Uses automatic fallback: Firecrawl -> Firecrawl stealth -> Playwright browser.
+
     Args:
         url: The URL to scrape
         include_links: Whether to extract links from the page (default False)
@@ -156,35 +158,22 @@ async def scrape_url(url: str, include_links: bool = False) -> dict:
     Returns:
         The page content as markdown, plus optionally a list of links found.
     """
-    client = _get_firecrawl()
+    from core.scraping import get_scraper_service
 
-    formats = ["markdown"]
-    if include_links:
-        formats.append("links")
+    service = get_scraper_service()
 
     try:
-        response = await client.scrape(url, formats=formats)
-
-        # Handle Document object from firecrawl v2
-        if hasattr(response, "markdown"):
-            markdown = response.markdown or ""
-            links = []
-            if include_links and hasattr(response, "links"):
-                links = response.links or []
-        # Fallback for dict response (older API)
-        elif isinstance(response, dict):
-            markdown = response.get("markdown", "")
-            links = response.get("links", []) if include_links else []
-        else:
-            markdown = ""
-            links = []
+        result = await service.scrape(url, include_links=include_links)
 
         output = ScrapeOutput(
-            url=url,
-            markdown=markdown,
-            links=links,
+            url=result.url,
+            markdown=result.markdown,
+            links=result.links,
         )
-        logger.debug(f"scrape_url got {len(markdown)} chars from: {url}")
+        logger.debug(
+            f"scrape_url got {len(result.markdown)} chars from {url} "
+            f"(provider: {result.provider})"
+        )
         return output.model_dump(mode="json")
 
     except Exception as e:
