@@ -9,6 +9,10 @@ Supports batch processing for 50% cost reduction when processing
 multiple documents together.
 """
 
+from core.config import configure_langsmith
+
+configure_langsmith()
+
 import asyncio
 import logging
 from datetime import datetime

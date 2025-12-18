@@ -13,10 +13,15 @@ from enum import Enum
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage
 
 load_dotenv()
+
+from core.config import configure_langsmith
+
+configure_langsmith()
+
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage
 
 
 class ModelTier(Enum):

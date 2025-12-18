@@ -156,6 +156,8 @@ python -m mcp_server.server
 
 **Embedding config:** Set `THALA_EMBEDDING_PROVIDER` (openai/ollama) and `THALA_EMBEDDING_MODEL`.
 
+**Dev mode:** Set `THALA_MODE=dev` to enable LangSmith tracing for all LangChain workflows. Requires `LANGSMITH_API_KEY`.
+
 ## LangChain Tools
 
 The `langchain_tools/` package provides tools for LangChain 1.x agents:
