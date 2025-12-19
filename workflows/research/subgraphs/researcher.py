@@ -3,7 +3,7 @@ Individual researcher agent subgraph.
 
 Each researcher:
 1. Generates search queries from the research question
-2. Searches multiple sources in parallel (Firecrawl, Perplexity, OpenAlex)
+2. Searches multiple sources in parallel (Firecrawl, Perplexity, OpenAlex, Books)
 3. Scrapes relevant pages for full content
 4. Compresses findings into structured output
 
@@ -20,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from langchain_tools.firecrawl import web_search, scrape_url
 from langchain_tools.perplexity import perplexity_search
 from langchain_tools.openalex import openalex_search
+from langchain_tools.book_search import book_search
 from workflows.research.state import ResearcherState, ResearchFinding, WebSearchResult
 from workflows.research.prompts import RESEARCHER_SYSTEM, COMPRESS_RESEARCH_SYSTEM, get_today_str
 from workflows.shared.llm_utils import ModelTier, get_llm
@@ -156,23 +157,59 @@ async def _search_openalex(query: str) -> list[WebSearchResult]:
     return results
 
 
+async def _search_books(query: str) -> list[WebSearchResult]:
+    """Search for books."""
+    results = []
+    try:
+        result = await book_search.ainvoke({"query": query, "limit": MAX_RESULTS_PER_SOURCE})
+        for r in result.get("results", []):
+            # Build description from authors + format + size
+            description = f"{r.get('authors', 'Unknown')} · {r.get('format', '').upper()} · {r.get('size', '')}"
+            if r.get("abstract"):
+                description += f"\n{r['abstract']}"
+
+            results.append(
+                WebSearchResult(
+                    url=r.get("url", ""),
+                    title=r.get("title", ""),
+                    description=description,
+                    content=None,
+                    source_metadata={
+                        "source_type": "book",
+                        "md5": r.get("md5"),
+                        "authors": r.get("authors"),
+                        "publisher": r.get("publisher"),
+                        "language": r.get("language"),
+                        "format": r.get("format"),
+                        "size": r.get("size"),
+                        "abstract": r.get("abstract"),
+                    },
+                )
+            )
+    except Exception as e:
+        logger.warning(f"Book search failed for '{query}': {e}")
+    return results
+
+
 async def execute_searches(state: ResearcherState) -> dict[str, Any]:
     """Execute web searches using multiple sources in parallel.
 
     Sources:
     - Firecrawl: General web search
     - Perplexity: AI-powered web search with synthesis
-    - OpenAlex: Academic/scholarly literature (ALWAYS included)
+    - OpenAlex: Academic/scholarly literature
+    - Books: Book search
     """
     queries = state.get("search_queries", [])
     all_results = []
 
     for query in queries[:MAX_SEARCHES]:
-        # Run all three sources in parallel for each query
+        # Run all four sources in parallel for each query
         search_tasks = [
             _search_firecrawl(query),
             _search_perplexity(query),
             _search_openalex(query),
+            _search_books(query),
         ]
 
         results_lists = await asyncio.gather(*search_tasks, return_exceptions=True)
@@ -195,7 +232,7 @@ async def execute_searches(state: ResearcherState) -> dict[str, Any]:
 
     logger.info(
         f"Found {len(unique_results)} unique results from {len(queries)} queries "
-        f"across Firecrawl/Perplexity/OpenAlex"
+        f"across Firecrawl/Perplexity/OpenAlex/Books"
     )
     return {"search_results": unique_results[:15]}
 

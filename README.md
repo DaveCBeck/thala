@@ -169,6 +169,7 @@ The `langchain_tools/` package provides tools for LangChain 1.x agents:
 - **`web_search`**, **`scrape_url`**, **`map_website`**: Firecrawl web tools
 - **`perplexity_search`**, **`check_fact`**: Perplexity AI search and fact verification
 - **`openalex_search`**: Academic literature search (240M+ scholarly works)
+- **`book_search`**: Book search for finding books, textbooks, and publications
 
 ```python
 from langchain.agents import create_agent

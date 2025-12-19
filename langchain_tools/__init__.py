@@ -10,6 +10,7 @@ Tools provided:
 - perplexity_search: AI-powered web search (Perplexity)
 - check_fact: Fact verification using Perplexity
 - openalex_search: Academic literature search (OpenAlex)
+- book_search: Book search for books, textbooks, and publications
 - process_document: Document extraction and summarization pipeline
 - deep_research: Comprehensive research with memory integration
 """
@@ -45,6 +46,11 @@ from .openalex import (
     OpenAlexWork,
     OpenAlexAuthor,
     OpenAlexSearchOutput,
+)
+from .book_search import (
+    book_search,
+    Book,
+    BookSearchOutput,
 )
 from .document_processing import (
     process_document,
@@ -85,6 +91,10 @@ __all__ = [
     "OpenAlexWork",
     "OpenAlexAuthor",
     "OpenAlexSearchOutput",
+    # book_search tool
+    "book_search",
+    "Book",
+    "BookSearchOutput",
     # document_processing tool
     "process_document",
     "DocumentProcessingOutput",
