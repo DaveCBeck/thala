@@ -10,6 +10,7 @@ from typing import Any
 
 from workflows.research.state import DeepResearchState, ResearchBrief
 from workflows.research.prompts import CREATE_BRIEF_SYSTEM, CREATE_BRIEF_HUMAN, get_today_str
+from workflows.research.prompts.translator import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,28 @@ async def create_brief(state: DeepResearchState) -> dict[str, Any]:
     """
     query = state["input"]["query"]
     clarifications = state.get("clarification_responses") or {}
+    language_config = state.get("primary_language_config")
 
-    system_prompt = CREATE_BRIEF_SYSTEM.format(date=get_today_str())
-    human_prompt = CREATE_BRIEF_HUMAN.format(
+    # Get language-appropriate prompts
+    if language_config and language_config["code"] != "en":
+        system_prompt_template = await get_translated_prompt(
+            CREATE_BRIEF_SYSTEM,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="create_brief_system",
+        )
+        human_prompt_template = await get_translated_prompt(
+            CREATE_BRIEF_HUMAN,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="create_brief_human",
+        )
+    else:
+        system_prompt_template = CREATE_BRIEF_SYSTEM
+        human_prompt_template = CREATE_BRIEF_HUMAN
+
+    system_prompt = system_prompt_template.format(date=get_today_str())
+    human_prompt = human_prompt_template.format(
         query=query,
         clarifications=json.dumps(clarifications) if clarifications else "None",
     )

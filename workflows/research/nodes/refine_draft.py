@@ -11,6 +11,7 @@ from typing import Any
 
 from workflows.research.state import DeepResearchState, DraftReport, calculate_completeness
 from workflows.research.prompts import REFINE_DRAFT_SYSTEM, get_today_str
+from workflows.research.prompts.translator import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
     brief = state.get("research_brief", {})
     findings = state.get("research_findings", [])
     current_draft = state.get("draft_report")
+    language_config = state.get("primary_language_config")
 
     draft_content = current_draft["content"] if current_draft else ""
     version = (current_draft.get("version", 0) if current_draft else 0) + 1
@@ -60,7 +62,18 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
     # Format new findings
     new_findings_text = _format_findings_for_draft(findings)
 
-    prompt = REFINE_DRAFT_SYSTEM.format(
+    # Get language-appropriate prompt
+    if language_config and language_config["code"] != "en":
+        prompt_template = await get_translated_prompt(
+            REFINE_DRAFT_SYSTEM,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="refine_draft_system",
+        )
+    else:
+        prompt_template = REFINE_DRAFT_SYSTEM
+
+    prompt = prompt_template.format(
         date=get_today_str(),
         research_brief=brief.get("topic", "Unknown topic"),
         draft_report=draft_content or "No draft yet - create initial draft.",

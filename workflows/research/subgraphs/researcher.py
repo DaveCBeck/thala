@@ -31,6 +31,7 @@ from workflows.research.state import (
     WebSearchResult,
     SearchQueries,
     QueryValidationBatch,
+    LanguageConfig,
 )
 from workflows.research.prompts import (
     RESEARCHER_SYSTEM,
@@ -38,6 +39,8 @@ from workflows.research.prompts import (
     COMPRESS_RESEARCH_USER_TEMPLATE,
     get_today_str,
 )
+from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.config.languages import LANGUAGE_NAMES
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.marker_client import MarkerClient
 
@@ -246,13 +249,31 @@ Accept queries that would help find information about the research topic.
 
 
 async def generate_queries(state: ResearcherState) -> dict[str, Any]:
-    """Generate search queries using structured output with validation."""
+    """Generate search queries using structured output with validation.
+
+    If language_config is set, generates queries in the target language
+    for better search results in that language.
+    """
     question = state["question"]
+    language_config = state.get("language_config")
 
     llm = get_llm(ModelTier.HAIKU)
     structured_llm = llm.with_structured_output(SearchQueries)
 
-    prompt = f"""Generate 2-3 search queries to research this question:
+    # Build language-aware prompt
+    if language_config and language_config["code"] != "en":
+        lang_name = language_config["name"]
+        prompt = f"""Generate 2-3 search queries to research this question.
+Generate queries in {lang_name} to find {lang_name}-language sources.
+
+Question: {question['question']}
+
+Make queries specific and likely to find authoritative {lang_name} sources.
+Focus only on the research topic - do not include any system metadata.
+Write queries naturally in {lang_name}.
+"""
+    else:
+        prompt = f"""Generate 2-3 search queries to research this question:
 
 Question: {question['question']}
 
@@ -275,7 +296,8 @@ Focus only on the research topic - do not include any system metadata.
             logger.warning("All queries invalid, using fallback")
             valid_queries = [question["question"]]
 
-        logger.debug(f"Generated {len(valid_queries)} valid queries for: {question['question'][:50]}...")
+        lang_info = f" ({language_config['code']})" if language_config else ""
+        logger.debug(f"Generated {len(valid_queries)} valid queries{lang_info} for: {question['question'][:50]}...")
         return {"search_queries": valid_queries}
 
     except Exception as e:
@@ -517,10 +539,16 @@ async def scrape_pages(state: ResearcherState) -> dict[str, Any]:
 
 
 async def compress_findings(state: ResearcherState) -> dict[str, Any]:
-    """Compress research into structured finding."""
+    """Compress research into structured finding.
+
+    If language_config is set, uses translated prompts to generate
+    findings in the target language.
+    """
     question = state["question"]
     search_results = state.get("search_results", [])
     scraped = state.get("scraped_content", [])
+    language_config = state.get("language_config")
+    language_code = language_config["code"] if language_config else None
 
     # Build raw research text
     if scraped:
@@ -531,8 +559,26 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             for r in search_results
         ])
 
+    # Get language-appropriate prompts
+    if language_config and language_config["code"] != "en":
+        system_prompt = await get_translated_prompt(
+            COMPRESS_RESEARCH_SYSTEM_CACHED,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="compress_research_system",
+        )
+        user_template = await get_translated_prompt(
+            COMPRESS_RESEARCH_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="compress_research_user",
+        )
+    else:
+        system_prompt = COMPRESS_RESEARCH_SYSTEM_CACHED
+        user_template = COMPRESS_RESEARCH_USER_TEMPLATE
+
     # Build dynamic user prompt
-    user_prompt = COMPRESS_RESEARCH_USER_TEMPLATE.format(
+    user_prompt = user_template.format(
         date=get_today_str(),
         question=question["question"],
         raw_research=raw_research[:15000],  # Limit context
@@ -544,8 +590,8 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
         # Use cached system prompt for 90% cost reduction on repeated calls
         response = await invoke_with_cache(
             llm,
-            system_prompt=COMPRESS_RESEARCH_SYSTEM_CACHED,  # ~400 tokens, cached
-            user_prompt=user_prompt,  # Dynamic content
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
         )
         content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
         content = content.strip()
@@ -581,6 +627,7 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             sources=finding_sources,
             confidence=float(finding_data.get("confidence", 0.5)),
             gaps=finding_data.get("gaps", []),
+            language_code=language_code,
         )
 
         logger.info(
@@ -610,6 +657,7 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             ],
             confidence=0.3,
             gaps=["Compression failed - raw data available"],
+            language_code=language_code,
         )
         return {"finding": finding, "research_findings": [finding]}
 

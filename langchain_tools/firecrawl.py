@@ -99,7 +99,12 @@ class MapOutput(BaseModel):
 
 
 @tool
-async def web_search(query: str, limit: int = 5) -> dict:
+async def web_search(
+    query: str,
+    limit: int = 5,
+    locale: Optional[str] = None,
+    preferred_domains: Optional[list[str]] = None,
+) -> dict:
     """Search the web for information on a topic.
 
     Use this when you need current information from the internet that may not
@@ -108,6 +113,8 @@ async def web_search(query: str, limit: int = 5) -> dict:
     Args:
         query: What to search for on the web
         limit: Maximum number of results to return (default 5, max 20)
+        locale: Language/region code (e.g., "es-ES", "zh-CN", "ja-JP")
+        preferred_domains: Domain suffixes to prefer (e.g., [".es", ".mx"])
 
     Returns:
         Search results with titles, URLs, and descriptions.
@@ -115,8 +122,15 @@ async def web_search(query: str, limit: int = 5) -> dict:
     client = _get_firecrawl()
     limit = min(max(1, limit), 20)
 
+    # Build search params with locale hints
+    search_params = {}
+    if locale:
+        search_params["locale"] = locale
+    if preferred_domains:
+        search_params["preferred_domains"] = preferred_domains
+
     try:
-        response = await client.search(query, limit=limit)
+        response = await client.search(query, limit=limit, **search_params)
 
         results = []
         # Handle SearchData object from firecrawl v2

@@ -5,6 +5,7 @@ Defines TypedDict states for:
 - Main workflow (DeepResearchState)
 - Supervisor diffusion algorithm (DiffusionState)
 - Individual researcher agents (ResearcherState)
+- Language configuration for multi-lingual support
 """
 
 from datetime import datetime
@@ -15,6 +16,29 @@ from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+
+
+# =============================================================================
+# Language Configuration Types
+# =============================================================================
+
+
+class LanguageConfig(TypedDict):
+    """Configuration for a specific language in the research workflow."""
+
+    code: str  # ISO 639-1 code (e.g., "es", "zh", "ja")
+    name: str  # Full language name (e.g., "Spanish", "Mandarin Chinese")
+    search_domains: list[str]  # Preferred domain TLDs (e.g., [".es", ".mx"])
+    search_engine_locale: str  # Locale code for search APIs (e.g., "es-ES")
+
+
+class TranslationConfig(TypedDict):
+    """Configuration for translating the final research output."""
+
+    enabled: bool  # Whether to translate the final report
+    target_language: str  # Target language code (e.g., "en")
+    preserve_quotes: bool  # Keep direct quotes in original language
+    preserve_citations: bool  # Keep citation format unchanged
 
 
 # =============================================================================
@@ -29,6 +53,13 @@ class ResearchInput(TypedDict):
     depth: Literal["quick", "standard", "comprehensive"]
     max_sources: int  # Max web sources to use
     max_iterations: Optional[int]  # Override default for depth
+
+    # Language configuration
+    language: Optional[str]  # Single language mode: ISO 639-1 code (e.g., "es", "zh")
+    multi_lingual: Optional[bool]  # Enable composite multi-lingual mode
+    target_languages: Optional[list[str]]  # Specific languages for composite mode
+    translate_to: Optional[str]  # Translate final output to this language
+    preserve_quotes: Optional[bool]  # Keep quotes in original language when translating
 
 
 class ClarificationQuestion(TypedDict):
@@ -80,6 +111,7 @@ class ResearchFinding(TypedDict):
     sources: list[WebSearchResult]  # Sources used
     confidence: float  # 0-1 confidence score
     gaps: list[str]  # What's still unclear
+    language_code: Optional[str]  # ISO 639-1 code (e.g., "es", "zh") or None for English
 
 
 class ResearcherState(TypedDict):
@@ -92,6 +124,9 @@ class ResearcherState(TypedDict):
     thinking: Optional[str]  # Agent's reasoning
     finding: Optional[ResearchFinding]  # Final compressed finding
     research_findings: Annotated[list[ResearchFinding], add]  # For aggregation to parent
+
+    # Language configuration for multi-lingual support
+    language_config: Optional[LanguageConfig]  # Language this researcher operates in
 
 
 # =============================================================================
@@ -336,3 +371,21 @@ class DeepResearchState(TypedDict):
     completed_at: Optional[datetime]
     current_status: str
     langsmith_run_id: Optional[str]  # LangSmith trace ID for run inspection
+
+    # ==========================================================================
+    # Multi-lingual support
+    # ==========================================================================
+
+    # Primary language for single-language mode
+    primary_language: Optional[str]  # ISO 639-1 code (default: "en")
+    primary_language_config: Optional[LanguageConfig]  # Full config for primary language
+
+    # Composite multi-lingual mode
+    active_languages: Optional[list[str]]  # Languages currently being researched
+    language_configs: Optional[dict[str, LanguageConfig]]  # Config per active language
+    language_findings: Optional[dict[str, list[ResearchFinding]]]  # Findings grouped by language
+    language_synthesis: Optional[str]  # Cross-language synthesis (composite mode)
+
+    # Translation
+    translation_config: Optional[TranslationConfig]  # If translating final output
+    translated_report: Optional[str]  # Translated version of final report

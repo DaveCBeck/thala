@@ -95,13 +95,15 @@ def _get_client():
     return _book_search_client
 
 
-async def _search_books_internal(query: str, limit: int = 10) -> BookSearchOutput:
+async def _search_books_internal(
+    query: str, limit: int = 10, language: Optional[str] = None
+) -> BookSearchOutput:
     """
     Search for books via the retrieve-academic service.
 
     Falls back gracefully if the service is unavailable.
     """
-    cache_key = f"search:{query}:{limit}"
+    cache_key = f"search:{query}:{limit}:{language or ''}"
 
     # Check cache
     if cache_key in _search_cache:
@@ -120,12 +122,20 @@ async def _search_books_internal(query: str, limit: int = 10) -> BookSearchOutpu
         # Convert service response to Book objects
         books: list[Book] = []
         for r in data.get("results", []):
+            book_language = r.get("language", "Unknown")
+
+            # Filter by language if specified
+            if language is not None:
+                # Normalize comparison (case-insensitive, strip whitespace)
+                if book_language.lower().strip() != language.lower().strip():
+                    continue
+
             books.append(
                 Book(
                     title=r.get("title", ""),
                     authors=r.get("authors", "Unknown"),
                     publisher=r.get("publisher"),
-                    language=r.get("language", "Unknown"),
+                    language=book_language,
                     format=r.get("format", "other"),
                     size=r.get("size", "Unknown"),
                     md5=r.get("md5", ""),
@@ -153,7 +163,7 @@ async def _search_books_internal(query: str, limit: int = 10) -> BookSearchOutpu
 
 
 @tool
-async def book_search(query: str, limit: int = 10) -> dict:
+async def book_search(query: str, limit: int = 10, language: Optional[str] = None) -> dict:
     """Search for books by title, author, ISBN, or topic.
 
     Use this to find books, textbooks, and other long-form written content.
@@ -162,6 +172,7 @@ async def book_search(query: str, limit: int = 10) -> dict:
     Args:
         query: Search query - can be title, author name, ISBN, or topic
         limit: Maximum number of results to return (default: 10, max: 50)
+        language: ISO 639-1 language code (e.g., "es", "zh", "ja")
 
     Returns:
         Book search results with title, authors, format, size, and metadata.
@@ -169,7 +180,7 @@ async def book_search(query: str, limit: int = 10) -> dict:
     limit = min(max(1, limit), 50)
 
     try:
-        output = await _search_books_internal(query, limit)
+        output = await _search_books_internal(query, limit, language)
         return output.model_dump(mode="json")
     except Exception as e:
         logger.error(f"book_search failed: {e}")

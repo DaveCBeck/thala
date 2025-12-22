@@ -30,6 +30,7 @@ from workflows.research.prompts import (
     SUPERVISOR_USER_TEMPLATE,
     get_today_str,
 )
+from workflows.research.prompts.translator import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from langchain_tools.perplexity import check_fact
 
@@ -149,13 +150,32 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
     memory_context = state.get("memory_context", "")
     findings = state.get("research_findings", [])
     draft = state.get("draft_report")
+    language_config = state.get("primary_language_config")
 
     findings_summary = _format_findings_summary(findings)
     draft_content = draft["content"] if draft else "No draft yet."
     gaps_remaining = draft.get("gaps_remaining", []) if draft else ["All areas need research"]
 
+    # Get language-appropriate prompts
+    if language_config and language_config["code"] != "en":
+        system_prompt_cached = await get_translated_prompt(
+            SUPERVISOR_SYSTEM_CACHED,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="supervisor_system",
+        )
+        user_prompt_template = await get_translated_prompt(
+            SUPERVISOR_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="supervisor_user",
+        )
+    else:
+        system_prompt_cached = SUPERVISOR_SYSTEM_CACHED
+        user_prompt_template = SUPERVISOR_USER_TEMPLATE
+
     # Build dynamic user prompt (changes each iteration)
-    user_prompt = SUPERVISOR_USER_TEMPLATE.format(
+    user_prompt = user_prompt_template.format(
         date=get_today_str(),
         research_brief=json.dumps(brief, indent=2),
         research_plan=research_plan or "No customized plan.",
@@ -179,7 +199,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     try:
         action, action_data = await _get_supervisor_decision_structured(
-            llm, SUPERVISOR_SYSTEM_CACHED, user_prompt, brief
+            llm, system_prompt_cached, user_prompt, brief
         )
         logger.info(f"Supervisor using structured output: {action}")
     except Exception as structured_error:
@@ -192,7 +212,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
             # Use cached system prompt for 90% cost reduction on repeated calls
             response = await invoke_with_cache(
                 llm,
-                system_prompt=SUPERVISOR_SYSTEM_CACHED,  # ~800 tokens, cached
+                system_prompt=system_prompt_cached,  # ~800 tokens, cached
                 user_prompt=user_prompt,  # Dynamic content
             )
             content = response.content

@@ -13,6 +13,7 @@ from typing import Any
 
 from workflows.research.state import DeepResearchState
 from workflows.research.prompts import ITERATE_PLAN_SYSTEM, ITERATE_PLAN_HUMAN, get_today_str
+from workflows.research.prompts.translator import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
     """
     brief = state.get("research_brief")
     memory_context = state.get("memory_context", "")
+    language_config = state.get("primary_language_config")
 
     if not brief:
         logger.warning("No research brief available for plan iteration")
@@ -42,7 +44,25 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
             "current_status": "supervising",
         }
 
-    system_prompt = ITERATE_PLAN_SYSTEM.format(
+    # Get language-appropriate prompts
+    if language_config and language_config["code"] != "en":
+        system_prompt_template = await get_translated_prompt(
+            ITERATE_PLAN_SYSTEM,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="iterate_plan_system",
+        )
+        human_prompt_template = await get_translated_prompt(
+            ITERATE_PLAN_HUMAN,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="iterate_plan_human",
+        )
+    else:
+        system_prompt_template = ITERATE_PLAN_SYSTEM
+        human_prompt_template = ITERATE_PLAN_HUMAN
+
+    system_prompt = system_prompt_template.format(
         date=get_today_str(),
         memory_context=memory_context or "No existing knowledge found in memory.",
         research_brief=json.dumps(brief, indent=2),
@@ -53,7 +73,7 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
     try:
         response = await llm.ainvoke([
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": ITERATE_PLAN_HUMAN},
+            {"role": "user", "content": human_prompt_template},
         ])
 
         content = response.content.strip()

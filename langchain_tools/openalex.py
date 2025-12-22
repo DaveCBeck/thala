@@ -173,6 +173,7 @@ async def openalex_search(
     min_citations: Optional[int] = None,
     from_year: Optional[int] = None,
     to_year: Optional[int] = None,
+    language: Optional[str] = None,
 ) -> dict:
     """Search academic literature using OpenAlex.
 
@@ -188,6 +189,7 @@ async def openalex_search(
         min_citations: Minimum citation count filter (optional)
         from_year: Only include works from this year onwards (optional)
         to_year: Only include works up to this year (optional)
+        language: ISO 639-1 language code (e.g., "es", "zh", "ja")
 
     Returns:
         Academic works with titles, abstracts, authors, citations, and DOIs.
@@ -204,6 +206,8 @@ async def openalex_search(
             filters.append(f"publication_year:>{from_year - 1}")
         if to_year is not None:
             filters.append(f"publication_year:<{to_year + 1}")
+        if language is not None:
+            filters.append(f"language:{language}")
 
         params = {
             "search": query,

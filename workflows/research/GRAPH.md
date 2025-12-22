@@ -14,8 +14,11 @@ clarify_intent
   ↓
 create_brief
   ↓
-search_memory
-  ↓
+[route_after_create_brief]
+  ├─ (if multi_lingual) ─→ analyze_languages
+  │                              ↓
+  └──────────────────────→ search_memory
+                               ↓
 iterate_plan (OPUS)
   ↓
 supervisor (OPUS) ←──────────────────┐
@@ -24,19 +27,25 @@ supervisor (OPUS) ←──────────────────┐
   ├─ conduct_research ───────────┐   │
   │    ↓                         │   │
   │  [fan_out] (parallel, max 3) │   │
-  │    ├─ researcher             │   │
-  │    ├─ researcher             │   │
-  │    └─ researcher             │   │
+  │    ├─ researcher (lang: es)  │   │  ← round-robin language assignment
+  │    ├─ researcher (lang: de)  │   │
+  │    └─ researcher (lang: es)  │   │
   │         ↓                    │   │
   │  aggregate_findings ─────────┼───┘
-  │                              │
+  │    └─ groups by language_code│
   ├─ refine_draft ───────────────┘
   │
   └─ research_complete
        ↓
+  (if multi_lingual)
+       ↓
+synthesize_languages (OPUS)
+       ↓
 final_report (OPUS)
   ↓
 process_citations
+  ↓
+translate_report (if translate_to)
   ↓
 save_findings
   ↓
@@ -126,10 +135,25 @@ END
 ```python
 from workflows.research import deep_research
 
+# Standard English research
 result = await deep_research(
     query="Impact of AI on software engineering jobs",
     depth="standard",  # quick | standard | comprehensive
     max_sources=20,
+)
+
+# Multi-lingual: research across Spanish and German sources
+result = await deep_research(
+    query="Cultural approaches to work-life balance",
+    multi_lingual=True,
+    target_languages=["es", "de"],
+)
+
+# Single language with translation
+result = await deep_research(
+    query="impacto de IA en empleos",
+    language="es",
+    translate_to="en",
 )
 
 print(result["final_report"])
@@ -149,5 +173,9 @@ print(f"Sources: {len(result['citations'])}")
         "iteration": int,
         "completeness_score": float,
     },
+    # Multi-lingual fields (when enabled)
+    "language_findings": dict,     # Findings grouped by language code
+    "language_synthesis": str,     # Cross-language analysis
+    "translated_report": str,      # If translate_to was specified
 }
 ```

@@ -14,6 +14,7 @@ from workflows.research.prompts import (
     FINAL_REPORT_USER_TEMPLATE,
     get_today_str,
 )
+from workflows.research.prompts.translator import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
     findings = state.get("research_findings", [])
     draft = state.get("draft_report")
     memory_context = state.get("memory_context", "")
+    language_config = state.get("primary_language_config")
 
     all_findings_text = _format_all_findings(findings)
     draft_content = draft["content"] if draft else "No draft available."
@@ -93,11 +95,29 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         f"\n\n**Key Questions:**\n" + "\n".join([f"- {q}" for q in brief.get('key_questions', [])])
     )
 
+    # Get language-appropriate prompts
+    if language_config and language_config["code"] != "en":
+        system_prompt_template = await get_translated_prompt(
+            FINAL_REPORT_SYSTEM_STATIC,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="final_report_system",
+        )
+        user_prompt_template = await get_translated_prompt(
+            FINAL_REPORT_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="final_report_user",
+        )
+    else:
+        system_prompt_template = FINAL_REPORT_SYSTEM_STATIC
+        user_prompt_template = FINAL_REPORT_USER_TEMPLATE
+
     # Static system prompt (cached) - only contains instructions
-    system_prompt = FINAL_REPORT_SYSTEM_STATIC.format(date=get_today_str())
+    system_prompt = system_prompt_template.format(date=get_today_str())
 
     # Dynamic user content - contains all research data
-    user_prompt = FINAL_REPORT_USER_TEMPLATE.format(
+    user_prompt = user_prompt_template.format(
         research_brief=research_brief_text,
         all_findings=all_findings_text,
         draft_report=draft_content,
