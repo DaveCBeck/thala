@@ -75,8 +75,9 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
 
     # Summarize memory findings
     if unique_results:
+        # Include score info for debugging
         findings_text = "\n\n".join([
-            f"[{r.get('source_store', 'unknown')}] (confidence: {r.get('confidence', 'N/A')})\n{r.get('content', '')[:500]}"
+            f"[{r.get('source_store', 'unknown')}] (score: {r.get('score', 'N/A')})\n{r.get('content', '')[:500]}"
             for r in unique_results
         ])
 
@@ -84,7 +85,7 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
             memory_context = await summarize_text(
                 text=findings_text,
                 target_words=300,
-                context=f"Summarize what the user already knows about: {brief['topic']}",
+                context=f"Summarize what the user already knows about: {brief['topic']}. If none of the content is relevant to this topic, say so clearly.",
                 tier=ModelTier.HAIKU,
             )
         except Exception as e:
@@ -93,8 +94,8 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
 
         logger.info(f"Found {len(unique_results)} relevant memory records")
     else:
-        memory_context = "No relevant existing knowledge found in memory stores."
-        logger.info("No relevant memory records found")
+        memory_context = "No relevant prior knowledge found on this topic."
+        logger.info("No memory records passed relevance thresholds")
 
     # Update the research brief with memory context
     updated_brief = dict(brief)

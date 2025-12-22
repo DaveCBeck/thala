@@ -2,15 +2,19 @@
 Final report node.
 
 Generates the comprehensive final report with citations.
-Uses OPUS for high-quality synthesis.
+Uses OPUS for high-quality synthesis with prompt caching for cost efficiency.
 """
 
 import logging
 from typing import Any
 
 from workflows.research.state import DeepResearchState
-from workflows.research.prompts import FINAL_REPORT_SYSTEM, FINAL_REPORT_HUMAN, get_today_str
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.research.prompts import (
+    FINAL_REPORT_SYSTEM_STATIC,
+    FINAL_REPORT_USER_TEMPLATE,
+    get_today_str,
+)
+from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +86,19 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
     all_findings_text = _format_all_findings(findings)
     draft_content = draft["content"] if draft else "No draft available."
 
-    prompt = FINAL_REPORT_SYSTEM.format(
-        date=get_today_str(),
-        research_brief=f"**Topic:** {brief.get('topic', 'Unknown')}\n\n"
-                      f"**Objectives:**\n" + "\n".join([f"- {o}" for o in brief.get('objectives', [])]) +
-                      f"\n\n**Key Questions:**\n" + "\n".join([f"- {q}" for q in brief.get('key_questions', [])]),
+    # Build research brief text
+    research_brief_text = (
+        f"**Topic:** {brief.get('topic', 'Unknown')}\n\n"
+        f"**Objectives:**\n" + "\n".join([f"- {o}" for o in brief.get('objectives', [])]) +
+        f"\n\n**Key Questions:**\n" + "\n".join([f"- {q}" for q in brief.get('key_questions', [])])
+    )
+
+    # Static system prompt (cached) - only contains instructions
+    system_prompt = FINAL_REPORT_SYSTEM_STATIC.format(date=get_today_str())
+
+    # Dynamic user content - contains all research data
+    user_prompt = FINAL_REPORT_USER_TEMPLATE.format(
+        research_brief=research_brief_text,
         all_findings=all_findings_text,
         draft_report=draft_content,
         memory_context=memory_context or "No prior knowledge available.",
@@ -95,12 +107,27 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
     llm = get_llm(ModelTier.OPUS, max_tokens=8192)  # OPUS for quality
 
     try:
-        response = await llm.ainvoke([
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": FINAL_REPORT_HUMAN},
-        ])
+        # Use cached invocation - system prompt is cached, user content is dynamic
+        response = await invoke_with_cache(
+            llm,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
 
-        report = response.content.strip()
+        # Handle response content (may be string or list of content blocks)
+        if isinstance(response.content, str):
+            report = response.content.strip()
+        elif isinstance(response.content, list) and len(response.content) > 0:
+            # Get text from first content block
+            first_block = response.content[0]
+            if isinstance(first_block, dict):
+                report = first_block.get("text", "").strip()
+            elif hasattr(first_block, "text"):
+                report = first_block.text.strip()
+            else:
+                report = str(first_block).strip()
+        else:
+            report = str(response.content).strip()
 
         # Extract citations from report
         citations = _extract_citations(report, findings)

@@ -14,6 +14,15 @@ from .base import get_store_manager
 
 logger = logging.getLogger(__name__)
 
+# Minimum similarity score for vector search results (0.0-1.0)
+# Results below this threshold are considered irrelevant and filtered out
+# 0.5 is a reasonable default - adjust based on testing
+MIN_VECTOR_SIMILARITY = 0.5
+
+# Minimum confidence for coherence records (beliefs/preferences)
+# Records below this threshold are filtered out
+MIN_COHERENCE_CONFIDENCE = 0.3
+
 
 class MemorySearchResult(BaseModel):
     """Individual search result from memory."""
@@ -76,16 +85,31 @@ async def search_memory(
                 query_embedding=query_embedding,
                 n_results=limit,
             )
+            filtered_count = 0
             for r in chroma_results:
+                similarity = 1 - r["distance"]  # Convert distance to similarity
+
+                # Filter out low-relevance results
+                if similarity < MIN_VECTOR_SIMILARITY:
+                    filtered_count += 1
+                    logger.debug(
+                        f"Filtered top_of_mind result with low similarity: {similarity:.3f} < {MIN_VECTOR_SIMILARITY}"
+                    )
+                    continue
+
                 results.append(MemorySearchResult(
                     id=str(r["id"]),
                     source_store="top_of_mind",
                     content=r["document"] or "",
-                    score=1 - r["distance"],  # Convert distance to similarity
+                    score=similarity,
                     zotero_key=r["metadata"].get("zotero_key") if r["metadata"] else None,
                     metadata=r["metadata"] or {},
                 ))
-            logger.debug(f"top_of_mind returned {len(chroma_results)} results")
+
+            accepted = len(chroma_results) - filtered_count
+            logger.debug(
+                f"top_of_mind: {accepted}/{len(chroma_results)} results passed similarity filter (>= {MIN_VECTOR_SIMILARITY})"
+            )
         except Exception as e:
             logger.warning(f"top_of_mind search failed: {e}")
 
@@ -96,19 +120,33 @@ async def search_memory(
                 query={"match": {"content": query}},
                 size=limit,
             )
+            filtered_count = 0
             for r in coherence_results:
+                # Filter by confidence if available
+                confidence = r.confidence if hasattr(r, 'confidence') else None
+                if confidence is not None and confidence < MIN_COHERENCE_CONFIDENCE:
+                    filtered_count += 1
+                    logger.debug(
+                        f"Filtered coherence result with low confidence: {confidence:.2f} < {MIN_COHERENCE_CONFIDENCE}"
+                    )
+                    continue
+
                 results.append(MemorySearchResult(
                     id=str(r.id),
                     source_store="coherence",
                     content=r.content,
-                    score=None,  # ES scores not directly comparable to vector distances
+                    score=confidence,  # Use confidence as score for coherence records
                     zotero_key=r.zotero_key,
                     metadata={
                         "category": r.category,
-                        "confidence": r.confidence,
+                        "confidence": confidence,
                     },
                 ))
-            logger.debug(f"coherence returned {len(coherence_results)} results")
+
+            accepted = len(coherence_results) - filtered_count
+            logger.debug(
+                f"coherence: {accepted}/{len(coherence_results)} results passed confidence filter (>= {MIN_COHERENCE_CONFIDENCE})"
+            )
         except Exception as e:
             logger.warning(f"coherence search failed: {e}")
 
@@ -159,13 +197,10 @@ async def search_memory(
         except Exception as e:
             logger.warning(f"who_i_was search failed: {e}")
 
-    # TODO: Priority/ranking strategy across stores
-    # Current behavior: Results are grouped by store in search order
-    # Options to consider:
-    # - Interleave by normalized score (requires score normalization)
-    # - top_of_mind (semantic) first, then text matches
+    # Results are filtered by relevance thresholds (MIN_VECTOR_SIMILARITY, MIN_COHERENCE_CONFIDENCE)
+    # and grouped by store in search order. Future improvements could include:
+    # - Interleave by normalized score across all stores
     # - Deduplicate by content hash
-    # - Boost coherence records (beliefs are important)
 
     output = SearchMemoryOutput(
         query=query,
