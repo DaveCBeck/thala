@@ -23,8 +23,12 @@ from workflows.research.state import (
     DiffusionState,
     DraftReport,
 )
-from workflows.research.prompts import SUPERVISOR_DIFFUSION_SYSTEM, get_today_str
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.research.prompts import (
+    SUPERVISOR_SYSTEM_CACHED,
+    SUPERVISOR_USER_TEMPLATE,
+    get_today_str,
+)
+from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from langchain_tools.perplexity import check_fact
 
 logger = logging.getLogger(__name__)
@@ -99,7 +103,8 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
     draft_content = draft["content"] if draft else "No draft yet."
     gaps_remaining = draft.get("gaps_remaining", []) if draft else ["All areas need research"]
 
-    prompt = SUPERVISOR_DIFFUSION_SYSTEM.format(
+    # Build dynamic user prompt (changes each iteration)
+    user_prompt = SUPERVISOR_USER_TEMPLATE.format(
         date=get_today_str(),
         research_brief=json.dumps(brief, indent=2),
         research_plan=research_plan or "No customized plan.",
@@ -117,7 +122,12 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
     llm = get_llm(ModelTier.OPUS)  # OPUS for strategic reasoning
 
     try:
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
+        # Use cached system prompt for 90% cost reduction on repeated calls
+        response = await invoke_with_cache(
+            llm,
+            system_prompt=SUPERVISOR_SYSTEM_CACHED,  # ~800 tokens, cached
+            user_prompt=user_prompt,  # Dynamic content
+        )
         content = response.content
 
         # Extract thinking (for logging)

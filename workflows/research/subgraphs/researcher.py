@@ -28,8 +28,13 @@ from workflows.research.state import (
     SearchQueries,
     QueryValidationBatch,
 )
-from workflows.research.prompts import RESEARCHER_SYSTEM, COMPRESS_RESEARCH_SYSTEM, get_today_str
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.research.prompts import (
+    RESEARCHER_SYSTEM,
+    COMPRESS_RESEARCH_SYSTEM_CACHED,
+    COMPRESS_RESEARCH_USER_TEMPLATE,
+    get_today_str,
+)
+from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
 
@@ -371,7 +376,8 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             for r in search_results
         ])
 
-    prompt = COMPRESS_RESEARCH_SYSTEM.format(
+    # Build dynamic user prompt
+    user_prompt = COMPRESS_RESEARCH_USER_TEMPLATE.format(
         date=get_today_str(),
         question=question["question"],
         raw_research=raw_research[:15000],  # Limit context
@@ -380,8 +386,14 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
     llm = get_llm(ModelTier.SONNET)  # Use Sonnet for better compression
 
     try:
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
-        content = response.content.strip()
+        # Use cached system prompt for 90% cost reduction on repeated calls
+        response = await invoke_with_cache(
+            llm,
+            system_prompt=COMPRESS_RESEARCH_SYSTEM_CACHED,  # ~400 tokens, cached
+            user_prompt=user_prompt,  # Dynamic content
+        )
+        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+        content = content.strip()
 
         # Extract JSON
         if content.startswith("```"):

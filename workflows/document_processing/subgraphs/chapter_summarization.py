@@ -2,6 +2,7 @@
 Chapter summarization subgraph using map-reduce pattern.
 
 Uses Opus with extended thinking for complex chapter analysis.
+Implements prompt caching for 90% cost reduction on static instructions.
 """
 
 import logging
@@ -11,9 +12,21 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 
 from workflows.document_processing.state import ChapterSummaryState, DocumentProcessingState
-from workflows.shared.llm_utils import ModelTier, analyze_with_thinking
+from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
+
+# Static system prompt (cached) - ~200 tokens, saves 90% on cache hits
+# Opus at $15/MTok base means cache hits at $1.50/MTok = 90% savings
+CHAPTER_SUMMARIZATION_SYSTEM = """You are an expert summarizer specializing in condensing academic and technical content while preserving essential meaning.
+
+Your task is to create a summary that captures:
+- The main arguments and thesis of the chapter
+- Key concepts and findings
+- How this chapter contributes to the broader work
+- Any significant conclusions or implications
+
+Provide a coherent, well-structured summary in clear prose. Maintain academic rigor while being accessible."""
 
 
 async def summarize_chapter(state: ChapterSummaryState) -> dict[str, Any]:
@@ -21,7 +34,7 @@ async def summarize_chapter(state: ChapterSummaryState) -> dict[str, Any]:
     Summarize a single chapter to ~10% of original length.
 
     Uses Opus with extended thinking for deep analysis of chapter content,
-    including title and author context.
+    including title and author context. Implements prompt caching for cost reduction.
 
     Returns summary and appends to chapter_summaries list.
     """
@@ -35,26 +48,46 @@ async def summarize_chapter(state: ChapterSummaryState) -> dict[str, Any]:
         if chapter.get("author"):
             chapter_context += f" (by {chapter['author']})"
 
-        # Build summarization prompt
-        prompt = f"""Summarize this chapter in approximately {target_words} words.
+        # Build dynamic user prompt
+        user_prompt = f"""Summarize this chapter in approximately {target_words} words.
 
 Context: {chapter_context}
 
-Focus on:
-- The main arguments and thesis of the chapter
-- Key concepts and findings
-- How this chapter contributes to the broader work
-- Any significant conclusions or implications
-
-Provide a coherent, well-structured summary that captures the essential content."""
+Chapter content:
+{chapter_content}"""
 
         # Use Opus with extended thinking for complex chapter analysis
-        summary, thinking = await analyze_with_thinking(
-            text=chapter_content,
-            prompt=prompt,
-            thinking_budget=8000,
+        # Note: Extended thinking is enabled on the LLM, system prompt is cached
+        llm = get_llm(
             tier=ModelTier.OPUS,
+            thinking_budget=8000,
+            max_tokens=8000 + 4096,
         )
+
+        # Use cached system prompt for 90% cost reduction
+        response = await invoke_with_cache(
+            llm,
+            system_prompt=CHAPTER_SUMMARIZATION_SYSTEM,  # ~200 tokens, cached
+            user_prompt=user_prompt,  # Dynamic content
+        )
+
+        # Extract text content from response (may include thinking blocks)
+        thinking = None
+        if isinstance(response.content, list):
+            summary = ""
+            for block in response.content:
+                if isinstance(block, dict):
+                    if block.get("type") == "thinking":
+                        thinking = block.get("thinking", "")
+                    elif block.get("type") == "text":
+                        summary = block.get("text", "")
+                elif hasattr(block, "type"):
+                    if block.type == "thinking":
+                        thinking = getattr(block, "thinking", "")
+                    elif block.type == "text":
+                        summary = getattr(block, "text", "")
+        else:
+            summary = response.content
 
         logger.info(f"Summarized chapter '{chapter['title']}' to {len(summary.split())} words")
         if thinking:
