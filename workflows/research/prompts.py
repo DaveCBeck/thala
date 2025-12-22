@@ -181,12 +181,14 @@ Today's date is {date}.
 {findings_summary}
 </Research Findings So Far>
 
-<Diffusion State>
+<Operational Metadata - Internal tracking only, DO NOT reference in research questions>
+<!-- These are internal state values for workflow coordination, not research topics -->
 - Iteration: {iteration}/{max_iterations}
 - Completeness: {completeness_score}%
 - Areas explored: {areas_explored}
 - Gaps remaining: {gaps_remaining}
-</Diffusion State>
+<!-- End internal state -->
+</Operational Metadata>
 
 <Available Tools>
 1. **ConductResearch**: Delegate a specific research question to a sub-agent. Provide detailed context.
@@ -200,6 +202,10 @@ Think like a research manager:
 2. Consider what the user already knows (don't duplicate)
 3. Assess current findings - are there gaps?
 4. Decide: delegate more research OR refine draft OR complete
+
+CRITICAL: Never include operational metadata (iteration counts, percentages,
+completeness scores, or internal state) in research questions or topics.
+Focus purely on the actual research subject matter.
 
 Rules:
 - Generate diverse questions covering different angles

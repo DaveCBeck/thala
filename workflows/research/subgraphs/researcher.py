@@ -21,7 +21,13 @@ from langchain_tools.firecrawl import web_search, scrape_url
 from langchain_tools.perplexity import perplexity_search
 from langchain_tools.openalex import openalex_search
 from langchain_tools.book_search import book_search
-from workflows.research.state import ResearcherState, ResearchFinding, WebSearchResult
+from workflows.research.state import (
+    ResearcherState,
+    ResearchFinding,
+    WebSearchResult,
+    SearchQueries,
+    QueryValidationBatch,
+)
 from workflows.research.prompts import RESEARCHER_SYSTEM, COMPRESS_RESEARCH_SYSTEM, get_today_str
 from workflows.shared.llm_utils import ModelTier, get_llm
 
@@ -33,34 +39,109 @@ MAX_SCRAPES = 3
 MAX_RESULTS_PER_SOURCE = 5  # Limit results from each search source
 
 
-async def generate_queries(state: ResearcherState) -> dict[str, Any]:
-    """Generate search queries for the research question."""
-    question = state["question"]
+async def validate_queries(
+    queries: list[str],
+    research_question: str,
+    research_brief: dict | None = None,
+    draft_notes: str | None = None,
+) -> list[str]:
+    """
+    Validate queries using LLM to ensure they're relevant to the research.
+
+    Args:
+        queries: Generated search queries to validate
+        research_question: The original research question
+        research_brief: Optional research brief for context
+        draft_notes: Optional current draft/notes for context
+
+    Returns:
+        List of validated queries that are relevant to the research
+    """
+    if not queries:
+        return []
 
     llm = get_llm(ModelTier.HAIKU)
-    prompt = f"""Generate 2-3 search queries to research this question:
+    structured_llm = llm.with_structured_output(QueryValidationBatch)
 
-Question: {question['question']}
-Context: {question.get('context', 'No additional context')}
+    # Build context
+    context_parts = [f"Research Question: {research_question}"]
+    if research_brief:
+        context_parts.append(f"Topic: {research_brief.get('topic', '')}")
+        if research_brief.get('objectives'):
+            context_parts.append(f"Objectives: {', '.join(research_brief['objectives'][:3])}")
+    if draft_notes:
+        context_parts.append(f"Current Notes: {draft_notes[:500]}...")
 
-Output as a JSON array of strings: ["query1", "query2", "query3"]
+    context = "\n".join(context_parts)
+    queries_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(queries))
 
-Make queries specific and likely to find authoritative sources.
+    prompt = f"""Validate whether these search queries are relevant to the research task.
+
+{context}
+
+Proposed Search Queries:
+{queries_list}
+
+For each query, determine if it's actually relevant to the research question above.
+Reject queries that:
+- Contain system metadata (iteration counts, percentages, internal state)
+- Are about completely unrelated topics
+- Are too vague or generic to be useful
+
+Accept queries that would help find information about the research topic.
 """
 
     try:
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
-        content = response.content.strip()
+        result: QueryValidationBatch = await structured_llm.ainvoke(
+            [{"role": "user", "content": prompt}]
+        )
 
-        # Extract JSON from response
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
+        valid_queries = []
+        for query, validation in zip(queries, result.validations):
+            if validation.is_relevant:
+                valid_queries.append(query)
+            else:
+                logger.warning(f"Query rejected: {query[:50]}... Reason: {validation.reason}")
 
-        queries = json.loads(content)
+        return valid_queries
 
-        logger.debug(f"Generated {len(queries)} search queries for: {question['question'][:50]}...")
-        return {"search_queries": queries}
+    except Exception as e:
+        logger.warning(f"Query validation failed: {e}, accepting all queries")
+        return queries  # Fail open
+
+
+async def generate_queries(state: ResearcherState) -> dict[str, Any]:
+    """Generate search queries using structured output with validation."""
+    question = state["question"]
+
+    llm = get_llm(ModelTier.HAIKU)
+    structured_llm = llm.with_structured_output(SearchQueries)
+
+    prompt = f"""Generate 2-3 search queries to research this question:
+
+Question: {question['question']}
+
+Make queries specific and likely to find authoritative sources.
+Focus only on the research topic - do not include any system metadata.
+"""
+
+    try:
+        result: SearchQueries = await structured_llm.ainvoke([{"role": "user", "content": prompt}])
+
+        # Validate queries are relevant
+        valid_queries = await validate_queries(
+            queries=result.queries,
+            research_question=question['question'],
+            research_brief=question.get('brief'),
+            draft_notes=question.get('context'),
+        )
+
+        if not valid_queries:
+            logger.warning("All queries invalid, using fallback")
+            valid_queries = [question["question"]]
+
+        logger.debug(f"Generated {len(valid_queries)} valid queries for: {question['question'][:50]}...")
+        return {"search_queries": valid_queries}
 
     except Exception as e:
         logger.error(f"Failed to generate queries: {e}")

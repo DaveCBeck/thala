@@ -48,6 +48,13 @@ logger = logging.getLogger(__name__)
 # Maximum concurrent researcher agents
 MAX_CONCURRENT_RESEARCHERS = 3
 
+# Recursion limits by depth (generous buffer for complex graph paths)
+RECURSION_LIMITS = {
+    "quick": 50,
+    "standard": 100,
+    "comprehensive": 200,
+}
+
 
 # =============================================================================
 # Routing Functions
@@ -269,9 +276,13 @@ async def deep_research(
         "current_status": "starting",
     }
 
-    logger.info(f"Starting deep research: query='{query[:50]}...', depth={depth}")
+    recursion_limit = RECURSION_LIMITS.get(depth, 100)
+    logger.info(f"Starting deep research: query='{query[:50]}...', depth={depth}, recursion_limit={recursion_limit}")
 
-    result = await deep_research_graph.ainvoke(initial_state)
+    result = await deep_research_graph.ainvoke(
+        initial_state,
+        config={"recursion_limit": recursion_limit},
+    )
 
     logger.info(
         f"Deep research complete: status={result.get('current_status')}, "
