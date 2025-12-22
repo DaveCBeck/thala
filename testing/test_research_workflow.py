@@ -6,8 +6,12 @@ Runs a comprehensive research workflow on a given topic with LangSmith tracing
 enabled for quality analysis.
 
 Usage:
-    python test_research_workflow.py "your research topic here"
-    python test_research_workflow.py  # Uses default topic
+    python test_research_workflow.py "your research topic here" [depth]
+    python test_research_workflow.py "AI agents" quick
+    python test_research_workflow.py "AI agents" comprehensive
+    python test_research_workflow.py  # Uses default topic and standard depth
+
+Valid depths: quick, standard, comprehensive (default: standard)
 
 Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
@@ -33,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 # Output directory for results
 OUTPUT_DIR = Path(__file__).parent / "test_data"
+
+VALID_DEPTHS = ["quick", "standard", "comprehensive"]
+DEFAULT_DEPTH = "standard"
 
 
 def print_result_summary(result: dict, topic: str) -> None:
@@ -342,22 +349,29 @@ async def run_research(topic: str, depth: str = "standard") -> dict:
 
 async def main():
     """Run research workflow test."""
-    # Default topic if none provided - something interesting and substantive
+    # Default topic if none provided
     default_topic = "What are the current best practices for building reliable AI agents, particularly around tool use, error handling, and human-in-the-loop patterns?"
 
     topic = sys.argv[1] if len(sys.argv) > 1 else default_topic
+    depth = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_DEPTH
+
+    # Validate depth
+    if depth not in VALID_DEPTHS:
+        print(f"Error: Invalid depth '{depth}'. Must be one of: {', '.join(VALID_DEPTHS)}")
+        print(f"Usage: python test_research_workflow.py \"topic\" [depth]")
+        sys.exit(1)
 
     print(f"\n{'=' * 80}")
     print("RESEARCH WORKFLOW TEST")
     print(f"{'=' * 80}")
     print(f"\nTopic: {topic}")
-    print(f"Depth: standard")
+    print(f"Depth: {depth}")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
     print(f"\nStarting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
 
     try:
-        result = await run_research(topic)
+        result = await run_research(topic, depth)
 
         # Print detailed result summary
         print_result_summary(result, topic)
@@ -396,6 +410,16 @@ async def main():
     except Exception as e:
         logger.error(f"Research failed: {e}", exc_info=True)
         return {"error": str(e)}, {"error": str(e)}
+
+    finally:
+        # Clean up resources
+        from workflows.research import cleanup_research_resources
+        try:
+            logger.info("Cleaning up research resources...")
+            await cleanup_research_resources()
+            logger.info("Cleanup completed")
+        except Exception as e:
+            logger.warning(f"Error during cleanup: {e}")
 
 
 if __name__ == "__main__":

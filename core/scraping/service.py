@@ -6,6 +6,7 @@ Fallback chain:
 3. Playwright (local browser) - for blocklisted/unreachable sites
 """
 
+import asyncio
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -24,6 +25,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+MAX_RETRY_ATTEMPTS = 2
+RETRY_INITIAL_DELAY = 2.0
+
 
 class ScrapeResult(BaseModel):
     """Output schema for scrape operations."""
@@ -38,6 +42,70 @@ def _extract_domain(url: str) -> str:
     """Extract domain from URL for blocklist matching."""
     parsed = urlparse(url)
     return parsed.netloc.lower()
+
+
+def _is_transient_error(error: Exception) -> bool:
+    """Check if error is transient and should be retried."""
+    error_str = str(error).lower()
+    error_type = type(error).__name__
+
+    # HTTP status codes that are transient
+    transient_statuses = ["502", "503", "504"]
+    if any(status in error_str for status in transient_statuses):
+        return True
+
+    # Connection/timeout errors
+    transient_indicators = [
+        "timeout",
+        "timed out",
+        "connection reset",
+        "connection refused",
+        "temporary failure",
+    ]
+    if any(indicator in error_str for indicator in transient_indicators):
+        return True
+
+    # Common exception types that are transient
+    transient_types = [
+        "TimeoutError",
+        "ClientConnectorError",
+        "ServerTimeoutError",
+        "asyncio.TimeoutError",
+    ]
+    if any(t in error_type for t in transient_types):
+        return True
+
+    return False
+
+
+async def _with_retry(func, *args, **kwargs):
+    """Execute function with retry logic for transient failures."""
+    last_error = None
+
+    for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+
+            # Don't retry permanent errors
+            if not _is_transient_error(e):
+                raise
+
+            # Don't retry on last attempt
+            if attempt >= MAX_RETRY_ATTEMPTS:
+                raise
+
+            # Calculate exponential backoff delay
+            delay = RETRY_INITIAL_DELAY * (2 ** (attempt - 1))
+            logger.info(
+                f"Transient error on attempt {attempt}/{MAX_RETRY_ATTEMPTS}, "
+                f"retrying in {delay}s: {e}"
+            )
+            await asyncio.sleep(delay)
+
+    # Should never reach here, but just in case
+    raise last_error
 
 
 class ScraperService:
@@ -180,10 +248,12 @@ class ScraperService:
             logger.debug(f"Domain {domain} in blocklist, using Playwright directly")
             return await self._scrape_playwright(url, include_links)
 
-        # Try Firecrawl basic
+        # Try Firecrawl basic with retry
         try:
             logger.debug(f"Trying Firecrawl basic for {url}")
-            return await self._scrape_firecrawl(url, proxy=None, include_links=include_links)
+            return await _with_retry(
+                self._scrape_firecrawl, url, proxy=None, include_links=include_links
+            )
 
         except SiteBlockedError as e:
             if "WebsiteNotSupportedError" in str(type(e).__mro__) or "not supported" in str(e).lower():
@@ -197,10 +267,12 @@ class ScraperService:
         except Exception as e:
             logger.debug(f"Firecrawl basic failed for {url}: {e}")
 
-        # Try Firecrawl stealth
+        # Try Firecrawl stealth with retry
         try:
             logger.debug(f"Trying Firecrawl stealth for {url}")
-            return await self._scrape_firecrawl(url, proxy="stealth", include_links=include_links)
+            return await _with_retry(
+                self._scrape_firecrawl, url, proxy="stealth", include_links=include_links
+            )
 
         except SiteBlockedError as e:
             # Site blocked even with stealth - add to blocklist
@@ -210,10 +282,10 @@ class ScraperService:
         except Exception as e:
             logger.debug(f"Firecrawl stealth failed for {url}: {e}")
 
-        # Playwright fallback
+        # Playwright fallback with retry
         logger.debug(f"Falling back to Playwright for {url}")
         try:
-            return await self._scrape_playwright(url, include_links)
+            return await _with_retry(self._scrape_playwright, url, include_links)
         except Exception as e:
             logger.error(f"All scraping methods failed for {url}: {e}")
             raise ScrapingError(

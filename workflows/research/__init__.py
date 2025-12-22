@@ -11,6 +11,27 @@ Implements a Self-Balancing Diffusion Algorithm for comprehensive research:
 7. Save findings to store
 """
 
+import logging
+
 from workflows.research.graph import deep_research, DeepResearchState
 
-__all__ = ["deep_research", "DeepResearchState"]
+logger = logging.getLogger(__name__)
+
+__all__ = ["deep_research", "DeepResearchState", "cleanup_research_resources"]
+
+
+async def cleanup_research_resources() -> None:
+    """Clean up all research workflow resources (idempotent)."""
+    from core.scraping.service import close_scraper_service
+    from langchain_tools.firecrawl import close_firecrawl
+
+    # Close both global singletons
+    try:
+        await close_firecrawl()
+    except Exception as e:
+        logger.warning(f"Error closing Firecrawl client: {e}")
+
+    try:
+        await close_scraper_service()
+    except Exception as e:
+        logger.warning(f"Error closing scraper service: {e}")

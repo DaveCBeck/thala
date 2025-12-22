@@ -116,6 +116,7 @@ class DiffusionState(TypedDict):
     completeness_score: float  # 0-1 estimated completeness
     areas_explored: list[str]  # Topics already researched
     areas_to_explore: list[str]  # Topics still needed
+    last_decision: str  # Last decision made by supervisor
 
 
 def calculate_completeness(
@@ -131,7 +132,7 @@ def calculate_completeness(
     - 40%: Iteration progress (gives baseline progression)
     - 30%: Findings coverage (questions answered with good confidence)
     - 20%: Average confidence of findings
-    - 10%: Gap penalty (reduces score based on known gaps)
+    - 15%: Gap penalty (reduces score based on known gaps)
 
     This ensures:
     - Score increases during research phase (not stuck at 0%)
@@ -166,15 +167,15 @@ def calculate_completeness(
     else:
         avg_confidence = 0.0
 
-    # 4. Gap penalty (10% weight, inverted)
-    gap_score = max(0, 1.0 - len(gaps_remaining) * 0.2)
+    # 4. Gap penalty (15% weight, inverted) - less punishing, capped at 10 gaps
+    gap_score = max(0, 1.0 - min(len(gaps_remaining), 10) * 0.05)
 
     # Weighted sum
     completeness = (
         0.40 * iteration_score
         + 0.30 * coverage_score
         + 0.20 * avg_confidence
-        + 0.10 * gap_score
+        + 0.15 * gap_score
     )
 
     return min(completeness, 1.0)

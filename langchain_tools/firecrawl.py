@@ -16,6 +16,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+FIRECRAWL_TIMEOUT = int(os.environ.get("FIRECRAWL_TIMEOUT", "45"))
+
 
 # ---------------------------------------------------------------------------
 # Client Management (lazy singleton)
@@ -36,8 +38,22 @@ def _get_firecrawl():
                 "FIRECRAWL_API_KEY environment variable is required. "
                 "Get one at https://firecrawl.dev"
             )
+        # NOTE: firecrawl-py SDK does not support timeout parameter directly.
+        # Timeout must be handled at the HTTP client level or via asyncio.wait_for
         _firecrawl_client = AsyncFirecrawl(api_key=api_key)
     return _firecrawl_client
+
+
+async def close_firecrawl() -> None:
+    """Close the global Firecrawl client and release resources."""
+    global _firecrawl_client
+    if _firecrawl_client is not None:
+        # AsyncFirecrawl uses aiohttp internally, close the session
+        if hasattr(_firecrawl_client, "close"):
+            await _firecrawl_client.close()
+        elif hasattr(_firecrawl_client, "_session") and _firecrawl_client._session:
+            await _firecrawl_client._session.close()
+        _firecrawl_client = None
 
 
 # ---------------------------------------------------------------------------

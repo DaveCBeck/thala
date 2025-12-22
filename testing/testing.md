@@ -15,9 +15,13 @@ Start services and confirm they're running before executing test scripts:
 Run a full research workflow with LangSmith tracing.
 
 ```bash
-.venv/bin/python3 testing/test_research_workflow.py "your topic"
-.venv/bin/python3 testing/test_research_workflow.py  # default topic
+.venv/bin/python3 testing/test_research_workflow.py "your topic" [depth]
+.venv/bin/python3 testing/test_research_workflow.py "AI agents" quick
+.venv/bin/python3 testing/test_research_workflow.py "AI agents" comprehensive
+.venv/bin/python3 testing/test_research_workflow.py  # default topic, standard depth
 ```
+
+Depth options: `quick`, `standard` (default), `comprehensive`
 
 Outputs results to `testing/test_data/` and displays the `langsmith_run_id` for inspection.
 

@@ -100,9 +100,10 @@ END
 ### Diffusion State
 - `iteration`: Current loop count
 - `max_iterations`: Depth-based limit
-- `completeness_score`: 0-1 estimated coverage
+- `completeness_score`: 0-1 estimated coverage (auto-completes at 85%)
 - `areas_explored`: Topics already researched
 - `areas_to_explore`: Remaining topics
+- `last_decision`: Last supervisor action for debugging
 
 ### Routing Flags
 - `current_status`: Controls supervisor routing

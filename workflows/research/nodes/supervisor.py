@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 # Maximum concurrent researcher agents
 MAX_CONCURRENT_RESEARCHERS = 3
 
+# Completeness threshold for automatic completion
+COMPLETENESS_THRESHOLD = 0.85
+
 
 async def _get_supervisor_decision_structured(
     llm, system_prompt: str, user_prompt: str, brief: dict
@@ -118,17 +121,26 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
             completeness_score=0.0,
             areas_explored=[],
             areas_to_explore=[],
+            last_decision="",
         )
 
     iteration = diffusion["iteration"]
     max_iterations = diffusion["max_iterations"]
 
-    # Check if we should force complete
+    # Check if we should force complete due to max iterations
     if iteration >= max_iterations:
         logger.info(f"Max iterations ({max_iterations}) reached - completing")
         return {
             "current_status": "research_complete",
-            "diffusion": {**diffusion, "iteration": iteration},
+            "diffusion": {**diffusion, "iteration": iteration, "last_decision": "max_iterations_reached"},
+        }
+
+    # Check if completeness threshold reached
+    if diffusion["completeness_score"] >= COMPLETENESS_THRESHOLD:
+        logger.info(f"Completeness threshold ({COMPLETENESS_THRESHOLD:.0%}) reached - completing")
+        return {
+            "current_status": "research_complete",
+            "diffusion": {**diffusion, "last_decision": "completeness_threshold_reached"},
         }
 
     # Build context
@@ -304,6 +316,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                     "iteration": iteration + 1,
                     "areas_explored": diffusion["areas_explored"] + [q["question"][:50] for q in questions],
                     "completeness_score": new_completeness,
+                    "last_decision": "conduct_research",
                 },
                 "current_status": "conduct_research",
             }
@@ -335,6 +348,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 "diffusion": {
                     **diffusion,
                     "completeness_score": new_completeness,
+                    "last_decision": "refine_draft",
                 },
                 "current_status": "refine_draft",
             }
@@ -361,7 +375,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                     # Continue with research, incorporating the fact-check result
                     # The fact-check adds context but doesn't change the flow
                     return {
-                        "diffusion": diffusion,
+                        "diffusion": {**diffusion, "last_decision": "check_fact"},
                         "current_status": "fact_checked",
                         "errors": [{
                             "node": "supervisor",
@@ -376,13 +390,13 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                     logger.warning(f"Fact-check failed: {fact_error}")
                     # Continue without fact-check result
                     return {
-                        "diffusion": diffusion,
+                        "diffusion": {**diffusion, "last_decision": "check_fact_failed"},
                         "current_status": "supervising",
                     }
             else:
                 logger.warning("check_fact action without claim - continuing")
                 return {
-                    "diffusion": diffusion,
+                    "diffusion": {**diffusion, "last_decision": "check_fact_no_claim"},
                     "current_status": "supervising",
                 }
 
@@ -392,7 +406,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
             return {
                 "diffusion": {
                     **diffusion,
-                    "completeness_score": 1.0,
+                    "last_decision": "research_complete",
                 },
                 "current_status": "research_complete",
             }
@@ -412,14 +426,14 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                         priority=1,
                     )
                 ],
-                "diffusion": {**diffusion, "iteration": iteration + 1},
+                "diffusion": {**diffusion, "iteration": iteration + 1, "last_decision": "error_fallback"},
                 "errors": [{"node": "supervisor", "error": str(e)}],
                 "current_status": "conduct_research",
             }
         else:
             # Later iterations - complete
             return {
-                "diffusion": {**diffusion, "completeness_score": 0.7},
+                "diffusion": {**diffusion, "completeness_score": 0.7, "last_decision": "error_complete"},
                 "errors": [{"node": "supervisor", "error": str(e)}],
                 "current_status": "research_complete",
             }
