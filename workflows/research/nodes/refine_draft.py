@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from workflows.research.state import DeepResearchState, DraftReport
+from workflows.research.state import DeepResearchState, DraftReport, calculate_completeness
 from workflows.research.prompts import REFINE_DRAFT_SYSTEM, get_today_str
 from workflows.shared.llm_utils import ModelTier, get_llm
 
@@ -86,10 +86,27 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
             gaps_remaining=unique_gaps,
         )
 
-        logger.info(f"Refined draft to version {version}, {len(unique_gaps)} gaps remaining")
+        # Calculate completeness with updated gaps
+        diffusion = state.get("diffusion", {})
+        new_completeness = calculate_completeness(
+            findings=findings,
+            key_questions=brief.get("key_questions", []),
+            iteration=diffusion.get("iteration", 0),
+            max_iterations=diffusion.get("max_iterations", 4),
+            gaps_remaining=unique_gaps,
+        )
+
+        logger.info(
+            f"Refined draft to version {version}, {len(unique_gaps)} gaps remaining, "
+            f"completeness: {new_completeness:.0%}"
+        )
 
         return {
             "draft_report": new_draft,
+            "diffusion": {
+                **diffusion,
+                "completeness_score": new_completeness,
+            },
             "current_status": "supervising",
         }
 

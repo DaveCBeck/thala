@@ -1,5 +1,14 @@
 # Testing
 
+## Prerequisites
+
+Start services and confirm they're running before executing test scripts:
+
+```bash
+./services/services.sh up
+./services/services.sh status
+```
+
 ## Scripts
 
 ### `test_research_workflow.py`

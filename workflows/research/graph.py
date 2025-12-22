@@ -32,7 +32,7 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy, Send
 
-from workflows.research.state import DeepResearchState, ResearcherState, DiffusionState
+from workflows.research.state import DeepResearchState, ResearcherState, DiffusionState, calculate_completeness
 from workflows.research.nodes.clarify_intent import clarify_intent
 from workflows.research.nodes.create_brief import create_brief
 from workflows.research.nodes.search_memory import search_memory_node
@@ -114,14 +114,34 @@ def aggregate_researcher_findings(state: DeepResearchState) -> dict[str, Any]:
 
     This is called after researcher agents complete. The findings are
     automatically aggregated via the Annotated[..., add] pattern.
+    Also updates completeness based on accumulated findings.
     """
     findings = state.get("research_findings", [])
-    logger.info(f"Aggregated {len(findings)} research findings")
+    diffusion = state.get("diffusion", {})
+    brief = state.get("research_brief", {})
+    draft = state.get("draft_report")
 
-    # Clear pending questions
+    # Calculate updated completeness based on new findings
+    new_completeness = calculate_completeness(
+        findings=findings,
+        key_questions=brief.get("key_questions", []),
+        iteration=diffusion.get("iteration", 0),
+        max_iterations=diffusion.get("max_iterations", 4),
+        gaps_remaining=draft.get("gaps_remaining", []) if draft else [],
+    )
+
+    logger.info(
+        f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}"
+    )
+
+    # Clear pending questions and update completeness
     return {
         "pending_questions": [],
         "current_status": "supervising",
+        "diffusion": {
+            **diffusion,
+            "completeness_score": new_completeness,
+        },
     }
 
 

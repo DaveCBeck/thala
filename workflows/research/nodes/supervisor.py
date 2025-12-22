@@ -23,6 +23,7 @@ from workflows.research.state import (
     DiffusionState,
     DraftReport,
     SupervisorDecision,
+    calculate_completeness,
 )
 from workflows.research.prompts import (
     SUPERVISOR_SYSTEM_CACHED,
@@ -287,12 +288,22 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
             logger.info(f"Supervisor: conduct_research with {len(questions)} questions")
 
+            # Calculate completeness based on current state
+            new_completeness = calculate_completeness(
+                findings=findings,
+                key_questions=brief.get("key_questions", []),
+                iteration=iteration + 1,
+                max_iterations=max_iterations,
+                gaps_remaining=gaps_remaining,
+            )
+
             return {
                 "pending_questions": questions,
                 "diffusion": {
                     **diffusion,
                     "iteration": iteration + 1,
                     "areas_explored": diffusion["areas_explored"] + [q["question"][:50] for q in questions],
+                    "completeness_score": new_completeness,
                 },
                 "current_status": "conduct_research",
             }
@@ -305,17 +316,25 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 gaps_remaining=action_data.get("gaps", []),
             )
 
-            # Update completeness based on gaps
-            gap_count = len(new_draft["gaps_remaining"])
-            completeness = max(0.5, 1.0 - gap_count * 0.1)
+            # Use multi-signal completeness calculation
+            new_completeness = calculate_completeness(
+                findings=findings,
+                key_questions=brief.get("key_questions", []),
+                iteration=iteration,
+                max_iterations=max_iterations,
+                gaps_remaining=new_draft["gaps_remaining"],
+            )
 
-            logger.info(f"Supervisor: refine_draft, version {new_draft['version']}, gaps={gap_count}")
+            logger.info(
+                f"Supervisor: refine_draft, version {new_draft['version']}, "
+                f"gaps={len(new_draft['gaps_remaining'])}, completeness={new_completeness:.0%}"
+            )
 
             return {
                 "draft_report": new_draft,
                 "diffusion": {
                     **diffusion,
-                    "completeness_score": completeness,
+                    "completeness_score": new_completeness,
                 },
                 "current_status": "refine_draft",
             }

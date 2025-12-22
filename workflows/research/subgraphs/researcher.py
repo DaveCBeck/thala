@@ -13,8 +13,11 @@ Uses HAIKU for cost-effective research operations.
 import asyncio
 import json
 import logging
+import os
+import uuid
 from typing import Any
 
+import httpx
 from langgraph.graph import END, START, StateGraph
 
 from langchain_tools.firecrawl import web_search, scrape_url
@@ -35,6 +38,7 @@ from workflows.research.prompts import (
     get_today_str,
 )
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.marker_client import MarkerClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,55 @@ logger = logging.getLogger(__name__)
 MAX_SEARCHES = 5
 MAX_SCRAPES = 3
 MAX_RESULTS_PER_SOURCE = 5  # Limit results from each search source
+
+# Marker input directory for PDF processing
+MARKER_INPUT_DIR = os.getenv(
+    "MARKER_INPUT_DIR",
+    "/home/dave/thala/services/marker/data/input"
+)
+
+
+def is_pdf_url(url: str) -> bool:
+    """Check if URL points to a PDF file."""
+    return url.lower().rstrip('/').endswith('.pdf')
+
+
+async def fetch_pdf_via_marker(url: str) -> str | None:
+    """Download PDF and convert via Marker service.
+
+    Returns markdown content or None if failed.
+    """
+    filename = f"{uuid.uuid4().hex}.pdf"
+    input_path = os.path.join(MARKER_INPUT_DIR, filename)
+
+    try:
+        # Download PDF
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(url, follow_redirects=True)
+            response.raise_for_status()
+
+        # Write to Marker input directory
+        with open(input_path, "wb") as f:
+            f.write(response.content)
+
+        # Convert via Marker
+        async with MarkerClient() as marker:
+            result = await marker.convert(
+                file_path=filename,
+                quality="fast",  # Fast preset for research scraping
+            )
+            return result.markdown
+
+    except Exception as e:
+        logger.warning(f"Marker PDF processing failed for {url}: {e}")
+        return None
+
+    finally:
+        # Cleanup temp file
+        try:
+            os.remove(input_path)
+        except OSError:
+            pass
 
 
 async def validate_queries(
@@ -324,16 +377,30 @@ async def execute_searches(state: ResearcherState) -> dict[str, Any]:
 
 
 async def scrape_pages(state: ResearcherState) -> dict[str, Any]:
-    """Scrape top results for full content."""
+    """Scrape top results for full content.
+
+    Routes PDF URLs to local Marker service instead of Firecrawl to save API costs.
+    """
     results = state.get("search_results", [])
     scraped = []
     updated_results = []
 
     # Scrape top N most relevant
     for i, result in enumerate(results[:MAX_SCRAPES]):
+        url = result["url"]
         try:
-            response = await scrape_url.ainvoke({"url": result["url"]})
-            content = response.get("markdown", "")
+            # Route PDFs to Marker instead of Firecrawl
+            if is_pdf_url(url):
+                logger.info(f"Processing PDF via Marker: {url}")
+                content = await fetch_pdf_via_marker(url)
+                if not content:
+                    # Fallback to Firecrawl if Marker fails
+                    logger.info(f"Marker failed, falling back to Firecrawl: {url}")
+                    response = await scrape_url.ainvoke({"url": url})
+                    content = response.get("markdown", "")
+            else:
+                response = await scrape_url.ainvoke({"url": url})
+                content = response.get("markdown", "")
 
             # Truncate very long content
             if len(content) > 8000:
