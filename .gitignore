@@ -5,6 +5,7 @@ dev.md
 claude.md
 todo.md
 test_data/
+testing/test_data/
 
 # Environment variables
 .env

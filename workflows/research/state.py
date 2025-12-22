@@ -149,6 +149,39 @@ class RefineDraftReport(BaseModel):
     )
 
 
+class SupervisorDecision(BaseModel):
+    """Supervisor's structured decision for the next research step.
+
+    Used with structured output to ensure clean, parseable decisions
+    without metadata contamination.
+    """
+
+    action: Literal["conduct_research", "refine_draft", "research_complete"] = Field(
+        description="The next action to take in the research process."
+    )
+
+    # For conduct_research action
+    research_questions: list[str] = Field(
+        default_factory=list,
+        description="1-3 specific research questions to investigate. Must be actual questions about the research topic - NOT analysis notes, metadata, or summaries of previous findings.",
+        max_length=3,
+    )
+
+    # For refine_draft action
+    draft_updates: Optional[str] = Field(
+        default=None,
+        description="Content to add or update in the draft report based on new findings.",
+    )
+    remaining_gaps: list[str] = Field(
+        default_factory=list,
+        description="Research gaps that still need investigation.",
+    )
+
+    reasoning: str = Field(
+        description="Brief explanation (1-2 sentences) of why this action was chosen.",
+    )
+
+
 # =============================================================================
 # Researcher Structured Output Schemas
 # =============================================================================
@@ -239,3 +272,4 @@ class DeepResearchState(TypedDict):
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     current_status: str
+    langsmith_run_id: Optional[str]  # LangSmith trace ID for run inspection

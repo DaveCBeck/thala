@@ -3,23 +3,27 @@ LangChain tool for searching books.
 
 Searches for books by title, author, ISBN, or topic and returns
 structured results with metadata.
+
+Requires the retrieve-academic service to be running. Falls back gracefully
+if the service is unavailable.
 """
 
 import logging
 import os
-import re
 from enum import Enum
 from typing import Optional
 
-from bs4 import BeautifulSoup
 from cachetools import TTLCache
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Lazy singleton client
+# Lazy singleton client for retrieve-academic service
 _book_search_client = None
+
+# Default service URL (can be overridden by env var)
+DEFAULT_SERVICE_URL = "http://localhost:8002"
 
 # Cache for search results (30 min TTL, max 100 items)
 _search_cache: TTLCache = TTLCache(maxsize=100, ttl=1800)
@@ -78,66 +82,24 @@ class BookSearchOutput(BaseModel):
 
 
 def _get_client():
-    """Get httpx AsyncClient for book search (lazy init)."""
+    """Get httpx AsyncClient for retrieve-academic service (lazy init)."""
     global _book_search_client
     if _book_search_client is None:
         import httpx
 
-        base_url = os.environ.get("BOOK_SEARCH_BASE_URL")
-        if not base_url:
-            raise ValueError("BOOK_SEARCH_BASE_URL environment variable is required")
+        service_url = os.environ.get("BOOK_SEARCH_SERVICE_URL", DEFAULT_SERVICE_URL)
         _book_search_client = httpx.AsyncClient(
-            base_url=base_url,
+            base_url=service_url,
             timeout=30.0,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            },
-            follow_redirects=True,
         )
     return _book_search_client
 
 
-def _parse_format(format_str: str) -> str:
-    """Parse format string from metadata."""
-    if not format_str:
-        return BookFormat.OTHER
-
-    cleaned = format_str.replace("[", "").replace("]", "").lower().strip()
-
-    if "pdf" in cleaned:
-        return BookFormat.PDF
-    if "epub" in cleaned:
-        return BookFormat.EPUB
-    if "txt" in cleaned or "text" in cleaned:
-        return BookFormat.TXT
-    if "mobi" in cleaned:
-        return BookFormat.MOBI
-    if "azw3" in cleaned:
-        return BookFormat.AZW3
-    if "fb2" in cleaned:
-        return BookFormat.FB2
-    if "djvu" in cleaned:
-        return BookFormat.DJVU
-    if "cbz" in cleaned:
-        return BookFormat.CBZ
-    if "cbr" in cleaned:
-        return BookFormat.CBR
-
-    return BookFormat.OTHER
-
-
-def _truncate_text(text: str, max_length: int = 200) -> str:
-    """Truncate text to maximum length."""
-    if not text or len(text) <= max_length:
-        return text
-    return text[:max_length].strip() + "..."
-
-
 async def _search_books_internal(query: str, limit: int = 10) -> BookSearchOutput:
     """
-    Search for books.
+    Search for books via the retrieve-academic service.
 
-    Parses HTML results and returns structured book data.
+    Falls back gracefully if the service is unavailable.
     """
     cache_key = f"search:{query}:{limit}"
 
@@ -146,109 +108,48 @@ async def _search_books_internal(query: str, limit: int = 10) -> BookSearchOutpu
         logger.debug(f"Cache hit for book search: {query}")
         return _search_cache[cache_key]
 
-    client = _get_client()
-    base_url = os.environ.get("BOOK_SEARCH_BASE_URL", "")
-
     try:
-        response = await client.get("/search", params={"q": query, "page": 1})
+        client = _get_client()
+        response = await client.post(
+            "/search",
+            json={"query": query, "limit": limit},
+        )
         response.raise_for_status()
-    except Exception as e:
-        logger.error(f"Book search request failed: {e}")
-        return BookSearchOutput(query=query, total_results=0, results=[])
+        data = response.json()
 
-    # Parse HTML response
-    soup = BeautifulSoup(response.text, "lxml")
-    books: list[Book] = []
-
-    # Find all book containers
-    containers = soup.select("div.flex.pt-3.pb-3.border-b")
-    logger.debug(f"Found {len(containers)} book containers")
-
-    for container in containers:
-        # Find MD5 link
-        md5_link = container.select_one('a[href^="/md5/"]')
-        if not md5_link:
-            continue
-
-        href = md5_link.get("href", "")
-        md5 = href.replace("/md5/", "")
-
-        # Find title
-        title_elem = container.select_one(
-            r"a.line-clamp-\[3\].overflow-hidden.break-words"
-        )
-        title = title_elem.get_text(strip=True) if title_elem else ""
-
-        # Find authors
-        author_elem = container.select_one(r"a:has(.icon-\[mdi--user-edit\])")
-        authors = author_elem.get_text(strip=True) if author_elem else "Unknown"
-
-        # Find publisher
-        publisher_elem = container.select_one(r"a:has(.icon-\[mdi--company\])")
-        publisher = (
-            publisher_elem.get_text(strip=True) if publisher_elem else None
-        )
-
-        # Find metadata line
-        meta_elem = container.select_one(
-            r"div.text-gray-800.dark\:text-slate-400"
-        )
-        meta_text = meta_elem.get_text(strip=True) if meta_elem else ""
-
-        # Parse metadata: "... Language [code] ... FORMAT ... SIZE ... YEAR ..."
-        language = "Unknown"
-        book_format = BookFormat.OTHER
-        size = "Unknown"
-
-        meta_match = re.search(
-            r"✅\s*([^[]+)\[([^\]]+)\]\s*·\s*([^·]+)\s*·\s*([^·]+)\s*·\s*(\d{4})",
-            meta_text,
-        )
-        if meta_match:
-            language = meta_match.group(1).strip()
-            book_format = _parse_format(meta_match.group(3).strip())
-            size = meta_match.group(4).strip()
-
-        # Find abstract/description
-        desc_elem = container.select_one(
-            r"div.line-clamp-\[2\].overflow-hidden.break-words.text-sm.text-gray-600"
-        )
-        abstract = desc_elem.get_text(strip=True) if desc_elem else None
-        if abstract:
-            abstract = _truncate_text(abstract, 200)
-
-        if title and md5:
+        # Convert service response to Book objects
+        books: list[Book] = []
+        for r in data.get("results", []):
             books.append(
                 Book(
-                    title=title,
-                    authors=authors,
-                    publisher=publisher,
-                    language=language,
-                    format=book_format,
-                    size=size,
-                    md5=md5,
-                    url=f"{base_url}/md5/{md5}",
-                    abstract=abstract,
+                    title=r.get("title", ""),
+                    authors=r.get("authors", "Unknown"),
+                    publisher=r.get("publisher"),
+                    language=r.get("language", "Unknown"),
+                    format=r.get("format", "other"),
+                    size=r.get("size", "Unknown"),
+                    md5=r.get("md5", ""),
+                    url=r.get("url", ""),
+                    abstract=r.get("abstract"),
                 )
             )
 
-    # Sort by format priority
-    books.sort(key=lambda b: FORMAT_PRIORITY.get(b.format, 10))
+        output = BookSearchOutput(
+            query=query,
+            total_results=len(books),
+            results=books,
+        )
 
-    # Limit results
-    books = books[:limit]
+        # Cache the result
+        _search_cache[cache_key] = output
 
-    output = BookSearchOutput(
-        query=query,
-        total_results=len(books),
-        results=books,
-    )
+        logger.debug(f"book_search returned {len(books)} results for '{query}'")
+        return output
 
-    # Cache the result
-    _search_cache[cache_key] = output
-
-    logger.debug(f"book_search returned {len(books)} results for '{query}'")
-    return output
+    except Exception as e:
+        # Log at debug level - service might not be running
+        logger.debug(f"Book search service unavailable: {e}")
+        return BookSearchOutput(query=query, total_results=0, results=[])
 
 
 @tool

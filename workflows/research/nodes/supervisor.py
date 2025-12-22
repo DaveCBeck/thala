@@ -22,6 +22,7 @@ from workflows.research.state import (
     ResearchQuestion,
     DiffusionState,
     DraftReport,
+    SupervisorDecision,
 )
 from workflows.research.prompts import (
     SUPERVISOR_SYSTEM_CACHED,
@@ -35,6 +36,43 @@ logger = logging.getLogger(__name__)
 
 # Maximum concurrent researcher agents
 MAX_CONCURRENT_RESEARCHERS = 3
+
+
+async def _get_supervisor_decision_structured(
+    llm, system_prompt: str, user_prompt: str, brief: dict
+) -> tuple[str, dict]:
+    """Try to get supervisor decision using structured output.
+
+    Returns: (action, action_data) tuple
+
+    Raises: Exception if structured output fails
+    """
+    structured_llm = llm.with_structured_output(SupervisorDecision)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    decision: SupervisorDecision = await structured_llm.ainvoke(messages)
+
+    action = decision.action
+    action_data = {}
+
+    if action == "conduct_research":
+        # Convert research_questions to the expected format
+        action_data["questions"] = [
+            {"question": q, "context": brief.get("topic", "")}
+            for q in decision.research_questions
+        ]
+    elif action == "refine_draft":
+        action_data["updates"] = decision.draft_updates or ""
+        action_data["gaps"] = decision.remaining_gaps
+
+    logger.info(
+        f"Supervisor (structured): {action}, reasoning: {decision.reasoning[:100]}..."
+    )
+
+    return action, action_data
 
 
 def _format_findings_summary(findings: list) -> str:
@@ -121,85 +159,101 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     llm = get_llm(ModelTier.OPUS)  # OPUS for strategic reasoning
 
+    # Try structured output first (more reliable), fall back to text parsing
+    action = None
+    action_data = {}
+    use_structured = True
+
     try:
-        # Use cached system prompt for 90% cost reduction on repeated calls
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=SUPERVISOR_SYSTEM_CACHED,  # ~800 tokens, cached
-            user_prompt=user_prompt,  # Dynamic content
+        action, action_data = await _get_supervisor_decision_structured(
+            llm, SUPERVISOR_SYSTEM_CACHED, user_prompt, brief
         )
-        content = response.content
+        logger.info(f"Supervisor using structured output: {action}")
+    except Exception as structured_error:
+        logger.warning(f"Structured output failed, falling back to text parsing: {structured_error}")
+        use_structured = False
 
-        # Extract thinking (for logging)
-        thinking_match = re.search(r'<thinking>(.*?)</thinking>', content, re.DOTALL)
-        if thinking_match:
-            logger.debug(f"Supervisor thinking: {thinking_match.group(1)[:200]}...")
+    # Fallback: text parsing with improved extraction
+    if not use_structured:
+        try:
+            # Use cached system prompt for 90% cost reduction on repeated calls
+            response = await invoke_with_cache(
+                llm,
+                system_prompt=SUPERVISOR_SYSTEM_CACHED,  # ~800 tokens, cached
+                user_prompt=user_prompt,  # Dynamic content
+            )
+            content = response.content
 
-        # Determine action based on tool calls or text analysis
-        # Look for action indicators in the response
-        action = None
-        action_data = {}
+            # Extract thinking (for logging)
+            thinking_match = re.search(r'<thinking>(.*?)</thinking>', content, re.DOTALL)
+            if thinking_match:
+                logger.debug(f"Supervisor thinking: {thinking_match.group(1)[:200]}...")
 
-        content_lower = content.lower()
+            # Determine action based on tool calls or text analysis
+            content_lower = content.lower()
 
-        if "conductresearch" in content_lower or "conduct_research" in content_lower:
-            action = "conduct_research"
-            # Try to extract questions
-            questions_match = re.search(r'"questions"\s*:\s*\[(.*?)\]', content, re.DOTALL)
-            if questions_match:
-                try:
-                    # This is a rough extraction; real implementation would use tool binding
-                    questions_text = "[" + questions_match.group(1) + "]"
-                    questions_raw = json.loads(questions_text)
-                    action_data["questions"] = questions_raw
-                except:
-                    # Fallback: extract questions from text
-                    action_data["questions"] = _extract_questions_from_text(content, brief)
-            else:
-                action_data["questions"] = _extract_questions_from_text(content, brief)
-
-        elif "refinedraftreport" in content_lower or "refine_draft" in content_lower:
-            action = "refine_draft"
-            # Extract update content
-            updates_match = re.search(r'"updates"\s*:\s*"([^"]*)"', content, re.DOTALL)
-            if updates_match:
-                action_data["updates"] = updates_match.group(1)
-            else:
-                action_data["updates"] = _extract_draft_from_text(content)
-
-            # Extract gaps
-            gaps_match = re.search(r'"gaps"\s*:\s*\[(.*?)\]', content, re.DOTALL)
-            if gaps_match:
-                try:
-                    action_data["gaps"] = json.loads("[" + gaps_match.group(1) + "]")
-                except:
-                    action_data["gaps"] = []
-
-        elif "researchcomplete" in content_lower or "research_complete" in content_lower:
-            action = "research_complete"
-
-        elif "checkfact" in content_lower or "check_fact" in content_lower or "verify_claim" in content_lower:
-            action = "check_fact"
-            # Extract the claim to verify
-            claim_match = re.search(r'"claim"\s*:\s*"([^"]*)"', content, re.DOTALL)
-            if claim_match:
-                action_data["claim"] = claim_match.group(1)
-            else:
-                # Try to find quoted text after "verify" or "check"
-                verify_match = re.search(r'(?:verify|check|fact.?check)[:\s]+["\']([^"\']+)["\']', content, re.IGNORECASE)
-                if verify_match:
-                    action_data["claim"] = verify_match.group(1)
-
-        else:
-            # Default: if we have few findings, conduct research; else complete
-            if len(findings) < 2:
+            if "conductresearch" in content_lower or "conduct_research" in content_lower:
                 action = "conduct_research"
-                action_data["questions"] = _extract_questions_from_text(content, brief)
-            else:
-                action = "refine_draft"
-                action_data["updates"] = content
+                # Try to extract questions
+                questions_match = re.search(r'"questions"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+                if questions_match:
+                    try:
+                        # This is a rough extraction; real implementation would use tool binding
+                        questions_text = "[" + questions_match.group(1) + "]"
+                        questions_raw = json.loads(questions_text)
+                        action_data["questions"] = questions_raw
+                    except:
+                        # Fallback: extract questions from text
+                        action_data["questions"] = _extract_questions_from_text(content, brief)
+                else:
+                    action_data["questions"] = _extract_questions_from_text(content, brief)
 
-        # Process action
+            elif "refinedraftreport" in content_lower or "refine_draft" in content_lower:
+                action = "refine_draft"
+                # Extract update content
+                updates_match = re.search(r'"updates"\s*:\s*"([^"]*)"', content, re.DOTALL)
+                if updates_match:
+                    action_data["updates"] = updates_match.group(1)
+                else:
+                    action_data["updates"] = _extract_draft_from_text(content)
+
+                # Extract gaps
+                gaps_match = re.search(r'"gaps"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+                if gaps_match:
+                    try:
+                        action_data["gaps"] = json.loads("[" + gaps_match.group(1) + "]")
+                    except:
+                        action_data["gaps"] = []
+
+            elif "researchcomplete" in content_lower or "research_complete" in content_lower:
+                action = "research_complete"
+
+            elif "checkfact" in content_lower or "check_fact" in content_lower or "verify_claim" in content_lower:
+                action = "check_fact"
+                # Extract the claim to verify
+                claim_match = re.search(r'"claim"\s*:\s*"([^"]*)"', content, re.DOTALL)
+                if claim_match:
+                    action_data["claim"] = claim_match.group(1)
+                else:
+                    # Try to find quoted text after "verify" or "check"
+                    verify_match = re.search(r'(?:verify|check|fact.?check)[:\s]+["\']([^"\']+)["\']', content, re.IGNORECASE)
+                    if verify_match:
+                        action_data["claim"] = verify_match.group(1)
+
+            else:
+                # Default: if we have few findings, conduct research; else complete
+                if len(findings) < 2:
+                    action = "conduct_research"
+                    action_data["questions"] = _extract_questions_from_text(content, brief)
+                else:
+                    action = "refine_draft"
+                    action_data["updates"] = content
+        except Exception as text_parse_error:
+            logger.error(f"Text parsing also failed: {text_parse_error}")
+            raise
+
+    # Process action (runs for both structured output and text parsing)
+    try:
         if action == "conduct_research":
             questions = []
             for i, q in enumerate(action_data.get("questions", [])[:MAX_CONCURRENT_RESEARCHERS]):
@@ -353,20 +407,69 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
 
 def _extract_questions_from_text(content: str, brief: dict) -> list[dict]:
-    """Extract research questions from unstructured text."""
+    """Extract research questions from unstructured text.
+
+    Improved to filter out analysis notes, thinking content, and metadata.
+    """
+    # 1. Remove thinking blocks entirely - they contain analysis, not questions
+    content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL)
+    content = re.sub(r'<action>.*?</action>', '', content, flags=re.DOTALL)
+
+    # 2. Try to find question section markers to focus extraction
+    question_section = content
+    markers = [
+        r'(?:research\s+questions?|questions?\s+to\s+(?:investigate|research|explore))[:\s]+',
+        r'(?:I\'ll\s+(?:investigate|research|explore)|conduct\s*_?research\s+on)[:\s]+',
+        r'(?:conductresearch|conduct_research)',
+    ]
+    for marker in markers:
+        match = re.search(marker, content, re.IGNORECASE)
+        if match:
+            question_section = content[match.end():]
+            break
+
+    # 3. Extract with stricter validation
     questions = []
 
-    # Look for numbered questions or bullet points
-    lines = content.split("\n")
-    for line in lines:
-        line = line.strip()
-        # Match patterns like "1.", "- ", "* ", etc.
-        if re.match(r'^[\d]+[.)]\s*', line) or re.match(r'^[-*]\s*', line):
-            question = re.sub(r'^[\d]+[.)]\s*|^[-*]\s*', '', line).strip()
-            if len(question) > 10 and "?" in question or len(question) > 20:
-                questions.append({"question": question, "context": ""})
+    # Patterns that indicate metadata/analysis rather than questions
+    metadata_patterns = [
+        r'iteration\s+\d+',           # "iteration 1 of 4"
+        r'\d+\s*%',                   # percentages
+        r'completeness',
+        r'areas?\s+explored',
+        r'gaps?\s+remaining',
+        r'^q\d+[_-]\d+',              # Question IDs like q0_1
+        r'not\s+relevant',
+        r'too\s+generic',
+        r'\*\*:?\s*$',                # Markdown bold endings
+        r'^\*+',                      # Markdown headers
+        r'current\s+findings',
+        r'previous\s+(?:findings|research)',
+        r'already\s+(?:covered|explored|researched)',
+    ]
 
-    # If no questions found, use key questions from brief
+    for line in question_section.split("\n"):
+        line = line.strip()
+
+        # Must match numbered or bulleted pattern
+        if not re.match(r'^[\d]+[.)]\s*', line) and not re.match(r'^[-*]\s*', line):
+            continue
+
+        # Extract the question text
+        question = re.sub(r'^[\d]+[.)]\s*|^[-*]\s*', '', line).strip()
+
+        # Must be substantial
+        if len(question) < 20:
+            continue
+
+        # Reject lines that look like metadata or analysis
+        if any(re.search(p, question, re.IGNORECASE) for p in metadata_patterns):
+            logger.debug(f"Rejected metadata-like question: {question[:50]}...")
+            continue
+
+        questions.append({"question": question, "context": ""})
+
+    # Fallback to key questions from brief if nothing extracted
     if not questions and brief.get("key_questions"):
         for kq in brief["key_questions"][:2]:
             questions.append({"question": kq, "context": brief.get("topic", "")})

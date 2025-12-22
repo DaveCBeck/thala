@@ -25,6 +25,7 @@ configure_langsmith()
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Literal
 
@@ -239,6 +240,9 @@ async def deep_research(
         )
         print(result["final_report"])
     """
+    # Generate a run_id for LangSmith tracing (allows inspection of runs)
+    run_id = uuid.uuid4()
+
     initial_state: DeepResearchState = {
         "input": {
             "query": query,
@@ -274,14 +278,19 @@ async def deep_research(
         "started_at": datetime.utcnow(),
         "completed_at": None,
         "current_status": "starting",
+        "langsmith_run_id": str(run_id),
     }
 
     recursion_limit = RECURSION_LIMITS.get(depth, 100)
-    logger.info(f"Starting deep research: query='{query[:50]}...', depth={depth}, recursion_limit={recursion_limit}")
+    logger.info(f"Starting deep research: query='{query[:50]}...', depth={depth}, recursion_limit={recursion_limit}, run_id={run_id}")
 
     result = await deep_research_graph.ainvoke(
         initial_state,
-        config={"recursion_limit": recursion_limit},
+        config={
+            "recursion_limit": recursion_limit,
+            "run_id": run_id,
+            "run_name": f"deep_research:{query[:30]}",
+        },
     )
 
     logger.info(
