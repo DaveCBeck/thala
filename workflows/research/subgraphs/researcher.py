@@ -4,7 +4,7 @@ Individual researcher agent subgraph.
 Each researcher:
 1. Generates search queries from the research question
 2. Searches multiple sources in parallel (Firecrawl, Perplexity, OpenAlex, Books)
-3. Scrapes relevant pages for full content
+3. Scrapes relevant pages for full content (with TTL caching to avoid redundant scrapes)
 4. Compresses findings into structured output
 
 Uses HAIKU for cost-effective research operations.
@@ -18,6 +18,7 @@ import uuid
 from typing import Any
 
 import httpx
+from cachetools import TTLCache
 from langgraph.graph import END, START, StateGraph
 
 from langchain_tools.firecrawl import web_search, scrape_url
@@ -51,6 +52,13 @@ MAX_RESULTS_PER_SOURCE = 5  # Limit results from each search source
 MARKER_INPUT_DIR = os.getenv(
     "MARKER_INPUT_DIR",
     "/home/dave/thala/services/marker/data/input"
+)
+
+# Cache for scraped URL content (1 hour TTL, max 200 items)
+# This avoids re-scraping the same URL across different researchers or iterations
+_scrape_cache: TTLCache = TTLCache(
+    maxsize=int(os.getenv("SCRAPE_CACHE_SIZE", "200")),
+    ttl=int(os.getenv("SCRAPE_CACHE_TTL", "3600")),  # 1 hour default
 )
 
 
@@ -95,6 +103,75 @@ async def fetch_pdf_via_marker(url: str) -> str | None:
             os.remove(input_path)
         except OSError:
             pass
+
+
+async def _scrape_single_url(
+    result: WebSearchResult,
+    index: int,
+) -> tuple[int, str | None, WebSearchResult]:
+    """Scrape a single URL and return the result.
+
+    This helper function enables parallel scraping via asyncio.gather().
+    Uses a TTL cache to avoid re-scraping the same URL across researchers or iterations.
+
+    Args:
+        result: WebSearchResult containing URL and metadata
+        index: Original index in results list (for preserving order)
+
+    Returns:
+        Tuple of (index, scraped_content_str, updated_result)
+        - index: Original position for deterministic ordering
+        - scraped_content_str: Formatted content string or None on failure
+        - updated_result: Result dict with content field added
+    """
+    url = result["url"]
+    updated_result = dict(result)
+    updated_result["_index"] = index
+
+    # Check cache first
+    if url in _scrape_cache:
+        content = _scrape_cache[url]
+        logger.debug(f"Cache hit for: {url} ({len(content)} chars)")
+
+        # Format scraped content string
+        content_str = f"[{result['title']}]\nURL: {result['url']}\n\n{content}"
+        updated_result["content"] = content
+
+        return (index, content_str, updated_result)
+
+    try:
+        # Route PDFs to Marker instead of Firecrawl
+        if is_pdf_url(url):
+            logger.info(f"Processing PDF via Marker: {url}")
+            content = await fetch_pdf_via_marker(url)
+            if not content:
+                # Fallback to Firecrawl if Marker fails
+                logger.info(f"Marker failed, falling back to Firecrawl: {url}")
+                response = await scrape_url.ainvoke({"url": url})
+                content = response.get("markdown", "")
+        else:
+            response = await scrape_url.ainvoke({"url": url})
+            content = response.get("markdown", "")
+
+        # Truncate very long content
+        if len(content) > 8000:
+            content = content[:8000] + "\n\n[Content truncated...]"
+
+        # Store in cache for future use
+        _scrape_cache[url] = content
+        logger.debug(f"Scraped and cached {len(content)} chars from: {url}")
+
+        # Format scraped content string
+        content_str = f"[{result['title']}]\nURL: {result['url']}\n\n{content}"
+
+        # Update result with content
+        updated_result["content"] = content
+
+        return (index, content_str, updated_result)
+
+    except Exception as e:
+        logger.warning(f"Failed to scrape {url}: {e}")
+        return (index, None, updated_result)
 
 
 async def validate_queries(
@@ -377,50 +454,61 @@ async def execute_searches(state: ResearcherState) -> dict[str, Any]:
 
 
 async def scrape_pages(state: ResearcherState) -> dict[str, Any]:
-    """Scrape top results for full content.
+    """Scrape top results for full content in parallel.
 
     Routes PDF URLs to local Marker service instead of Firecrawl to save API costs.
+    Uses asyncio.gather() to scrape multiple URLs concurrently for improved performance.
+    Results are cached with 1-hour TTL to avoid redundant scrapes across researchers.
     """
     results = state.get("search_results", [])
+
+    if not results:
+        return {"scraped_content": [], "search_results": []}
+
+    # Check how many URLs are already cached
+    urls_to_scrape = [r["url"] for r in results[:MAX_SCRAPES]]
+    cached_count = sum(1 for url in urls_to_scrape if url in _scrape_cache)
+    logger.info(
+        f"Scraping {len(urls_to_scrape)} URLs ({cached_count} cached, "
+        f"{len(urls_to_scrape) - cached_count} new) - cache size: {len(_scrape_cache)}"
+    )
+
+    # Create scraping tasks for parallel execution
+    scraping_tasks = [
+        _scrape_single_url(result, i)
+        for i, result in enumerate(results[:MAX_SCRAPES])
+    ]
+
+    # Execute all scrapes concurrently
+    task_results = await asyncio.gather(*scraping_tasks, return_exceptions=True)
+
+    # Process results
     scraped = []
     updated_results = []
 
-    # Scrape top N most relevant
-    for i, result in enumerate(results[:MAX_SCRAPES]):
-        url = result["url"]
-        try:
-            # Route PDFs to Marker instead of Firecrawl
-            if is_pdf_url(url):
-                logger.info(f"Processing PDF via Marker: {url}")
-                content = await fetch_pdf_via_marker(url)
-                if not content:
-                    # Fallback to Firecrawl if Marker fails
-                    logger.info(f"Marker failed, falling back to Firecrawl: {url}")
-                    response = await scrape_url.ainvoke({"url": url})
-                    content = response.get("markdown", "")
-            else:
-                response = await scrape_url.ainvoke({"url": url})
-                content = response.get("markdown", "")
+    for task_result in task_results:
+        if isinstance(task_result, Exception):
+            logger.error(f"Scraping task failed with exception: {task_result}")
+            continue
 
-            # Truncate very long content
-            if len(content) > 8000:
-                content = content[:8000] + "\n\n[Content truncated...]"
+        idx, content_str, updated_result = task_result
 
-            scraped.append(f"[{result['title']}]\nURL: {result['url']}\n\n{content}")
+        if content_str:
+            scraped.append(content_str)
 
-            # Update result with content
-            updated_result = dict(result)
-            updated_result["content"] = content
-            updated_results.append(updated_result)
+        updated_results.append(updated_result)
 
-            logger.debug(f"Scraped {len(content)} chars from: {result['url']}")
+    # Sort by original index to maintain deterministic order
+    updated_results.sort(key=lambda x: x.get("_index", 0))
 
-        except Exception as e:
-            logger.warning(f"Failed to scrape {result['url']}: {e}")
-            updated_results.append(result)
+    # Remove temporary index field
+    for r in updated_results:
+        r.pop("_index", None)
 
     # Keep remaining results without scraping
     updated_results.extend(results[MAX_SCRAPES:])
+
+    logger.info(f"Scraped {len(scraped)} URLs successfully in parallel")
 
     return {
         "scraped_content": scraped,

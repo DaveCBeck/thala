@@ -83,6 +83,7 @@ END
 ### Parallel Execution
 - **researcher fan-out**: Up to 3 concurrent researcher agents via Send()
 - **4-source search**: Firecrawl/Perplexity/OpenAlex/Books run in parallel per query
+- **parallel scraping**: Top results scraped concurrently with TTL cache (1hr) to avoid redundant fetches
 - **Finding aggregation**: Results merged via Annotated[list, add] reducer
 
 ### Retry Policies
