@@ -17,6 +17,7 @@ services/chroma/data/
 services/zotero/data/
 services/elasticsearch/data/
 services/backups/
+services/marker/data/
 
 # Note: services/retrieve-academic is a git submodule (private repo)
 # It's tracked via .gitmodules, not ignored
