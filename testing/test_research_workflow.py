@@ -11,10 +11,8 @@ Usage:
     python test_research_workflow.py "AI agents" comprehensive
     python test_research_workflow.py  # Uses default topic and standard depth
 
-    # Multi-lingual options:
+    # Language options:
     python test_research_workflow.py "topic" standard --language es
-    python test_research_workflow.py "topic" standard --multi-lingual
-    python test_research_workflow.py "topic" standard --multi-lingual --languages es,zh,de
     python test_research_workflow.py "topic" standard --language es --translate-to en
 
 Valid depths: quick, standard, comprehensive (default: standard)
@@ -189,34 +187,13 @@ def print_result_summary(result: dict, topic: str) -> None:
         if langsmith_run_id:
             print(f"LangSmith Run ID: {langsmith_run_id}")
 
-    # Multi-lingual Results
+    # Language Results
     primary_lang = result.get("primary_language")
-    active_languages = result.get("active_languages")
-    language_synthesis = result.get("language_synthesis")
     translated_report = result.get("translated_report")
 
     if primary_lang and primary_lang != "en":
         print(f"\n--- Language Settings ---")
         print(f"Primary Language: {primary_lang}")
-
-    if active_languages:
-        print(f"\n--- Multi-Lingual Research ---")
-        print(f"Active Languages: {', '.join(active_languages)}")
-
-        # Show language findings summary
-        language_findings = result.get("language_findings", {})
-        if language_findings:
-            print(f"Findings by Language:")
-            for lang, findings in language_findings.items():
-                print(f"  {lang}: {len(findings)} findings")
-
-    if language_synthesis:
-        print(f"\n--- Language Synthesis ---")
-        print(f"Length: {len(language_synthesis)} chars")
-        preview = language_synthesis[:800]
-        if len(language_synthesis) > 800:
-            preview += "\n\n... [truncated] ..."
-        print(preview)
 
     if translated_report:
         print(f"\n--- Translated Report ---")
@@ -325,26 +302,7 @@ def analyze_quality(result: dict) -> dict:
     if errors:
         analysis["issues"].append(f"{len(errors)} errors encountered during research")
 
-    # Multi-lingual metrics
-    active_languages = result.get("active_languages", [])
-    if active_languages:
-        analysis["metrics"]["languages_researched"] = len(active_languages)
-        analysis["metrics"]["active_languages"] = active_languages
-
-        language_findings = result.get("language_findings", {})
-        if language_findings:
-            analysis["metrics"]["findings_per_language"] = {
-                lang: len(findings) for lang, findings in language_findings.items()
-            }
-
-        if result.get("language_synthesis"):
-            analysis["metrics"]["synthesis_generated"] = True
-            analysis["metrics"]["synthesis_length"] = len(result["language_synthesis"])
-        else:
-            analysis["metrics"]["synthesis_generated"] = False
-            if len(active_languages) > 1:
-                analysis["issues"].append("Multi-lingual mode but no synthesis generated")
-
+    # Translation metrics
     if result.get("translated_report"):
         analysis["metrics"]["translation_generated"] = True
         analysis["metrics"]["translation_length"] = len(result["translated_report"])
@@ -403,8 +361,6 @@ async def run_research(
     topic: str,
     depth: str = "standard",
     language: str = None,
-    multi_lingual: bool = False,
-    target_languages: list[str] = None,
     translate_to: str = None,
     preserve_quotes: bool = True,
 ) -> dict:
@@ -414,8 +370,6 @@ async def run_research(
         topic: Research question or topic
         depth: Research depth (quick, standard, comprehensive)
         language: Single language mode (ISO 639-1 code, e.g., "es", "zh")
-        multi_lingual: Enable composite multi-lingual mode
-        target_languages: Specific languages for composite mode
         translate_to: Translate final report to this language
         preserve_quotes: Keep direct quotes in original language when translating
     """
@@ -425,10 +379,6 @@ async def run_research(
     logger.info(f"Depth: {depth}")
     if language:
         logger.info(f"Language: {language}")
-    if multi_lingual:
-        logger.info(f"Multi-lingual mode: enabled")
-        if target_languages:
-            logger.info(f"Target languages: {target_languages}")
     if translate_to:
         logger.info(f"Translate to: {translate_to}")
     logger.info(f"LangSmith tracing: {os.environ.get('LANGSMITH_TRACING', 'false')}")
@@ -437,8 +387,6 @@ async def run_research(
         query=topic,
         depth=depth,
         language=language,
-        multi_lingual=multi_lingual,
-        target_languages=target_languages,
         translate_to=translate_to,
         preserve_quotes=preserve_quotes,
     )
@@ -449,15 +397,13 @@ async def run_research(
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Run research workflow with optional multi-lingual support",
+        description="Run research workflow with optional language support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s "AI agents"                          # Standard English research
   %(prog)s "AI agents" quick                    # Quick research
   %(prog)s "AI agents" --language es            # Research in Spanish
-  %(prog)s "AI agents" --multi-lingual          # Auto-detect useful languages
-  %(prog)s "AI agents" --multi-lingual --languages es,zh,de
   %(prog)s "impacto de IA" --language es --translate-to en
         """
     )
@@ -476,24 +422,13 @@ Examples:
         help=f"Research depth (default: {DEFAULT_DEPTH})"
     )
 
-    # Multi-lingual options
-    lang_group = parser.add_argument_group("Multi-lingual Options")
+    # Language options
+    lang_group = parser.add_argument_group("Language Options")
     lang_group.add_argument(
         "--language", "-l",
         type=str,
         default=None,
         help="Research in this language (ISO 639-1 code, e.g., 'es', 'zh', 'ja')"
-    )
-    lang_group.add_argument(
-        "--multi-lingual", "-m",
-        action="store_true",
-        help="Enable composite multi-lingual mode (research across multiple languages)"
-    )
-    lang_group.add_argument(
-        "--languages",
-        type=str,
-        default=None,
-        help="Comma-separated language codes for multi-lingual mode (e.g., 'es,zh,de')"
     )
     lang_group.add_argument(
         "--translate-to", "-t",
@@ -524,11 +459,6 @@ async def main():
     topic = args.topic
     depth = args.depth
 
-    # Parse target languages if provided
-    target_languages = None
-    if args.languages:
-        target_languages = [lang.strip() for lang in args.languages.split(",")]
-
     print(f"\n{'=' * 80}")
     print("RESEARCH WORKFLOW TEST")
     print(f"{'=' * 80}")
@@ -536,12 +466,6 @@ async def main():
     print(f"Depth: {depth}")
     if args.language:
         print(f"Language: {args.language}")
-    if args.multi_lingual:
-        print(f"Multi-lingual: enabled")
-        if target_languages:
-            print(f"Target Languages: {', '.join(target_languages)}")
-        else:
-            print(f"Target Languages: auto-detect")
     if args.translate_to:
         print(f"Translate To: {args.translate_to}")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
@@ -553,8 +477,6 @@ async def main():
             topic=topic,
             depth=depth,
             language=args.language,
-            multi_lingual=args.multi_lingual,
-            target_languages=target_languages,
             translate_to=args.translate_to,
             preserve_quotes=args.preserve_quotes,
         )

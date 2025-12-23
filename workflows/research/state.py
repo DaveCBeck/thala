@@ -56,8 +56,6 @@ class ResearchInput(TypedDict):
 
     # Language configuration
     language: Optional[str]  # Single language mode: ISO 639-1 code (e.g., "es", "zh")
-    multi_lingual: Optional[bool]  # Enable composite multi-lingual mode
-    target_languages: Optional[list[str]]  # Specific languages for composite mode
     translate_to: Optional[str]  # Translate final output to this language
     preserve_quotes: Optional[bool]  # Keep quotes in original language when translating
 
@@ -373,18 +371,12 @@ class DeepResearchState(TypedDict):
     langsmith_run_id: Optional[str]  # LangSmith trace ID for run inspection
 
     # ==========================================================================
-    # Multi-lingual support
+    # Language support
     # ==========================================================================
 
     # Primary language for single-language mode
     primary_language: Optional[str]  # ISO 639-1 code (default: "en")
     primary_language_config: Optional[LanguageConfig]  # Full config for primary language
-
-    # Composite multi-lingual mode
-    active_languages: Optional[list[str]]  # Languages currently being researched
-    language_configs: Optional[dict[str, LanguageConfig]]  # Config per active language
-    language_findings: Optional[dict[str, list[ResearchFinding]]]  # Findings grouped by language
-    language_synthesis: Optional[str]  # Cross-language synthesis (composite mode)
 
     # Translation
     translation_config: Optional[TranslationConfig]  # If translating final output

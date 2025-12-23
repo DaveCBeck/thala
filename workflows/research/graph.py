@@ -51,8 +51,6 @@ from workflows.research.nodes.final_report import final_report
 from workflows.research.nodes.process_citations import process_citations
 from workflows.research.nodes.save_findings import save_findings
 from workflows.research.nodes.translate_report import translate_report
-from workflows.research.nodes.analyze_languages import analyze_languages
-from workflows.research.nodes.synthesize_languages import synthesize_languages
 from workflows.research.subgraphs.researcher import researcher_subgraph
 
 logger = logging.getLogger(__name__)
@@ -84,9 +82,7 @@ def route_after_clarify(state: DeepResearchState) -> str:
 
 
 def route_after_create_brief(state: DeepResearchState) -> str:
-    """Route to language analysis if multi-lingual, otherwise to memory search."""
-    if state["input"].get("multi_lingual"):
-        return "analyze_languages"
+    """Route to memory search after creating brief."""
     return "search_memory"
 
 
@@ -100,63 +96,32 @@ def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
 
         if not pending:
             logger.warning("No pending questions for research - completing")
-            return "synthesize_languages" if state["input"].get("multi_lingual") else "final_report"
+            return "final_report"
 
-        # Multi-lingual mode: distribute questions across languages
-        if state["input"].get("multi_lingual") and state.get("language_configs"):
-            language_configs = state.get("language_configs", {})
-            active_languages = list(language_configs.keys())
+        # All researchers use primary language config
+        language_config = state.get("primary_language_config")
 
-            logger.info(f"Launching {len(pending)} researcher agents in multi-lingual mode across {active_languages}")
+        logger.info(f"Launching {len(pending)} researcher agents" +
+                   (f" (language: {language_config['code']})" if language_config else ""))
 
-            researchers = []
-            for i, q in enumerate(pending):
-                # Round-robin distribute questions across available languages
-                target_lang = active_languages[i % len(active_languages)] if active_languages else "en"
-                lang_config = language_configs.get(target_lang)
-
-                researchers.append(
-                    Send("researcher", ResearcherState(
-                        question=q,
-                        search_queries=[],
-                        search_results=[],
-                        scraped_content=[],
-                        thinking=None,
-                        finding=None,
-                        research_findings=[],
-                        language_config=lang_config,
-                    ))
-                )
-
-            return researchers
-        else:
-            # Single-language mode: all researchers use primary language config
-            language_config = state.get("primary_language_config")
-
-            logger.info(f"Launching {len(pending)} researcher agents" +
-                       (f" (language: {language_config['code']})" if language_config else ""))
-
-            return [
-                Send("researcher", ResearcherState(
-                    question=q,
-                    search_queries=[],
-                    search_results=[],
-                    scraped_content=[],
-                    thinking=None,
-                    finding=None,
-                    research_findings=[],
-                    language_config=language_config,
-                ))
-                for q in pending
-            ]
+        return [
+            Send("researcher", ResearcherState(
+                question=q,
+                search_queries=[],
+                search_results=[],
+                scraped_content=[],
+                thinking=None,
+                finding=None,
+                research_findings=[],
+                language_config=language_config,
+            ))
+            for q in pending
+        ]
 
     elif current_status == "refine_draft":
         return "refine_draft"
 
     elif current_status == "research_complete":
-        # Route to synthesis if multi-lingual, otherwise to final report
-        if state["input"].get("multi_lingual") and state.get("active_languages"):
-            return "synthesize_languages"
         return "final_report"
 
     else:
@@ -175,17 +140,6 @@ def aggregate_researcher_findings(state: DeepResearchState) -> dict[str, Any]:
     diffusion = state.get("diffusion", {})
     brief = state.get("research_brief", {})
     draft = state.get("draft_report")
-    input_data = state.get("input", {})
-
-    # Group findings by language for multi-lingual mode
-    language_findings = None
-    if input_data.get("multi_lingual") and findings:
-        language_findings = {}
-        for f in findings:
-            lang_code = f.get("language_code") or "en"
-            if lang_code not in language_findings:
-                language_findings[lang_code] = []
-            language_findings[lang_code].append(f)
 
     # Calculate updated completeness based on new findings
     new_completeness = calculate_completeness(
@@ -196,13 +150,9 @@ def aggregate_researcher_findings(state: DeepResearchState) -> dict[str, Any]:
         gaps_remaining=draft.get("gaps_remaining", []) if draft else [],
     )
 
-    logger.info(
-        f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}"
-        + (f", languages: {list(language_findings.keys())}" if language_findings else "")
-    )
+    logger.info(f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}")
 
-    # Build result with completeness update
-    result = {
+    return {
         "pending_questions": [],
         "current_status": "supervising",
         "diffusion": {
@@ -210,12 +160,6 @@ def aggregate_researcher_findings(state: DeepResearchState) -> dict[str, Any]:
             "completeness_score": new_completeness,
         },
     }
-
-    # Add language_findings if in multi-lingual mode
-    if language_findings is not None:
-        result["language_findings"] = language_findings
-
-    return result
 
 
 # =============================================================================
@@ -228,9 +172,8 @@ def create_deep_research_graph():
     Create the main deep research workflow graph.
 
     Flow:
-    START -> clarify_intent -> create_brief -> [analyze_languages (if multi-lingual)]
-          -> search_memory -> iterate_plan
-          -> supervisor <-> researcher (loop) -> [synthesize_languages (if multi-lingual)]
+    START -> clarify_intent -> create_brief -> search_memory -> iterate_plan
+          -> supervisor <-> researcher (loop)
           -> final_report -> process_citations -> translate_report -> save_findings -> END
     """
     builder = StateGraph(DeepResearchState)
@@ -238,7 +181,6 @@ def create_deep_research_graph():
     # Add nodes
     builder.add_node("clarify_intent", clarify_intent)
     builder.add_node("create_brief", create_brief)
-    builder.add_node("analyze_languages", analyze_languages)
     builder.add_node("search_memory", search_memory_node)
     builder.add_node("iterate_plan", iterate_plan)
     builder.add_node(
@@ -249,7 +191,6 @@ def create_deep_research_graph():
     builder.add_node("researcher", researcher_subgraph)
     builder.add_node("aggregate_findings", aggregate_researcher_findings)
     builder.add_node("refine_draft", refine_draft)
-    builder.add_node("synthesize_languages", synthesize_languages)
     builder.add_node(
         "final_report",
         final_report,
@@ -266,8 +207,7 @@ def create_deep_research_graph():
     # Entry flow
     builder.add_edge(START, "clarify_intent")
     builder.add_conditional_edges("clarify_intent", route_after_clarify, ["create_brief"])
-    builder.add_conditional_edges("create_brief", route_after_create_brief, ["analyze_languages", "search_memory"])
-    builder.add_edge("analyze_languages", "search_memory")
+    builder.add_edge("create_brief", "search_memory")
     builder.add_edge("search_memory", "iterate_plan")
     builder.add_edge("iterate_plan", "supervisor")
 
@@ -275,7 +215,7 @@ def create_deep_research_graph():
     builder.add_conditional_edges(
         "supervisor",
         route_supervisor_action,
-        ["researcher", "refine_draft", "synthesize_languages", "final_report", "supervisor"],
+        ["researcher", "refine_draft", "final_report", "supervisor"],
     )
 
     # Researchers converge to aggregation
@@ -284,9 +224,6 @@ def create_deep_research_graph():
 
     # Refine draft loops back to supervisor
     builder.add_edge("refine_draft", "supervisor")
-
-    # Synthesis flows to final report
-    builder.add_edge("synthesize_languages", "final_report")
 
     # Final stages
     builder.add_edge("final_report", "process_citations")
@@ -312,10 +249,8 @@ async def deep_research(
     max_sources: int = 20,
     max_iterations: int = None,
     clarification_responses: dict[str, str] = None,
-    # Multi-lingual options
+    # Language options
     language: str = None,
-    multi_lingual: bool = False,
-    target_languages: list[str] = None,
     translate_to: str = None,
     preserve_quotes: bool = True,
 ) -> DeepResearchState:
@@ -333,16 +268,9 @@ async def deep_research(
         max_sources: Maximum web sources to consult
         max_iterations: Override default iteration count for depth
         clarification_responses: Pre-provided clarification answers
-
-        # Multi-lingual options
         language: Run workflow in this language (ISO 639-1 code, e.g., "es", "zh").
                   All prompts, queries, and output will be in target language.
                   Default: None (English)
-        multi_lingual: Enable composite mode where multiple language-specific
-                       researchers are spawned for cross-cultural insights.
-        target_languages: Specific languages for composite mode.
-                         If multi_lingual=True but this is None, Opus will
-                         analyze which languages would provide unique insights.
         translate_to: After research, translate final report to this language.
                      Useful when researching in non-English but need English output.
         preserve_quotes: Keep direct quotes in original language when translating.
@@ -370,13 +298,6 @@ async def deep_research(
             language="es",
             translate_to="en",
         )
-
-        # Composite: research across multiple languages
-        result = await deep_research(
-            "impact of AI on jobs",
-            multi_lingual=True,
-            target_languages=["es", "zh", "de"],
-        )
     """
     # Generate a run_id for LangSmith tracing (allows inspection of runs)
     run_id = uuid.uuid4()
@@ -402,8 +323,6 @@ async def deep_research(
             "max_sources": max_sources,
             "max_iterations": max_iterations,
             "language": language,
-            "multi_lingual": multi_lingual,
-            "target_languages": target_languages,
             "translate_to": translate_to,
             "preserve_quotes": preserve_quotes,
         },
@@ -437,21 +356,16 @@ async def deep_research(
         "current_status": "starting",
         "langsmith_run_id": str(run_id),
 
-        # Multi-lingual support
+        # Language support
         "primary_language": primary_lang,
         "primary_language_config": primary_lang_config,
-        "active_languages": target_languages if multi_lingual else None,
-        "language_configs": None,
-        "language_findings": None,
-        "language_synthesis": None,
         "translation_config": translation_config,
         "translated_report": None,
     }
 
     recursion_limit = RECURSION_LIMITS.get(depth, 100)
     lang_info = f", language={primary_lang}" if primary_lang != "en" else ""
-    multi_lang_info = f", multi_lingual=True, languages={target_languages}" if multi_lingual else ""
-    logger.info(f"Starting deep research: query='{query[:50]}...', depth={depth}{lang_info}{multi_lang_info}, recursion_limit={recursion_limit}, run_id={run_id}")
+    logger.info(f"Starting deep research: query='{query[:50]}...', depth={depth}{lang_info}, recursion_limit={recursion_limit}, run_id={run_id}")
 
     result = await deep_research_graph.ainvoke(
         initial_state,
