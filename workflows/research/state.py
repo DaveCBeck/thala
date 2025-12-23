@@ -9,6 +9,7 @@ Defines TypedDict states for:
 """
 
 from datetime import datetime
+from enum import Enum
 from operator import add
 from typing import Annotated, Any, Literal, Optional
 from typing_extensions import TypedDict
@@ -16,6 +17,27 @@ from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+
+
+# =============================================================================
+# Researcher Types
+# =============================================================================
+
+
+class ResearcherType(str, Enum):
+    """Types of specialized researchers."""
+
+    WEB = "web"           # Firecrawl + Perplexity
+    ACADEMIC = "academic" # OpenAlex
+    BOOK = "book"         # book_search
+
+
+class ResearcherAllocation(TypedDict):
+    """Allocation of researchers for a conduct_research action."""
+
+    web_count: int       # Number of web researchers (default: 1)
+    academic_count: int  # Number of academic researchers (default: 1)
+    book_count: int      # Number of book researchers (default: 1)
 
 
 # =============================================================================
@@ -342,6 +364,9 @@ class DeepResearchState(TypedDict):
     pending_questions: list[ResearchQuestion]
     active_researchers: int  # Currently running (max 3)
     research_findings: Annotated[list[ResearchFinding], add]
+
+    # Researcher allocation for specialized researchers
+    researcher_allocation: Optional[ResearcherAllocation]  # {web_count, academic_count, book_count}
 
     # Supervisor messages (for tool-based agent)
     supervisor_messages: Annotated[list[BaseMessage], add_messages]

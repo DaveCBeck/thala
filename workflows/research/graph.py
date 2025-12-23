@@ -51,7 +51,9 @@ from workflows.research.nodes.final_report import final_report
 from workflows.research.nodes.process_citations import process_citations
 from workflows.research.nodes.save_findings import save_findings
 from workflows.research.nodes.translate_report import translate_report
-from workflows.research.subgraphs.researcher import researcher_subgraph
+from workflows.research.subgraphs.web_researcher import web_researcher_subgraph
+from workflows.research.subgraphs.academic_researcher import academic_researcher_subgraph
+from workflows.research.subgraphs.book_researcher import book_researcher_subgraph
 
 logger = logging.getLogger(__name__)
 
@@ -87,36 +89,94 @@ def route_after_create_brief(state: DeepResearchState) -> str:
 
 
 def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
-    """Route based on supervisor's chosen action."""
+    """Route based on supervisor's chosen action.
+
+    For conduct_research, dispatches specialized researchers based on allocation:
+    - Default: 1 web + 1 academic + 1 book researcher (one of each)
+    - Supervisor can override via researcher_allocation field
+    """
     current_status = state.get("current_status", "")
 
     if current_status == "conduct_research":
-        # Fan out to researcher agents (max 3 parallel)
-        pending = state.get("pending_questions", [])[:MAX_CONCURRENT_RESEARCHERS]
+        pending = state.get("pending_questions", [])
 
         if not pending:
             logger.warning("No pending questions for research - completing")
             return "final_report"
 
+        # Get allocation (default: 1 of each type)
+        allocation = state.get("researcher_allocation") or {
+            "web_count": 1,
+            "academic_count": 1,
+            "book_count": 1,
+        }
+
         # All researchers use primary language config
         language_config = state.get("primary_language_config")
 
-        logger.info(f"Launching {len(pending)} researcher agents" +
-                   (f" (language: {language_config['code']})" if language_config else ""))
+        sends = []
+        question_idx = 0
 
-        return [
-            Send("researcher", ResearcherState(
-                question=q,
-                search_queries=[],
-                search_results=[],
-                scraped_content=[],
-                thinking=None,
-                finding=None,
-                research_findings=[],
-                language_config=language_config,
-            ))
-            for q in pending
-        ]
+        # Dispatch web researchers
+        for _ in range(allocation.get("web_count", 1)):
+            if question_idx < len(pending):
+                q = pending[question_idx]
+                sends.append(Send("web_researcher", ResearcherState(
+                    question=q,
+                    search_queries=[],
+                    search_results=[],
+                    scraped_content=[],
+                    thinking=None,
+                    finding=None,
+                    research_findings=[],
+                    language_config=language_config,
+                )))
+                question_idx += 1
+
+        # Dispatch academic researchers
+        for _ in range(allocation.get("academic_count", 1)):
+            if question_idx < len(pending):
+                q = pending[question_idx]
+                sends.append(Send("academic_researcher", ResearcherState(
+                    question=q,
+                    search_queries=[],
+                    search_results=[],
+                    scraped_content=[],
+                    thinking=None,
+                    finding=None,
+                    research_findings=[],
+                    language_config=language_config,
+                )))
+                question_idx += 1
+
+        # Dispatch book researchers
+        for _ in range(allocation.get("book_count", 1)):
+            if question_idx < len(pending):
+                q = pending[question_idx]
+                sends.append(Send("book_researcher", ResearcherState(
+                    question=q,
+                    search_queries=[],
+                    search_results=[],
+                    scraped_content=[],
+                    thinking=None,
+                    finding=None,
+                    research_findings=[],
+                    language_config=language_config,
+                )))
+                question_idx += 1
+
+        if not sends:
+            return "final_report"
+
+        logger.info(
+            f"Launching {len(sends)} researchers "
+            f"(web={allocation.get('web_count', 1)}, "
+            f"academic={allocation.get('academic_count', 1)}, "
+            f"book={allocation.get('book_count', 1)})"
+            + (f" language: {language_config['code']}" if language_config else "")
+        )
+
+        return sends
 
     elif current_status == "refine_draft":
         return "refine_draft"
@@ -188,7 +248,10 @@ def create_deep_research_graph():
         supervisor,
         retry=RetryPolicy(max_attempts=3, backoff_factor=2.0),
     )
-    builder.add_node("researcher", researcher_subgraph)
+    # Specialized researcher subgraphs
+    builder.add_node("web_researcher", web_researcher_subgraph)
+    builder.add_node("academic_researcher", academic_researcher_subgraph)
+    builder.add_node("book_researcher", book_researcher_subgraph)
     builder.add_node("aggregate_findings", aggregate_researcher_findings)
     builder.add_node("refine_draft", refine_draft)
     builder.add_node(
@@ -215,11 +278,14 @@ def create_deep_research_graph():
     builder.add_conditional_edges(
         "supervisor",
         route_supervisor_action,
-        ["researcher", "refine_draft", "final_report", "supervisor"],
+        ["web_researcher", "academic_researcher", "book_researcher",
+         "refine_draft", "final_report", "supervisor"],
     )
 
-    # Researchers converge to aggregation
-    builder.add_edge("researcher", "aggregate_findings")
+    # All researchers converge to aggregation
+    builder.add_edge("web_researcher", "aggregate_findings")
+    builder.add_edge("academic_researcher", "aggregate_findings")
+    builder.add_edge("book_researcher", "aggregate_findings")
     builder.add_edge("aggregate_findings", "supervisor")
 
     # Refine draft loops back to supervisor
@@ -336,6 +402,7 @@ async def deep_research(
         "pending_questions": [],
         "active_researchers": 0,
         "research_findings": [],
+        "researcher_allocation": None,  # Default: 1 web + 1 academic + 1 book
         "supervisor_messages": [],
         "diffusion": DiffusionState(
             iteration=0,

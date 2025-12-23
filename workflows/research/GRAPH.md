@@ -23,10 +23,10 @@ supervisor (OPUS) ←──────────────────┐
 [route_supervisor_action]            │
   ├─ conduct_research ───────────┐   │
   │    ↓                         │   │
-  │  [fan_out] (parallel, max 3) │   │
-  │    ├─ researcher             │   │
-  │    ├─ researcher             │   │
-  │    └─ researcher             │   │
+  │  [fan_out] (parallel)        │   │
+  │    ├─ web_researcher         │   │
+  │    ├─ academic_researcher    │   │
+  │    └─ book_researcher        │   │
   │         ↓                    │   │
   │  aggregate_findings ─────────┼───┘
   ├─ refine_draft ───────────────┘
@@ -44,29 +44,32 @@ save_findings
 END
 ```
 
-## Researcher Subgraph
+## Specialized Researcher Subgraphs
 
-Each researcher agent runs this subgraph independently:
+Three specialized researchers run in parallel per iteration (default: 1 of each):
 
+### Web Researcher (Firecrawl + Perplexity)
 ```
-START
-  ↓
-generate_queries (HAIKU)
-  ↓
-execute_searches
-  ├─ Firecrawl    (web)       ─┐
-  ├─ Perplexity   (AI search) ─┼─ parallel
-  ├─ OpenAlex     (academic)  ─┤
-  └─ Books        (books)     ─┘
-       ↓
-  [deduplicate by URL]
-       ↓
-scrape_pages (top 3)
-  ↓
-compress_findings (SONNET)
-  ↓
-END
+generate_queries → execute_searches → scrape_pages (3) → compress_findings
 ```
+- Sources: Firecrawl, Perplexity (parallel)
+- Prompt: Emphasizes recency, domain authority, bias detection
+
+### Academic Researcher (OpenAlex)
+```
+generate_queries → execute_searches → scrape_pages (3) → compress_findings
+```
+- Sources: OpenAlex (scholarly literature)
+- Prompt: Emphasizes peer-review, citations, methodology
+- Sorted by citation count
+
+### Book Researcher (book_search)
+```
+generate_queries → execute_searches → scrape_pages (1) → compress_findings
+```
+- Sources: book_search
+- Prompt: Emphasizes author credentials, publisher reputation
+- Prioritizes PDF format
 
 ## Key Features
 
@@ -82,9 +85,9 @@ END
 - **Avoids redundancy**: Skips topics already well-covered in memory
 
 ### Parallel Execution
-- **researcher fan-out**: Up to 3 concurrent researcher agents via Send()
-- **4-source search**: Firecrawl/Perplexity/OpenAlex/Books run in parallel per query
-- **parallel scraping**: Top results scraped concurrently with TTL cache (1hr) to avoid redundant fetches
+- **Specialized researchers**: 3 concurrent researcher types via Send() (web, academic, book)
+- **Default allocation**: 1 web + 1 academic + 1 book per iteration (configurable)
+- **Parallel scraping**: Top results scraped concurrently with TTL cache (1hr) to avoid redundant fetches
 - **Finding aggregation**: Results merged via Annotated[list, add] reducer
 
 ### Retry Policies
