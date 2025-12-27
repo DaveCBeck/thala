@@ -45,10 +45,10 @@ COMPLETENESS_THRESHOLD = 0.85
 
 async def _get_supervisor_decision_structured(
     llm, system_prompt: str, user_prompt: str, brief: dict
-) -> tuple[str, dict]:
+) -> tuple[str, dict, SupervisorDecision]:
     """Try to get supervisor decision using structured output.
 
-    Returns: (action, action_data) tuple
+    Returns: (action, action_data, decision) tuple
 
     Raises: Exception if structured output fails
     """
@@ -69,6 +69,13 @@ async def _get_supervisor_decision_structured(
             {"question": q, "context": brief.get("topic", "")}
             for q in decision.research_questions
         ]
+        # Include allocation from LLM decision
+        action_data["llm_allocation"] = {
+            "web_count": decision.web_researchers,
+            "academic_count": decision.academic_researchers,
+            "book_count": decision.book_researchers,
+        }
+        action_data["allocation_reasoning"] = decision.allocation_reasoning
     elif action == "refine_draft":
         action_data["updates"] = decision.draft_updates or ""
         action_data["gaps"] = decision.remaining_gaps
@@ -77,7 +84,7 @@ async def _get_supervisor_decision_structured(
         f"Supervisor (structured): {action}, reasoning: {decision.reasoning[:100]}..."
     )
 
-    return action, action_data
+    return action, action_data, decision
 
 
 def _format_findings_summary(findings: list) -> str:
@@ -195,10 +202,11 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
     # Try structured output first (more reliable), fall back to text parsing
     action = None
     action_data = {}
+    decision = None
     use_structured = True
 
     try:
-        action, action_data = await _get_supervisor_decision_structured(
+        action, action_data, decision = await _get_supervisor_decision_structured(
             llm, system_prompt_cached, user_prompt, brief
         )
         logger.info(f"Supervisor using structured output: {action}")
@@ -329,7 +337,23 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 gaps_remaining=gaps_remaining,
             )
 
-            return {
+            # Determine researcher allocation
+            # Priority: user-specified (already in state) > LLM decision > default
+            current_allocation = state.get("researcher_allocation")
+            if not current_allocation and action_data.get("llm_allocation"):
+                # Use LLM's allocation decision
+                llm_alloc = action_data["llm_allocation"]
+                # Validate total doesn't exceed 3
+                total = llm_alloc["web_count"] + llm_alloc["academic_count"] + llm_alloc["book_count"]
+                if total <= 3 and total > 0:
+                    current_allocation = llm_alloc
+                    logger.info(
+                        f"Using LLM allocation: web={llm_alloc['web_count']}, "
+                        f"academic={llm_alloc['academic_count']}, book={llm_alloc['book_count']} "
+                        f"({action_data.get('allocation_reasoning', 'no reasoning')})"
+                    )
+
+            result = {
                 "pending_questions": questions,
                 "diffusion": {
                     **diffusion,
@@ -340,6 +364,12 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 },
                 "current_status": "conduct_research",
             }
+
+            # Only update allocation if LLM set it (don't overwrite user-specified)
+            if current_allocation and not state.get("researcher_allocation"):
+                result["researcher_allocation"] = current_allocation
+
+            return result
 
         elif action == "refine_draft":
             new_draft = DraftReport(

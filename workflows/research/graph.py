@@ -39,6 +39,7 @@ from workflows.research.state import (
     LanguageConfig,
     TranslationConfig,
     calculate_completeness,
+    parse_allocation,
 )
 from workflows.research.config.languages import get_language_config, LANGUAGE_NAMES
 from workflows.research.nodes.clarify_intent import clarify_intent
@@ -319,6 +320,8 @@ async def deep_research(
     language: str = None,
     translate_to: str = None,
     preserve_quotes: bool = True,
+    # Researcher allocation
+    researcher_allocation: str = None,
 ) -> DeepResearchState:
     """
     Run deep research on a topic.
@@ -341,6 +344,10 @@ async def deep_research(
                      Useful when researching in non-English but need English output.
         preserve_quotes: Keep direct quotes in original language when translating.
                         Default: True
+        researcher_allocation: Researcher allocation as 3-digit string (web, academic, book).
+                              Examples: "111" (1 each, default), "210" (2 web, 1 academic),
+                              "300" (3 web only). Total must not exceed 3.
+                              If None, supervisor LLM decides based on topic.
 
     Returns:
         DeepResearchState with:
@@ -382,6 +389,11 @@ async def deep_research(
             preserve_citations=True,
         )
 
+    # Parse researcher allocation if provided
+    parsed_allocation = None
+    if researcher_allocation:
+        parsed_allocation = parse_allocation(researcher_allocation)
+
     initial_state: DeepResearchState = {
         "input": {
             "query": query,
@@ -402,7 +414,7 @@ async def deep_research(
         "pending_questions": [],
         "active_researchers": 0,
         "research_findings": [],
-        "researcher_allocation": None,  # Default: 1 web + 1 academic + 1 book
+        "researcher_allocation": parsed_allocation,  # User-specified or None (supervisor decides)
         "supervisor_messages": [],
         "diffusion": DiffusionState(
             iteration=0,

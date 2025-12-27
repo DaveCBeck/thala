@@ -363,6 +363,7 @@ async def run_research(
     language: str = None,
     translate_to: str = None,
     preserve_quotes: bool = True,
+    researcher_allocation: str = None,
 ) -> dict:
     """Run the research workflow on a topic.
 
@@ -372,6 +373,7 @@ async def run_research(
         language: Single language mode (ISO 639-1 code, e.g., "es", "zh")
         translate_to: Translate final report to this language
         preserve_quotes: Keep direct quotes in original language when translating
+        researcher_allocation: Allocation as 3-digit string (web, academic, book)
     """
     from workflows.research import deep_research
 
@@ -381,6 +383,10 @@ async def run_research(
         logger.info(f"Language: {language}")
     if translate_to:
         logger.info(f"Translate to: {translate_to}")
+    if researcher_allocation:
+        logger.info(f"Researcher allocation: {researcher_allocation}")
+    else:
+        logger.info("Researcher allocation: LLM-decided")
     logger.info(f"LangSmith tracing: {os.environ.get('LANGSMITH_TRACING', 'false')}")
 
     result = await deep_research(
@@ -389,6 +395,7 @@ async def run_research(
         language=language,
         translate_to=translate_to,
         preserve_quotes=preserve_quotes,
+        researcher_allocation=researcher_allocation,
     )
 
     return result
@@ -449,6 +456,20 @@ Examples:
         help="Translate quotes along with the report"
     )
 
+    # Researcher allocation options
+    alloc_group = parser.add_argument_group("Researcher Allocation")
+    alloc_group.add_argument(
+        "--allocation", "-a",
+        type=str,
+        default=None,
+        help=(
+            "Researcher allocation as 3-digit string (web, academic, book). "
+            "Examples: '111' (1 each, default), '210' (2 web, 1 academic), "
+            "'300' (3 web only). Total must not exceed 3. "
+            "If not specified, LLM supervisor decides based on topic."
+        )
+    )
+
     return parser.parse_args()
 
 
@@ -468,6 +489,10 @@ async def main():
         print(f"Language: {args.language}")
     if args.translate_to:
         print(f"Translate To: {args.translate_to}")
+    if args.allocation:
+        print(f"Allocation: {args.allocation} (web={args.allocation[0]}, academic={args.allocation[1]}, book={args.allocation[2]})")
+    else:
+        print("Allocation: LLM-decided (based on topic)")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
     print(f"\nStarting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
@@ -479,6 +504,7 @@ async def main():
             language=args.language,
             translate_to=args.translate_to,
             preserve_quotes=args.preserve_quotes,
+            researcher_allocation=args.allocation,
         )
 
         # Print detailed result summary

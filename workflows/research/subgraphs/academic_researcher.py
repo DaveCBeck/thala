@@ -32,7 +32,7 @@ from workflows.research.prompts import (
 )
 from workflows.research.prompts.translator import get_translated_prompt
 from workflows.research.subgraphs.researcher_base import (
-    generate_queries,
+    create_generate_queries,
     scrape_pages as base_scrape_pages,
 )
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
@@ -270,7 +270,8 @@ def create_academic_researcher_subgraph() -> StateGraph:
     """
     builder = StateGraph(ResearcherState)
 
-    builder.add_node("generate_queries", generate_queries)
+    # Use academic-optimized query generation for OpenAlex
+    builder.add_node("generate_queries", create_generate_queries("academic"))
     builder.add_node("execute_searches", execute_searches)
     builder.add_node("scrape_pages", scrape_pages)
     builder.add_node("compress_findings", compress_findings)

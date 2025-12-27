@@ -86,7 +86,7 @@ generate_queries → execute_searches → scrape_pages (1) → compress_findings
 
 ### Parallel Execution
 - **Specialized researchers**: 3 concurrent researcher types via Send() (web, academic, book)
-- **Default allocation**: 1 web + 1 academic + 1 book per iteration (configurable)
+- **Smart allocation**: User-specified (e.g., "300") or LLM-decided based on topic type
 - **Parallel scraping**: Top results scraped concurrently with TTL cache (1hr) to avoid redundant fetches
 - **Finding aggregation**: Results merged via Annotated[list, add] reducer
 
@@ -148,6 +148,18 @@ result = await deep_research(
     query="impacto de IA en empleos",
     language="es",
     translate_to="en",
+)
+
+# Override researcher allocation (3-digit: web, academic, book)
+result = await deep_research(
+    query="latest AI coding assistants",
+    researcher_allocation="300",  # All web researchers
+)
+
+# LLM-decided allocation (default)
+result = await deep_research(
+    query="postcolonial literary theory",
+    # researcher_allocation=None → LLM decides (e.g., 0 web, 2 academic, 1 book)
 )
 
 print(result["final_report"])
