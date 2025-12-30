@@ -12,8 +12,14 @@ Flow:
           -> clustering_phase -> synthesis_phase -> END
 """
 
+# Configure LangSmith tracing before other imports
+from core.config import configure_langsmith
+
+configure_langsmith()
+
 import asyncio
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Optional
 
@@ -97,7 +103,7 @@ async def discovery_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
             topic=topic,
             research_questions=research_questions,
             quality_settings=quality_settings,
-            existing_corpus=paper_corpus,
+            existing_dois=set(paper_corpus.keys()),
         )
 
         citation_papers = citation_result.get("discovered_papers", [])
@@ -191,8 +197,11 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
 
     Uses document_processing workflow for PDF handling and summary extraction.
     """
+    input_data = state["input"]
     paper_corpus = state.get("paper_corpus", {})
     quality_settings = state["quality_settings"]
+
+    topic = input_data["topic"]
 
     logger.info(f"Starting processing phase for {len(paper_corpus)} papers")
 
@@ -209,7 +218,8 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
 
     processing_result = await run_paper_processing(
         papers=papers_to_process,
-        use_batch_api=quality_settings.get("use_batch_api", True),
+        quality_settings=quality_settings,
+        topic=topic,
     )
 
     paper_summaries = processing_result.get("paper_summaries", {})
@@ -498,11 +508,13 @@ async def academic_lit_review(
         completed_at=None,
         current_phase="discovery",
         current_status="Starting literature review",
+        langsmith_run_id=str(uuid.uuid4()),
         errors=[],
     )
 
     logger.info(f"Starting academic literature review: {topic}")
     logger.info(f"Quality: {quality}, Max papers: {quality_settings['max_papers']}")
+    logger.info(f"LangSmith run ID: {initial_state['langsmith_run_id']}")
 
     try:
         result = await academic_lit_review_graph.ainvoke(initial_state)
@@ -521,6 +533,7 @@ async def academic_lit_review(
             "quality_metrics": result.get("section_drafts", {}).get("quality_metrics"),
             "started_at": initial_state["started_at"],
             "completed_at": result.get("completed_at"),
+            "langsmith_run_id": initial_state["langsmith_run_id"],
             "errors": result.get("errors", []),
         }
 
@@ -532,5 +545,6 @@ async def academic_lit_review(
             "paper_summaries": {},
             "clusters": [],
             "references": [],
+            "langsmith_run_id": initial_state["langsmith_run_id"],
             "errors": [{"phase": "unknown", "error": str(e)}],
         }

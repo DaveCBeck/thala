@@ -227,27 +227,59 @@ Provide a deep analysis of this research theme."""
 def prepare_document_for_clustering(summary: PaperSummary) -> str:
     """Format a paper summary for BERTopic clustering.
 
-    Creates a text representation combining title, abstract, key findings,
-    and themes for embedding-based clustering.
+    Creates a text representation that emphasizes discriminative features
+    to help differentiate papers within a focused research domain.
+
+    Strategy:
+    - De-emphasize common domain terms (these dominate embeddings)
+    - Emphasize unique aspects: methodology, application domain, specific findings
+    - Include structured metadata for better differentiation
     """
-    parts = [
-        summary.get("title", "Untitled"),
-    ]
+    parts = []
 
-    if summary.get("short_summary"):
-        parts.append(summary["short_summary"])
+    # Title (but avoid it dominating - it's often very similar across papers)
+    title = summary.get("title", "Untitled")
+    parts.append(title)
 
-    key_findings = summary.get("key_findings", [])
-    if key_findings:
-        parts.append("Key findings: " + "; ".join(key_findings[:5]))
+    # Application domain / venue context (often discriminative)
+    venue = summary.get("venue")
+    if venue:
+        parts.append(f"Published in: {venue}")
 
-    themes = summary.get("themes", [])
-    if themes:
-        parts.append("Themes: " + ", ".join(themes[:10]))
-
+    # Methodology is often highly discriminative
     methodology = summary.get("methodology")
     if methodology:
+        # Emphasize methodology by putting it early
         parts.append(f"Methodology: {methodology}")
+
+    # Key findings - these are unique to each paper
+    key_findings = summary.get("key_findings", [])
+    if key_findings:
+        # Use all findings for better discrimination
+        parts.append("Key findings: " + "; ".join(key_findings))
+
+    # Limitations and future work - often unique and discriminative
+    limitations = summary.get("limitations", [])
+    if limitations:
+        parts.append("Limitations: " + "; ".join(limitations[:3]))
+
+    future_work = summary.get("future_work", [])
+    if future_work:
+        parts.append("Future directions: " + "; ".join(future_work[:3]))
+
+    # Themes - but only the more specific ones (skip first few generic ones)
+    themes = summary.get("themes", [])
+    if themes:
+        # Skip potentially generic themes at the start, use later ones
+        specific_themes = themes[2:] if len(themes) > 4 else themes
+        if specific_themes:
+            parts.append("Specific topics: " + ", ".join(specific_themes[:8]))
+
+    # Short summary last (it's often dominated by generic domain language)
+    if summary.get("short_summary"):
+        # Truncate to reduce dominance of generic abstract language
+        short_summary = summary["short_summary"][:300]
+        parts.append(short_summary)
 
     return "\n".join(parts)
 
@@ -329,10 +361,20 @@ async def run_bertopic_clustering_node(state: ClusteringState) -> dict[str, Any]
 
     try:
         from bertopic import BERTopic
+        from sklearn.feature_extraction.text import CountVectorizer
 
-        # Configure BERTopic
+        # Configure CountVectorizer with stop word removal and minimum document frequency
+        # This prevents common words like "the", "and" from dominating topic representations
+        vectorizer_model = CountVectorizer(
+            stop_words="english",
+            min_df=2,  # Word must appear in at least 2 documents
+            ngram_range=(1, 2),  # Include bigrams for better topic representation
+        )
+
+        # Configure BERTopic with improved settings for academic corpora
         topic_model = BERTopic(
             embedding_model="all-MiniLM-L6-v2",
+            vectorizer_model=vectorizer_model,
             min_topic_size=MIN_CLUSTER_SIZE,
             nr_topics="auto",  # Let it determine optimal number
             calculate_probabilities=True,
@@ -382,10 +424,16 @@ async def run_bertopic_clustering_node(state: ClusteringState) -> dict[str, Any]
         if outlier_dois:
             logger.info(f"BERTopic: {len(outlier_dois)} papers not assigned to clusters")
 
+        # Log detailed cluster information for diagnostics
         logger.info(
             f"BERTopic clustering complete: {len(clusters)} clusters "
             f"from {len(document_texts)} documents"
         )
+        for c in clusters[:5]:  # Log first 5 clusters for diagnostics
+            logger.info(
+                f"  Cluster {c['cluster_id']}: {len(c['paper_dois'])} papers, "
+                f"topics: {c['topic_words'][:5]}"
+            )
 
         return {
             "bertopic_clusters": clusters,
@@ -485,10 +533,15 @@ async def run_llm_clustering_node(state: ClusteringState) -> dict[str, Any]:
             reasoning=result.get("reasoning", ""),
         )
 
+        # Log detailed theme information for diagnostics
         logger.info(
             f"LLM clustering complete: {len(themes)} themes "
             f"from {len(paper_summaries)} papers"
         )
+        for t in themes[:5]:  # Log first 5 themes for diagnostics
+            logger.info(
+                f"  Theme '{t['name']}': {len(t['paper_dois'])} papers"
+            )
 
         return {
             "llm_topic_schema": llm_schema,
@@ -511,14 +564,58 @@ async def run_llm_clustering_node(state: ClusteringState) -> dict[str, Any]:
         }
 
 
+def _evaluate_bertopic_quality(
+    bertopic_clusters: list[BERTopicCluster],
+    total_papers: int,
+) -> tuple[bool, str]:
+    """Evaluate quality of BERTopic clustering results.
+
+    Returns:
+        (is_good_quality, reason) tuple
+    """
+    if not bertopic_clusters:
+        return False, "No clusters produced"
+
+    # Check 1: Too few clusters for the corpus size
+    # For 50+ papers, we expect at least 4-5 clusters
+    expected_min_clusters = max(3, total_papers // 15)
+    if len(bertopic_clusters) < expected_min_clusters:
+        return False, f"Too few clusters ({len(bertopic_clusters)}) for {total_papers} papers"
+
+    # Check 2: Cluster imbalance - one cluster dominates
+    cluster_sizes = [len(c["paper_dois"]) for c in bertopic_clusters]
+    if cluster_sizes:
+        max_size = max(cluster_sizes)
+        if max_size > total_papers * 0.6:  # One cluster has >60% of papers
+            return False, f"Cluster imbalance: largest cluster has {max_size}/{total_papers} papers"
+
+    # Check 3: Topic words quality - check for stop words or overly generic terms
+    # Common stop words and domain-generic terms that indicate poor clustering
+    bad_topic_words = {
+        "the", "and", "to", "of", "in", "for", "a", "is", "that", "with",
+        "on", "are", "be", "this", "an", "as", "it", "by", "from", "or",
+        "using", "based", "can", "we", "our", "their", "these", "which",
+    }
+
+    for cluster in bertopic_clusters:
+        topic_words = cluster.get("topic_words", [])[:5]  # Check top 5 words
+        bad_count = sum(1 for w in topic_words if w.lower() in bad_topic_words)
+        if bad_count >= 3:  # More than half are bad
+            return False, f"Poor topic words in cluster {cluster['cluster_id']}: {topic_words}"
+
+    return True, "BERTopic quality acceptable"
+
+
 async def synthesize_clusters_node(state: ClusteringState) -> dict[str, Any]:
     """Use Claude Opus to synthesize BERTopic and LLM clustering results.
 
     Opus reviews both approaches and decides on final clusters.
+    Prefers LLM clustering when BERTopic produces poor results.
     """
     bertopic_clusters = state.get("bertopic_clusters", [])
     llm_schema = state.get("llm_topic_schema")
     paper_summaries = state.get("paper_summaries", {})
+    total_papers = len(paper_summaries)
 
     # Handle case where only one clustering succeeded
     if not bertopic_clusters and not llm_schema:
@@ -528,15 +625,39 @@ async def synthesize_clusters_node(state: ClusteringState) -> dict[str, Any]:
             "cluster_labels": {},
         }
 
+    # Evaluate BERTopic quality
+    bertopic_good, bertopic_reason = _evaluate_bertopic_quality(
+        bertopic_clusters, total_papers
+    )
+
+    if not bertopic_good:
+        logger.warning(f"BERTopic quality issue: {bertopic_reason}")
+
     if not bertopic_clusters:
         # Use LLM clusters directly
         logger.info("Using LLM clusters only (BERTopic failed)")
         return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
 
     if not llm_schema:
-        # Use BERTopic clusters directly
-        logger.info("Using BERTopic clusters only (LLM failed)")
-        return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+        # BERTopic only available
+        if bertopic_good:
+            logger.info("Using BERTopic clusters only (LLM failed)")
+            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+        else:
+            # BERTopic is poor quality and LLM failed - return what we have with warning
+            logger.warning(
+                f"Using poor-quality BERTopic clusters (LLM failed). "
+                f"Reason: {bertopic_reason}"
+            )
+            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+
+    # Both succeeded - check if we should skip synthesis and use LLM directly
+    if not bertopic_good:
+        logger.info(
+            f"Preferring LLM clusters over poor BERTopic results. "
+            f"BERTopic issue: {bertopic_reason}"
+        )
+        return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
 
     # Both succeeded - use Opus to synthesize
     try:

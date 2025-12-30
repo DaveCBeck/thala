@@ -340,4 +340,5 @@ class AcademicLitReviewState(TypedDict):
     completed_at: Optional[datetime]
     current_phase: str  # "discovery", "diffusion", "processing", etc.
     current_status: str  # Human-readable status message
+    langsmith_run_id: Optional[str]  # LangSmith run ID for tracing
     errors: Annotated[list[dict], add]

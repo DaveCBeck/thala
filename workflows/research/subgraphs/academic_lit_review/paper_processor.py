@@ -378,6 +378,107 @@ Extract structured information from this paper."""
         )
 
 
+METADATA_SUMMARY_EXTRACTION_SYSTEM = """Analyze this academic paper's metadata and abstract to extract structured information.
+
+Extract the following in JSON format:
+{
+  "key_findings": ["2-3 inferred findings based on the abstract"],
+  "methodology": "Inferred methodology from the abstract (1-2 sentences)",
+  "limitations": [],
+  "future_work": [],
+  "themes": ["3-5 topic tags based on title and abstract"]
+}
+
+Note: This is based only on metadata/abstract, not full text. Be conservative and extract only what is clearly stated."""
+
+
+async def extract_summary_from_metadata(
+    paper: PaperMetadata,
+) -> PaperSummary:
+    """Extract summary from paper metadata when full text is unavailable.
+
+    Uses title, abstract, and other metadata to generate a summary.
+    This is a fallback when document processing fails.
+
+    Args:
+        paper: Paper metadata including abstract
+
+    Returns:
+        PaperSummary with fields populated from metadata
+    """
+    doi = paper.get("doi", "unknown")
+    title = paper.get("title", "Unknown Title")
+    abstract = paper.get("abstract", "")
+
+    # Format authors
+    authors = [a.get("name", "") for a in paper.get("authors", [])]
+    authors_str = ", ".join(authors[:5])
+    if len(authors) > 5:
+        authors_str += " et al."
+
+    # Create prompt from metadata
+    user_prompt = f"""Paper: {title} ({paper.get('year', 'Unknown')})
+Authors: {authors_str}
+Venue: {paper.get('venue', 'Unknown')}
+Citations: {paper.get('cited_by_count', 0)}
+
+Abstract:
+{abstract if abstract else 'No abstract available'}
+
+Extract structured information based on this metadata."""
+
+    try:
+        extracted = await extract_json_cached(
+            text=user_prompt,
+            system_instructions=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+            tier=ModelTier.HAIKU,
+        )
+
+        # Use abstract as short summary if available
+        short_summary = abstract[:500] if abstract else f"Study on {title}"
+
+        return PaperSummary(
+            doi=doi,
+            title=title,
+            authors=authors,
+            year=paper.get("year", 0),
+            venue=paper.get("venue"),
+            short_summary=short_summary,
+            es_record_id=None,  # No ES record for metadata-only
+            zotero_key=None,  # No Zotero item for metadata-only
+            key_findings=extracted.get("key_findings", []),
+            methodology=extracted.get("methodology", "Not available from abstract"),
+            limitations=extracted.get("limitations", []),
+            future_work=extracted.get("future_work", []),
+            themes=extracted.get("themes", []),
+            claims=[],
+            relevance_score=paper.get("relevance_score", 0.6),
+            processing_status="metadata_only",
+        )
+
+    except Exception as e:
+        logger.warning(f"Failed to extract metadata summary for {doi}: {e}")
+        # Return minimal summary
+        return PaperSummary(
+            doi=doi,
+            title=title,
+            authors=authors,
+            year=paper.get("year", 0),
+            venue=paper.get("venue"),
+            short_summary=abstract[:500] if abstract else title,
+            es_record_id=None,
+            zotero_key=None,
+            key_findings=[],
+            methodology="Not available",
+            limitations=[],
+            future_work=[],
+            themes=[],
+            claims=[],
+            relevance_score=paper.get("relevance_score", 0.5),
+            processing_status="metadata_minimal",
+        )
+
+
 async def extract_all_summaries(
     processing_results: dict[str, dict],
     papers_by_doi: dict[str, PaperMetadata],
@@ -500,25 +601,70 @@ async def process_documents_node(state: PaperProcessingState) -> dict[str, Any]:
 
 
 async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
-    """Extract structured summaries from processed papers."""
+    """Extract structured summaries from processed papers.
+
+    Falls back to metadata-based extraction when document processing fails.
+    """
     processing_results = state.get("processing_results", {})
+    processing_failed = state.get("processing_failed", [])
     papers = state.get("papers_to_process", [])
 
     # Build DOI -> PaperMetadata mapping
     papers_by_doi = {p.get("doi"): p for p in papers}
 
-    if not processing_results:
-        logger.warning("No processing results to extract summaries from")
-        return {
-            "paper_summaries": {},
-            "elasticsearch_ids": {},
-            "zotero_keys": {},
-        }
+    summaries = {}
+    es_ids = {}
+    zotero_keys = {}
 
-    summaries, es_ids, zotero_keys = await extract_all_summaries(
-        processing_results=processing_results,
-        papers_by_doi=papers_by_doi,
-    )
+    # Extract from successfully processed documents
+    if processing_results:
+        full_text_summaries, full_text_es_ids, full_text_zotero_keys = await extract_all_summaries(
+            processing_results=processing_results,
+            papers_by_doi=papers_by_doi,
+        )
+        summaries.update(full_text_summaries)
+        es_ids.update(full_text_es_ids)
+        zotero_keys.update(full_text_zotero_keys)
+
+    # Fallback: Extract from metadata for papers without full-text processing
+    papers_needing_fallback = []
+    for paper in papers:
+        doi = paper.get("doi")
+        if doi and doi not in summaries:
+            papers_needing_fallback.append(paper)
+
+    if papers_needing_fallback:
+        logger.warning(
+            f"Document processing failed for {len(papers_needing_fallback)} papers - "
+            f"falling back to metadata-only extraction. "
+            f"Full-text processing is preferred for higher quality summaries."
+        )
+
+        # Process in batches to avoid overwhelming the LLM
+        semaphore = asyncio.Semaphore(10)
+
+        async def extract_with_limit(paper: PaperMetadata) -> tuple[str, PaperSummary]:
+            async with semaphore:
+                summary = await extract_summary_from_metadata(paper)
+                return (paper.get("doi"), summary)
+
+        tasks = [extract_with_limit(p) for p in papers_needing_fallback]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Metadata extraction failed: {result}")
+                continue
+            doi, summary = result
+            if doi:
+                summaries[doi] = summary
+                # Generate simple zotero key for metadata-only papers
+                zotero_keys[doi] = doi.replace("/", "_").replace(".", "")[:20].upper()
+
+        logger.info(f"Metadata fallback extracted {len(summaries) - len(processing_results)} additional summaries")
+
+    if not summaries:
+        logger.warning("No summaries extracted (no processing results and metadata fallback failed)")
 
     return {
         "paper_summaries": summaries,
