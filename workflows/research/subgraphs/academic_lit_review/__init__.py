@@ -67,6 +67,22 @@ from workflows.research.subgraphs.academic_lit_review.paper_processor import (
     paper_processing_subgraph,
     run_paper_processing,
 )
+from workflows.research.subgraphs.academic_lit_review.clustering import (
+    ClusteringState,
+    ClusterAnalysis,
+    clustering_subgraph,
+    run_clustering,
+)
+from workflows.research.subgraphs.academic_lit_review.synthesis import (
+    SynthesisState,
+    QualityMetrics,
+    synthesis_subgraph,
+    run_synthesis,
+)
+from workflows.research.subgraphs.academic_lit_review.graph import (
+    academic_lit_review_graph,
+    academic_lit_review,
+)
 
 __all__ = [
     # Citation graph
@@ -120,4 +136,17 @@ __all__ = [
     "PaperProcessingState",
     "paper_processing_subgraph",
     "run_paper_processing",
+    # Clustering subgraph
+    "ClusteringState",
+    "ClusterAnalysis",
+    "clustering_subgraph",
+    "run_clustering",
+    # Synthesis subgraph
+    "SynthesisState",
+    "QualityMetrics",
+    "synthesis_subgraph",
+    "run_synthesis",
+    # Main workflow
+    "academic_lit_review_graph",
+    "academic_lit_review",
 ]
