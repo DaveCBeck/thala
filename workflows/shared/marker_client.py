@@ -30,7 +30,7 @@ class MarkerClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        timeout: float = 600.0,
+        timeout: float = 1200.0,
         poll_interval: float = 2.0,
     ):
         """
@@ -100,7 +100,7 @@ class MarkerClient:
         return data["job_id"]
 
     async def poll_until_complete(
-        self, job_id: str, max_wait: float = 600.0
+        self, job_id: str, max_wait: float = 1200.0
     ) -> MarkerJobResult:
         """
         Poll job status until complete or timeout.
