@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # retrieval requests since document processing (LLM calls) takes significant time.
 # Low concurrency (2) prevents overwhelming external retrieval sources.
 MAX_PAPER_PIPELINE_CONCURRENT = 2
-ACQUISITION_TIMEOUT = 120.0
+ACQUISITION_TIMEOUT = 300.0
 RETRY_DELAY = 5.0
 ACQUISITION_DELAY = 2.0  # Delay between acquisition requests to be polite to sources
 
