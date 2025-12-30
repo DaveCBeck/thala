@@ -34,10 +34,13 @@ from workflows.shared.llm_utils import ModelTier, get_llm, extract_json_cached
 logger = logging.getLogger(__name__)
 
 # Constants
-MAX_ACQUISITION_CONCURRENT = 5
-MAX_PROCESSING_CONCURRENT = 3
+# Each paper goes through acquire → process as a unit, which naturally rate-limits
+# retrieval requests since document processing (LLM calls) takes significant time.
+# Low concurrency (2) prevents overwhelming external retrieval sources.
+MAX_PAPER_PIPELINE_CONCURRENT = 2
 ACQUISITION_TIMEOUT = 120.0
 RETRY_DELAY = 5.0
+ACQUISITION_DELAY = 2.0  # Delay between acquisition requests to be polite to sources
 
 # Paper summary extraction prompt
 PAPER_SUMMARY_EXTRACTION_SYSTEM = """Analyze this academic paper and extract structured information.
@@ -139,60 +142,135 @@ async def acquire_full_text(
         return None
 
 
-async def acquire_all_papers(
-    papers: list[PaperMetadata],
-    max_concurrent: int = MAX_ACQUISITION_CONCURRENT,
-) -> tuple[dict[str, str], list[str]]:
-    """Acquire full text for all papers in parallel.
+async def acquire_and_process_single_paper(
+    paper: PaperMetadata,
+    client: RetrieveAcademicClient,
+    output_dir: Path,
+    paper_index: int,
+    total_papers: int,
+) -> dict[str, Any]:
+    """Acquire full text and process a single paper as one unit.
+
+    This combines acquisition and processing to naturally rate-limit
+    retrieval requests (processing takes time, giving the source a break).
 
     Args:
-        papers: Papers to acquire
-        max_concurrent: Maximum concurrent acquisitions
+        paper: Paper metadata
+        client: Retrieve academic client
+        output_dir: Directory to save downloaded files
+        paper_index: Current paper number (for logging)
+        total_papers: Total papers being processed
 
     Returns:
-        Tuple of (acquired_dict, failed_dois)
-        acquired_dict: DOI -> local file path
-        failed_dois: List of DOIs that failed
+        Dict with acquisition and processing results
+    """
+    doi = paper.get("doi")
+    title = paper.get("title", "Unknown")[:50]
+
+    logger.info(f"[{paper_index}/{total_papers}] Processing: {title}...")
+
+    result = {
+        "doi": doi,
+        "acquired": False,
+        "local_path": None,
+        "processing_result": None,
+        "processing_success": False,
+    }
+
+    # Step 1: Acquire full text
+    local_path = await acquire_full_text(paper, client, output_dir)
+
+    if not local_path:
+        logger.warning(f"[{paper_index}/{total_papers}] Acquisition failed for {doi}")
+        return result
+
+    result["acquired"] = True
+    result["local_path"] = local_path
+
+    # Step 2: Process document (this takes time, naturally rate-limiting)
+    processing_result = await process_single_document(doi, local_path, paper)
+    result["processing_result"] = processing_result
+    result["processing_success"] = processing_result.get("success", False)
+
+    if result["processing_success"]:
+        logger.info(f"[{paper_index}/{total_papers}] Completed: {title}")
+    else:
+        logger.warning(f"[{paper_index}/{total_papers}] Processing failed for {doi}")
+
+    return result
+
+
+async def run_paper_pipeline(
+    papers: list[PaperMetadata],
+    max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
+) -> tuple[dict[str, str], dict[str, dict], list[str], list[str]]:
+    """Run acquire→process pipeline for all papers with controlled concurrency.
+
+    Uses a unified pipeline where each paper goes through acquisition and
+    processing as one unit. This naturally rate-limits retrieval because
+    document processing takes significant time.
+
+    Args:
+        papers: Papers to process
+        max_concurrent: Maximum concurrent paper pipelines (default: 2)
+
+    Returns:
+        Tuple of (acquired, processing_results, acquisition_failed, processing_failed)
     """
     # Check if retrieve-academic service is available
     async with RetrieveAcademicClient() as client:
         if not await client.health_check():
             logger.warning("Retrieve-academic service unavailable, skipping full-text acquisition")
-            return {}, [p.get("doi") for p in papers]
+            return {}, {}, [p.get("doi") for p in papers], []
 
         # Create output directory
         output_dir = Path("/tmp/thala_papers")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        semaphore = asyncio.Semaphore(max_concurrent)
         acquired = {}
-        failed = []
+        processing_results = {}
+        acquisition_failed = []
+        processing_failed = []
 
-        async def acquire_with_limit(paper: PaperMetadata) -> tuple[str, Optional[str]]:
+        semaphore = asyncio.Semaphore(max_concurrent)
+        total_papers = len(papers)
+
+        async def process_with_limit(paper: PaperMetadata, index: int) -> dict:
             async with semaphore:
-                doi = paper.get("doi")
-                result = await acquire_full_text(paper, client, output_dir)
-                return doi, result
+                # Add small delay between acquisitions to avoid rate limiting
+                if index > 0:
+                    await asyncio.sleep(ACQUISITION_DELAY)
+                return await acquire_and_process_single_paper(
+                    paper, client, output_dir, index + 1, total_papers
+                )
 
-        # Execute acquisitions in parallel
-        tasks = [acquire_with_limit(paper) for paper in papers]
+        # Process papers with limited concurrency
+        tasks = [process_with_limit(paper, i) for i, paper in enumerate(papers)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Acquisition task failed: {result}")
+                logger.error(f"Paper pipeline task failed: {result}")
                 continue
 
-            doi, local_path = result
-            if local_path:
-                acquired[doi] = local_path
+            doi = result.get("doi")
+            if result.get("acquired"):
+                acquired[doi] = result.get("local_path")
+
+                if result.get("processing_success"):
+                    processing_results[doi] = result.get("processing_result")
+                else:
+                    processing_failed.append(doi)
             else:
-                failed.append(doi)
+                acquisition_failed.append(doi)
 
         logger.info(
-            f"Full-text acquisition: {len(acquired)} acquired, {len(failed)} failed"
+            f"Paper pipeline complete: {len(acquired)} acquired, "
+            f"{len(processing_results)} processed, "
+            f"{len(acquisition_failed)} acquisition failed, "
+            f"{len(processing_failed)} processing failed"
         )
-        return acquired, failed
+        return acquired, processing_results, acquisition_failed, processing_failed
 
 
 async def process_single_document(
@@ -244,52 +322,6 @@ async def process_single_document(
             "success": False,
             "errors": [{"node": "process_document", "error": str(e)}],
         }
-
-
-async def process_papers_batch(
-    acquired: dict[str, str],
-    papers_by_doi: dict[str, PaperMetadata],
-    max_concurrent: int = MAX_PROCESSING_CONCURRENT,
-) -> tuple[dict[str, dict], list[str]]:
-    """Process acquired papers through document_processing workflow.
-
-    Args:
-        acquired: DOI -> local file path mapping
-        papers_by_doi: DOI -> PaperMetadata mapping
-        max_concurrent: Maximum concurrent processing
-
-    Returns:
-        Tuple of (processing_results, failed_dois)
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-    results = {}
-    failed = []
-
-    async def process_with_limit(doi: str, local_path: str) -> dict:
-        async with semaphore:
-            paper = papers_by_doi[doi]
-            return await process_single_document(doi, local_path, paper)
-
-    # Process all papers
-    tasks = [process_with_limit(doi, path) for doi, path in acquired.items()]
-    processing_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    for result in processing_results:
-        if isinstance(result, Exception):
-            logger.error(f"Processing task failed: {result}")
-            continue
-
-        doi = result.get("doi")
-        if result.get("success"):
-            results[doi] = result
-        else:
-            failed.append(doi)
-            logger.warning(f"Document processing failed for {doi}: {result.get('errors')}")
-
-    logger.info(
-        f"Document processing: {len(results)} succeeded, {len(failed)} failed"
-    )
-    return results, failed
 
 
 async def extract_paper_summary(
@@ -545,58 +577,36 @@ async def extract_all_summaries(
 # =============================================================================
 
 
-async def acquire_papers_node(state: PaperProcessingState) -> dict[str, Any]:
-    """Acquire full text for all papers."""
+async def acquire_and_process_papers_node(state: PaperProcessingState) -> dict[str, Any]:
+    """Acquire and process all papers using unified pipeline.
+
+    This node combines acquisition and processing as one operation per paper,
+    which naturally rate-limits retrieval requests since processing takes time.
+    """
     papers = state.get("papers_to_process", [])
 
     if not papers:
-        logger.warning("No papers to acquire")
+        logger.warning("No papers to process")
         return {
             "acquired_papers": {},
             "acquisition_failed": [],
-        }
-
-    acquired, failed = await acquire_all_papers(papers)
-
-    return {
-        "acquired_papers": acquired,
-        "acquisition_failed": failed,
-    }
-
-
-async def process_documents_node(state: PaperProcessingState) -> dict[str, Any]:
-    """Process acquired documents through document_processing workflow."""
-    acquired = state.get("acquired_papers", {})
-    papers = state.get("papers_to_process", [])
-
-    # Build DOI -> PaperMetadata mapping
-    papers_by_doi = {p.get("doi"): p for p in papers}
-
-    if not acquired:
-        logger.warning("No acquired papers to process")
-        return {
             "processing_results": {},
             "processing_failed": [],
         }
 
-    # Use batch processing for large batches
-    quality_settings = state.get("quality_settings", {})
-    use_batch = quality_settings.get("use_batch_api", False) and len(acquired) >= 20
+    logger.info(f"Starting unified paper pipeline for {len(papers)} papers")
 
-    if use_batch:
-        logger.info(f"Using batch API for {len(acquired)} papers (50% cost savings)")
-        # TODO: Implement batch API mode via workflows/shared/batch_processor.py
-        # For now, fall back to concurrent processing
-        use_batch = False
-
-    results, failed = await process_papers_batch(
-        acquired=acquired,
-        papers_by_doi=papers_by_doi,
+    # Run unified acquire→process pipeline
+    acquired, processing_results, acquisition_failed, processing_failed = await run_paper_pipeline(
+        papers=papers,
+        max_concurrent=MAX_PAPER_PIPELINE_CONCURRENT,
     )
 
     return {
-        "processing_results": results,
-        "processing_failed": failed,
+        "acquired_papers": acquired,
+        "acquisition_failed": acquisition_failed,
+        "processing_results": processing_results,
+        "processing_failed": processing_failed,
     }
 
 
@@ -682,19 +692,21 @@ def create_paper_processing_subgraph() -> StateGraph:
     """Create the paper processing subgraph.
 
     Flow:
-        START -> acquire_papers -> process_documents -> extract_summaries -> END
+        START -> acquire_and_process -> extract_summaries -> END
+
+    The acquire_and_process node uses a unified pipeline where each paper
+    goes through acquisition and processing as one unit. This naturally
+    rate-limits retrieval requests since processing takes time.
     """
     builder = StateGraph(PaperProcessingState)
 
     # Add nodes
-    builder.add_node("acquire_papers", acquire_papers_node)
-    builder.add_node("process_documents", process_documents_node)
+    builder.add_node("acquire_and_process", acquire_and_process_papers_node)
     builder.add_node("extract_summaries", extract_summaries_node)
 
     # Add edges
-    builder.add_edge(START, "acquire_papers")
-    builder.add_edge("acquire_papers", "process_documents")
-    builder.add_edge("process_documents", "extract_summaries")
+    builder.add_edge(START, "acquire_and_process")
+    builder.add_edge("acquire_and_process", "extract_summaries")
     builder.add_edge("extract_summaries", END)
 
     return builder.compile()

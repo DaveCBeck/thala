@@ -21,6 +21,7 @@ from typing_extensions import TypedDict
 from langchain_tools.openalex import (
     get_forward_citations,
     get_backward_citations,
+    get_works_by_dois,
     OpenAlexWork,
 )
 from workflows.research.subgraphs.academic_lit_review.state import (
@@ -491,17 +492,49 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
         if p.get("doi")
     }
 
-    # Merge with original candidates that might have been filtered
-    for doi in cocitation_included:
-        if doi not in candidate_lookup and doi not in all_candidates_lookup:
-            # This shouldn't happen, but handle gracefully
-            logger.warning(f"Co-cited paper {doi} not found in candidates")
+    # Find co-cited papers not in candidates - these need DOI lookup fallback
+    missing_cocited_dois = [
+        doi for doi in cocitation_included
+        if doi not in candidate_lookup and doi not in all_candidates_lookup
+    ]
+
+    # Fallback: fetch missing co-cited papers by DOI from OpenAlex
+    fallback_papers = {}
+    if missing_cocited_dois:
+        logger.info(
+            f"Fetching {len(missing_cocited_dois)} co-cited papers by DOI fallback"
+        )
+        try:
+            fetched_works = await get_works_by_dois(missing_cocited_dois)
+            for work in fetched_works:
+                if work.doi:
+                    doi_clean = work.doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+                    paper = convert_to_paper_metadata(
+                        work.model_dump(),
+                        discovery_stage=diffusion["current_stage"],
+                        discovery_method="cocitation_fallback",
+                    )
+                    if paper:
+                        fallback_papers[doi_clean] = paper
+                        logger.debug(f"Recovered co-cited paper via DOI: {work.title[:50]}...")
+
+            # Log any still-missing papers
+            still_missing = set(missing_cocited_dois) - set(fallback_papers.keys())
+            if still_missing:
+                for doi in still_missing:
+                    logger.warning(f"Co-cited paper {doi} not found in OpenAlex")
+        except Exception as e:
+            logger.warning(f"Failed to fetch co-cited papers by DOI: {e}")
 
     # Add relevant papers to corpus
     new_corpus_papers = {}
     for doi in all_relevant_dois:
-        # Try to find in candidate lookup first, then all candidates
-        paper = candidate_lookup.get(doi) or all_candidates_lookup.get(doi)
+        # Try to find in candidate lookup first, then all candidates, then fallback
+        paper = (
+            candidate_lookup.get(doi)
+            or all_candidates_lookup.get(doi)
+            or fallback_papers.get(doi)
+        )
         if paper:
             new_corpus_papers[doi] = paper
 

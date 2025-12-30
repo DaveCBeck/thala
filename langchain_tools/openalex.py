@@ -568,3 +568,86 @@ async def resolve_doi_to_openalex_id(doi: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"resolve_doi_to_openalex_id failed for {doi_clean}: {e}")
         return None
+
+
+async def get_work_by_doi(doi: str) -> Optional[OpenAlexWork]:
+    """Fetch a work's full metadata by DOI.
+
+    Useful for looking up papers that were discovered through citation analysis
+    but weren't in the original search results.
+
+    Args:
+        doi: DOI string (with or without https://doi.org/ prefix)
+
+    Returns:
+        OpenAlexWork with full metadata, or None if not found
+    """
+    client = _get_openalex()
+
+    # Normalize DOI (remove https://doi.org/ prefix)
+    doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+
+    try:
+        work_url = f"/works/doi:{doi_clean}"
+        response = await client.get(work_url)
+        response.raise_for_status()
+        work_data = response.json()
+
+        parsed = _parse_work(work_data)
+        logger.debug(f"Fetched work by DOI {doi_clean}: {parsed.title[:50]}...")
+        return parsed
+
+    except Exception as e:
+        logger.debug(f"get_work_by_doi failed for {doi_clean}: {e}")
+        return None
+
+
+async def get_works_by_dois(dois: list[str]) -> list[OpenAlexWork]:
+    """Fetch multiple works by their DOIs in a single batch request.
+
+    Uses pipe-delimited DOI filter for efficiency.
+
+    Args:
+        dois: List of DOI strings
+
+    Returns:
+        List of OpenAlexWork objects for found papers
+    """
+    if not dois:
+        return []
+
+    client = _get_openalex()
+
+    # Normalize DOIs
+    dois_clean = [
+        d.replace("https://doi.org/", "").replace("http://doi.org/", "")
+        for d in dois
+    ]
+
+    try:
+        # Use pipe-delimited filter for batch lookup
+        filter_str = "|".join(f"https://doi.org/{d}" for d in dois_clean)
+        params = {
+            "filter": f"doi:{filter_str}",
+            "per_page": min(len(dois_clean), 50),
+        }
+
+        response = await client.get("/works", params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for work in data.get("results", []):
+            try:
+                parsed = _parse_work(work)
+                results.append(parsed)
+            except Exception as e:
+                logger.warning(f"Failed to parse work in batch: {e}")
+                continue
+
+        logger.debug(f"Batch fetched {len(results)}/{len(dois)} works by DOI")
+        return results
+
+    except Exception as e:
+        logger.error(f"get_works_by_dois failed: {e}")
+        return []

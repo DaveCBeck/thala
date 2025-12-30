@@ -16,6 +16,7 @@ import logging
 from typing import Any, Optional
 
 from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from workflows.research.subgraphs.academic_lit_review.state import (
@@ -34,6 +35,60 @@ from workflows.shared.llm_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Pydantic Models for Structured Output
+# =============================================================================
+
+
+class LLMThemeOutput(BaseModel):
+    """Pydantic model for a single theme from LLM clustering."""
+
+    name: str = Field(description="Clear, descriptive theme name suitable as a section heading")
+    description: str = Field(description="2-3 sentence description of the theme")
+    paper_dois: list[str] = Field(description="DOIs of papers belonging to this theme")
+    sub_themes: list[str] = Field(default_factory=list, description="Sub-themes if the cluster is broad")
+    relationships: list[str] = Field(default_factory=list, description="How this theme relates to other themes")
+
+
+class LLMTopicSchemaOutput(BaseModel):
+    """Pydantic model for LLM semantic clustering output."""
+
+    themes: list[LLMThemeOutput] = Field(description="List of identified themes")
+    reasoning: str = Field(description="Explanation of the clustering rationale")
+
+
+class ClusterAnalysisOutput(BaseModel):
+    """Pydantic model for deep analysis of a single cluster."""
+
+    narrative_summary: str = Field(description="2-3 paragraph summary of the theme")
+    timeline: list[str] = Field(default_factory=list, description="Key developments chronologically")
+    key_debates: list[str] = Field(default_factory=list, description="Main debates and positions")
+    methodologies: list[str] = Field(default_factory=list, description="Common methodological approaches")
+    outstanding_questions: list[str] = Field(default_factory=list, description="Open research questions")
+
+
+class ThematicClusterOutput(BaseModel):
+    """Pydantic model for a synthesized thematic cluster."""
+
+    cluster_id: int = Field(description="Unique cluster ID")
+    label: str = Field(description="Final theme name")
+    description: str = Field(description="What this cluster covers")
+    paper_dois: list[str] = Field(description="DOIs of papers in this cluster")
+    key_papers: list[str] = Field(default_factory=list, description="Most central papers")
+    sub_themes: list[str] = Field(default_factory=list, description="Finer-grained topics")
+    conflicts: list[str] = Field(default_factory=list, description="Contradictory findings")
+    gaps: list[str] = Field(default_factory=list, description="Under-researched areas")
+    source: str = Field(default="merged", description="Origin: bertopic, llm, or merged")
+
+
+class OpusSynthesisOutput(BaseModel):
+    """Pydantic model for Opus cluster synthesis output."""
+
+    reasoning: str = Field(description="Explanation of synthesis decisions")
+    final_clusters: list[ThematicClusterOutput] = Field(description="Synthesized thematic clusters")
+
 
 # Constants
 MIN_CLUSTER_SIZE = 3  # Minimum papers per cluster
@@ -498,39 +553,31 @@ async def run_llm_clustering_node(state: ClusteringState) -> dict[str, Any]:
             max_tokens=16000,
         )
 
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=LLM_CLUSTERING_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            cache_ttl="1h",  # Use extended TTL for large prompts
-        )
+        # Use structured output to avoid JSON parsing issues
+        structured_llm = llm.with_structured_output(LLMTopicSchemaOutput)
+        messages = [
+            {"role": "system", "content": LLM_CLUSTERING_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
 
-        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
-        content = content.strip()
+        result: LLMTopicSchemaOutput = await structured_llm.ainvoke(messages)
 
-        # Parse JSON response
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
-
-        result = json.loads(content)
-
-        # Convert to LLMTopicSchema
+        # Convert Pydantic model to TypedDict for state compatibility
         themes: list[LLMTheme] = []
-        for theme_data in result.get("themes", []):
+        for theme in result.themes:
             themes.append(
                 LLMTheme(
-                    name=theme_data.get("name", "Unnamed Theme"),
-                    description=theme_data.get("description", ""),
-                    paper_dois=theme_data.get("paper_dois", []),
-                    sub_themes=theme_data.get("sub_themes", []),
-                    relationships=theme_data.get("relationships", []),
+                    name=theme.name,
+                    description=theme.description,
+                    paper_dois=theme.paper_dois,
+                    sub_themes=theme.sub_themes,
+                    relationships=theme.relationships,
                 )
             )
 
         llm_schema = LLMTopicSchema(
             themes=themes,
-            reasoning=result.get("reasoning", ""),
+            reasoning=result.reasoning,
         )
 
         # Log detailed theme information for diagnostics
@@ -548,13 +595,6 @@ async def run_llm_clustering_node(state: ClusteringState) -> dict[str, Any]:
             "llm_error": None,
         }
 
-    except json.JSONDecodeError as e:
-        error_msg = f"Failed to parse LLM clustering response: {e}"
-        logger.error(error_msg)
-        return {
-            "llm_topic_schema": None,
-            "llm_error": error_msg,
-        }
     except Exception as e:
         error_msg = f"LLM clustering failed: {str(e)}"
         logger.error(error_msg)
@@ -716,38 +756,30 @@ async def synthesize_clusters_node(state: ClusteringState) -> dict[str, Any]:
 
         llm = get_llm(tier=ModelTier.OPUS, max_tokens=16000)
 
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=OPUS_SYNTHESIS_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            cache_ttl="1h",
-        )
+        # Use structured output to avoid JSON parsing issues
+        structured_llm = llm.with_structured_output(OpusSynthesisOutput)
+        messages = [
+            {"role": "system", "content": OPUS_SYNTHESIS_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
 
-        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
-        content = content.strip()
+        result: OpusSynthesisOutput = await structured_llm.ainvoke(messages)
 
-        # Parse JSON response
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
-
-        result = json.loads(content)
-
-        # Convert to ThematicCluster list
+        # Convert Pydantic models to TypedDict for state compatibility
         final_clusters: list[ThematicCluster] = []
         cluster_labels: dict[str, int] = {}
 
-        for cluster_data in result.get("final_clusters", []):
+        for cluster_data in result.final_clusters:
             cluster = ThematicCluster(
-                cluster_id=cluster_data.get("cluster_id", len(final_clusters)),
-                label=cluster_data.get("label", "Unnamed"),
-                description=cluster_data.get("description", ""),
-                paper_dois=cluster_data.get("paper_dois", []),
-                key_papers=cluster_data.get("key_papers", []),
-                sub_themes=cluster_data.get("sub_themes", []),
-                conflicts=cluster_data.get("conflicts", []),
-                gaps=cluster_data.get("gaps", []),
-                source=cluster_data.get("source", "merged"),
+                cluster_id=cluster_data.cluster_id,
+                label=cluster_data.label,
+                description=cluster_data.description,
+                paper_dois=cluster_data.paper_dois,
+                key_papers=cluster_data.key_papers,
+                sub_themes=cluster_data.sub_themes,
+                conflicts=cluster_data.conflicts,
+                gaps=cluster_data.gaps,
+                source=cluster_data.source,
             )
             final_clusters.append(cluster)
 
@@ -757,7 +789,7 @@ async def synthesize_clusters_node(state: ClusteringState) -> dict[str, Any]:
 
         logger.info(
             f"Opus synthesis complete: {len(final_clusters)} final clusters. "
-            f"Reasoning: {result.get('reasoning', 'N/A')[:100]}..."
+            f"Reasoning: {result.reasoning[:100]}..."
         )
 
         return {
@@ -910,28 +942,22 @@ Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
         try:
             llm = get_llm(tier=ModelTier.SONNET, max_tokens=4096)
 
-            response = await invoke_with_cache(
-                llm,
-                system_prompt=CLUSTER_ANALYSIS_SYSTEM_PROMPT,
-                user_prompt=user_prompt,
-            )
+            # Use structured output to avoid JSON parsing issues
+            structured_llm = llm.with_structured_output(ClusterAnalysisOutput)
+            messages = [
+                {"role": "system", "content": CLUSTER_ANALYSIS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ]
 
-            content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
-            content = content.strip()
-
-            if content.startswith("```"):
-                lines = content.split("\n")
-                content = "\n".join(lines[1:-1])
-
-            result = json.loads(content)
+            result: ClusterAnalysisOutput = await structured_llm.ainvoke(messages)
 
             return ClusterAnalysis(
                 cluster_id=cluster["cluster_id"],
-                narrative_summary=result.get("narrative_summary", ""),
-                timeline=result.get("timeline", []),
-                key_debates=result.get("key_debates", []),
-                methodologies=result.get("methodologies", []),
-                outstanding_questions=result.get("outstanding_questions", []),
+                narrative_summary=result.narrative_summary,
+                timeline=result.timeline,
+                key_debates=result.key_debates,
+                methodologies=result.methodologies,
+                outstanding_questions=result.outstanding_questions,
             )
 
         except Exception as e:

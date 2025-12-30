@@ -49,11 +49,11 @@ check_vpn_config() {
     if [[ ! -f "$env_file" ]]; then
         return 1
     fi
-    # Check for VPN credentials
-    if ! grep -q "EXPRESSVPN_USERNAME" "$env_file" 2>/dev/null; then
-        return 1
+    # Check for VPN credentials (supports both ExpressVPN and OpenVPN configs)
+    if grep -qE "(EXPRESSVPN_USERNAME|OPENVPN_USER)" "$env_file" 2>/dev/null; then
+        return 0
     fi
-    return 0
+    return 1
 }
 
 cmd_up() {
