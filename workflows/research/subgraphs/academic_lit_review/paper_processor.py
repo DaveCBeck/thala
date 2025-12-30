@@ -59,6 +59,51 @@ If a field is not present in the paper, use an empty list or brief note."""
 
 
 # =============================================================================
+# Local Document Store Check
+# =============================================================================
+
+
+async def check_document_exists_by_doi(doi: str) -> Optional[dict[str, Any]]:
+    """Check if document already exists in ES L0 by DOI.
+
+    Args:
+        doi: The DOI to search for
+
+    Returns:
+        Dict with es_record_id, zotero_key, short_summary, content if found,
+        None otherwise.
+    """
+    store_manager = get_store_manager()
+
+    try:
+        results = await store_manager.es_stores.store.search(
+            query={
+                "bool": {
+                    "must": [
+                        {"term": {"metadata.doi": doi}},
+                        {"term": {"metadata.processing_status": "completed"}}
+                    ]
+                }
+            },
+            size=1,
+            compression_level=0,  # Search L0 only
+        )
+
+        if results:
+            record = results[0]
+            return {
+                "es_record_id": str(record.id),
+                "zotero_key": record.zotero_key,
+                "content": record.content,
+                "short_summary": record.metadata.get("short_summary", ""),
+            }
+    except Exception as e:
+        logger.debug(f"ES lookup for DOI {doi} failed: {e}")
+
+    return None
+
+
+# =============================================================================
 # State Definition
 # =============================================================================
 
@@ -175,7 +220,25 @@ async def acquire_and_process_single_paper(
         "local_path": None,
         "processing_result": None,
         "processing_success": False,
+        "from_cache": False,
     }
+
+    # Step 0: Check if document already exists in local store
+    existing = await check_document_exists_by_doi(doi)
+    if existing:
+        logger.info(f"[{paper_index}/{total_papers}] Cache hit for {doi}, skipping download")
+        result["acquired"] = True
+        result["processing_success"] = True
+        result["from_cache"] = True
+        result["processing_result"] = {
+            "doi": doi,
+            "success": True,
+            "es_record_id": existing["es_record_id"],
+            "zotero_key": existing["zotero_key"],
+            "short_summary": existing["short_summary"],
+            "errors": [],
+        }
+        return result
 
     # Step 1: Acquire full text
     local_path = await acquire_full_text(paper, client, output_dir)
@@ -231,6 +294,7 @@ async def run_paper_pipeline(
         processing_results = {}
         acquisition_failed = []
         processing_failed = []
+        cache_hits = 0
 
         semaphore = asyncio.Semaphore(max_concurrent)
         total_papers = len(papers)
@@ -254,6 +318,9 @@ async def run_paper_pipeline(
                 continue
 
             doi = result.get("doi")
+            if result.get("from_cache"):
+                cache_hits += 1
+
             if result.get("acquired"):
                 acquired[doi] = result.get("local_path")
 
@@ -265,7 +332,8 @@ async def run_paper_pipeline(
                 acquisition_failed.append(doi)
 
         logger.info(
-            f"Paper pipeline complete: {len(acquired)} acquired, "
+            f"Paper pipeline complete: {len(acquired)} acquired "
+            f"({cache_hits} from cache), "
             f"{len(processing_results)} processed, "
             f"{len(acquisition_failed)} acquisition failed, "
             f"{len(processing_failed)} processing failed"

@@ -60,6 +60,7 @@ async def create_zotero_stub(state: dict) -> dict:
             "title": title,
             "processing_status": "pending",
             "source": input_data["source"],
+            "doi": input_data.get("extra_metadata", {}).get("DOI"),
         },
     )
 
