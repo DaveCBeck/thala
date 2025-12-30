@@ -1332,35 +1332,35 @@ sentence-transformers     # Embeddings for BERTopic clustering
 
 ## 7. Implementation Phases
 
-### Phase 1: Foundation (Week 1)
-- [ ] Create `workflows/research/subgraphs/academic_lit_review/` directory structure
-- [ ] Implement `state.py` with all TypedDict definitions
-- [ ] Extend `langchain_tools/openalex.py` with citation endpoints:
+### Phase 1: Foundation ✓
+- [x] Create `workflows/research/subgraphs/academic_lit_review/` directory structure
+- [x] Implement `state.py` with all TypedDict definitions
+- [x] Extend `langchain_tools/openalex.py` with citation endpoints:
   - `get_forward_citations(doi, limit)`
   - `get_backward_citations(doi, limit)`
   - `get_author_works(author_id, limit)`
-- [ ] Create `citation_graph.py` with basic graph operations
+- [x] Create `citation_graph.py` with basic graph operations
 
-### Phase 2: Discovery Subgraphs (Week 2)
-- [ ] Implement `keyword_search.py` subgraph
-- [ ] Implement `citation_network.py` initial discovery
+### Phase 2: Discovery Subgraphs ✓
+- [x] Implement `keyword_search.py` subgraph
+- [x] Implement `citation_network.py` initial discovery
 - [ ] Implement `expert_identifier.py` subgraph
 - [ ] Integrate `book_discovery.py` (light wrapper around existing)
 - [ ] Create discovery coordinator node
 
-### Phase 3: Diffusion Engine (Week 3)
-- [ ] Implement `diffusion_engine.py` core algorithm
-- [ ] Add saturation detection logic
-- [ ] Add seed selection prioritization
-- [ ] Implement batch relevance scoring
-- [ ] Add citation graph construction during diffusion
+### Phase 3: Diffusion Engine ✓
+- [x] Implement `diffusion_engine.py` core algorithm
+- [x] Add saturation detection logic
+- [x] Add seed selection prioritization
+- [x] Implement batch relevance scoring
+- [x] Add citation graph construction during diffusion
 
-### Phase 4: Paper Processing Integration (Week 4)
-- [ ] Create `paper_processor.py` that wraps document_processing workflow
-- [ ] Integrate with `retrieve-academic` service for full-text acquisition
-- [ ] Create `PaperSummary` extraction prompts (runs after document_processing)
+### Phase 4: Paper Processing Integration ✓
+- [x] Create `paper_processor.py` that wraps document_processing workflow
+- [x] Integrate with `retrieve-academic` service for full-text acquisition
+- [x] Create `PaperSummary` extraction prompts (runs after document_processing)
 - [ ] Add batch processing with progress callbacks
-- [ ] Implement fallback for failed retrievals (abstract-only mode)
+- [x] Implement fallback for failed retrievals (abstract-only mode)
 
 ### Phase 5: Dual Clustering & Synthesis (Week 5)
 - [ ] Implement `clustering.py` with dual strategy:

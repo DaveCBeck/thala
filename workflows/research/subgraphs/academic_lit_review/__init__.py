@@ -40,6 +40,33 @@ from workflows.research.subgraphs.academic_lit_review.state import (
     merge_dicts,
     merge_paper_summaries,
 )
+from workflows.research.subgraphs.academic_lit_review.utils import (
+    convert_to_paper_metadata,
+    deduplicate_papers,
+    score_paper_relevance,
+    batch_score_relevance,
+    generate_search_queries,
+)
+from workflows.research.subgraphs.academic_lit_review.keyword_search import (
+    KeywordSearchState,
+    keyword_search_subgraph,
+    run_keyword_search,
+)
+from workflows.research.subgraphs.academic_lit_review.citation_network import (
+    CitationNetworkState,
+    citation_network_subgraph,
+    run_citation_expansion,
+)
+from workflows.research.subgraphs.academic_lit_review.diffusion_engine import (
+    DiffusionEngineState,
+    diffusion_engine_subgraph,
+    run_diffusion,
+)
+from workflows.research.subgraphs.academic_lit_review.paper_processor import (
+    PaperProcessingState,
+    paper_processing_subgraph,
+    run_paper_processing,
+)
 
 __all__ = [
     # Citation graph
@@ -71,4 +98,26 @@ __all__ = [
     # Reducers
     "merge_dicts",
     "merge_paper_summaries",
+    # Utils
+    "convert_to_paper_metadata",
+    "deduplicate_papers",
+    "score_paper_relevance",
+    "batch_score_relevance",
+    "generate_search_queries",
+    # Keyword search subgraph
+    "KeywordSearchState",
+    "keyword_search_subgraph",
+    "run_keyword_search",
+    # Citation network subgraph
+    "CitationNetworkState",
+    "citation_network_subgraph",
+    "run_citation_expansion",
+    # Diffusion engine subgraph
+    "DiffusionEngineState",
+    "diffusion_engine_subgraph",
+    "run_diffusion",
+    # Paper processor subgraph
+    "PaperProcessingState",
+    "paper_processing_subgraph",
+    "run_paper_processing",
 ]
