@@ -171,8 +171,8 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         markdown = processing_result["markdown"]
         word_count = processing_result.get("word_count", count_words(markdown))
 
-        # Only run 10:1 summary for long documents
-        if word_count < 50000:
+        # Only run 10:1 summary for documents with substantial content
+        if word_count < 3000:
             logger.info(f"Document too short ({word_count} words), skipping 10:1 summary")
             return {
                 "chapters": [],
