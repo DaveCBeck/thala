@@ -30,7 +30,7 @@ class MarkerClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        timeout: float = 1200.0,
+        timeout: Optional[float] = None,
         poll_interval: float = 2.0,
     ):
         """
@@ -38,7 +38,7 @@ class MarkerClient:
 
         Args:
             base_url: Marker API base URL (default: env MARKER_BASE_URL or http://localhost:8001)
-            timeout: Max timeout for HTTP requests in seconds
+            timeout: Max timeout for HTTP requests in seconds (default: None, no timeout)
             poll_interval: Seconds between status polls (default: env MARKER_POLL_INTERVAL or 2.0)
         """
         self.base_url = base_url or os.getenv("MARKER_BASE_URL", "http://localhost:8001")
@@ -100,14 +100,14 @@ class MarkerClient:
         return data["job_id"]
 
     async def poll_until_complete(
-        self, job_id: str, max_wait: float = 1200.0
+        self, job_id: str, max_wait: Optional[float] = None
     ) -> MarkerJobResult:
         """
         Poll job status until complete or timeout.
 
         Args:
             job_id: Job ID from submit_job
-            max_wait: Maximum seconds to wait before timeout
+            max_wait: Maximum seconds to wait before timeout (None = no timeout)
 
         Returns:
             MarkerJobResult with conversion output
@@ -122,7 +122,7 @@ class MarkerClient:
 
         while True:
             elapsed = asyncio.get_event_loop().time() - start_time
-            if elapsed > max_wait:
+            if max_wait is not None and elapsed > max_wait:
                 raise TimeoutError(
                     f"Job {job_id} did not complete within {max_wait}s"
                 )

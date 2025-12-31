@@ -357,6 +357,20 @@ async def process_single_document(
         Processing result with es_record_id, zotero_key, etc.
     """
     try:
+        # Verify file exists before processing
+        from pathlib import Path
+        source_path = Path(local_path)
+        if not source_path.exists():
+            logger.error(f"Source file does not exist: {local_path}")
+            return {
+                "doi": doi,
+                "success": False,
+                "errors": [{"node": "process_document", "error": f"File not found: {local_path}"}],
+            }
+
+        file_size_mb = source_path.stat().st_size / (1024 * 1024)
+        logger.info(f"Processing {doi}: {local_path} ({file_size_mb:.1f} MB)")
+
         # Build extra metadata for Zotero
         extra_metadata = {
             "DOI": doi,
@@ -373,22 +387,37 @@ async def process_single_document(
             extra_metadata=extra_metadata,
         )
 
+        # Log result details
+        status = result.get("current_status", "unknown")
+        errors = result.get("errors", [])
+        logger.info(f"Document {doi} processed with status: {status}, errors: {len(errors)}")
+        if errors:
+            for err in errors:
+                logger.warning(f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}")
+
         # Extract key fields
         return {
             "doi": doi,
-            "success": result.get("current_status") != "failed",
+            "success": status not in ("failed",),
             "es_record_id": result.get("store_record_id"),
             "zotero_key": result.get("zotero_key"),
             "short_summary": result.get("short_summary", ""),
-            "errors": result.get("errors", []),
+            "errors": errors,
         }
 
-    except Exception as e:
-        logger.error(f"Failed to process document {doi}: {e}")
+    except TimeoutError as e:
+        logger.error(f"Timeout processing document {doi}: {e}")
         return {
             "doi": doi,
             "success": False,
-            "errors": [{"node": "process_document", "error": str(e)}],
+            "errors": [{"node": "process_document", "error": f"Timeout: {e}"}],
+        }
+    except Exception as e:
+        logger.error(f"Failed to process document {doi}: {type(e).__name__}: {e}")
+        return {
+            "doi": doi,
+            "success": False,
+            "errors": [{"node": "process_document", "error": f"{type(e).__name__}: {e}"}],
         }
 
 

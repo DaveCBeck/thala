@@ -2,11 +2,14 @@
 Submit document to Marker and wait for completion.
 """
 
+import logging
 import os
 from pathlib import Path
 
 from workflows.shared.marker_client import MarkerClient
 from workflows.shared.text_utils import count_words, estimate_pages
+
+logger = logging.getLogger(__name__)
 
 
 async def process_marker(state: dict) -> dict:
@@ -21,7 +24,26 @@ async def process_marker(state: dict) -> dict:
 
     # Get relative path for Marker API
     marker_input_dir = Path(os.getenv("MARKER_INPUT_DIR", "/data/input"))
-    relative_path = Path(resolved_path).relative_to(marker_input_dir)
+
+    logger.info(f"Processing with Marker: resolved_path={resolved_path}")
+    logger.info(f"MARKER_INPUT_DIR: {marker_input_dir}")
+
+    # Verify the resolved path exists
+    resolved_path_obj = Path(resolved_path)
+    if not resolved_path_obj.exists():
+        raise FileNotFoundError(f"Resolved path does not exist: {resolved_path}")
+
+    # Compute relative path
+    try:
+        relative_path = resolved_path_obj.relative_to(marker_input_dir)
+    except ValueError as e:
+        logger.error(f"Path mismatch: {resolved_path} is not under {marker_input_dir}")
+        raise ValueError(
+            f"Path mismatch: resolved_path '{resolved_path}' is not under "
+            f"MARKER_INPUT_DIR '{marker_input_dir}'. Check MARKER_INPUT_DIR env var."
+        ) from e
+
+    logger.info(f"Submitting to Marker: {relative_path}")
 
     # Submit to Marker
     async with MarkerClient() as client:

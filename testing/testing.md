@@ -32,6 +32,37 @@ Test the document processing workflow.
 .venv/bin/python3 testing/test_document_processing.py
 ```
 
+### `test_academic_lit_review.py`
+Run an academic literature review workflow with checkpointing support.
+
+```bash
+# Full run with automatic checkpoints
+.venv/bin/python3 testing/test_academic_lit_review.py "transformer architectures" quick
+.venv/bin/python3 testing/test_academic_lit_review.py "AI in drug discovery" standard
+
+# Named checkpoints for iterative testing
+.venv/bin/python3 testing/test_academic_lit_review.py "topic" quick --checkpoint-prefix mytest
+```
+
+Quality options: `quick`, `standard`, `comprehensive`, `high_quality`
+
+**Checkpointing for fast iteration:**
+
+The workflow saves checkpoints after expensive phases (diffusion, processing). Resume from these to iterate on later phases without re-running discovery/processing:
+
+```bash
+# Resume from after-processing (fastest - only runs clustering + synthesis)
+.venv/bin/python3 testing/test_academic_lit_review.py --resume-from processing --checkpoint-prefix mytest
+
+# Resume from after-diffusion (runs processing + clustering + synthesis)
+.venv/bin/python3 testing/test_academic_lit_review.py --resume-from diffusion --checkpoint-prefix mytest
+
+# Original behavior without checkpoints
+.venv/bin/python3 testing/test_academic_lit_review.py "topic" quick --no-checkpoint
+```
+
+Checkpoints are saved to `testing/test_data/checkpoints/`.
+
 ### `retrieve_langsmith_run.py`
 Inspect a LangSmith run - supervisor decisions, research questions, findings.
 
