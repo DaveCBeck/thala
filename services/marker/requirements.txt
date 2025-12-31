@@ -13,3 +13,6 @@ pydantic-settings>=2.0.0
 # Task queue
 celery[redis]>=5.3.0
 redis>=5.0.0
+
+# Monitoring
+psutil>=5.9.0

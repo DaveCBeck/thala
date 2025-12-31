@@ -1,11 +1,46 @@
 """Celery tasks for document processing."""
 
+import logging
+import subprocess
+
+import psutil
 from celery import Celery
 
 from app.config import get_settings
 from app.processor import get_processor
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def get_memory_stats() -> dict:
+    """Get current RAM and GPU memory usage for monitoring."""
+    # RAM usage for this process
+    ram = psutil.Process().memory_info()
+    ram_gb = ram.rss / (1024**3)
+
+    # GPU memory via nvidia-smi
+    gpu_used_gb = 0.0
+    gpu_total_gb = 0.0
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            gpu_used, gpu_total = map(int, result.stdout.strip().split(", "))
+            gpu_used_gb = gpu_used / 1024
+            gpu_total_gb = gpu_total / 1024
+    except Exception:
+        pass
+
+    return {"ram_gb": ram_gb, "gpu_used_gb": gpu_used_gb, "gpu_total_gb": gpu_total_gb}
 
 # Initialize Celery
 celery = Celery(
@@ -51,6 +86,13 @@ def convert_document(
     Returns:
         Dict with markdown, json, chunks, and metadata
     """
+    # Log memory before processing
+    before = get_memory_stats()
+    logger.info(
+        f"[{file_path}] Starting - RAM: {before['ram_gb']:.1f}GB, "
+        f"GPU: {before['gpu_used_gb']:.1f}/{before['gpu_total_gb']:.1f}GB"
+    )
+
     processor = get_processor()
 
     try:
@@ -60,18 +102,33 @@ def convert_document(
             markdown_only=markdown_only,
             langs=langs,
         )
+
+        # Log memory after processing
+        after = get_memory_stats()
+        logger.info(
+            f"[{file_path}] Complete - RAM: {after['ram_gb']:.1f}GB, "
+            f"GPU: {after['gpu_used_gb']:.1f}/{after['gpu_total_gb']:.1f}GB"
+        )
+
         return {
             "status": "completed",
             "result": result,
             "error": None,
         }
     except FileNotFoundError as e:
+        logger.error(f"[{file_path}] File not found: {e}")
         return {
             "status": "failed",
             "result": None,
             "error": f"File not found: {e}",
         }
     except Exception as e:
+        # Log memory on failure too
+        after = get_memory_stats()
+        logger.error(
+            f"[{file_path}] Failed - RAM: {after['ram_gb']:.1f}GB, "
+            f"GPU: {after['gpu_used_gb']:.1f}/{after['gpu_total_gb']:.1f}GB - Error: {e}"
+        )
         return {
             "status": "failed",
             "result": None,

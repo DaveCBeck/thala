@@ -131,6 +131,7 @@ class PaperMetadata(TypedDict):
     retrieved_at: Optional[datetime]
     discovery_stage: int  # Which diffusion stage found this
     discovery_method: str  # "keyword", "forward", "backward", "expert", "book"
+    relevance_score: Optional[float]  # LLM-assigned relevance to research topic (0-1)
 
 
 class ClaimWithEvidence(TypedDict):

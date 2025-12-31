@@ -427,6 +427,78 @@ Guidelines:
                 raise RuntimeError(f"Failed to summarize after {max_retries} attempts") from e
 
 
+async def extract_structured(
+    text: str,
+    prompt: str,
+    schema: dict[str, Any],
+    tier: ModelTier = ModelTier.SONNET,
+) -> dict[str, Any]:
+    """
+    Extract structured data using Anthropic tool use (guaranteed valid JSON).
+
+    Uses tool use to force the model to return data matching the schema.
+    This eliminates JSON parsing errors that can occur with prompt-based extraction.
+
+    Args:
+        text: Text to extract from
+        prompt: Instructions for extraction
+        schema: JSON schema dict defining the expected output structure.
+                Must include "type", "properties", and optionally "required".
+        tier: Model tier to use (default: SONNET)
+
+    Returns:
+        Extracted data as dict matching the schema
+
+    Example:
+        schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Document title"},
+                "authors": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["title"]
+        }
+        result = await extract_structured(text, "Extract metadata", schema)
+    """
+    import anthropic
+
+    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    tool = {
+        "name": "extract_data",
+        "description": prompt,
+        "input_schema": schema,
+    }
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = await client.messages.create(
+                model=tier.value,
+                max_tokens=4096,
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "extract_data"},
+                messages=[
+                    {"role": "user", "content": f"{prompt}\n\nText:\n{text}"}
+                ],
+            )
+
+            # Extract tool use result
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "extract_data":
+                    return block.input
+
+            raise RuntimeError("No tool use in response")
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                await asyncio.sleep(wait_time)
+                logger.warning(f"Structured extraction attempt {attempt + 1} failed: {e}")
+            else:
+                raise RuntimeError(f"Failed to extract structured data after {max_retries} attempts: {e}") from e
+
+
 async def extract_json_cached(
     text: str,
     system_instructions: str,
@@ -438,6 +510,9 @@ async def extract_json_cached(
 
     The system instructions and schema are cached, so repeated extractions
     (e.g., processing multiple documents) benefit from ~90% cost reduction.
+
+    Note: For guaranteed valid JSON, consider using extract_structured() instead,
+    which uses tool use to force valid output.
 
     Args:
         text: Text to extract from

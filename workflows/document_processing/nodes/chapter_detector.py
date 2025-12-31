@@ -7,10 +7,13 @@ import re
 from typing import Any
 
 from workflows.document_processing.state import ChapterInfo, DocumentProcessingState
-from workflows.shared.llm_utils import extract_json
+from workflows.shared.llm_utils import extract_structured, ModelTier
 from workflows.shared.text_utils import count_words
 
 logger = logging.getLogger(__name__)
+
+# Target chunk size for fallback chunking (in words)
+FALLBACK_CHUNK_SIZE = 30000
 
 
 def _extract_headings(markdown: str) -> list[dict]:
@@ -34,6 +37,58 @@ def _extract_headings(markdown: str) -> list[dict]:
         })
 
     return headings
+
+
+def _create_fallback_chunks(markdown: str, word_count: int) -> list[ChapterInfo]:
+    """
+    Create pseudo-chapters by splitting document into ~30k word chunks.
+
+    Used as fallback when heading-based chapter detection fails.
+    Splits on paragraph boundaries to avoid breaking mid-sentence.
+    """
+    num_chunks = max(1, (word_count + FALLBACK_CHUNK_SIZE - 1) // FALLBACK_CHUNK_SIZE)
+    target_chunk_size = len(markdown) // num_chunks
+
+    chunks = []
+    current_pos = 0
+
+    for i in range(num_chunks):
+        start_pos = current_pos
+
+        if i == num_chunks - 1:
+            # Last chunk gets everything remaining
+            end_pos = len(markdown)
+        else:
+            # Find a good split point near target
+            target_pos = start_pos + target_chunk_size
+            # Look for paragraph break (double newline) near target
+            search_start = max(start_pos, target_pos - 2000)
+            search_end = min(len(markdown), target_pos + 2000)
+            search_region = markdown[search_start:search_end]
+
+            # Find last paragraph break in search region
+            para_break = search_region.rfind("\n\n")
+            if para_break != -1:
+                end_pos = search_start + para_break + 2
+            else:
+                # No paragraph break, just split at target
+                end_pos = target_pos
+
+        chunk_text = markdown[start_pos:end_pos]
+        chunk_word_count = count_words(chunk_text)
+
+        chunks.append(ChapterInfo(
+            title=f"Section {i + 1}",
+            start_position=start_pos,
+            end_position=end_pos,
+            author=None,
+            word_count=chunk_word_count,
+        ))
+
+        current_pos = end_pos
+
+    logger.info(f"Created {len(chunks)} fallback chunks (~{FALLBACK_CHUNK_SIZE} words each)")
+    return chunks
 
 
 def _build_chapter_boundaries(
@@ -166,44 +221,71 @@ Guidelines:
         if is_multi_author:
             prompt += "\n\nThis is a multi-author book. For each chapter, identify the author name if present in the heading."
 
-        # Build schema hint
-        schema_hint = """[
-  {
-    "heading": "exact heading text",
-    "is_chapter": true,
-    "chapter_author": "Author Name or null"
-  }
-]"""
-
-        # Call LLM
-        analysis = await extract_json(
-            text=heading_list,
-            prompt=prompt,
-            schema_hint=schema_hint,
-        )
-
-        # Build chapter boundaries
-        chapters = _build_chapter_boundaries(markdown, headings, analysis)
-
-        # If no chapters identified, treat entire document as single chapter
-        if not chapters:
-            logger.warning("No chapters identified by LLM, treating as single chapter")
-            chapters = [ChapterInfo(
-                title="Full Document",
-                start_position=0,
-                end_position=len(markdown),
-                author=None,
-                word_count=word_count,
-            )]
-
-        logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
-        return {
-            "chapters": chapters,
-            "needs_tenth_summary": True,
-            "current_status": "chapters_detected",
+        # Schema for structured extraction (guaranteed valid JSON)
+        schema = {
+            "type": "object",
+            "properties": {
+                "headings": {
+                    "type": "array",
+                    "description": "Analysis of each heading",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "heading": {"type": "string", "description": "Exact heading text"},
+                            "is_chapter": {"type": "boolean", "description": "Whether this is a chapter boundary"},
+                            "chapter_author": {"type": ["string", "null"], "description": "Author name if multi-author book"},
+                        },
+                        "required": ["heading", "is_chapter"],
+                    },
+                },
+            },
+            "required": ["headings"],
         }
 
+        try:
+            # Use structured extraction for guaranteed valid JSON
+            result = await extract_structured(
+                text=heading_list,
+                prompt=prompt,
+                schema=schema,
+                tier=ModelTier.SONNET,
+            )
+            analysis = result.get("headings", [])
+
+            # Build chapter boundaries
+            chapters = _build_chapter_boundaries(markdown, headings, analysis)
+
+            # If no chapters identified, treat entire document as single chapter
+            if not chapters:
+                logger.warning("No chapters identified by LLM, treating as single chapter")
+                chapters = [ChapterInfo(
+                    title="Full Document",
+                    start_position=0,
+                    end_position=len(markdown),
+                    author=None,
+                    word_count=word_count,
+                )]
+
+            logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
+            return {
+                "chapters": chapters,
+                "needs_tenth_summary": True,
+                "current_status": "chapters_detected",
+            }
+
+        except Exception as e:
+            # Graceful fallback: chunk document into ~30k word sections
+            logger.warning(f"Chapter detection via LLM failed: {e}. Using fallback chunking.")
+            chapters = _create_fallback_chunks(markdown, word_count)
+
+            return {
+                "chapters": chapters,
+                "needs_tenth_summary": True,
+                "current_status": "chapters_detected_fallback",
+            }
+
     except Exception as e:
+        # Outer exception handler for non-LLM failures (e.g., state issues)
         logger.error(f"Failed to detect chapters: {e}")
         return {
             "chapters": [],

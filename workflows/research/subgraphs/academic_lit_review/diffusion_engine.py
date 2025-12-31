@@ -536,6 +536,10 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
             or fallback_papers.get(doi)
         )
         if paper:
+            # Ensure papers have relevance scores (co-citation papers bypass LLM scoring)
+            if paper.get("relevance_score") is None:
+                # High default for co-citation papers (included via citation network evidence)
+                paper["relevance_score"] = 0.8
             new_corpus_papers[doi] = paper
 
     # Add papers to citation graph
@@ -642,17 +646,32 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
 
 
 async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
-    """Finalize diffusion and return final corpus DOIs."""
+    """Finalize diffusion and filter to top papers by relevance."""
     paper_corpus = state.get("paper_corpus", {})
+    quality_settings = state["quality_settings"]
     diffusion = state["diffusion"]
     saturation_reason = state.get("saturation_reason", "Unknown")
+    max_papers = quality_settings["max_papers"]
 
-    final_dois = list(paper_corpus.keys())
-
-    logger.info(
-        f"Diffusion complete: {len(final_dois)} papers in final corpus. "
-        f"Reason: {saturation_reason}"
-    )
+    # Filter to top N papers by relevance score if we exceeded max_papers
+    if len(paper_corpus) > max_papers:
+        sorted_papers = sorted(
+            paper_corpus.items(),
+            key=lambda x: x[1].get("relevance_score", 0.5),
+            reverse=True,
+        )
+        cutoff_score = sorted_papers[max_papers - 1][1].get("relevance_score", 0.5)
+        final_dois = [doi for doi, _ in sorted_papers[:max_papers]]
+        logger.info(
+            f"Diffusion complete: Filtered {len(paper_corpus)} papers to {max_papers} "
+            f"(relevance cutoff: {cutoff_score:.2f}). Reason: {saturation_reason}"
+        )
+    else:
+        final_dois = list(paper_corpus.keys())
+        logger.info(
+            f"Diffusion complete: {len(final_dois)} papers in final corpus. "
+            f"Reason: {saturation_reason}"
+        )
 
     return {
         "final_corpus_dois": final_dois,

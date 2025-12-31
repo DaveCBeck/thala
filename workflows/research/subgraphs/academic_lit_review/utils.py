@@ -297,6 +297,8 @@ async def batch_score_relevance(
             continue
 
         paper, score, reasoning = result
+        # Attach score to paper for downstream filtering
+        paper["relevance_score"] = score
         if score >= threshold:
             relevant.append(paper)
             logger.debug(
