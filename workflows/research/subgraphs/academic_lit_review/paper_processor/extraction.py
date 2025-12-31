@@ -1,0 +1,266 @@
+"""Paper summary extraction from full text and metadata."""
+
+import asyncio
+import logging
+from typing import Any
+from uuid import UUID
+
+from langchain_tools.base import get_store_manager
+from workflows.research.subgraphs.academic_lit_review.state import (
+    PaperMetadata,
+    PaperSummary,
+)
+from workflows.shared.llm_utils import ModelTier, extract_json_cached
+
+logger = logging.getLogger(__name__)
+
+PAPER_SUMMARY_EXTRACTION_SYSTEM = """Analyze this academic paper and extract structured information.
+
+Extract the following in JSON format:
+{
+  "key_findings": ["3-5 specific findings from the paper"],
+  "methodology": "Brief research method description (1-2 sentences)",
+  "limitations": ["Stated limitations from the paper"],
+  "future_work": ["Suggested future research directions"],
+  "themes": ["3-5 topic tags for clustering"]
+}
+
+Be specific and grounded in the paper content. Do not hallucinate information.
+If a field is not present in the paper, use an empty list or brief note."""
+
+METADATA_SUMMARY_EXTRACTION_SYSTEM = """Analyze this academic paper's metadata and abstract to extract structured information.
+
+Extract the following in JSON format:
+{
+  "key_findings": ["2-3 inferred findings based on the abstract"],
+  "methodology": "Inferred methodology from the abstract (1-2 sentences)",
+  "limitations": [],
+  "future_work": [],
+  "themes": ["3-5 topic tags based on title and abstract"]
+}
+
+Note: This is based only on metadata/abstract, not full text. Be conservative and extract only what is clearly stated."""
+
+
+async def extract_paper_summary(
+    content: str,
+    paper: PaperMetadata,
+    short_summary: str,
+    es_record_id: str,
+    zotero_key: str,
+) -> PaperSummary:
+    """Extract structured summary from paper content.
+
+    Args:
+        content: Full paper content (L0 markdown)
+        paper: Paper metadata
+        short_summary: 100-word summary from document_processing
+        es_record_id: Elasticsearch record ID
+        zotero_key: Zotero item key
+
+    Returns:
+        PaperSummary with extracted fields
+    """
+    authors_str = ", ".join(
+        a.get("name", "") for a in paper.get("authors", [])[:5]
+    )
+    if len(paper.get("authors", [])) > 5:
+        authors_str += " et al."
+
+    user_prompt = f"""Paper: {paper.get('title', 'Unknown')} ({paper.get('year', 'Unknown')})
+Authors: {authors_str}
+Venue: {paper.get('venue', 'Unknown')}
+
+Content (first 40k chars):
+{content[:40000]}
+
+Extract structured information from this paper."""
+
+    try:
+        extracted = await extract_json_cached(
+            text=user_prompt,
+            system_instructions=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            tier=ModelTier.HAIKU,
+        )
+
+        return PaperSummary(
+            doi=paper.get("doi"),
+            title=paper.get("title", "Unknown"),
+            authors=[a.get("name", "") for a in paper.get("authors", [])],
+            year=paper.get("year", 0),
+            venue=paper.get("venue"),
+            short_summary=short_summary,
+            es_record_id=es_record_id,
+            zotero_key=zotero_key,
+            key_findings=extracted.get("key_findings", []),
+            methodology=extracted.get("methodology", "Not specified"),
+            limitations=extracted.get("limitations", []),
+            future_work=extracted.get("future_work", []),
+            themes=extracted.get("themes", []),
+            claims=[],
+            relevance_score=0.7,
+            processing_status="success",
+        )
+
+    except Exception as e:
+        logger.warning(f"Failed to extract summary for {paper.get('doi')}: {e}")
+        return PaperSummary(
+            doi=paper.get("doi"),
+            title=paper.get("title", "Unknown"),
+            authors=[a.get("name", "") for a in paper.get("authors", [])],
+            year=paper.get("year", 0),
+            venue=paper.get("venue"),
+            short_summary=short_summary,
+            es_record_id=es_record_id,
+            zotero_key=zotero_key,
+            key_findings=[],
+            methodology="Extraction failed",
+            limitations=[],
+            future_work=[],
+            themes=[],
+            claims=[],
+            relevance_score=0.7,
+            processing_status="partial",
+        )
+
+
+async def extract_summary_from_metadata(
+    paper: PaperMetadata,
+) -> PaperSummary:
+    """Extract summary from paper metadata when full text is unavailable.
+
+    Uses title, abstract, and other metadata to generate a summary.
+    This is a fallback when document processing fails.
+
+    Args:
+        paper: Paper metadata including abstract
+
+    Returns:
+        PaperSummary with fields populated from metadata
+    """
+    doi = paper.get("doi", "unknown")
+    title = paper.get("title", "Unknown Title")
+    abstract = paper.get("abstract", "")
+
+    authors = [a.get("name", "") for a in paper.get("authors", [])]
+    authors_str = ", ".join(authors[:5])
+    if len(authors) > 5:
+        authors_str += " et al."
+
+    user_prompt = f"""Paper: {title} ({paper.get('year', 'Unknown')})
+Authors: {authors_str}
+Venue: {paper.get('venue', 'Unknown')}
+Citations: {paper.get('cited_by_count', 0)}
+
+Abstract:
+{abstract if abstract else 'No abstract available'}
+
+Extract structured information based on this metadata."""
+
+    try:
+        extracted = await extract_json_cached(
+            text=user_prompt,
+            system_instructions=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+            tier=ModelTier.HAIKU,
+        )
+
+        short_summary = abstract[:500] if abstract else f"Study on {title}"
+
+        return PaperSummary(
+            doi=doi,
+            title=title,
+            authors=authors,
+            year=paper.get("year", 0),
+            venue=paper.get("venue"),
+            short_summary=short_summary,
+            es_record_id=None,
+            zotero_key=None,
+            key_findings=extracted.get("key_findings", []),
+            methodology=extracted.get("methodology", "Not available from abstract"),
+            limitations=extracted.get("limitations", []),
+            future_work=extracted.get("future_work", []),
+            themes=extracted.get("themes", []),
+            claims=[],
+            relevance_score=paper.get("relevance_score", 0.6),
+            processing_status="metadata_only",
+        )
+
+    except Exception as e:
+        logger.warning(f"Failed to extract metadata summary for {doi}: {e}")
+        return PaperSummary(
+            doi=doi,
+            title=title,
+            authors=authors,
+            year=paper.get("year", 0),
+            venue=paper.get("venue"),
+            short_summary=abstract[:500] if abstract else title,
+            es_record_id=None,
+            zotero_key=None,
+            key_findings=[],
+            methodology="Not available",
+            limitations=[],
+            future_work=[],
+            themes=[],
+            claims=[],
+            relevance_score=paper.get("relevance_score", 0.5),
+            processing_status="metadata_minimal",
+        )
+
+
+async def extract_all_summaries(
+    processing_results: dict[str, dict],
+    papers_by_doi: dict[str, PaperMetadata],
+) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str]]:
+    """Extract structured summaries for all processed papers.
+
+    Args:
+        processing_results: DOI -> processing result mapping
+        papers_by_doi: DOI -> PaperMetadata mapping
+
+    Returns:
+        Tuple of (summaries, es_ids, zotero_keys)
+    """
+    store_manager = get_store_manager()
+    summaries = {}
+    es_ids = {}
+    zotero_keys = {}
+
+    for doi, result in processing_results.items():
+        paper = papers_by_doi[doi]
+        es_record_id = result.get("es_record_id")
+        zotero_key = result.get("zotero_key")
+        short_summary = result.get("short_summary", "")
+
+        if not es_record_id:
+            logger.warning(f"No ES record ID for {doi}, skipping summary extraction")
+            continue
+
+        try:
+            record = await store_manager.es_stores.store.get(
+                UUID(es_record_id),
+                index="store_l0"
+            )
+            if not record:
+                logger.warning(f"Could not fetch L0 content for {doi}")
+                continue
+
+            content = record.content
+
+            summary = await extract_paper_summary(
+                content=content,
+                paper=paper,
+                short_summary=short_summary,
+                es_record_id=es_record_id,
+                zotero_key=zotero_key,
+            )
+
+            summaries[doi] = summary
+            es_ids[doi] = es_record_id
+            zotero_keys[doi] = zotero_key
+
+        except Exception as e:
+            logger.error(f"Failed to extract summary for {doi}: {e}")
+            continue
+
+    logger.info(f"Extracted summaries for {len(summaries)} papers")
+    return summaries, es_ids, zotero_keys

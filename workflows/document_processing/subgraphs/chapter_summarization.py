@@ -93,9 +93,10 @@ Chapter content:
         if thinking:
             logger.debug(f"Thinking summary for '{chapter['title']}': {thinking[:200]}...")
 
-        # Return summary for aggregation
+        # Return summary for aggregation (only chapter_summaries, not summary)
+        # Note: We don't return "summary" because DocumentProcessingState doesn't have
+        # that field, and parallel Send() calls would cause InvalidUpdateError
         return {
-            "summary": summary,
             "chapter_summaries": [{
                 "title": chapter["title"],
                 "author": chapter.get("author"),
@@ -105,9 +106,8 @@ Chapter content:
 
     except Exception as e:
         logger.error(f"Failed to summarize chapter '{chapter['title']}': {e}")
-        # Return error summary
+        # Return error in chapter_summaries only (not summary field)
         return {
-            "summary": f"[Error summarizing chapter: {str(e)}]",
             "chapter_summaries": [{
                 "title": chapter["title"],
                 "author": chapter.get("author"),

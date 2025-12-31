@@ -1,37 +1,44 @@
 """Prompts for deep research workflow."""
 
-# Re-export all original prompts
-from workflows.research.prompts.base import (
-    get_today_str,
+from workflows.research.prompts.utils import get_today_str
+from workflows.research.prompts.clarification import (
     CLARIFY_INTENT_SYSTEM,
     CLARIFY_INTENT_HUMAN,
+)
+from workflows.research.prompts.brief import (
     CREATE_BRIEF_SYSTEM,
     CREATE_BRIEF_HUMAN,
+)
+from workflows.research.prompts.planning import (
     ITERATE_PLAN_SYSTEM,
     ITERATE_PLAN_HUMAN,
+)
+from workflows.research.prompts.supervision import (
     SUPERVISOR_SYSTEM_CACHED,
     SUPERVISOR_USER_TEMPLATE,
     SUPERVISOR_DIFFUSION_SYSTEM,
-    RESEARCHER_SYSTEM,
+)
+from workflows.research.prompts.researcher import RESEARCHER_SYSTEM
+from workflows.research.prompts.compression import (
     COMPRESS_RESEARCH_SYSTEM_CACHED,
     COMPRESS_RESEARCH_USER_TEMPLATE,
     COMPRESS_RESEARCH_SYSTEM,
-    # Specialized compression prompts
     COMPRESS_WEB_RESEARCH_SYSTEM,
     COMPRESS_ACADEMIC_RESEARCH_SYSTEM,
     COMPRESS_BOOK_RESEARCH_SYSTEM,
-    # Query generation prompts (researcher-specific)
+)
+from workflows.research.prompts.queries import (
     GENERATE_WEB_QUERIES_SYSTEM,
     GENERATE_ACADEMIC_QUERIES_SYSTEM,
     GENERATE_BOOK_QUERIES_SYSTEM,
+)
+from workflows.research.prompts.reporting import (
     FINAL_REPORT_SYSTEM_STATIC,
     FINAL_REPORT_USER_TEMPLATE,
     FINAL_REPORT_SYSTEM,
     FINAL_REPORT_HUMAN,
     REFINE_DRAFT_SYSTEM,
 )
-
-# Export translation utilities
 from workflows.research.prompts.translator import (
     translate_prompt,
     get_translated_prompt,
@@ -40,35 +47,41 @@ from workflows.research.prompts.translator import (
 )
 
 __all__ = [
-    # Base prompts
+    # Utils
     "get_today_str",
+    # Clarification
     "CLARIFY_INTENT_SYSTEM",
     "CLARIFY_INTENT_HUMAN",
+    # Brief
     "CREATE_BRIEF_SYSTEM",
     "CREATE_BRIEF_HUMAN",
+    # Planning
     "ITERATE_PLAN_SYSTEM",
     "ITERATE_PLAN_HUMAN",
+    # Supervision
     "SUPERVISOR_SYSTEM_CACHED",
     "SUPERVISOR_USER_TEMPLATE",
     "SUPERVISOR_DIFFUSION_SYSTEM",
+    # Researcher
     "RESEARCHER_SYSTEM",
+    # Compression
     "COMPRESS_RESEARCH_SYSTEM_CACHED",
     "COMPRESS_RESEARCH_USER_TEMPLATE",
     "COMPRESS_RESEARCH_SYSTEM",
-    # Specialized compression prompts
     "COMPRESS_WEB_RESEARCH_SYSTEM",
     "COMPRESS_ACADEMIC_RESEARCH_SYSTEM",
     "COMPRESS_BOOK_RESEARCH_SYSTEM",
-    # Query generation prompts (researcher-specific)
+    # Queries
     "GENERATE_WEB_QUERIES_SYSTEM",
     "GENERATE_ACADEMIC_QUERIES_SYSTEM",
     "GENERATE_BOOK_QUERIES_SYSTEM",
+    # Reporting
     "FINAL_REPORT_SYSTEM_STATIC",
     "FINAL_REPORT_USER_TEMPLATE",
     "FINAL_REPORT_SYSTEM",
     "FINAL_REPORT_HUMAN",
     "REFINE_DRAFT_SYSTEM",
-    # Translator utilities
+    # Translator
     "translate_prompt",
     "get_translated_prompt",
     "clear_translation_cache",

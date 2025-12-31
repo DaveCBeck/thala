@@ -13,7 +13,8 @@ Implements a Self-Balancing Diffusion Algorithm for comprehensive research:
 
 import logging
 
-from workflows.research.graph import deep_research, DeepResearchState
+from workflows.research.graph import deep_research
+from workflows.research.state import DeepResearchState
 
 logger = logging.getLogger(__name__)
 
