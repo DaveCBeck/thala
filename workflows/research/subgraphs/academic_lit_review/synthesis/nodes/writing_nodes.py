@@ -1,4 +1,7 @@
-"""Writing nodes for synthesis subgraph."""
+"""Writing nodes for synthesis subgraph.
+
+Uses Anthropic Batch API for 50% cost reduction when writing 5+ thematic sections.
+"""
 
 import asyncio
 import logging
@@ -6,6 +9,7 @@ from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.language import get_translated_prompt
+from workflows.shared.batch_processor import BatchProcessor
 from ..types import SynthesisState, MAX_CONCURRENT_SECTIONS
 from ..prompts import (
     INTRODUCTION_SYSTEM_PROMPT,
@@ -132,7 +136,10 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
 
 
 async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
-    """Write a section for each thematic cluster (parallel)."""
+    """Write a section for each thematic cluster.
+
+    Uses Anthropic Batch API for 50% cost reduction when writing 5+ sections.
+    """
     clusters = state.get("clusters", [])
     cluster_analyses = state.get("cluster_analyses", [])
     paper_summaries = state.get("paper_summaries", {})
@@ -163,6 +170,14 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             prompt_name="lit_review_thematic_user",
         )
 
+    # Use batch API for 5+ sections (50% cost reduction)
+    if len(clusters) >= 5:
+        return await _write_thematic_sections_batched(
+            clusters, analysis_lookup, paper_summaries, zotero_keys,
+            thematic_system, thematic_user_template
+        )
+
+    # Fall back to concurrent calls for small batches
     async def write_single_section(cluster):
         """Write a single thematic section."""
         analysis = analysis_lookup.get(cluster["cluster_id"], {})
@@ -218,6 +233,64 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
         section_drafts[label] = text
 
     logger.info(f"Completed {len(section_drafts)} thematic sections")
+
+    return {"thematic_section_drafts": section_drafts}
+
+
+async def _write_thematic_sections_batched(
+    clusters: list,
+    analysis_lookup: dict,
+    paper_summaries: dict,
+    zotero_keys: dict,
+    thematic_system: str,
+    thematic_user_template: str,
+) -> dict[str, Any]:
+    """Write thematic sections using Anthropic Batch API for 50% cost reduction."""
+    processor = BatchProcessor(poll_interval=30)
+
+    cluster_labels = []  # Track order for result mapping
+    for i, cluster in enumerate(clusters):
+        analysis = analysis_lookup.get(cluster["cluster_id"], {})
+
+        papers_text = format_papers_with_keys(
+            cluster["paper_dois"],
+            paper_summaries,
+            zotero_keys,
+        )
+
+        user_prompt = thematic_user_template.format(
+            theme_name=cluster["label"],
+            theme_description=cluster["description"],
+            sub_themes=", ".join(cluster.get("sub_themes", [])) or "None identified",
+            key_debates="\n".join(f"- {d}" for d in cluster.get("conflicts", [])) or "None identified",
+            outstanding_questions="\n".join(f"- {q}" for q in cluster.get("gaps", [])) or "None identified",
+            papers_with_keys=papers_text,
+            narrative_summary=analysis.get("narrative_summary", "No analysis available"),
+        )
+
+        processor.add_request(
+            custom_id=f"section-{i}",
+            prompt=user_prompt,
+            model=ModelTier.SONNET,
+            max_tokens=6000,
+            system=thematic_system,
+        )
+        cluster_labels.append(cluster["label"])
+
+    logger.info(f"Submitting batch of {len(clusters)} thematic sections")
+    results = await processor.execute_batch()
+
+    section_drafts = {}
+    for i, label in enumerate(cluster_labels):
+        result = results.get(f"section-{i}")
+        if result and result.success:
+            section_drafts[label] = result.content
+        else:
+            error_msg = result.error if result else "No result returned"
+            logger.error(f"Failed to write section for {label}: {error_msg}")
+            section_drafts[label] = f"[Section generation failed: {error_msg}]"
+
+    logger.info(f"Completed {len(section_drafts)} thematic sections (batch)")
 
     return {"thematic_section_drafts": section_drafts}
 

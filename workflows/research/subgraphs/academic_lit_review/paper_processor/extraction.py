@@ -1,6 +1,10 @@
-"""Paper summary extraction from full text and metadata."""
+"""Paper summary extraction from full text and metadata.
+
+Uses Anthropic Batch API for 50% cost reduction when processing 5+ papers.
+"""
 
 import asyncio
+import json
 import logging
 from typing import Any
 from uuid import UUID
@@ -11,6 +15,7 @@ from workflows.research.subgraphs.academic_lit_review.state import (
     PaperSummary,
 )
 from workflows.shared.llm_utils import ModelTier, extract_json_cached
+from workflows.shared.batch_processor import BatchProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +218,8 @@ async def extract_all_summaries(
 ) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str]]:
     """Extract structured summaries for all processed papers.
 
+    Uses Anthropic Batch API for 50% cost reduction when processing 5+ papers.
+
     Args:
         processing_results: DOI -> processing result mapping
         papers_by_doi: DOI -> PaperMetadata mapping
@@ -221,10 +228,20 @@ async def extract_all_summaries(
         Tuple of (summaries, es_ids, zotero_keys)
     """
     store_manager = get_store_manager()
+
+    if not processing_results:
+        return {}, {}, {}
+
+    # Use batch API for 5+ papers
+    if len(processing_results) >= 5:
+        return await _extract_all_summaries_batched(
+            processing_results, papers_by_doi, store_manager
+        )
+
+    # Fall back to concurrent calls for small batches
     summaries = {}
     es_ids = {}
     zotero_keys = {}
-
     semaphore = asyncio.Semaphore(3)
     completed_count = 0
     total_to_extract = len(processing_results)
@@ -284,4 +301,126 @@ async def extract_all_summaries(
             zotero_keys[doi] = zotero_key
 
     logger.info(f"Extracted summaries for {len(summaries)} papers")
+    return summaries, es_ids, zotero_keys
+
+
+async def _extract_all_summaries_batched(
+    processing_results: dict[str, dict],
+    papers_by_doi: dict[str, PaperMetadata],
+    store_manager,
+) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str]]:
+    """Extract summaries using Anthropic Batch API for 50% cost reduction."""
+    # First, fetch all L0 content (this is I/O, not LLM calls)
+    paper_data = {}  # doi -> {paper, content, es_record_id, zotero_key, short_summary}
+
+    for doi, result in processing_results.items():
+        paper = papers_by_doi[doi]
+        es_record_id = result.get("es_record_id")
+        zotero_key = result.get("zotero_key")
+        short_summary = result.get("short_summary", "")
+
+        if not es_record_id:
+            logger.warning(f"No ES record ID for {doi}, skipping")
+            continue
+
+        try:
+            record = await store_manager.es_stores.store.get(
+                UUID(es_record_id),
+                index="store_l0"
+            )
+            if not record:
+                logger.warning(f"Could not fetch L0 content for {doi}")
+                continue
+
+            paper_data[doi] = {
+                "paper": paper,
+                "content": record.content,
+                "es_record_id": es_record_id,
+                "zotero_key": zotero_key,
+                "short_summary": short_summary,
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch content for {doi}: {e}")
+
+    if not paper_data:
+        return {}, {}, {}
+
+    # Build batch requests
+    processor = BatchProcessor(poll_interval=30)
+
+    for doi, data in paper_data.items():
+        paper = data["paper"]
+        content = data["content"]
+
+        authors_str = ", ".join(
+            a.get("name", "") for a in paper.get("authors", [])[:5]
+        )
+        if len(paper.get("authors", [])) > 5:
+            authors_str += " et al."
+
+        user_prompt = f"""Paper: {paper.get('title', 'Unknown')} ({paper.get('year', 'Unknown')})
+Authors: {authors_str}
+Venue: {paper.get('venue', 'Unknown')}
+
+Content (first 40k chars):
+{content[:40000]}
+
+Extract structured information from this paper."""
+
+        processor.add_request(
+            custom_id=doi,  # Use DOI as custom_id
+            prompt=user_prompt,
+            model=ModelTier.HAIKU,
+            max_tokens=2048,
+            system=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+        )
+
+    logger.info(f"Submitting batch of {len(paper_data)} papers for summary extraction")
+    results = await processor.execute_batch()
+
+    summaries = {}
+    es_ids = {}
+    zotero_keys = {}
+
+    for doi, data in paper_data.items():
+        paper = data["paper"]
+        result = results.get(doi)
+
+        if result and result.success:
+            try:
+                content = result.content.strip()
+                if content.startswith("```"):
+                    lines = content.split("\n")
+                    content = "\n".join(lines[1:-1])
+
+                extracted = json.loads(content)
+
+                summaries[doi] = PaperSummary(
+                    doi=paper.get("doi"),
+                    title=paper.get("title", "Unknown"),
+                    authors=[a.get("name", "") for a in paper.get("authors", [])],
+                    year=paper.get("year", 0),
+                    venue=paper.get("venue"),
+                    short_summary=data["short_summary"],
+                    es_record_id=data["es_record_id"],
+                    zotero_key=data["zotero_key"],
+                    key_findings=extracted.get("key_findings", []),
+                    methodology=extracted.get("methodology", "Not specified"),
+                    limitations=extracted.get("limitations", []),
+                    future_work=extracted.get("future_work", []),
+                    themes=extracted.get("themes", []),
+                    claims=[],
+                    relevance_score=0.7,
+                    processing_status="success",
+                )
+                es_ids[doi] = data["es_record_id"]
+                zotero_keys[doi] = data["zotero_key"]
+
+            except Exception as e:
+                logger.warning(f"Failed to parse extraction result for {doi}: {e}")
+        else:
+            error_msg = result.error if result else "No result returned"
+            logger.warning(f"Summary extraction failed for {doi}: {error_msg}")
+
+    logger.info(f"Extracted summaries for {len(summaries)} papers (batch)")
     return summaries, es_ids, zotero_keys

@@ -2,7 +2,7 @@
 Chapter summarization subgraph using map-reduce pattern.
 
 Uses Opus with extended thinking for complex chapter analysis.
-Implements prompt caching for 90% cost reduction on static instructions.
+Uses Anthropic Batch API for 50% cost reduction when processing 5+ chapters.
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph, START, END
 
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.batch_processor import BatchProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +115,10 @@ Chapter content:
 
 async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     """
-    Summarize all chapters concurrently using asyncio.gather() with semaphore.
+    Summarize all chapters using Anthropic Batch API for 50% cost reduction.
 
-    Batches LLM calls to run up to MAX_CONCURRENT_CHAPTER_SUMMARIES in parallel
-    to reduce total processing time while respecting rate limits.
+    Uses batch processing for 5+ chapters, falls back to concurrent calls
+    for smaller documents.
 
     Returns chapter_summaries list preserving chapter order.
     """
@@ -132,23 +133,23 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                 "current_status": "no_chapters",
             }
 
-        # Create semaphore to limit concurrent LLM calls
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHAPTER_SUMMARIES)
-
-        # Build list of coroutines for all chapters
-        tasks = [
-            _summarize_single_chapter(
-                chapter=chapter,
-                chapter_content=markdown[chapter["start_position"]:chapter["end_position"]],
-                target_words=max(50, chapter["word_count"] // 10),
-                semaphore=semaphore,
-            )
-            for chapter in chapters
-        ]
-
-        # Execute all chapter summaries concurrently with semaphore limiting parallelism
-        logger.info(f"Starting concurrent summarization of {len(chapters)} chapters (max {MAX_CONCURRENT_CHAPTER_SUMMARIES} concurrent)")
-        chapter_summaries = await asyncio.gather(*tasks)
+        # Use batch API for 5+ chapters (50% cost reduction)
+        if len(chapters) >= 5:
+            chapter_summaries = await _summarize_chapters_batched(chapters, markdown)
+        else:
+            # Fall back to concurrent calls for small documents
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHAPTER_SUMMARIES)
+            tasks = [
+                _summarize_single_chapter(
+                    chapter=chapter,
+                    chapter_content=markdown[chapter["start_position"]:chapter["end_position"]],
+                    target_words=max(50, chapter["word_count"] // 10),
+                    semaphore=semaphore,
+                )
+                for chapter in chapters
+            ]
+            logger.info(f"Starting concurrent summarization of {len(chapters)} chapters")
+            chapter_summaries = await asyncio.gather(*tasks)
 
         logger.info(f"Completed summarization of {len(chapter_summaries)} chapters")
 
@@ -164,6 +165,70 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
             "current_status": "summarization_failed",
             "errors": [{"node": "summarize_chapters", "error": str(e)}],
         }
+
+
+async def _summarize_chapters_batched(
+    chapters: list[dict],
+    markdown: str,
+) -> list[dict[str, Any]]:
+    """Summarize chapters using Anthropic Batch API for 50% cost reduction."""
+    processor = BatchProcessor(poll_interval=60)  # Longer poll for Opus
+
+    chapter_data = []  # Store chapter info for result mapping
+    for i, chapter in enumerate(chapters):
+        chapter_content = markdown[chapter["start_position"]:chapter["end_position"]]
+        target_words = max(50, chapter["word_count"] // 10)
+
+        chapter_context = f"Chapter: {chapter['title']}"
+        if chapter.get("author"):
+            chapter_context += f" (by {chapter['author']})"
+
+        user_prompt = f"""Summarize this chapter in approximately {target_words} words.
+
+Context: {chapter_context}
+
+Chapter content:
+{chapter_content}"""
+
+        processor.add_request(
+            custom_id=f"chapter-{i}",
+            prompt=user_prompt,
+            model=ModelTier.OPUS,
+            max_tokens=8000 + 4096,
+            system=CHAPTER_SUMMARIZATION_SYSTEM,
+            thinking_budget=8000,
+        )
+
+        chapter_data.append({
+            "title": chapter["title"],
+            "author": chapter.get("author"),
+        })
+
+    logger.info(f"Submitting batch of {len(chapters)} chapters for summarization")
+    results = await processor.execute_batch()
+
+    chapter_summaries = []
+    for i, chapter_info in enumerate(chapter_data):
+        result = results.get(f"chapter-{i}")
+        if result and result.success:
+            summary = result.content
+            if result.thinking:
+                logger.debug(f"Thinking for '{chapter_info['title']}': {result.thinking[:200]}...")
+            chapter_summaries.append({
+                "title": chapter_info["title"],
+                "author": chapter_info["author"],
+                "summary": summary,
+            })
+        else:
+            error_msg = result.error if result else "No result returned"
+            logger.error(f"Failed to summarize chapter '{chapter_info['title']}': {error_msg}")
+            chapter_summaries.append({
+                "title": chapter_info["title"],
+                "author": chapter_info["author"],
+                "summary": f"[Error: {error_msg}]",
+            })
+
+    return chapter_summaries
 
 
 def aggregate_summaries(state: DocumentProcessingState) -> dict[str, Any]:
