@@ -46,11 +46,11 @@ services:
       - marker-cache:/root/.cache/huggingface
     environment:
       - TORCH_DEVICE=cuda
-      - INFERENCE_RAM=24
-      - RECOGNITION_BATCH_SIZE=192
-      - DETECTOR_BATCH_SIZE=18
-      - LAYOUT_BATCH_SIZE=24
-      - TABLE_REC_BATCH_SIZE=36
+      - INFERENCE_RAM=12
+      - RECOGNITION_BATCH_SIZE=128
+      - DETECTOR_BATCH_SIZE=12
+      - LAYOUT_BATCH_SIZE=16
+      - TABLE_REC_BATCH_SIZE=24
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
@@ -58,6 +58,7 @@ services:
       redis:
         condition: service_healthy
     deploy:
+      replicas: 2
       resources:
         reservations:
           devices:
