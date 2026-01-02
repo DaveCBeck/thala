@@ -1,8 +1,8 @@
 services:
   marker-api:
     build:
-      context: .
-      dockerfile: Dockerfile.gpu
+      context: ..
+      dockerfile: marker/Dockerfile.gpu
     ports:
       - "8001:8001"
     volumes:
@@ -38,8 +38,8 @@ services:
 
   marker-worker:
     build:
-      context: .
-      dockerfile: Dockerfile.gpu
+      context: ..
+      dockerfile: marker/Dockerfile.gpu
     volumes:
       - ./data/input:/data/input
       - ./data/output:/data/output
