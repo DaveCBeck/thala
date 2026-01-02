@@ -10,7 +10,11 @@ import logging
 from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm
-from workflows.research.subgraphs.book_finding.state import BookRecommendation
+from workflows.research.subgraphs.book_finding.state import (
+    BookRecommendation,
+    BookFindingQualitySettings,
+    BOOK_QUALITY_PRESETS,
+)
 from workflows.research.subgraphs.book_finding.prompts import (
     ANALOGOUS_DOMAIN_SYSTEM,
     ANALOGOUS_DOMAIN_USER,
@@ -36,8 +40,9 @@ async def _generate_recommendations(
     category: str,
     system_prompt: str,
     user_template: str,
+    quality_settings: BookFindingQualitySettings,
 ) -> list[BookRecommendation]:
-    """Generate book recommendations using Opus.
+    """Generate book recommendations using configured model.
 
     Args:
         theme: The theme to explore
@@ -45,11 +50,17 @@ async def _generate_recommendations(
         category: Category name for the recommendations
         system_prompt: System prompt for this category
         user_template: User prompt template
+        quality_settings: Quality configuration for model and token limits
 
     Returns:
         List of BookRecommendation objects
     """
-    llm = get_llm(ModelTier.OPUS, max_tokens=2048)
+    # Select model based on quality settings
+    model_tier = ModelTier.OPUS if quality_settings["use_opus_for_recommendations"] else ModelTier.SONNET
+    max_tokens = quality_settings["recommendation_max_tokens"]
+    max_recs = quality_settings["recommendations_per_category"]
+
+    llm = get_llm(model_tier, max_tokens=max_tokens)
 
     brief_section = _format_brief_section(brief)
     user_prompt = user_template.format(theme=theme, brief_section=brief_section)
@@ -76,7 +87,7 @@ async def _generate_recommendations(
                 explanation=r["explanation"],
                 category=category,
             )
-            for r in recommendations_raw[:3]
+            for r in recommendations_raw[:max_recs]
         ]
 
         logger.info(f"Generated {len(recommendations)} {category} recommendations for theme: {theme[:50]}...")
@@ -100,6 +111,7 @@ async def generate_analogous_recommendations(state: dict) -> dict[str, Any]:
     # Handle both direct state (from Send) and nested input
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
+    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
 
     recs = await _generate_recommendations(
         theme=theme,
@@ -107,6 +119,7 @@ async def generate_analogous_recommendations(state: dict) -> dict[str, Any]:
         category="analogous",
         system_prompt=ANALOGOUS_DOMAIN_SYSTEM,
         user_template=ANALOGOUS_DOMAIN_USER,
+        quality_settings=quality_settings,
     )
 
     return {"analogous_recommendations": recs}
@@ -120,6 +133,7 @@ async def generate_inspiring_recommendations(state: dict) -> dict[str, Any]:
     """
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
+    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
 
     recs = await _generate_recommendations(
         theme=theme,
@@ -127,6 +141,7 @@ async def generate_inspiring_recommendations(state: dict) -> dict[str, Any]:
         category="inspiring",
         system_prompt=INSPIRING_ACTION_SYSTEM,
         user_template=INSPIRING_ACTION_USER,
+        quality_settings=quality_settings,
     )
 
     return {"inspiring_recommendations": recs}
@@ -140,6 +155,7 @@ async def generate_expressive_recommendations(state: dict) -> dict[str, Any]:
     """
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
+    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
 
     recs = await _generate_recommendations(
         theme=theme,
@@ -147,6 +163,7 @@ async def generate_expressive_recommendations(state: dict) -> dict[str, Any]:
         category="expressive",
         system_prompt=EXPRESSIVE_SYSTEM,
         user_template=EXPRESSIVE_USER,
+        quality_settings=quality_settings,
     )
 
     return {"expressive_recommendations": recs}

@@ -10,26 +10,28 @@ import logging
 from typing import Any
 
 from workflows.research.subgraphs.researcher_base import fetch_pdf_via_marker
-from workflows.research.subgraphs.book_finding.state import BookResult
+from workflows.research.subgraphs.book_finding.state import (
+    BookResult,
+    BookFindingQualitySettings,
+    BOOK_QUALITY_PRESETS,
+)
 from workflows.research.subgraphs.book_finding.prompts import SUMMARY_PROMPT
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
 
-# Processing configuration
-MAX_CONCURRENT_DOWNLOADS = 3
-MAX_CONTENT_FOR_SUMMARY = 50000  # Characters to use for summary generation
-
 
 async def _process_single_book(
     book: BookResult,
     theme: str,
+    quality_settings: BookFindingQualitySettings,
 ) -> tuple[BookResult | None, str | None]:
     """Download, process via Marker, and summarize a single book.
 
     Args:
         book: BookResult to process
         theme: Theme for context-aware summarization
+        quality_settings: Quality configuration for content limits and tokens
 
     Returns:
         Tuple of (updated BookResult with summary, None) on success,
@@ -49,11 +51,13 @@ async def _process_single_book(
             logger.warning(f"No content extracted from: {book['title']}")
             return None, book["title"]
 
-        # Truncate content for summary generation
-        content_truncated = content[:MAX_CONTENT_FOR_SUMMARY]
+        # Truncate content for summary generation based on quality settings
+        max_content = quality_settings["max_content_for_summary"]
+        content_truncated = content[:max_content]
 
         # Generate theme-relevant summary using Sonnet
-        llm = get_llm(ModelTier.SONNET, max_tokens=1024)
+        summary_tokens = quality_settings["summary_max_tokens"]
+        llm = get_llm(ModelTier.SONNET, max_tokens=summary_tokens)
         summary_prompt = SUMMARY_PROMPT.format(
             theme=theme,
             title=book["title"],
@@ -90,21 +94,23 @@ async def process_books(state: dict) -> dict[str, Any]:
     """Download and process books via Marker, generate theme-relevant summaries.
 
     Processes books with limited concurrency to avoid overwhelming
-    the Marker service.
+    the Marker service. Concurrency is controlled by quality settings.
     """
     books = state.get("search_results", [])
     theme = state.get("input", {}).get("theme", "")
+    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
 
     if not books:
         logger.warning("No books to process")
         return {"processed_books": [], "processing_failed": []}
 
-    # Process books with limited concurrency
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+    # Process books with limited concurrency based on quality settings
+    max_concurrent = quality_settings["max_concurrent_downloads"]
+    semaphore = asyncio.Semaphore(max_concurrent)
 
     async def process_with_semaphore(book: BookResult):
         async with semaphore:
-            return await _process_single_book(book, theme)
+            return await _process_single_book(book, theme, quality_settings)
 
     tasks = [process_with_semaphore(book) for book in books]
     results = await asyncio.gather(*tasks, return_exceptions=True)

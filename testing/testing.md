@@ -63,6 +63,39 @@ The workflow saves checkpoints after expensive phases (diffusion, processing). R
 
 Checkpoints are saved to `testing/test_data/checkpoints/`.
 
+### `test_wrapped_research.py`
+Run the wrapped research workflow that orchestrates web, academic, and book research.
+
+```bash
+# Full run with automatic checkpoints
+.venv/bin/python3 testing/test_wrapped_research.py "AI agents in creative work" quick
+.venv/bin/python3 testing/test_wrapped_research.py "Impact of LLMs" standard
+
+# Named checkpoints for iterative testing
+.venv/bin/python3 testing/test_wrapped_research.py "topic" quick --checkpoint-prefix mytest
+```
+
+Quality options: `quick`, `standard`, `comprehensive`
+
+**Checkpointing for fast iteration:**
+
+The workflow saves checkpoints after expensive phases (parallel research, book finding). Resume from these to iterate on later phases:
+
+```bash
+# Resume from after-parallel (runs books + summary + save)
+.venv/bin/python3 testing/test_wrapped_research.py --resume-from parallel --checkpoint-prefix mytest
+
+# Resume from after-books (runs summary + save only)
+.venv/bin/python3 testing/test_wrapped_research.py --resume-from books --checkpoint-prefix mytest
+
+# Original behavior without manual checkpoints
+.venv/bin/python3 testing/test_wrapped_research.py "topic" quick --no-checkpoint
+```
+
+Checkpoints are saved to `testing/test_data/checkpoints/wrapped/`.
+
+**Outputs:** Saves 4 markdown files (web, academic, books, combined) plus JSON result and analysis.
+
 ### `retrieve_langsmith_run.py`
 Inspect a LangSmith run - supervisor decisions, research questions, findings.
 

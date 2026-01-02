@@ -7,7 +7,7 @@ three categories: analogous domain, inspiring action, and expressive fiction.
 
 from datetime import datetime
 from operator import add
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
 
@@ -59,6 +59,50 @@ class BookResult(TypedDict):
 
 
 # =============================================================================
+# Quality Settings
+# =============================================================================
+
+
+class BookFindingQualitySettings(TypedDict):
+    """Configuration for a book finding quality tier."""
+
+    recommendations_per_category: int
+    max_concurrent_downloads: int
+    max_content_for_summary: int
+    recommendation_max_tokens: int
+    summary_max_tokens: int
+    use_opus_for_recommendations: bool
+
+
+BOOK_QUALITY_PRESETS: dict[str, BookFindingQualitySettings] = {
+    "quick": BookFindingQualitySettings(
+        recommendations_per_category=2,
+        max_concurrent_downloads=2,
+        max_content_for_summary=25000,
+        recommendation_max_tokens=1024,
+        summary_max_tokens=512,
+        use_opus_for_recommendations=False,
+    ),
+    "standard": BookFindingQualitySettings(
+        recommendations_per_category=3,
+        max_concurrent_downloads=3,
+        max_content_for_summary=50000,
+        recommendation_max_tokens=2048,
+        summary_max_tokens=1024,
+        use_opus_for_recommendations=True,
+    ),
+    "comprehensive": BookFindingQualitySettings(
+        recommendations_per_category=5,
+        max_concurrent_downloads=5,
+        max_content_for_summary=100000,
+        recommendation_max_tokens=4096,
+        summary_max_tokens=2048,
+        use_opus_for_recommendations=True,
+    ),
+}
+
+
+# =============================================================================
 # Input Types
 # =============================================================================
 
@@ -68,6 +112,7 @@ class BookFindingInput(TypedDict):
 
     theme: str  # The theme to explore
     brief: Optional[str]  # Optional additional context/brief
+    quality: Literal["quick", "standard", "comprehensive"]
 
 
 # =============================================================================
@@ -80,6 +125,7 @@ class BookFindingState(TypedDict):
 
     # Input
     input: BookFindingInput
+    quality_settings: BookFindingQualitySettings
 
     # Recommendations phase (parallel aggregation via add reducer)
     analogous_recommendations: Annotated[list[BookRecommendation], add]

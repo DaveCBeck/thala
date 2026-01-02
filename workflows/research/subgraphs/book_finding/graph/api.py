@@ -7,11 +7,12 @@ the complete workflow from theme to markdown output.
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from workflows.research.subgraphs.book_finding.state import (
     BookFindingInput,
     BookFindingState,
+    BOOK_QUALITY_PRESETS,
 )
 from .construction import book_finding_graph
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 async def book_finding(
     theme: str,
     brief: Optional[str] = None,
+    quality: Literal["quick", "standard", "comprehensive"] = "standard",
 ) -> dict[str, Any]:
     """Run book finding workflow for a theme.
 
@@ -29,13 +31,17 @@ async def book_finding(
     2. Inspiring action - Books that inspire change and action
     3. Expressive fiction - Fiction capturing the theme's essence
 
-    Each category uses Opus to generate 3 book recommendations,
-    then the workflow searches for and processes the books via
-    the book_search API and Marker PDF conversion.
+    Each category generates book recommendations (2-5 per category depending
+    on quality tier), then the workflow searches for and processes the books
+    via the book_search API and Marker PDF conversion.
 
     Args:
         theme: The theme to explore (e.g., "organizational resilience")
         brief: Optional additional context to guide recommendations
+        quality: Quality tier - "quick", "standard", or "comprehensive"
+            - quick: 2 recommendations per category, faster processing
+            - standard: 3 recommendations per category (default)
+            - comprehensive: 5 recommendations per category, thorough
 
     Returns:
         Dict containing:
@@ -51,16 +57,22 @@ async def book_finding(
         result = await book_finding(
             theme="creative leadership in uncertain times",
             brief="Focus on practical approaches rather than theoretical frameworks",
+            quality="comprehensive",
         )
         print(result["final_markdown"])
     """
+    # Get quality settings, defaulting to standard if invalid
+    quality_settings = BOOK_QUALITY_PRESETS.get(quality, BOOK_QUALITY_PRESETS["standard"])
+
     input_data = BookFindingInput(
         theme=theme,
         brief=brief,
+        quality=quality,
     )
 
     initial_state = BookFindingState(
         input=input_data,
+        quality_settings=quality_settings,
         analogous_recommendations=[],
         inspiring_recommendations=[],
         expressive_recommendations=[],
