@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="${SCRIPT_DIR}/backups"
+MONITOR_PID_FILE="${SCRIPT_DIR}/monitor.pid"
 
 # Service directories (order matters for startup - databases first)
 SERVICES=(
@@ -91,9 +92,15 @@ cmd_up() {
 
     log "All services started."
     cmd_status
+
+    # Start background performance monitor
+    start_background_monitor
 }
 
 cmd_down() {
+    # Stop background monitor first
+    stop_background_monitor
+
     log "Stopping all services..."
 
     # Stop VPN services first
@@ -236,6 +243,39 @@ cmd_reset() {
     log "Reset complete. Run '$0 up' to start fresh."
 }
 
+cmd_monitor() {
+    python3 "${SCRIPT_DIR}/monitor.py" "${@}"
+}
+
+start_background_monitor() {
+    # Start monitor in background with JSON output (saves to files)
+    if [[ -f "$MONITOR_PID_FILE" ]]; then
+        local pid=$(cat "$MONITOR_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log "Monitor already running (PID $pid)"
+            return 0
+        fi
+    fi
+
+    log "Starting background monitor..."
+    nohup python3 "${SCRIPT_DIR}/monitor.py" --json > /dev/null 2>&1 &
+    echo $! > "$MONITOR_PID_FILE"
+    log "Monitor started (PID $(cat "$MONITOR_PID_FILE"))"
+}
+
+stop_background_monitor() {
+    if [[ -f "$MONITOR_PID_FILE" ]]; then
+        local pid=$(cat "$MONITOR_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log "Stopping monitor (PID $pid)..."
+            kill "$pid" 2>/dev/null || true
+            rm -f "$MONITOR_PID_FILE"
+        else
+            rm -f "$MONITOR_PID_FILE"
+        fi
+    fi
+}
+
 cmd_help() {
     cat <<EOF
 Usage: $0 <command> [args]
@@ -245,10 +285,18 @@ Commands:
   down      Stop all services
   status    Show service status
   logs      Follow logs for a service (e.g., $0 logs zotero)
+  monitor   Monitor service performance (e.g., $0 monitor --interval 60)
   backup    Create timestamped backup of all data
   restore   Restore from backup (e.g., $0 restore backups/20251216-120000)
   reset     Stop services and DELETE all data (requires confirmation)
   help      Show this help
+
+Monitor options:
+  --interval, -i  Collection interval in seconds (default: 30)
+  --window, -w    Rolling stats window in seconds (default: 300)
+  --json, -j      Output JSON to console instead of table
+  --once          Single collection, then exit
+  --no-save       Disable file persistence (console only)
 
 Services:     ${SERVICES[*]}
 GPU Services: ${GPU_SERVICES[*]} (require nvidia-container-toolkit)
@@ -262,6 +310,7 @@ case "${1:-}" in
     down)    cmd_down ;;
     status)  cmd_status ;;
     logs)    cmd_logs "$2" ;;
+    monitor) cmd_monitor "${@:2}" ;;
     backup)  cmd_backup ;;
     restore) cmd_restore "$2" ;;
     reset)   cmd_reset ;;

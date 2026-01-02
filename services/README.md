@@ -162,6 +162,23 @@ async with RetrieveAcademicClient() as client:
 ./services.sh reset
 ```
 
+## Monitoring
+
+Performance monitoring starts automatically with `services.sh up` and saves metrics to `services/metrics/YYYY-MM-DD.jsonl`.
+
+```bash
+# Manual foreground monitoring (table output)
+./services.sh monitor
+
+# One-shot status check
+./services.sh monitor --once
+
+# Custom interval (60s instead of default 30s)
+./services.sh monitor --interval 60
+```
+
+Metrics collected: CPU%, memory usage, health endpoint latency (avg, p90).
+
 ## Logs
 
 ```bash
