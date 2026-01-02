@@ -4,6 +4,11 @@ LangChain tools for Thala memory system.
 Tools provided:
 - search_memory: Cross-store semantic search
 - expand_context: Deep-dive retrieval ("more about that")
+- search_store: Main knowledge store (with language, type, compression filters)
+- search_coherence: Beliefs/preferences (with category, confidence filters)
+- search_top_of_mind: Active projects (semantic search with language filter)
+- search_history: Historical versions
+- search_forgotten: Archived content
 - web_search: Search the web for information (Firecrawl)
 - scrape_url: Scrape a webpage to markdown
 - map_website: Discover URLs on a website
@@ -24,6 +29,15 @@ from .search_memory import (
 from .expand_context import (
     expand_context,
     ExpandedContext,
+)
+from .store_search import (
+    search_store,
+    search_coherence,
+    search_top_of_mind,
+    search_history,
+    search_forgotten,
+    StoreSearchResult,
+    StoreSearchOutput,
 )
 from .firecrawl import (
     web_search,
@@ -72,6 +86,14 @@ __all__ = [
     # expand_context tool
     "expand_context",
     "ExpandedContext",
+    # store_search tools
+    "search_store",
+    "search_coherence",
+    "search_top_of_mind",
+    "search_history",
+    "search_forgotten",
+    "StoreSearchResult",
+    "StoreSearchOutput",
     # firecrawl tools
     "web_search",
     "scrape_url",
