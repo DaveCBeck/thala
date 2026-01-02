@@ -200,3 +200,31 @@ results = await process_documents_with_batch_api([
     {"id": "doc2", "content": "...", "title": "Doc 2"},
 ])
 ```
+
+## Multi-Language Research Workflow
+
+The `workflows/multi_lang/` package runs research across multiple languages, producing two outputs:
+
+1. **Synthesized Document**: Opus integrates findings one-by-one into a unified English report
+2. **Comparative Document**: Sonnet 1M analyzes commonalities, differences, and unique contributions
+
+```python
+from workflows.multi_lang import multi_lang_research
+
+# Mode 1: Specific languages
+result = await multi_lang_research(
+    topic="sustainable urban planning",
+    mode="set_languages",
+    languages=["en", "es", "de", "ja"],
+    workflows={"web": True, "academic": True, "books": False},
+)
+
+# Mode 2: Auto-detect (major 10 languages, Haiku filters by relevance)
+result = await multi_lang_research(
+    topic="traditional medicine",
+    mode="all_languages",
+)
+
+print(result.synthesis)    # Unified English report
+print(result.comparative)  # Cross-language analysis
+```
