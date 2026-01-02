@@ -63,6 +63,7 @@ result = await academic_lit_review(
     topic="machine learning in drug discovery",
     research_questions=["How are GNNs used for molecular property prediction?"],
     quality="standard",  # quick | standard | comprehensive | high_quality
+    language="en",       # ISO 639-1 code (29 languages supported)
 )
 ```
 
@@ -73,6 +74,7 @@ from workflows.research.subgraphs.book_finding import book_finding
 result = await book_finding(
     theme="organizational resilience",
     brief="Focus on practical approaches",  # optional
+    language="es",                          # ISO 639-1 code
 )
 ```
 Generates 9 book recommendations across three categories (analogous domain, inspiring action, expressive fiction) using Opus, then searches and processes them.

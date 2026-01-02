@@ -5,6 +5,7 @@ from typing import Any
 
 from workflows.research.subgraphs.academic_lit_review.state import LLMTheme, LLMTopicSchema
 from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.language import get_translated_prompt
 
 from .formatters import format_paper_for_llm
 from .prompts import LLM_CLUSTERING_SYSTEM_PROMPT, LLM_CLUSTERING_USER_TEMPLATE
@@ -21,6 +22,7 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
     """
     paper_summaries = state.get("paper_summaries", {})
     input_data = state.get("input", {})
+    language_config = state.get("language_config")
 
     if not paper_summaries:
         logger.warning("No paper summaries for LLM clustering")
@@ -32,6 +34,16 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
     topic = input_data.get("topic", "Unknown topic")
     research_questions = input_data.get("research_questions", [])
 
+    # Translate system prompt if needed
+    system_prompt = LLM_CLUSTERING_SYSTEM_PROMPT
+    if language_config and language_config["code"] != "en":
+        system_prompt = await get_translated_prompt(
+            LLM_CLUSTERING_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_clustering_system",
+        )
+
     # Format all summaries for the prompt
     summaries_text = "\n\n---\n\n".join(
         format_paper_for_llm(doi, summary)
@@ -41,7 +53,17 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
     # Format research questions
     rq_text = "\n".join(f"- {q}" for q in research_questions) if research_questions else "None specified"
 
-    user_prompt = LLM_CLUSTERING_USER_TEMPLATE.format(
+    # Translate user prompt template if needed
+    user_template = LLM_CLUSTERING_USER_TEMPLATE
+    if language_config and language_config["code"] != "en":
+        user_template = await get_translated_prompt(
+            LLM_CLUSTERING_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_clustering_user",
+        )
+
+    user_prompt = user_template.format(
         paper_count=len(paper_summaries),
         topic=topic,
         research_questions=rq_text,
@@ -58,7 +80,7 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
         # Use structured output to avoid JSON parsing issues
         structured_llm = llm.with_structured_output(LLMTopicSchemaOutput)
         messages = [
-            {"role": "system", "content": LLM_CLUSTERING_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
 

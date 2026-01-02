@@ -9,9 +9,11 @@ Usage:
     python test_academic_lit_review.py "your research topic" [quality] [options]
     python test_academic_lit_review.py "transformer architectures" quick
     python test_academic_lit_review.py "transformer architectures" standard
+    python test_academic_lit_review.py "transformer architectures" standard --language es
     python test_academic_lit_review.py  # Uses default topic and quick quality
 
 Valid quality levels: quick, standard, comprehensive, high_quality (default: quick)
+Valid languages: en, es, zh, ja, de, fr, pt, ko, ru, ar, it, nl, pl, tr, vi, th, id, hi, bn, sv, no, da, fi, cs, el, he, uk, ro, hu (default: en)
 
 Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
@@ -347,12 +349,14 @@ async def run_literature_review(
     research_questions: list[str],
     quality: str = "quick",
     date_range: tuple[int, int] | None = None,
+    language: str = "en",
 ) -> dict:
     """Run the academic literature review workflow on a topic."""
     from workflows.research.subgraphs.academic_lit_review import academic_lit_review
 
     logger.info(f"Starting literature review on: {topic}")
     logger.info(f"Quality: {quality}")
+    logger.info(f"Language: {language}")
     logger.info(f"Research questions: {len(research_questions)}")
     logger.info(f"LangSmith tracing: {os.environ.get('LANGSMITH_TRACING', 'false')}")
 
@@ -361,6 +365,7 @@ async def run_literature_review(
         research_questions=research_questions,
         quality=quality,
         date_range=date_range,
+        language=language,
     )
 
     return result
@@ -376,6 +381,7 @@ def build_initial_state(
     research_questions: list[str],
     quality: str,
     date_range: tuple[int, int] | None,
+    language: str = "en",
 ) -> dict:
     """Build initial state for the literature review workflow.
 
@@ -388,12 +394,14 @@ def build_initial_state(
         LitReviewInput,
         LitReviewDiffusionState,
     )
+    from workflows.shared.language import get_language_config
 
     if quality not in QUALITY_PRESETS:
         logger.warning(f"Unknown quality '{quality}', using 'standard'")
         quality = "standard"
 
     quality_settings = dict(QUALITY_PRESETS[quality])
+    language_config = get_language_config(language)
 
     input_data = LitReviewInput(
         topic=topic,
@@ -404,11 +412,13 @@ def build_initial_state(
         focus_areas=None,
         exclude_terms=None,
         max_papers=None,
+        language_code=language,
     )
 
     return {
         "input": input_data,
         "quality_settings": quality_settings,
+        "language_config": language_config,
         "keyword_papers": [],
         "citation_papers": [],
         "expert_papers": [],
@@ -455,6 +465,7 @@ async def run_with_checkpoints(
     quality: str = "quick",
     date_range: tuple[int, int] | None = None,
     checkpoint_prefix: str = "latest",
+    language: str = "en",
 ) -> dict:
     """Run full workflow with automatic checkpoint saves after expensive phases.
 
@@ -472,9 +483,10 @@ async def run_with_checkpoints(
 
     logger.info(f"Starting checkpointed literature review on: {topic}")
     logger.info(f"Checkpoint prefix: {checkpoint_prefix}")
+    logger.info(f"Language: {language}")
 
     # Build initial state
-    state = build_initial_state(topic, research_questions, quality, date_range)
+    state = build_initial_state(topic, research_questions, quality, date_range, language)
 
     # Phase 1: Discovery
     logger.info("Running discovery phase...")
@@ -636,6 +648,12 @@ Checkpoint examples:
         action="store_true",
         help="Disable automatic checkpointing (use original workflow)"
     )
+    parser.add_argument(
+        "--language", "-l",
+        type=str,
+        default="en",
+        help="Language code for the review (default: en). Supported: en, es, zh, ja, de, fr, pt, ko, ru, ar, it, nl, pl, tr, vi, th, id, hi, bn, sv, no, da, fi, cs, el, he, uk, ro, hu"
+    )
 
     return parser.parse_args()
 
@@ -647,6 +665,7 @@ async def main():
     topic = args.topic
     quality = args.quality
     checkpoint_prefix = args.checkpoint_prefix
+    language = args.language
 
     # Default research questions if not provided
     if args.questions:
@@ -678,6 +697,7 @@ async def main():
     print(f"{'=' * 80}")
     print(f"\nTopic: {topic}")
     print(f"Quality: {quality}")
+    print(f"Language: {language}")
     print(f"Mode: {mode}")
     if not args.resume_from:
         print(f"Research Questions:")
@@ -707,6 +727,7 @@ async def main():
                 research_questions=research_questions,
                 quality=quality,
                 date_range=date_range,
+                language=language,
             )
         else:
             result = await run_with_checkpoints(
@@ -715,6 +736,7 @@ async def main():
                 quality=quality,
                 date_range=date_range,
                 checkpoint_prefix=checkpoint_prefix,
+                language=language,
             )
 
         # Print detailed result summary
@@ -746,7 +768,7 @@ async def main():
             with open(report_file, "w") as f:
                 f.write(f"# Literature Review: {topic}\n\n")
                 f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality}*\n\n")
+                f.write(f"*Quality: {quality} | Language: {language}*\n\n")
                 f.write("---\n\n")
                 f.write(result["final_review"])
             logger.info(f"Review saved to: {report_file}")

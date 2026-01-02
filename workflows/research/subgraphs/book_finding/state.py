@@ -10,6 +10,8 @@ from operator import add
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
+from workflows.shared.language import LanguageConfig
+
 
 # =============================================================================
 # Reducer Functions
@@ -113,6 +115,7 @@ class BookFindingInput(TypedDict):
     theme: str  # The theme to explore
     brief: Optional[str]  # Optional additional context/brief
     quality: Literal["quick", "standard", "comprehensive"]
+    language_code: Optional[str]  # ISO 639-1 code, default "en"
 
 
 # =============================================================================
@@ -126,6 +129,7 @@ class BookFindingState(TypedDict):
     # Input
     input: BookFindingInput
     quality_settings: BookFindingQualitySettings
+    language_config: Optional[LanguageConfig]  # Full config derived from code
 
     # Recommendations phase (parallel aggregation via add reducer)
     analogous_recommendations: Annotated[list[BookRecommendation], add]

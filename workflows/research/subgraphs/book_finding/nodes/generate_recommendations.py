@@ -15,14 +15,7 @@ from workflows.research.subgraphs.book_finding.state import (
     BookFindingQualitySettings,
     BOOK_QUALITY_PRESETS,
 )
-from workflows.research.subgraphs.book_finding.prompts import (
-    ANALOGOUS_DOMAIN_SYSTEM,
-    ANALOGOUS_DOMAIN_USER,
-    INSPIRING_ACTION_SYSTEM,
-    INSPIRING_ACTION_USER,
-    EXPRESSIVE_SYSTEM,
-    EXPRESSIVE_USER,
-)
+from workflows.research.subgraphs.book_finding.prompts import get_recommendation_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +105,16 @@ async def generate_analogous_recommendations(state: dict) -> dict[str, Any]:
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
     quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    language_config = state.get("language_config")
+
+    system_prompt, user_template = await get_recommendation_prompts("analogous", language_config)
 
     recs = await _generate_recommendations(
         theme=theme,
         brief=brief,
         category="analogous",
-        system_prompt=ANALOGOUS_DOMAIN_SYSTEM,
-        user_template=ANALOGOUS_DOMAIN_USER,
+        system_prompt=system_prompt,
+        user_template=user_template,
         quality_settings=quality_settings,
     )
 
@@ -134,13 +130,16 @@ async def generate_inspiring_recommendations(state: dict) -> dict[str, Any]:
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
     quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    language_config = state.get("language_config")
+
+    system_prompt, user_template = await get_recommendation_prompts("inspiring", language_config)
 
     recs = await _generate_recommendations(
         theme=theme,
         brief=brief,
         category="inspiring",
-        system_prompt=INSPIRING_ACTION_SYSTEM,
-        user_template=INSPIRING_ACTION_USER,
+        system_prompt=system_prompt,
+        user_template=user_template,
         quality_settings=quality_settings,
     )
 
@@ -156,13 +155,16 @@ async def generate_expressive_recommendations(state: dict) -> dict[str, Any]:
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
     quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    language_config = state.get("language_config")
+
+    system_prompt, user_template = await get_recommendation_prompts("expressive", language_config)
 
     recs = await _generate_recommendations(
         theme=theme,
         brief=brief,
         category="expressive",
-        system_prompt=EXPRESSIVE_SYSTEM,
-        user_template=EXPRESSIVE_USER,
+        system_prompt=system_prompt,
+        user_template=user_template,
         quality_settings=quality_settings,
     )
 

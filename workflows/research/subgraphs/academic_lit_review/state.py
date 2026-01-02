@@ -10,6 +10,8 @@ from operator import add
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
+from workflows.shared.language import LanguageConfig
+
 
 # =============================================================================
 # Reducer Functions
@@ -46,6 +48,7 @@ class LitReviewInput(TypedDict):
     focus_areas: Optional[list[str]]  # Specific sub-topics to prioritize
     exclude_terms: Optional[list[str]]  # Terms to filter out
     max_papers: Optional[int]  # Override default for quality level
+    language_code: Optional[str]  # ISO 639-1 code, default "en"
 
 
 class QualitySettings(TypedDict):
@@ -300,6 +303,7 @@ class AcademicLitReviewState(TypedDict):
     # Input
     input: LitReviewInput
     quality_settings: QualitySettings
+    language_config: Optional[LanguageConfig]
 
     # Discovery phase results (parallel aggregation)
     keyword_papers: Annotated[list[str], add]  # DOIs from keyword search

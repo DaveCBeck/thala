@@ -27,6 +27,7 @@ from workflows.research.subgraphs.academic_lit_review.utils import (
     batch_score_relevance,
 )
 from workflows.shared.llm_utils import ModelTier
+from workflows.shared.language import LanguageConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class KeywordSearchState(TypedDict):
     # Input (from parent)
     input: LitReviewInput
     quality_settings: QualitySettings
+    language_config: Optional[LanguageConfig]
 
     # Internal state
     search_queries: list[str]
@@ -75,11 +77,13 @@ async def generate_queries_node(state: KeywordSearchState) -> dict[str, Any]:
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     focus_areas = input_data.get("focus_areas")
+    language_config = state.get("language_config")
 
     queries = await generate_search_queries(
         topic=topic,
         research_questions=research_questions,
         focus_areas=focus_areas,
+        language_config=language_config,
         tier=ModelTier.HAIKU,
     )
 
@@ -160,6 +164,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
     input_data = state["input"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
+    language_config = state.get("language_config")
 
     if not raw_results:
         logger.warning("No raw results to filter")
@@ -197,6 +202,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
         topic=topic,
         research_questions=research_questions,
         threshold=0.6,
+        language_config=language_config,
         tier=ModelTier.HAIKU,
         max_concurrent=10,
     )
@@ -258,6 +264,7 @@ async def run_keyword_search(
     quality_settings: QualitySettings,
     date_range: Optional[tuple[int, int]] = None,
     focus_areas: Optional[list[str]] = None,
+    language_config: Optional[LanguageConfig] = None,
 ) -> dict[str, Any]:
     """Run keyword search discovery as a standalone operation.
 
@@ -267,6 +274,7 @@ async def run_keyword_search(
         quality_settings: Quality tier settings
         date_range: Optional (start_year, end_year) filter
         focus_areas: Optional specific areas to focus on
+        language_config: Optional language configuration
 
     Returns:
         Dict with discovered_papers, rejected_papers, keyword_dois
@@ -280,11 +288,13 @@ async def run_keyword_search(
         focus_areas=focus_areas,
         exclude_terms=None,
         max_papers=None,
+        language_code=language_config["code"] if language_config else "en",
     )
 
     initial_state = KeywordSearchState(
         input=input_data,
         quality_settings=quality_settings,
+        language_config=language_config,
         search_queries=[],
         raw_results=[],
         discovered_papers=[],

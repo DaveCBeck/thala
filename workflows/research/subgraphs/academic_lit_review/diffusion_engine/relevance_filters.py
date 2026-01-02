@@ -84,6 +84,7 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
     input_data = state["input"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
+    language_config = state.get("language_config")
 
     if not candidates:
         logger.info("No candidates remaining for LLM relevance scoring")
@@ -98,6 +99,7 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
         topic=topic,
         research_questions=research_questions,
         threshold=0.6,
+        language_config=language_config,
         tier=ModelTier.HAIKU,
         max_concurrent=10,
     )

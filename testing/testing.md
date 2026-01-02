@@ -40,11 +40,15 @@ Run an academic literature review workflow with checkpointing support.
 .venv/bin/python3 testing/test_academic_lit_review.py "transformer architectures" quick
 .venv/bin/python3 testing/test_academic_lit_review.py "AI in drug discovery" standard
 
+# Multilingual support (29 languages)
+.venv/bin/python3 testing/test_academic_lit_review.py "machine learning" standard --language es
+
 # Named checkpoints for iterative testing
 .venv/bin/python3 testing/test_academic_lit_review.py "topic" quick --checkpoint-prefix mytest
 ```
 
 Quality options: `quick`, `standard`, `comprehensive`, `high_quality`
+Language: ISO 639-1 code (e.g., `en`, `es`, `zh`, `ja`, `de`, `fr`)
 
 **Checkpointing for fast iteration:**
 
@@ -62,6 +66,18 @@ The workflow saves checkpoints after expensive phases (diffusion, processing). R
 ```
 
 Checkpoints are saved to `testing/test_data/checkpoints/`.
+
+### `test_book_finding.py`
+Run the book finding workflow to discover relevant books across three categories.
+
+```bash
+.venv/bin/python3 testing/test_book_finding.py "organizational resilience"
+.venv/bin/python3 testing/test_book_finding.py "creative leadership" standard
+.venv/bin/python3 testing/test_book_finding.py "liderazgo creativo" quick --language es
+```
+
+Quality options: `quick`, `standard`, `comprehensive`
+Language: ISO 639-1 code (e.g., `en`, `es`, `zh`, `ja`, `de`, `fr`)
 
 ### `test_wrapped_research.py`
 Run the wrapped research workflow that orchestrates web, academic, and book research.

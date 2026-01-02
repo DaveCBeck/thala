@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState, MAX_CONCURRENT_SECTIONS
 from ..prompts import (
     INTRODUCTION_SYSTEM_PROMPT,
@@ -29,6 +30,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     paper_summaries = state.get("paper_summaries", {})
     clusters = state.get("clusters", [])
     quality_settings = state.get("quality_settings", {})
+    language_config = state.get("language_config")
 
     topic = input_data.get("topic", "Unknown topic")
     research_questions = input_data.get("research_questions", [])
@@ -47,7 +49,39 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     else:
         actual_range = "Not specified"
 
-    intro_prompt = INTRODUCTION_USER_TEMPLATE.format(
+    # Translate prompts if needed
+    intro_system = INTRODUCTION_SYSTEM_PROMPT
+    intro_user_template = INTRODUCTION_USER_TEMPLATE
+    method_system = METHODOLOGY_SYSTEM_PROMPT
+    method_user_template = METHODOLOGY_USER_TEMPLATE
+
+    if language_config and language_config["code"] != "en":
+        intro_system = await get_translated_prompt(
+            INTRODUCTION_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_intro_system",
+        )
+        intro_user_template = await get_translated_prompt(
+            INTRODUCTION_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_intro_user",
+        )
+        method_system = await get_translated_prompt(
+            METHODOLOGY_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_method_system",
+        )
+        method_user_template = await get_translated_prompt(
+            METHODOLOGY_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_method_user",
+        )
+
+    intro_prompt = intro_user_template.format(
         topic=topic,
         research_questions="\n".join(f"- {q}" for q in research_questions),
         themes_overview=themes_overview,
@@ -59,7 +93,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
 
     intro_response = await invoke_with_cache(
         llm,
-        system_prompt=INTRODUCTION_SYSTEM_PROMPT,
+        system_prompt=intro_system,
         user_prompt=intro_prompt,
     )
 
@@ -67,7 +101,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
 
     total_papers = len(paper_summaries)
 
-    method_prompt = METHODOLOGY_USER_TEMPLATE.format(
+    method_prompt = method_user_template.format(
         topic=topic,
         keyword_count=total_papers // 4,
         citation_count=total_papers * 3 // 4,
@@ -83,7 +117,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
 
     method_response = await invoke_with_cache(
         llm,
-        system_prompt=METHODOLOGY_SYSTEM_PROMPT,
+        system_prompt=method_system,
         user_prompt=method_prompt,
     )
 
@@ -103,12 +137,31 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
     cluster_analyses = state.get("cluster_analyses", [])
     paper_summaries = state.get("paper_summaries", {})
     zotero_keys = state.get("zotero_keys", {})
+    language_config = state.get("language_config")
 
     if not clusters:
         logger.warning("No clusters to write sections for")
         return {"thematic_section_drafts": {}}
 
     analysis_lookup = {a["cluster_id"]: a for a in cluster_analyses}
+
+    # Translate prompts if needed
+    thematic_system = THEMATIC_SECTION_SYSTEM_PROMPT
+    thematic_user_template = THEMATIC_SECTION_USER_TEMPLATE
+
+    if language_config and language_config["code"] != "en":
+        thematic_system = await get_translated_prompt(
+            THEMATIC_SECTION_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_thematic_system",
+        )
+        thematic_user_template = await get_translated_prompt(
+            THEMATIC_SECTION_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_thematic_user",
+        )
 
     async def write_single_section(cluster):
         """Write a single thematic section."""
@@ -120,7 +173,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             zotero_keys,
         )
 
-        user_prompt = THEMATIC_SECTION_USER_TEMPLATE.format(
+        user_prompt = thematic_user_template.format(
             theme_name=cluster["label"],
             theme_description=cluster["description"],
             sub_themes=", ".join(cluster.get("sub_themes", [])) or "None identified",
@@ -135,7 +188,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
 
             response = await invoke_with_cache(
                 llm,
-                system_prompt=THEMATIC_SECTION_SYSTEM_PROMPT,
+                system_prompt=thematic_system,
                 user_prompt=user_prompt,
             )
 
@@ -174,6 +227,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
     input_data = state.get("input", {})
     clusters = state.get("clusters", [])
     cluster_analyses = state.get("cluster_analyses", [])
+    language_config = state.get("language_config")
 
     research_questions = input_data.get("research_questions", [])
 
@@ -192,7 +246,39 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         for gap in cluster.get("gaps", []):
             gaps.append(gap)
 
-    discussion_prompt = DISCUSSION_USER_TEMPLATE.format(
+    # Translate prompts if needed
+    discussion_system = DISCUSSION_SYSTEM_PROMPT
+    discussion_user_template = DISCUSSION_USER_TEMPLATE
+    conclusions_system = CONCLUSIONS_SYSTEM_PROMPT
+    conclusions_user_template = CONCLUSIONS_USER_TEMPLATE
+
+    if language_config and language_config["code"] != "en":
+        discussion_system = await get_translated_prompt(
+            DISCUSSION_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_discussion_system",
+        )
+        discussion_user_template = await get_translated_prompt(
+            DISCUSSION_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_discussion_user",
+        )
+        conclusions_system = await get_translated_prompt(
+            CONCLUSIONS_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_conclusions_system",
+        )
+        conclusions_user_template = await get_translated_prompt(
+            CONCLUSIONS_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_conclusions_user",
+        )
+
+    discussion_prompt = discussion_user_template.format(
         research_questions="\n".join(f"- {q}" for q in research_questions),
         themes_summary=themes_summary,
         cross_cutting_findings="See thematic sections for detailed findings.",
@@ -203,7 +289,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
 
     discussion_response = await invoke_with_cache(
         llm,
-        system_prompt=DISCUSSION_SYSTEM_PROMPT,
+        system_prompt=discussion_system,
         user_prompt=discussion_prompt,
     )
 
@@ -214,7 +300,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         for i, q in enumerate(research_questions)
     )
 
-    conclusions_prompt = CONCLUSIONS_USER_TEMPLATE.format(
+    conclusions_prompt = conclusions_user_template.format(
         research_questions="\n".join(f"- {q}" for q in research_questions),
         findings_per_question=findings_summary,
         main_contributions=f"Systematic review of {sum(len(c['paper_dois']) for c in clusters)} papers organized into {len(clusters)} themes",
@@ -222,7 +308,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
 
     conclusions_response = await invoke_with_cache(
         llm,
-        system_prompt=CONCLUSIONS_SYSTEM_PROMPT,
+        system_prompt=conclusions_system,
         user_prompt=conclusions_prompt,
     )
 

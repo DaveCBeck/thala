@@ -15,7 +15,7 @@ from workflows.research.subgraphs.book_finding.state import (
     BookFindingQualitySettings,
     BOOK_QUALITY_PRESETS,
 )
-from workflows.research.subgraphs.book_finding.prompts import SUMMARY_PROMPT
+from workflows.research.subgraphs.book_finding.prompts import get_summary_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ async def _process_single_book(
     book: BookResult,
     theme: str,
     quality_settings: BookFindingQualitySettings,
+    summary_prompt_template: str,
 ) -> tuple[BookResult | None, str | None]:
     """Download, process via Marker, and summarize a single book.
 
@@ -32,6 +33,7 @@ async def _process_single_book(
         book: BookResult to process
         theme: Theme for context-aware summarization
         quality_settings: Quality configuration for content limits and tokens
+        summary_prompt_template: Prompt template for summary generation
 
     Returns:
         Tuple of (updated BookResult with summary, None) on success,
@@ -58,7 +60,7 @@ async def _process_single_book(
         # Generate theme-relevant summary using Sonnet
         summary_tokens = quality_settings["summary_max_tokens"]
         llm = get_llm(ModelTier.SONNET, max_tokens=summary_tokens)
-        summary_prompt = SUMMARY_PROMPT.format(
+        summary_prompt = summary_prompt_template.format(
             theme=theme,
             title=book["title"],
             authors=book["authors"],
@@ -99,10 +101,14 @@ async def process_books(state: dict) -> dict[str, Any]:
     books = state.get("search_results", [])
     theme = state.get("input", {}).get("theme", "")
     quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    language_config = state.get("language_config")
 
     if not books:
         logger.warning("No books to process")
         return {"processed_books": [], "processing_failed": []}
+
+    # Get translated summary prompt if needed
+    summary_prompt_template = await get_summary_prompt(language_config)
 
     # Process books with limited concurrency based on quality settings
     max_concurrent = quality_settings["max_concurrent_downloads"]
@@ -110,7 +116,7 @@ async def process_books(state: dict) -> dict[str, Any]:
 
     async def process_with_semaphore(book: BookResult):
         async with semaphore:
-            return await _process_single_book(book, theme, quality_settings)
+            return await _process_single_book(book, theme, quality_settings, summary_prompt_template)
 
     tasks = [process_with_semaphore(book) for book in books]
     results = await asyncio.gather(*tasks, return_exceptions=True)

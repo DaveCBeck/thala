@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import INTEGRATION_SYSTEM_PROMPT, INTEGRATION_USER_TEMPLATE
 
@@ -19,6 +20,7 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     discussion = state.get("discussion_draft", "")
     conclusions = state.get("conclusions_draft", "")
     clusters = state.get("clusters", [])
+    language_config = state.get("language_config")
 
     topic = input_data.get("topic", "Literature Review")
 
@@ -31,7 +33,25 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
 
     thematic_text = "\n\n".join(ordered_sections)
 
-    integration_prompt = INTEGRATION_USER_TEMPLATE.format(
+    # Translate prompts if needed
+    integration_system = INTEGRATION_SYSTEM_PROMPT
+    integration_user_template = INTEGRATION_USER_TEMPLATE
+
+    if language_config and language_config["code"] != "en":
+        integration_system = await get_translated_prompt(
+            INTEGRATION_SYSTEM_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_integration_system",
+        )
+        integration_user_template = await get_translated_prompt(
+            INTEGRATION_USER_TEMPLATE,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_integration_user",
+        )
+
+    integration_prompt = integration_user_template.format(
         title=f"Literature Review: {topic}",
         introduction=introduction,
         methodology=methodology,
@@ -44,7 +64,7 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
 
     response = await invoke_with_cache(
         llm,
-        system_prompt=INTEGRATION_SYSTEM_PROMPT,
+        system_prompt=integration_system,
         user_prompt=integration_prompt,
         cache_ttl="1h",
     )

@@ -7,6 +7,11 @@ Three distinct recommendation categories:
 3. Expressive Fiction - Fiction capturing the theme's essence
 """
 
+from typing import Optional
+
+from workflows.shared.language import LanguageConfig, get_translated_prompt
+
+
 ANALOGOUS_DOMAIN_SYSTEM = """You are a literary advisor with deep knowledge across academic disciplines, finding books that illuminate themes through unexpected domains.
 
 Your task is to find books that explore SIMILAR themes but in DIFFERENT domains. The goal is to find unexpected connections that provide fresh perspective on the user's theme.
@@ -91,3 +96,55 @@ Content excerpt:
 {content}
 
 Provide a 2-3 sentence summary focusing on insights relevant to the theme. Be specific about what the book contributes to understanding the theme."""
+
+
+async def get_recommendation_prompts(
+    category: str,
+    language_config: Optional[LanguageConfig] = None,
+) -> tuple[str, str]:
+    """Get system and user prompts for a recommendation category, translated if needed.
+
+    Args:
+        category: "analogous", "inspiring", or "expressive"
+        language_config: Language configuration for translation
+
+    Returns:
+        Tuple of (system_prompt, user_template)
+    """
+    prompt_map = {
+        "analogous": (ANALOGOUS_DOMAIN_SYSTEM, ANALOGOUS_DOMAIN_USER),
+        "inspiring": (INSPIRING_ACTION_SYSTEM, INSPIRING_ACTION_USER),
+        "expressive": (EXPRESSIVE_SYSTEM, EXPRESSIVE_USER),
+    }
+
+    system_prompt, user_template = prompt_map[category]
+
+    if language_config and language_config["code"] != "en":
+        system_prompt = await get_translated_prompt(
+            system_prompt,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name=f"book_finding_{category}_system",
+        )
+        user_template = await get_translated_prompt(
+            user_template,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name=f"book_finding_{category}_user",
+        )
+
+    return system_prompt, user_template
+
+
+async def get_summary_prompt(
+    language_config: Optional[LanguageConfig] = None,
+) -> str:
+    """Get summary prompt, translated if needed."""
+    if language_config and language_config["code"] != "en":
+        return await get_translated_prompt(
+            SUMMARY_PROMPT,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="book_finding_summary",
+        )
+    return SUMMARY_PROMPT

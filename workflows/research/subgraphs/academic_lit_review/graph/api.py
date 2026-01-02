@@ -17,6 +17,7 @@ async def academic_lit_review(
     topic: str,
     research_questions: list[str],
     quality: str = "standard",
+    language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
     include_books: bool = True,
     focus_areas: Optional[list[str]] = None,
@@ -31,6 +32,7 @@ async def academic_lit_review(
         topic: Research topic (e.g., "Large Language Models in Scientific Discovery")
         research_questions: List of specific questions to address
         quality: Quality tier - "quick", "standard", "comprehensive", "high_quality"
+        language: ISO 639-1 language code (default: "en")
         date_range: Optional (start_year, end_year) filter
         include_books: Whether to include book sources (default: True)
         focus_areas: Optional specific areas to prioritize
@@ -56,6 +58,7 @@ async def academic_lit_review(
                 "What are the methodological challenges of using LLMs in research?",
             ],
             quality="high_quality",
+            language="es",
             date_range=(2020, 2025),
         )
 
@@ -88,6 +91,7 @@ async def academic_lit_review(
         focus_areas=focus_areas,
         exclude_terms=exclude_terms,
         max_papers=max_papers,
+        language_code=language,
     )
 
     # Initialize state
@@ -95,6 +99,7 @@ async def academic_lit_review(
 
     logger.info(f"Starting academic literature review: {topic}")
     logger.info(f"Quality: {quality}, Max papers: {quality_settings['max_papers']}")
+    logger.info(f"Language: {language}")
     logger.info(f"LangSmith run ID: {initial_state['langsmith_run_id']}")
 
     try:

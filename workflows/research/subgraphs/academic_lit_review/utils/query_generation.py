@@ -11,6 +11,7 @@ from workflows.shared.llm_utils import (
     get_llm,
     invoke_with_cache,
 )
+from workflows.shared.language import LanguageConfig, get_translated_prompt, translate_queries
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ async def generate_search_queries(
     topic: str,
     research_questions: list[str],
     focus_areas: list[str] | None = None,
+    language_config: LanguageConfig | None = None,
     tier: ModelTier = ModelTier.HAIKU,
 ) -> list[str]:
     """Generate academic search queries for the given topic.
@@ -60,6 +62,7 @@ async def generate_search_queries(
         topic: Research topic
         research_questions: List of research questions
         focus_areas: Optional specific areas to focus on
+        language_config: Optional language configuration for translation
         tier: Model tier for generation
 
     Returns:
@@ -68,6 +71,16 @@ async def generate_search_queries(
     import json
 
     llm = get_llm(tier=tier)
+
+    # Translate system prompt if needed
+    system_prompt = GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM
+    if language_config and language_config["code"] != "en":
+        system_prompt = await get_translated_prompt(
+            GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_query_gen_system",
+        )
 
     user_prompt = GENERATE_ACADEMIC_SEARCH_QUERIES_USER.format(
         topic=topic,
@@ -78,7 +91,7 @@ async def generate_search_queries(
     try:
         response = await invoke_with_cache(
             llm,
-            system_prompt=GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
@@ -94,8 +107,15 @@ async def generate_search_queries(
         queries = result.get("queries", [])
 
         if not queries:
-            # Fallback to topic as query
             queries = [topic]
+
+        # Translate queries if needed (keep OpenAlex queries in target language)
+        if language_config and language_config["code"] != "en":
+            queries = await translate_queries(
+                queries,
+                target_language_code=language_config["code"],
+                target_language_name=language_config["name"],
+            )
 
         logger.info(f"Generated {len(queries)} search queries for topic: {topic[:50]}...")
         return queries

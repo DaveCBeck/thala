@@ -13,6 +13,7 @@ from workflows.shared.llm_utils import (
     get_llm,
     invoke_with_cache,
 )
+from workflows.shared.language import LanguageConfig, get_translated_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ async def score_paper_relevance(
     paper: PaperMetadata,
     topic: str,
     research_questions: list[str],
+    language_config: LanguageConfig | None = None,
     tier: ModelTier = ModelTier.HAIKU,
 ) -> tuple[float, str]:
     """Score a single paper's relevance to the research topic.
@@ -65,6 +67,7 @@ async def score_paper_relevance(
         paper: Paper metadata to evaluate
         topic: Research topic
         research_questions: List of research questions
+        language_config: Optional language configuration for translation
         tier: Model tier for scoring
 
     Returns:
@@ -73,6 +76,16 @@ async def score_paper_relevance(
     import json
 
     llm = get_llm(tier=tier)
+
+    # Translate system prompt if needed
+    system_prompt = RELEVANCE_SCORING_SYSTEM
+    if language_config and language_config["code"] != "en":
+        system_prompt = await get_translated_prompt(
+            RELEVANCE_SCORING_SYSTEM,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_relevance_system",
+        )
 
     # Format authors
     authors_str = ", ".join(
@@ -95,7 +108,7 @@ async def score_paper_relevance(
     try:
         response = await invoke_with_cache(
             llm,
-            system_prompt=RELEVANCE_SCORING_SYSTEM,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
@@ -127,6 +140,7 @@ async def batch_score_relevance(
     topic: str,
     research_questions: list[str],
     threshold: float = 0.6,
+    language_config: LanguageConfig | None = None,
     tier: ModelTier = ModelTier.HAIKU,
     max_concurrent: int = 10,
 ) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
@@ -137,6 +151,7 @@ async def batch_score_relevance(
         topic: Research topic
         research_questions: List of research questions
         threshold: Minimum relevance score to include
+        language_config: Optional language configuration for translation
         tier: Model tier for scoring
         max_concurrent: Maximum concurrent scoring calls
 
@@ -153,7 +168,7 @@ async def batch_score_relevance(
     async def score_with_limit(paper: PaperMetadata) -> tuple[PaperMetadata, float, str]:
         async with semaphore:
             score, reasoning = await score_paper_relevance(
-                paper, topic, research_questions, tier
+                paper, topic, research_questions, language_config, tier
             )
             return paper, score, reasoning
 

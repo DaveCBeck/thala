@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import QUALITY_CHECK_SYSTEM_PROMPT
 from ..citation_utils import calculate_quality_metrics
@@ -18,6 +19,7 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
     paper_summaries = state.get("paper_summaries", {})
     zotero_keys = state.get("zotero_keys", {})
     quality_settings = state.get("quality_settings", {})
+    language_config = state.get("language_config")
 
     metrics = calculate_quality_metrics(final_review, paper_summaries, zotero_keys)
 
@@ -33,9 +35,19 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
 
         sample = final_review[:5000]
 
+        # Translate prompt if needed
+        quality_system = QUALITY_CHECK_SYSTEM_PROMPT
+        if language_config and language_config["code"] != "en":
+            quality_system = await get_translated_prompt(
+                QUALITY_CHECK_SYSTEM_PROMPT,
+                language_code=language_config["code"],
+                language_name=language_config["name"],
+                prompt_name="lit_review_quality_system",
+            )
+
         response = await invoke_with_cache(
             llm,
-            system_prompt=QUALITY_CHECK_SYSTEM_PROMPT,
+            system_prompt=quality_system,
             user_prompt=f"Review this literature review sample for quality:\n\n{sample}",
         )
 

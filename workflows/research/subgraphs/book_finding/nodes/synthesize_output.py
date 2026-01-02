@@ -9,9 +9,46 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from workflows.shared.language import LanguageConfig, get_translated_prompt
 from workflows.research.subgraphs.book_finding.state import BookResult, BookRecommendation
 
 logger = logging.getLogger(__name__)
+
+# Section headers for translation
+SECTION_HEADERS_EN = {
+    "book_recommendations": "Book Recommendations",
+    "analogous_domain": "Analogous Domain",
+    "analogous_subtitle": "Books exploring similar themes from different fields",
+    "inspiring_action": "Inspiring Action",
+    "inspiring_subtitle": "Books that inspire change and action",
+    "expressive_fiction": "Expressive Fiction",
+    "expressive_subtitle": "Fiction expressing the experience and potential of the theme",
+    "additional_recommendations": "Additional recommendations (not processed)",
+    "no_recommendations": "No recommendations in this category.",
+    "summary": "Summary",
+    "total_recommendations": "Total recommendations",
+    "books_processed": "Books processed",
+    "books_not_available": "Books not available/processed",
+    "generated": "Generated",
+}
+
+
+async def _get_translated_headers(language_config: LanguageConfig | None) -> dict[str, str]:
+    """Get translated section headers if needed."""
+    if not language_config or language_config["code"] == "en":
+        return SECTION_HEADERS_EN
+
+    headers = {}
+    for key, en_text in SECTION_HEADERS_EN.items():
+        translated = await get_translated_prompt(
+            en_text,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name=f"book_finding_header_{key}",
+        )
+        headers[key] = translated
+
+    return headers
 
 
 def _find_recommendation_for_book(
@@ -66,6 +103,10 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
     - Unprocessed recommendations listed at end of each section
     """
     theme = state.get("input", {}).get("theme", "Unknown Theme")
+    language_config = state.get("language_config")
+
+    # Get translated headers
+    headers = await _get_translated_headers(language_config)
 
     # Get all recommendations by category
     analogous_recs = state.get("analogous_recommendations", [])
@@ -84,8 +125,8 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
 
     # Start building markdown
     sections = [
-        f"# Book Recommendations: {theme}",
-        f"*Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*",
+        f"# {headers['book_recommendations']}: {theme}",
+        f"*{headers['generated']}: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*",
         "",
         "---",
         "",
@@ -121,34 +162,34 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
         # Add unprocessed recommendations
         if unprocessed_in_section:
             if processed_in_section:
-                lines.append("**Additional recommendations (not processed):**")
+                lines.append(f"**{headers['additional_recommendations']}:**")
                 lines.append("")
             for rec in unprocessed_in_section:
                 lines.append(_format_recommendation_only(rec))
             lines.append("")
 
         if not processed_in_section and not unprocessed_in_section:
-            lines.append("*No recommendations in this category.*")
+            lines.append(f"*{headers['no_recommendations']}*")
             lines.append("")
 
         return lines
 
     # Build each section
     sections.extend(build_section(
-        "Analogous Domain",
-        "Books exploring similar themes from different fields",
+        headers["analogous_domain"],
+        headers["analogous_subtitle"],
         analogous_recs,
     ))
 
     sections.extend(build_section(
-        "Inspiring Action",
-        "Books that inspire change and action",
+        headers["inspiring_action"],
+        headers["inspiring_subtitle"],
         inspiring_recs,
     ))
 
     sections.extend(build_section(
-        "Expressive Fiction",
-        "Fiction expressing the experience and potential of the theme",
+        headers["expressive_fiction"],
+        headers["expressive_subtitle"],
         expressive_recs,
     ))
 
@@ -160,10 +201,10 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
     sections.extend([
         "---",
         "",
-        "## Summary",
-        f"- **Total recommendations:** {total_recs}",
-        f"- **Books processed:** {total_processed}",
-        f"- **Books not available/processed:** {len(failed)}",
+        f"## {headers['summary']}",
+        f"- **{headers['total_recommendations']}:** {total_recs}",
+        f"- **{headers['books_processed']}:** {total_processed}",
+        f"- **{headers['books_not_available']}:** {len(failed)}",
     ])
 
     final_markdown = "\n".join(sections)

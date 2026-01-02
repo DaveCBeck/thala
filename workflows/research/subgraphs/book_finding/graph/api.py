@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from typing import Any, Literal, Optional
 
+from workflows.shared.language import get_language_config
 from workflows.research.subgraphs.book_finding.state import (
     BookFindingInput,
     BookFindingState,
@@ -23,6 +24,7 @@ async def book_finding(
     theme: str,
     brief: Optional[str] = None,
     quality: Literal["quick", "standard", "comprehensive"] = "standard",
+    language: str = "en",
 ) -> dict[str, Any]:
     """Run book finding workflow for a theme.
 
@@ -42,6 +44,7 @@ async def book_finding(
             - quick: 2 recommendations per category, faster processing
             - standard: 3 recommendations per category (default)
             - comprehensive: 5 recommendations per category, thorough
+        language: ISO 639-1 language code (default: "en")
 
     Returns:
         Dict containing:
@@ -58,21 +61,27 @@ async def book_finding(
             theme="creative leadership in uncertain times",
             brief="Focus on practical approaches rather than theoretical frameworks",
             quality="comprehensive",
+            language="es",
         )
         print(result["final_markdown"])
     """
     # Get quality settings, defaulting to standard if invalid
     quality_settings = BOOK_QUALITY_PRESETS.get(quality, BOOK_QUALITY_PRESETS["standard"])
 
+    # Get language configuration
+    language_config = get_language_config(language)
+
     input_data = BookFindingInput(
         theme=theme,
         brief=brief,
         quality=quality,
+        language_code=language,
     )
 
     initial_state = BookFindingState(
         input=input_data,
         quality_settings=quality_settings,
+        language_config=language_config,
         analogous_recommendations=[],
         inspiring_recommendations=[],
         expressive_recommendations=[],
@@ -86,7 +95,7 @@ async def book_finding(
         errors=[],
     )
 
-    logger.info(f"Starting book finding for theme: {theme[:100]}...")
+    logger.info(f"Starting book finding for theme: {theme[:100]}... (language: {language})")
 
     try:
         result = await book_finding_graph.ainvoke(initial_state)

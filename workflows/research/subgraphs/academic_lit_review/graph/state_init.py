@@ -8,6 +8,7 @@ from workflows.research.subgraphs.academic_lit_review.state import (
     LitReviewInput,
     LitReviewDiffusionState,
 )
+from workflows.shared.language import get_language_config
 
 
 def build_initial_state(
@@ -15,9 +16,13 @@ def build_initial_state(
     quality_settings: dict,
 ) -> AcademicLitReviewState:
     """Build initial state for the literature review workflow."""
+    language_code = input_data.get("language_code", "en")
+    language_config = get_language_config(language_code)
+
     return AcademicLitReviewState(
         input=input_data,
         quality_settings=quality_settings,
+        language_config=language_config,
         keyword_papers=[],
         citation_papers=[],
         expert_papers=[],
