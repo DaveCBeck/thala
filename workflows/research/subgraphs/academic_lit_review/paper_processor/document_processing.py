@@ -60,10 +60,14 @@ async def process_single_document(
             for err in errors:
                 logger.warning(f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}")
 
+        # Extract ES record ID from store_records list (first record at compression level 0)
+        store_records = result.get("store_records", [])
+        es_record_id = store_records[0].get("id") if store_records else None
+
         return {
             "doi": doi,
             "success": status not in ("failed",),
-            "es_record_id": result.get("store_record_id"),
+            "es_record_id": es_record_id,
             "zotero_key": result.get("zotero_key"),
             "short_summary": result.get("short_summary", ""),
             "errors": errors,

@@ -8,7 +8,28 @@ import json
 import logging
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from workflows.research.subgraphs.academic_lit_review.state import PaperMetadata, PaperSummary
+
+
+class MetadataSummarySchema(BaseModel):
+    """Schema for metadata-based paper summary extraction."""
+
+    key_findings: list[str] = Field(
+        default_factory=list,
+        description="2-3 inferred findings based on the abstract",
+    )
+    methodology: str = Field(
+        default="Not available from abstract",
+        description="Inferred methodology from the abstract (1-2 sentences)",
+    )
+    limitations: list[str] = Field(default_factory=list)
+    future_work: list[str] = Field(default_factory=list)
+    themes: list[str] = Field(
+        default_factory=list,
+        description="3-5 topic tags based on title and abstract",
+    )
 
 from .acquisition import run_paper_pipeline
 from .extraction import (
@@ -135,8 +156,18 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
 async def _extract_metadata_summaries_batched(
     papers: list[PaperMetadata],
 ) -> dict[str, PaperSummary]:
-    """Extract metadata summaries using Anthropic Batch API for 50% cost reduction."""
+    """Extract metadata summaries using Anthropic Batch API for 50% cost reduction.
+
+    Uses tool calling to guarantee valid JSON responses.
+    """
     processor = BatchProcessor(poll_interval=30)
+
+    # Define tool for structured output
+    extraction_tool = {
+        "name": "extract_metadata",
+        "description": "Extract structured metadata from an academic paper's abstract",
+        "input_schema": MetadataSummarySchema.model_json_schema(),
+    }
 
     paper_index = {}  # Map custom_id back to paper
     for i, paper in enumerate(papers):
@@ -167,6 +198,8 @@ Extract structured information based on this metadata."""
             model=ModelTier.HAIKU,
             max_tokens=1024,
             system=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+            tools=[extraction_tool],
+            tool_choice={"type": "tool", "name": "extract_metadata"},
         )
 
     logger.info(f"Submitting batch of {len(papers)} papers for metadata extraction")
@@ -182,12 +215,8 @@ Extract structured information based on this metadata."""
 
         if result and result.success:
             try:
-                content = result.content.strip()
-                if content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(lines[1:-1])
-
-                extracted = json.loads(content)
+                # Tool use returns valid JSON - just parse it
+                extracted = json.loads(result.content)
                 short_summary = abstract[:500] if abstract else f"Study on {title}"
 
                 summaries[doi] = PaperSummary(

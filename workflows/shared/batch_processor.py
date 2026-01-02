@@ -41,6 +41,8 @@ class BatchRequest:
     max_tokens: int = 4096
     system: Optional[str] = None
     thinking_budget: Optional[int] = None
+    tools: Optional[list[dict]] = None
+    tool_choice: Optional[dict] = None
 
 
 @dataclass
@@ -87,6 +89,8 @@ class BatchProcessor:
         max_tokens: int = 4096,
         system: Optional[str] = None,
         thinking_budget: Optional[int] = None,
+        tools: Optional[list[dict]] = None,
+        tool_choice: Optional[dict] = None,
     ) -> None:
         """
         Add a request to the pending batch.
@@ -98,6 +102,8 @@ class BatchProcessor:
             max_tokens: Maximum output tokens
             system: Optional system prompt
             thinking_budget: Optional token budget for extended thinking
+            tools: Optional list of tool definitions for structured output
+            tool_choice: Optional tool choice config (e.g., {"type": "tool", "name": "..."})
         """
         self.pending_requests.append(BatchRequest(
             custom_id=custom_id,
@@ -106,6 +112,8 @@ class BatchProcessor:
             max_tokens=max_tokens,
             system=system,
             thinking_budget=thinking_budget,
+            tools=tools,
+            tool_choice=tool_choice,
         ))
 
     def clear_requests(self) -> None:
@@ -133,6 +141,11 @@ class BatchProcessor:
                 # Ensure max_tokens > thinking_budget
                 if req.max_tokens <= req.thinking_budget:
                     params["max_tokens"] = req.thinking_budget + 4096
+
+            if req.tools:
+                params["tools"] = req.tools
+            if req.tool_choice:
+                params["tool_choice"] = req.tool_choice
 
             batch_requests.append({
                 "custom_id": req.custom_id,
@@ -224,6 +237,9 @@ class BatchProcessor:
                             content = block.get("text", "")
                         elif block.get("type") == "thinking":
                             thinking = block.get("thinking", "")
+                        elif block.get("type") == "tool_use":
+                            # Tool input is already valid JSON - serialize it
+                            content = json.dumps(block.get("input", {}))
 
                     results[custom_id] = BatchResult(
                         custom_id=custom_id,

@@ -9,6 +9,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel, Field
+
 from langchain_tools.base import get_store_manager
 from workflows.research.subgraphs.academic_lit_review.state import (
     PaperMetadata,
@@ -16,6 +18,31 @@ from workflows.research.subgraphs.academic_lit_review.state import (
 )
 from workflows.shared.llm_utils import ModelTier, extract_json_cached
 from workflows.shared.batch_processor import BatchProcessor
+
+
+class PaperSummarySchema(BaseModel):
+    """Schema for full-text paper summary extraction."""
+
+    key_findings: list[str] = Field(
+        default_factory=list,
+        description="3-5 specific findings from the paper",
+    )
+    methodology: str = Field(
+        default="Not specified",
+        description="Brief research method description (1-2 sentences)",
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        description="Stated limitations from the paper",
+    )
+    future_work: list[str] = Field(
+        default_factory=list,
+        description="Suggested future research directions",
+    )
+    themes: list[str] = Field(
+        default_factory=list,
+        description="3-5 topic tags for clustering",
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +336,10 @@ async def _extract_all_summaries_batched(
     papers_by_doi: dict[str, PaperMetadata],
     store_manager,
 ) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str]]:
-    """Extract summaries using Anthropic Batch API for 50% cost reduction."""
+    """Extract summaries using Anthropic Batch API for 50% cost reduction.
+
+    Uses tool calling to guarantee valid JSON responses.
+    """
     # First, fetch all L0 content (this is I/O, not LLM calls)
     paper_data = {}  # doi -> {paper, content, es_record_id, zotero_key, short_summary}
 
@@ -345,8 +375,14 @@ async def _extract_all_summaries_batched(
     if not paper_data:
         return {}, {}, {}
 
-    # Build batch requests
+    # Build batch requests with tool calling for guaranteed JSON
     processor = BatchProcessor(poll_interval=30)
+
+    extraction_tool = {
+        "name": "extract_summary",
+        "description": "Extract structured summary from an academic paper",
+        "input_schema": PaperSummarySchema.model_json_schema(),
+    }
 
     for doi, data in paper_data.items():
         paper = data["paper"]
@@ -373,6 +409,8 @@ Extract structured information from this paper."""
             model=ModelTier.HAIKU,
             max_tokens=2048,
             system=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            tools=[extraction_tool],
+            tool_choice={"type": "tool", "name": "extract_summary"},
         )
 
     logger.info(f"Submitting batch of {len(paper_data)} papers for summary extraction")
@@ -388,12 +426,8 @@ Extract structured information from this paper."""
 
         if result and result.success:
             try:
-                content = result.content.strip()
-                if content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(lines[1:-1])
-
-                extracted = json.loads(content)
+                # Tool use returns valid JSON - just parse it
+                extracted = json.loads(result.content)
 
                 summaries[doi] = PaperSummary(
                     doi=paper.get("doi"),
