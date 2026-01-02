@@ -23,10 +23,7 @@ supervisor (OPUS) ←──────────────────┐
 [route_supervisor_action]            │
   ├─ conduct_research ───────────┐   │
   │    ↓                         │   │
-  │  [fan_out] (parallel)        │   │
-  │    ├─ web_researcher         │   │
-  │    ├─ academic_researcher    │   │
-  │    └─ book_researcher        │   │
+  │  web_researcher (up to 3)    │   │
   │         ↓                    │   │
   │  aggregate_findings ─────────┼───┘
   ├─ refine_draft ───────────────┘
@@ -44,32 +41,41 @@ save_findings
 END
 ```
 
-## Specialized Researcher Subgraphs
+## Web Researcher Subgraph
 
-Three specialized researchers run in parallel per iteration (default: 1 of each):
+The main workflow uses web researchers (up to 3 concurrent per iteration):
 
-### Web Researcher (Firecrawl + Perplexity)
 ```
 generate_queries → execute_searches → scrape_pages (3) → compress_findings
 ```
 - Sources: Firecrawl, Perplexity (parallel)
 - Prompt: Emphasizes recency, domain authority, bias detection
 
-### Academic Researcher (OpenAlex)
-```
-generate_queries → execute_searches → scrape_pages (3) → compress_findings
-```
-- Sources: OpenAlex (scholarly literature)
-- Prompt: Emphasizes peer-review, citations, methodology
-- Sorted by citation count
+## Standalone Workflows
 
-### Book Researcher (book_search)
+For academic papers and books, use the dedicated standalone workflows:
+
+### Academic Literature Review
+```python
+from workflows.research.subgraphs.academic_lit_review import academic_lit_review
+
+result = await academic_lit_review(
+    topic="machine learning in drug discovery",
+    research_questions=["How are GNNs used for molecular property prediction?"],
+    quality="standard",  # quick | standard | comprehensive | high_quality
+)
 ```
-generate_queries → execute_searches → scrape_pages (1) → compress_findings
+
+### Book Finding
+```python
+from workflows.research.subgraphs.book_finding import book_finding
+
+result = await book_finding(
+    theme="organizational resilience",
+    brief="Focus on practical approaches",  # optional
+)
 ```
-- Sources: book_search
-- Prompt: Emphasizes author credentials, publisher reputation
-- Prioritizes PDF format
+Generates 9 book recommendations across three categories (analogous domain, inspiring action, expressive fiction) using Opus, then searches and processes them.
 
 ## Key Features
 
@@ -85,8 +91,7 @@ generate_queries → execute_searches → scrape_pages (1) → compress_findings
 - **Avoids redundancy**: Skips topics already well-covered in memory
 
 ### Parallel Execution
-- **Specialized researchers**: 3 concurrent researcher types via Send() (web, academic, book)
-- **Smart allocation**: User-specified (e.g., "300") or LLM-decided based on topic type
+- **Web researchers**: Up to 3 concurrent web researchers per iteration
 - **Parallel scraping**: Top results scraped concurrently with TTL cache (1hr) to avoid redundant fetches
 - **Finding aggregation**: Results merged via Annotated[list, add] reducer
 
@@ -118,12 +123,12 @@ generate_queries → execute_searches → scrape_pages (1) → compress_findings
 
 ## Search Sources
 
-| Source | Type | Metadata |
-|--------|------|----------|
-| Firecrawl | General web | None |
-| Perplexity | AI-synthesized | None |
-| OpenAlex | Academic papers | DOI, authors, citations, OA status |
-| Books | Book search | MD5, format, publisher, size |
+| Source | Type | Used In |
+|--------|------|---------|
+| Firecrawl | General web | deep_research |
+| Perplexity | AI-synthesized | deep_research |
+| OpenAlex | Academic papers | academic_lit_review |
+| book_search | Books | book_finding |
 
 ## Usage
 
@@ -150,16 +155,11 @@ result = await deep_research(
     translate_to="en",
 )
 
-# Override researcher allocation (3-digit: web, academic, book)
-result = await deep_research(
-    query="latest AI coding assistants",
-    researcher_allocation="300",  # All web researchers
-)
-
-# LLM-decided allocation (default)
-result = await deep_research(
-    query="postcolonial literary theory",
-    # researcher_allocation=None → LLM decides (e.g., 0 web, 2 academic, 1 book)
+# For academic research, use the standalone workflow
+from workflows.research.subgraphs.academic_lit_review import academic_lit_review
+result = await academic_lit_review(
+    topic="postcolonial literary theory",
+    research_questions=["How has Said's Orientalism influenced the field?"],
 )
 
 print(result["final_report"])

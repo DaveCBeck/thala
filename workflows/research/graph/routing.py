@@ -28,9 +28,9 @@ def route_after_create_brief(state: DeepResearchState) -> str:
 def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
     """Route based on supervisor's chosen action.
 
-    For conduct_research, dispatches specialized researchers based on allocation:
-    - Default: 1 web + 1 academic + 1 book researcher (one of each)
-    - Supervisor can override via researcher_allocation field
+    For conduct_research, dispatches web researchers for pending questions.
+    Academic and book researchers have been removed from the main flow -
+    use standalone workflows (academic_lit_review, book_finding) instead.
     """
     current_status = state.get("current_status", "")
 
@@ -41,76 +41,30 @@ def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
             logger.warning("No pending questions for research - completing")
             return "final_report"
 
-        # Get allocation (default: 1 of each type)
-        allocation = state.get("researcher_allocation") or {
-            "web_count": 1,
-            "academic_count": 1,
-            "book_count": 1,
-        }
-
         # All researchers use primary language config
         language_config = state.get("primary_language_config")
 
+        # Dispatch web researchers for each pending question (up to 3 concurrent)
+        max_concurrent = 3
         sends = []
-        question_idx = 0
-
-        # Dispatch web researchers
-        for _ in range(allocation.get("web_count", 1)):
-            if question_idx < len(pending):
-                q = pending[question_idx]
-                sends.append(Send("web_researcher", ResearcherState(
-                    question=q,
-                    search_queries=[],
-                    search_results=[],
-                    scraped_content=[],
-                    thinking=None,
-                    finding=None,
-                    research_findings=[],
-                    language_config=language_config,
-                )))
-                question_idx += 1
-
-        # Dispatch academic researchers
-        for _ in range(allocation.get("academic_count", 1)):
-            if question_idx < len(pending):
-                q = pending[question_idx]
-                sends.append(Send("academic_researcher", ResearcherState(
-                    question=q,
-                    search_queries=[],
-                    search_results=[],
-                    scraped_content=[],
-                    thinking=None,
-                    finding=None,
-                    research_findings=[],
-                    language_config=language_config,
-                )))
-                question_idx += 1
-
-        # Dispatch book researchers
-        for _ in range(allocation.get("book_count", 1)):
-            if question_idx < len(pending):
-                q = pending[question_idx]
-                sends.append(Send("book_researcher", ResearcherState(
-                    question=q,
-                    search_queries=[],
-                    search_results=[],
-                    scraped_content=[],
-                    thinking=None,
-                    finding=None,
-                    research_findings=[],
-                    language_config=language_config,
-                )))
-                question_idx += 1
+        for q in pending[:max_concurrent]:
+            sends.append(Send("web_researcher", ResearcherState(
+                question=q,
+                search_queries=[],
+                search_results=[],
+                scraped_content=[],
+                thinking=None,
+                finding=None,
+                research_findings=[],
+                language_config=language_config,
+            )))
 
         if not sends:
             return "final_report"
 
         logger.info(
-            f"Launching {len(sends)} researchers "
-            f"(web={allocation.get('web_count', 1)}, "
-            f"academic={allocation.get('academic_count', 1)}, "
-            f"book={allocation.get('book_count', 1)})"
-            + (f" language: {language_config['code']}" if language_config else "")
+            f"Launching {len(sends)} web researchers"
+            + (f" (language: {language_config['code']})" if language_config else "")
         )
 
         return sends

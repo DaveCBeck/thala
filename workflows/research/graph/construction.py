@@ -15,8 +15,6 @@ from workflows.research.nodes.process_citations import process_citations
 from workflows.research.nodes.save_findings import save_findings
 from workflows.research.nodes.translate_report import translate_report
 from workflows.research.subgraphs.web_researcher import web_researcher_subgraph
-from workflows.research.subgraphs.academic_researcher import academic_researcher_subgraph
-from workflows.research.subgraphs.book_researcher import book_researcher_subgraph
 
 from .routing import route_after_clarify, route_after_create_brief, route_supervisor_action
 from .aggregation import aggregate_researcher_findings
@@ -43,10 +41,8 @@ def create_deep_research_graph():
         supervisor,
         retry=RetryPolicy(max_attempts=3, backoff_factor=2.0),
     )
-    # Specialized researcher subgraphs
+    # Web researcher subgraph (academic and book researchers removed - use standalone workflows)
     builder.add_node("web_researcher", web_researcher_subgraph)
-    builder.add_node("academic_researcher", academic_researcher_subgraph)
-    builder.add_node("book_researcher", book_researcher_subgraph)
     builder.add_node("aggregate_findings", aggregate_researcher_findings)
     builder.add_node("refine_draft", refine_draft)
     builder.add_node(
@@ -73,14 +69,11 @@ def create_deep_research_graph():
     builder.add_conditional_edges(
         "supervisor",
         route_supervisor_action,
-        ["web_researcher", "academic_researcher", "book_researcher",
-         "refine_draft", "final_report", "supervisor"],
+        ["web_researcher", "refine_draft", "final_report", "supervisor"],
     )
 
-    # All researchers converge to aggregation
+    # Web researcher converges to aggregation
     builder.add_edge("web_researcher", "aggregate_findings")
-    builder.add_edge("academic_researcher", "aggregate_findings")
-    builder.add_edge("book_researcher", "aggregate_findings")
     builder.add_edge("aggregate_findings", "supervisor")
 
     # Refine draft loops back to supervisor
