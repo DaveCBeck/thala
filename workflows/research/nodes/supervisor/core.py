@@ -26,7 +26,7 @@ from workflows.research.prompts import (
     SUPERVISOR_USER_TEMPLATE,
     get_today_str,
 )
-from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.utils import load_prompts_with_translation
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 from .llm_integration import _get_supervisor_decision_structured
@@ -108,23 +108,13 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
     draft_content = draft["content"] if draft else "No draft yet."
     gaps_remaining = draft.get("gaps_remaining", []) if draft else ["All areas need research"]
 
-    # Get language-appropriate prompts
-    if language_config and language_config["code"] != "en":
-        system_prompt_cached = await get_translated_prompt(
-            SUPERVISOR_SYSTEM_CACHED,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="supervisor_system",
-        )
-        user_prompt_template = await get_translated_prompt(
-            SUPERVISOR_USER_TEMPLATE,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="supervisor_user",
-        )
-    else:
-        system_prompt_cached = SUPERVISOR_SYSTEM_CACHED
-        user_prompt_template = SUPERVISOR_USER_TEMPLATE
+    system_prompt_cached, user_prompt_template = await load_prompts_with_translation(
+        SUPERVISOR_SYSTEM_CACHED,
+        SUPERVISOR_USER_TEMPLATE,
+        language_config,
+        "supervisor_system",
+        "supervisor_user",
+    )
 
     # Build dynamic user prompt (changes each iteration)
     user_prompt = user_prompt_template.format(
@@ -142,7 +132,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
         max_concurrent_research_units=MAX_CONCURRENT_RESEARCHERS,
     )
 
-    llm = get_llm(ModelTier.OPUS)  # OPUS for strategic reasoning
+    llm = get_llm(ModelTier.OPUS)
 
     # Try structured output first (more reliable), fall back to text parsing
     action = None
@@ -165,8 +155,8 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
             # Use cached system prompt for 90% cost reduction on repeated calls
             response = await invoke_with_cache(
                 llm,
-                system_prompt=system_prompt_cached,  # ~800 tokens, cached
-                user_prompt=user_prompt,  # Dynamic content
+                system_prompt=system_prompt_cached,
+                user_prompt=user_prompt,
             )
             content = response.content
 

@@ -4,7 +4,6 @@ Embedding generation service for stores.
 Supports OpenAI and Ollama providers.
 """
 
-import hashlib
 import os
 from abc import ABC, abstractmethod
 from typing import Any
@@ -12,6 +11,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from core.utils import generate_cache_key
 from workflows.shared.persistent_cache import get_cached, set_cached
 
 load_dotenv()
@@ -65,13 +65,9 @@ class OpenAIEmbeddings(EmbeddingProvider):
             timeout=60.0,
         )
 
-    def _cache_key(self, text: str) -> str:
-        """Generate cache key for text."""
-        return hashlib.sha256(f"{self.model}:{text}".encode()).hexdigest()
-
     async def embed(self, text: str) -> list[float]:
         """Generate embedding for text."""
-        cache_key = self._cache_key(text)
+        cache_key = generate_cache_key(self.model, text)
         cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
         if cached is not None:
             return cached
@@ -83,7 +79,7 @@ class OpenAIEmbeddings(EmbeddingProvider):
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for multiple texts."""
-        cache_keys = [self._cache_key(text) for text in texts]
+        cache_keys = [generate_cache_key(self.model, text) for text in texts]
         results = [None] * len(texts)
         uncached_indices = []
         uncached_texts = []
@@ -140,13 +136,9 @@ class OllamaEmbeddings(EmbeddingProvider):
         self.host = host
         self._client = httpx.AsyncClient(base_url=host, timeout=120.0)
 
-    def _cache_key(self, text: str) -> str:
-        """Generate cache key for text."""
-        return hashlib.sha256(f"{self.model}:{text}".encode()).hexdigest()
-
     async def embed(self, text: str) -> list[float]:
         """Generate embedding for text."""
-        cache_key = self._cache_key(text)
+        cache_key = generate_cache_key(self.model, text)
         cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
         if cached is not None:
             return cached

@@ -1,11 +1,13 @@
 """top_of_mind tools - Full CRUD for vector store with semantic search."""
 
 from typing import Any
-from uuid import UUID
 
 from mcp.types import Tool
 
-from ..errors import EmbeddingError, NotFoundError, StoreConnectionError, ToolError, ValidationError
+from ..embedding_utils import validate_embedding_available
+from ..errors import EmbeddingError, NotFoundError, ToolError, ValidationError
+from ..store_utils import get_chroma_store
+from ..validation_utils import parse_uuid_arg
 
 
 def get_tools() -> list[Tool]:
@@ -143,30 +145,21 @@ async def handle(
     """Handle top_of_mind tool calls."""
     from core.stores.schema import BaseRecord, SourceType
 
-    chroma_store = stores.get("chroma")
-    if not chroma_store:
-        raise StoreConnectionError("chroma", "ChromaDB store not initialized")
+    chroma_store = get_chroma_store(stores)
 
-    # top_of_mind operations require embedding service
     if name in ("top_of_mind.add", "top_of_mind.update", "top_of_mind.search"):
-        if not embedding_service:
-            raise EmbeddingError(
-                "Embedding service not initialized. top_of_mind operations require embeddings.",
-            )
+        await validate_embedding_available(embedding_service)
 
     if name == "top_of_mind.add":
         content = arguments["content"]
 
-        # Generate embedding
         try:
             embedding = await embedding_service.embed(content)
         except Exception as e:
             raise EmbeddingError(str(e), embedding_service.provider_name)
 
-        # Parse source_type
         source_type = SourceType(arguments["source_type"])
 
-        # Validate external sources have zotero_key
         if source_type == SourceType.EXTERNAL and not arguments.get("zotero_key"):
             raise ValidationError("zotero_key", "Required for external source_type")
 
@@ -187,12 +180,11 @@ async def handle(
         return {"id": str(record_id), "success": True}
 
     elif name == "top_of_mind.get":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         result = await chroma_store.get(record_id)
         if result is None:
             raise NotFoundError("top_of_mind", arguments["id"])
 
-        # Convert result to serializable format
         return {
             "id": str(result["id"]),
             "document": result["document"],
@@ -201,27 +193,23 @@ async def handle(
         }
 
     elif name == "top_of_mind.update":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         content = arguments["content"]
         reason = arguments["reason"]
 
-        # Check if record exists
         existing = await chroma_store.get(record_id)
         if existing is None:
             raise NotFoundError("top_of_mind", arguments["id"])
 
-        # Generate new embedding
         try:
             embedding = await embedding_service.embed(content)
         except Exception as e:
             raise EmbeddingError(str(e), embedding_service.provider_name)
 
-        # Build updated record from existing metadata
         metadata = existing.get("metadata", {})
         if "metadata" in arguments:
             metadata.update(arguments["metadata"])
 
-        # Determine source_type from existing metadata
         source_type_str = metadata.get("source_type", "internal")
         source_type = SourceType(source_type_str)
 
@@ -244,7 +232,7 @@ async def handle(
         return {"id": arguments["id"], "success": True}
 
     elif name == "top_of_mind.delete":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         reason = arguments["reason"]
 
         success = await chroma_store.delete(record_id, reason=reason)
@@ -258,7 +246,6 @@ async def handle(
         n_results = arguments.get("n_results", 10)
         where = arguments.get("where")
 
-        # Generate query embedding
         try:
             query_embedding = await embedding_service.embed(query)
         except Exception as e:

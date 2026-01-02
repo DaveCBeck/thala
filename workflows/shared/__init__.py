@@ -28,6 +28,17 @@ from .persistent_cache import (
     get_cache_stats,
     compute_file_hash,
 )
+from .async_utils import (
+    run_with_concurrency,
+    gather_with_error_collection,
+)
+from .retry_utils import with_retry
+from .node_utils import safe_node_execution, StateUpdater
+from .llm_utils.response_parsing import (
+    extract_json_from_response,
+    extract_response_content,
+)
+from .checkpointing import CheckpointManager
 
 __all__ = [
     # Marker client
@@ -56,4 +67,17 @@ __all__ = [
     "clear_cache",
     "get_cache_stats",
     "compute_file_hash",
+    # Async utilities
+    "run_with_concurrency",
+    "gather_with_error_collection",
+    # Retry utilities
+    "with_retry",
+    # Node utilities
+    "safe_node_execution",
+    "StateUpdater",
+    # Response parsing
+    "extract_json_from_response",
+    "extract_response_content",
+    # Checkpointing
+    "CheckpointManager",
 ]

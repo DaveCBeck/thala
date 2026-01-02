@@ -14,6 +14,8 @@ from langchain.tools import tool
 from pydantic import BaseModel, Field
 from workflows.shared.persistent_cache import get_cached, set_cached
 
+from .utils import clamp_limit, output_dict
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -116,7 +118,7 @@ async def perplexity_search(
         return cached
 
     client = _get_perplexity()
-    limit = min(max(1, limit), 20)
+    limit = clamp_limit(limit, min_val=1, max_val=20)
 
     try:
         payload = {
@@ -148,17 +150,19 @@ async def perplexity_search(
         )
         logger.debug(f"perplexity_search returned {len(results)} results for: {query}")
 
-        result = output.model_dump(mode="json")
+        result = output_dict(output)
         set_cached(CACHE_TYPE, cache_key, result)
         return result
 
     except Exception as e:
         logger.error(f"perplexity_search failed: {e}")
-        return PerplexitySearchOutput(
-            query=query,
-            total_results=0,
-            results=[],
-        ).model_dump(mode="json")
+        return output_dict(
+            PerplexitySearchOutput(
+                query=query,
+                total_results=0,
+                results=[],
+            )
+        )
 
 
 @tool
@@ -261,16 +265,18 @@ Respond with ONLY valid JSON (no markdown):
             f"(conf: {output.confidence:.2f})"
         )
 
-        result = output.model_dump(mode="json")
+        result = output_dict(output)
         set_cached(CACHE_TYPE, cache_key, result)
         return result
 
     except Exception as e:
         logger.error(f"check_fact failed: {e}")
-        return FactCheckOutput(
-            claim=claim,
-            verdict="unverifiable",
-            confidence=0.0,
-            explanation=f"Fact-check failed: {e}",
-            sources=[],
-        ).model_dump(mode="json")
+        return output_dict(
+            FactCheckOutput(
+                claim=claim,
+                verdict="unverifiable",
+                confidence=0.0,
+                explanation=f"Fact-check failed: {e}",
+                sources=[],
+            )
+        )

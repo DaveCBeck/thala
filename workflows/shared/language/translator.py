@@ -22,14 +22,12 @@ from typing import Optional
 from cachetools import TTLCache
 
 from workflows.shared.llm_utils import get_llm, ModelTier
+from workflows.shared.retry_utils import with_retry
+from workflows.shared.llm_utils.response_parsing import extract_response_content
 
 logger = logging.getLogger(__name__)
 
-# Cache translated prompts (24h TTL to reduce repeated translations)
-# maxsize=500 covers all prompts × many languages
 _prompt_cache: TTLCache = TTLCache(maxsize=500, ttl=86400)
-
-# Lock to prevent concurrent translations of the same prompt
 _translation_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -56,41 +54,16 @@ async def translate_prompt(
     target_language: str,
     cache_key: Optional[str] = None,
 ) -> str:
-    """
-    Translate an English prompt to the target language using Opus.
-
-    Uses high-quality LLM translation (not machine translation) to preserve
-    the semantic intent and instructional style of the original prompt.
-
-    Args:
-        english_prompt: The English prompt to translate
-        target_language: Full language name (e.g., "Spanish", "Mandarin Chinese")
-        cache_key: Optional key for caching. If provided, result is cached for 24h.
-                   Recommended format: "{node_name}_{prompt_type}_{lang_code}"
-                   e.g., "clarify_intent_system_es"
-
-    Returns:
-        Translated prompt in the target language
-
-    Example:
-        translated = await translate_prompt(
-            SUPERVISOR_SYSTEM_CACHED,
-            target_language="Spanish",
-            cache_key="supervisor_system_es",
-        )
-    """
-    # Check cache first
+    """Translate an English prompt to the target language using Opus."""
     if cache_key and cache_key in _prompt_cache:
         logger.debug(f"Prompt translation cache hit: {cache_key}")
         return _prompt_cache[cache_key]
 
-    # Use lock to prevent concurrent translations of the same prompt
     if cache_key:
         if cache_key not in _translation_locks:
             _translation_locks[cache_key] = asyncio.Lock()
 
         async with _translation_locks[cache_key]:
-            # Double-check cache after acquiring lock
             if cache_key in _prompt_cache:
                 return _prompt_cache[cache_key]
 
@@ -100,7 +73,6 @@ async def translate_prompt(
             logger.info(f"Translated and cached prompt: {cache_key} ({len(result)} chars)")
             return result
     else:
-        # No caching - just translate
         return await _do_translation(english_prompt, target_language)
 
 
@@ -112,36 +84,19 @@ async def _do_translation(english_prompt: str, target_language: str) -> str:
 
 {english_prompt}"""
 
-    max_retries = 2
-    for attempt in range(max_retries):
-        try:
-            response = await llm.ainvoke([
-                {"role": "system", "content": PROMPT_TRANSLATION_SYSTEM},
-                {"role": "user", "content": user_prompt},
-            ])
+    async def _invoke():
+        response = await llm.ainvoke([
+            {"role": "system", "content": PROMPT_TRANSLATION_SYSTEM},
+            {"role": "user", "content": user_prompt},
+        ])
+        return extract_response_content(response)
 
-            # Extract text content
-            if isinstance(response.content, str):
-                return response.content.strip()
-            elif isinstance(response.content, list):
-                for block in response.content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        return block.get("text", "").strip()
-                    elif hasattr(block, "type") and block.type == "text":
-                        return getattr(block, "text", "").strip()
-
-            # Fallback: stringify content
-            return str(response.content).strip()
-
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(f"Translation attempt {attempt + 1} failed: {e}, retrying...")
-                await asyncio.sleep(2 ** attempt)
-            else:
-                logger.error(f"Translation failed after {max_retries} attempts: {e}")
-                # Return original English prompt as fallback
-                logger.warning("Falling back to English prompt")
-                return english_prompt
+    try:
+        return await with_retry(_invoke, max_attempts=2)
+    except Exception as e:
+        logger.error(f"Translation failed after retries: {e}")
+        logger.warning("Falling back to English prompt")
+        return english_prompt
 
 
 async def get_translated_prompt(
@@ -150,18 +105,7 @@ async def get_translated_prompt(
     language_name: str,
     prompt_name: str,
 ) -> str:
-    """
-    Convenience function to get a translated prompt with standard cache key.
-
-    Args:
-        english_prompt: The English prompt to translate
-        language_code: ISO 639-1 code (e.g., "es", "zh")
-        language_name: Full language name (e.g., "Spanish")
-        prompt_name: Name of the prompt for cache key (e.g., "supervisor_system")
-
-    Returns:
-        Translated prompt (or English if translation fails)
-    """
+    """Convenience function to get a translated prompt with standard cache key."""
     if language_code == "en":
         return english_prompt
 

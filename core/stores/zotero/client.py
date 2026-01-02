@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import httpx
 
+from core.utils import BaseAsyncHttpClient
 from ..schema import BaseRecord, SourceType, _utc_now
 from .schemas import (
     ZoteroHealthStatus,
@@ -23,7 +24,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 
-class ZoteroStore:
+class ZoteroStore(BaseAsyncHttpClient):
     """
     Async-safe Zotero client for local CRUD operations.
 
@@ -51,31 +52,20 @@ class ZoteroStore:
         port: int = 23119,
         timeout: float = 30.0,
     ):
-        self.base_url = f"http://{host}:{port}"
-        self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
+        super().__init__(
+            base_url=f"http://{host}:{port}",
+            timeout=timeout,
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the HTTP client (lazy init)."""
-        if self._client is None:
+        """Get or create the HTTP client with JSON header."""
+        if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self.timeout,
                 headers={"Content-Type": "application/json"},
             )
         return self._client
-
-    async def close(self) -> None:
-        """Close the HTTP client."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-
-    async def __aenter__(self) -> "ZoteroStore":
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        await self.close()
 
     # ==================== CRUD Operations ====================
 

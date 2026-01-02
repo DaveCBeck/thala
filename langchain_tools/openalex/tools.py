@@ -6,6 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain.tools import tool
 
+from langchain_tools.utils import clamp_limit, output_dict
 from workflows.shared.persistent_cache import get_cached, set_cached
 from .client import _get_openalex
 from .models import OpenAlexSearchOutput
@@ -55,7 +56,7 @@ async def openalex_search(
         return cached
 
     client = _get_openalex()
-    limit = min(max(1, limit), 50)
+    limit = clamp_limit(limit, min_val=1, max_val=50)
 
     try:
         # Build filter string
@@ -101,14 +102,16 @@ async def openalex_search(
             f"(total in index: {output.total_results})"
         )
 
-        result_dict = output.model_dump(mode="json")
+        result_dict = output_dict(output)
         set_cached(CACHE_TYPE, cache_key, result_dict)
         return result_dict
 
     except Exception as e:
         logger.error(f"openalex_search failed: {e}")
-        return OpenAlexSearchOutput(
-            query=query,
-            total_results=0,
-            results=[],
-        ).model_dump(mode="json")
+        return output_dict(
+            OpenAlexSearchOutput(
+                query=query,
+                total_results=0,
+                results=[],
+            )
+        )

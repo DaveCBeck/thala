@@ -16,6 +16,7 @@ from langchain.tools import tool
 from pydantic import BaseModel, Field
 
 from .base import get_store_manager
+from .utils import clamp_limit, output_dict
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ async def search_store(
         source_type: Filter by origin ('external' from Zotero, 'internal' system-generated)
     """
     store_manager = get_store_manager()
-    limit = min(max(1, limit), 50)
+    limit = clamp_limit(limit, min_val=1, max_val=50)
 
     # Build filters
     filters = []
@@ -121,12 +122,14 @@ async def search_store(
     except Exception as e:
         logger.warning(f"store search failed: {e}")
 
-    return StoreSearchOutput(
-        query=query,
-        store="store",
-        total_results=len(results),
-        results=results,
-    ).model_dump(mode="json")
+    return output_dict(
+        StoreSearchOutput(
+            query=query,
+            store="store",
+            total_results=len(results),
+            results=results,
+        )
+    )
 
 
 @tool
@@ -148,7 +151,7 @@ async def search_coherence(
         min_confidence: Minimum confidence threshold (0-1, default 0.3)
     """
     store_manager = get_store_manager()
-    limit = min(max(1, limit), 50)
+    limit = clamp_limit(limit, min_val=1, max_val=50)
 
     # Build query
     filters = []
@@ -177,12 +180,14 @@ async def search_coherence(
     except Exception as e:
         logger.warning(f"coherence search failed: {e}")
 
-    return StoreSearchOutput(
-        query=query,
-        store="coherence",
-        total_results=len(results),
-        results=results,
-    ).model_dump(mode="json")
+    return output_dict(
+        StoreSearchOutput(
+            query=query,
+            store="coherence",
+            total_results=len(results),
+            results=results,
+        )
+    )
 
 
 @tool
@@ -206,7 +211,7 @@ async def search_top_of_mind(
         min_similarity: Minimum similarity threshold (0-1, default 0.5)
     """
     store_manager = get_store_manager()
-    limit = min(max(1, limit), 50)
+    limit = clamp_limit(limit, min_val=1, max_val=50)
 
     # Build Chroma where filter
     where = {}
@@ -241,12 +246,14 @@ async def search_top_of_mind(
     except Exception as e:
         logger.warning(f"top_of_mind search failed: {e}")
 
-    return StoreSearchOutput(
-        query=query,
-        store="top_of_mind",
-        total_results=len(results),
-        results=results,
-    ).model_dump(mode="json")
+    return output_dict(
+        StoreSearchOutput(
+            query=query,
+            store="top_of_mind",
+            total_results=len(results),
+            results=results,
+        )
+    )
 
 
 @tool
@@ -266,7 +273,7 @@ async def search_history(
         original_store: Filter by source ('coherence' or 'top_of_mind')
     """
     store_manager = get_store_manager()
-    limit = min(max(1, limit), 50)
+    limit = clamp_limit(limit, min_val=1, max_val=50)
 
     # Search in previous_data.content
     must = [{"match": {"previous_data.content": query}}]
@@ -295,12 +302,14 @@ async def search_history(
     except Exception as e:
         logger.warning(f"who_i_was search failed: {e}")
 
-    return StoreSearchOutput(
-        query=query,
-        store="who_i_was",
-        total_results=len(results),
-        results=results,
-    ).model_dump(mode="json")
+    return output_dict(
+        StoreSearchOutput(
+            query=query,
+            store="who_i_was",
+            total_results=len(results),
+            results=results,
+        )
+    )
 
 
 @tool
@@ -322,7 +331,7 @@ async def search_forgotten(
         forgotten_reason: Filter by reason for archiving (partial match)
     """
     store_manager = get_store_manager()
-    limit = min(max(1, limit), 50)
+    limit = clamp_limit(limit, min_val=1, max_val=50)
 
     must = [{"match": {"content": query}}]
     filters = []
@@ -351,9 +360,11 @@ async def search_forgotten(
     except Exception as e:
         logger.warning(f"forgotten search failed: {e}")
 
-    return StoreSearchOutput(
-        query=query,
-        store="forgotten",
-        total_results=len(results),
-        results=results,
-    ).model_dump(mode="json")
+    return output_dict(
+        StoreSearchOutput(
+            query=query,
+            store="forgotten",
+            total_results=len(results),
+            results=results,
+        )
+    )

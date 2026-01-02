@@ -1,6 +1,5 @@
 """FastAPI application for Marker document processing service."""
 
-import subprocess
 from typing import Any
 
 from celery.result import AsyncResult
@@ -9,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.config import QUALITY_PRESETS
 from app.tasks import celery, convert_document
+from services.common.health import check_gpu
 
 app = FastAPI(
     title="Marker Document Processing API",
@@ -81,21 +81,7 @@ class HealthResponse(BaseModel):
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Check service health, GPU status, and queue depth."""
-    # Check GPU
-    gpu_available = False
-    gpu_name = None
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            gpu_available = True
-            gpu_name = result.stdout.strip()
-    except Exception:
-        pass
+    gpu_available, gpu_name = await check_gpu()
 
     # Check Celery queue
     inspect = celery.control.inspect()
@@ -233,5 +219,3 @@ async def list_jobs(limit: int = 100, offset: int = 0) -> dict[str, Any]:
 async def list_presets() -> dict[str, dict]:
     """List available quality presets."""
     return QUALITY_PRESETS
-
-

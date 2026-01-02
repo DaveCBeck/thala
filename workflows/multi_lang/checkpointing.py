@@ -10,10 +10,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from uuid import UUID
 
-from workflows.multi_lang.state import MultiLangState, CheckpointPhase
-
+from workflows.shared.checkpointing import CheckpointManager, _deserialize_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -21,24 +19,10 @@ logger = logging.getLogger(__name__)
 CHECKPOINT_DIR = Path.home() / ".thala" / "checkpoints" / "multi_lang"
 
 
-def _serialize_datetime(obj):
-    """Serialize datetime objects for JSON."""
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    if isinstance(obj, UUID):
-        return str(obj)
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-
-def _deserialize_datetime(data: dict) -> dict:
-    """Deserialize datetime strings back to datetime objects."""
-    datetime_fields = ["started_at", "completed_at"]
-    for field in datetime_fields:
-        if field in data and data[field]:
-            try:
-                data[field] = datetime.fromisoformat(data[field])
-            except (ValueError, TypeError):
-                pass
+def _deserialize_multi_lang_state(data: dict) -> dict:
+    """Deserialize multi_lang workflow state with nested datetime fields."""
+    # Handle top-level datetime fields
+    data = _deserialize_datetime(data)
 
     # Handle nested datetime in language_results
     for result in data.get("language_results", []):
@@ -52,10 +36,16 @@ def _deserialize_datetime(data: dict) -> dict:
     return data
 
 
+# Initialize checkpoint manager
+_manager = CheckpointManager(
+    checkpoint_dir=str(CHECKPOINT_DIR),
+    state_deserializer=_deserialize_multi_lang_state,
+)
+
+
 def get_checkpoint_path(run_id: str) -> Path:
     """Get the checkpoint file path for a run."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    return CHECKPOINT_DIR / f"{run_id}.json"
+    return _manager.get_checkpoint_path(run_id)
 
 
 def save_checkpoint(state: dict, phase: str) -> Optional[Path]:
@@ -74,8 +64,6 @@ def save_checkpoint(state: dict, phase: str) -> Optional[Path]:
     if not run_id:
         logger.warning("Cannot save checkpoint: no langsmith_run_id in state")
         return None
-
-    checkpoint_path = get_checkpoint_path(run_id)
 
     try:
         # Update checkpoint phase
@@ -99,11 +87,7 @@ def save_checkpoint(state: dict, phase: str) -> Optional[Path]:
 
         state_to_save = {**state, "checkpoint_phase": checkpoint_phase}
 
-        with open(checkpoint_path, "w") as f:
-            json.dump(state_to_save, f, default=_serialize_datetime, indent=2)
-
-        logger.info(f"Checkpoint saved: {phase} -> {checkpoint_path}")
-        return checkpoint_path
+        return _manager.save_checkpoint(run_id, state_to_save, phase)
 
     except Exception as e:
         logger.error(f"Failed to save checkpoint: {e}")
@@ -120,23 +104,7 @@ def load_checkpoint(run_id: str) -> Optional[dict]:
     Returns:
         State dict if checkpoint exists, None otherwise
     """
-    checkpoint_path = get_checkpoint_path(run_id)
-
-    if not checkpoint_path.exists():
-        logger.info(f"No checkpoint found for run {run_id}")
-        return None
-
-    try:
-        with open(checkpoint_path) as f:
-            state = json.load(f)
-
-        state = _deserialize_datetime(state)
-        logger.info(f"Checkpoint loaded for run {run_id}")
-        return state
-
-    except Exception as e:
-        logger.error(f"Failed to load checkpoint: {e}")
-        return None
+    return _manager.load_checkpoint(run_id)
 
 
 def get_resume_phase(state: dict) -> str:
@@ -190,18 +158,7 @@ def delete_checkpoint(run_id: str) -> bool:
     Returns:
         True if deleted, False otherwise
     """
-    checkpoint_path = get_checkpoint_path(run_id)
-
-    if checkpoint_path.exists():
-        try:
-            checkpoint_path.unlink()
-            logger.info(f"Checkpoint deleted for run {run_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete checkpoint: {e}")
-            return False
-
-    return False
+    return _manager.delete_checkpoint(run_id)
 
 
 def list_checkpoints() -> list[dict]:

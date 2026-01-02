@@ -13,14 +13,13 @@ Endpoints:
 Reference: https://github.com/zotero/translation-server
 """
 
-import hashlib
 import logging
-import os
 from typing import Any, Optional
 
 import httpx
 from pydantic import BaseModel, Field, ConfigDict
 
+from core.utils import BaseAsyncHttpClient, generate_cache_key
 from workflows.shared.persistent_cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -95,7 +94,7 @@ class TranslationResult(BaseModel):
         }
 
 
-class TranslationServerClient:
+class TranslationServerClient(BaseAsyncHttpClient):
     """
     Async client for Zotero Translation Server.
 
@@ -113,32 +112,15 @@ class TranslationServerClient:
         port: Optional[int] = None,
         timeout: float = 30.0,
     ):
-        self.host = host or os.environ.get("THALA_TRANSLATION_HOST", "localhost")
-        self.port = port or int(os.environ.get("THALA_TRANSLATION_PORT", "1969"))
-        self.base_url = f"http://{self.host}:{self.port}"
-        self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=self.timeout,
-            )
-        return self._client
-
-    async def close(self) -> None:
-        """Close HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            self._client = None
-
-    async def __aenter__(self) -> "TranslationServerClient":
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        await self.close()
+        super().__init__(
+            host=host,
+            port=port,
+            timeout=timeout,
+            host_env_var="THALA_TRANSLATION_HOST",
+            port_env_var="THALA_TRANSLATION_PORT",
+            host_default="localhost",
+            port_default=1969,
+        )
 
     async def translate_url(self, url: str) -> Optional[TranslationResult]:
         """
@@ -150,7 +132,7 @@ class TranslationServerClient:
         Returns:
             TranslationResult with extracted metadata, or None if translation failed
         """
-        cache_key = hashlib.sha256(url.encode()).hexdigest()
+        cache_key = generate_cache_key(url)
         cached_result = get_cached("translation_server", cache_key, ttl_days=30)
         if cached_result is not None:
             return cached_result

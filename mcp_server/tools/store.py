@@ -1,11 +1,14 @@
 """store tools - Full CRUD for main knowledge store with embedding support."""
 
 from typing import Any
-from uuid import UUID
 
 from mcp.types import Tool
 
-from ..errors import EmbeddingError, NotFoundError, StoreConnectionError, ToolError, ValidationError
+from ..embedding_utils import generate_embedding
+from ..errors import NotFoundError, ToolError, ValidationError
+from ..response_utils import format_search_results, format_single_record
+from ..store_utils import get_es_substore
+from ..validation_utils import parse_uuid_arg, parse_uuid_list_arg, uuid_list_to_strings
 
 
 def get_tools() -> list[Tool]:
@@ -168,31 +171,17 @@ async def handle(
     """Handle store tool calls."""
     from core.stores.schema import SourceType, StoreRecord
 
-    es_stores = stores.get("es")
-    if not es_stores:
-        raise StoreConnectionError("elasticsearch", "Elasticsearch stores not initialized")
-
-    main_store = es_stores.store
+    main_store = get_es_substore(stores, "store")
 
     if name == "store.add":
-        # Generate embedding if service available
-        embedding_model = None
-        if embedding_service:
-            try:
-                await embedding_service.embed(arguments["content"])
-                embedding_model = embedding_service.model
-            except Exception as e:
-                raise EmbeddingError(str(e), embedding_service.provider_name if embedding_service else None)
+        _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
 
-        # Parse source_type
         source_type = SourceType(arguments["source_type"])
 
-        # Validate external sources have zotero_key
         if source_type == SourceType.EXTERNAL and not arguments.get("zotero_key"):
             raise ValidationError("zotero_key", "Required for external source_type")
 
-        # Parse source_ids if provided
-        source_ids = [UUID(sid) for sid in arguments.get("source_ids", [])]
+        source_ids = parse_uuid_list_arg(arguments)
 
         record = StoreRecord(
             source_type=source_type,
@@ -209,33 +198,29 @@ async def handle(
         return {"id": str(record_id), "success": True}
 
     elif name == "store.get":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         record = await main_store.get(record_id)
         if record is None:
             raise NotFoundError("store", arguments["id"])
-        return record.model_dump(mode="json")
+        return format_single_record(record)
 
     elif name == "store.update":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
 
-        # Build updates dict
         updates: dict[str, Any] = {}
 
         if "content" in arguments:
             updates["content"] = arguments["content"]
-            # Regenerate embedding if content changes
-            if embedding_service:
-                try:
-                    await embedding_service.embed(arguments["content"])
-                    updates["embedding_model"] = embedding_service.model
-                except Exception as e:
-                    raise EmbeddingError(str(e), embedding_service.provider_name if embedding_service else None)
+            _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
+            if embedding_model:
+                updates["embedding_model"] = embedding_model
 
         if "compression_level" in arguments:
             updates["compression_level"] = arguments["compression_level"]
 
         if "source_ids" in arguments:
-            updates["source_ids"] = [str(UUID(sid)) for sid in arguments["source_ids"]]
+            source_ids = parse_uuid_list_arg(arguments)
+            updates["source_ids"] = uuid_list_to_strings(source_ids)
 
         if "metadata" in arguments:
             updates["metadata"] = arguments["metadata"]
@@ -253,7 +238,7 @@ async def handle(
         return {"id": arguments["id"], "success": True}
 
     elif name == "store.delete":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         reason = arguments["reason"]
 
         success = await main_store.delete(record_id, reason=reason)
@@ -266,10 +251,7 @@ async def handle(
         query = arguments["query"]
         size = arguments.get("size", 10)
         records = await main_store.search(query, size=size)
-        return {
-            "count": len(records),
-            "results": [r.model_dump(mode="json") for r in records],
-        }
+        return format_search_results(records)
 
     else:
         raise ToolError(f"Unknown store tool: {name}")

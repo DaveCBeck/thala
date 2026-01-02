@@ -4,7 +4,9 @@ from typing import Any
 
 from mcp.types import Tool
 
-from ..errors import NotFoundError, StoreConnectionError, ToolError
+from ..errors import NotFoundError, ToolError
+from ..response_utils import format_search_results, format_single_record
+from ..store_utils import get_zotero_store
 
 
 def get_tools() -> list[Tool]:
@@ -196,12 +198,9 @@ async def handle(
         ZoteroSearchCondition,
     )
 
-    zotero_store = stores.get("zotero")
-    if not zotero_store:
-        raise StoreConnectionError("zotero", "Zotero store not initialized")
+    zotero_store = get_zotero_store(stores)
 
     if name == "zotero.add":
-        # Build creators if provided
         creators = []
         for c in arguments.get("creators", []):
             creators.append(ZoteroCreator(
@@ -226,12 +225,11 @@ async def handle(
         item = await zotero_store.get(zotero_key)
         if item is None:
             raise NotFoundError("zotero", zotero_key)
-        return item.model_dump(mode="json")
+        return format_single_record(item)
 
     elif name == "zotero.update":
         zotero_key = arguments["zotero_key"]
 
-        # Build creators if provided
         creators = None
         if "creators" in arguments:
             creators = [
@@ -275,19 +273,13 @@ async def handle(
         limit = arguments.get("limit", 100)
 
         results = await zotero_store.search(conditions, limit=limit)
-        return {
-            "count": len(results),
-            "results": [r.model_dump(mode="json") for r in results],
-        }
+        return format_search_results(results)
 
     elif name == "zotero.quicksearch":
         query = arguments["query"]
         limit = arguments.get("limit", 100)
         results = await zotero_store.quicksearch(query, limit=limit)
-        return {
-            "count": len(results),
-            "results": [r.model_dump(mode="json") for r in results],
-        }
+        return format_search_results(results)
 
     else:
         raise ToolError(f"Unknown zotero tool: {name}")

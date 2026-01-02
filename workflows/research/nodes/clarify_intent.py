@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from workflows.research.state import DeepResearchState, ClarificationQuestion
 from workflows.research.prompts import CLARIFY_INTENT_SYSTEM, CLARIFY_INTENT_HUMAN, get_today_str
-from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.utils import load_prompts_with_translation
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -48,23 +48,13 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
     query = state["input"]["query"]
     language_config = state.get("primary_language_config")
 
-    # Get language-appropriate prompts
-    if language_config and language_config["code"] != "en":
-        system_prompt_template = await get_translated_prompt(
-            CLARIFY_INTENT_SYSTEM,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="clarify_intent_system",
-        )
-        human_prompt_template = await get_translated_prompt(
-            CLARIFY_INTENT_HUMAN,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="clarify_intent_human",
-        )
-    else:
-        system_prompt_template = CLARIFY_INTENT_SYSTEM
-        human_prompt_template = CLARIFY_INTENT_HUMAN
+    system_prompt_template, human_prompt_template = await load_prompts_with_translation(
+        CLARIFY_INTENT_SYSTEM,
+        CLARIFY_INTENT_HUMAN,
+        language_config,
+        "clarify_intent_system",
+        "clarify_intent_human",
+    )
 
     system_prompt = system_prompt_template.format(date=get_today_str())
     human_prompt = human_prompt_template.format(query=query)

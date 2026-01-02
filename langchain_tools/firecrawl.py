@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
+from .utils import clamp_limit, output_dict
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -120,7 +122,7 @@ async def web_search(
         Search results with titles, URLs, and descriptions.
     """
     client = _get_firecrawl()
-    limit = min(max(1, limit), 20)
+    limit = clamp_limit(limit, min_val=1, max_val=20)
 
     # Build search params with locale hints
     search_params = {}
@@ -161,15 +163,17 @@ async def web_search(
             results=results,
         )
         logger.debug(f"web_search returned {len(results)} results for: {query}")
-        return output.model_dump(mode="json")
+        return output_dict(output)
 
     except Exception as e:
         logger.error(f"web_search failed: {e}")
-        return WebSearchOutput(
-            query=query,
-            total_results=0,
-            results=[],
-        ).model_dump(mode="json")
+        return output_dict(
+            WebSearchOutput(
+                query=query,
+                total_results=0,
+                results=[],
+            )
+        )
 
 
 @tool
@@ -204,15 +208,17 @@ async def scrape_url(url: str, include_links: bool = False) -> dict:
             f"scrape_url got {len(result.markdown)} chars from {url} "
             f"(provider: {result.provider})"
         )
-        return output.model_dump(mode="json")
+        return output_dict(output)
 
     except Exception as e:
         logger.error(f"scrape_url failed for {url}: {e}")
-        return ScrapeOutput(
-            url=url,
-            markdown=f"Error scraping URL: {e}",
-            links=[],
-        ).model_dump(mode="json")
+        return output_dict(
+            ScrapeOutput(
+                url=url,
+                markdown=f"Error scraping URL: {e}",
+                links=[],
+            )
+        )
 
 
 @tool
@@ -230,7 +236,7 @@ async def map_website(url: str, limit: int = 50) -> dict:
         List of URLs found on the website.
     """
     client = _get_firecrawl()
-    limit = min(max(1, limit), 500)
+    limit = clamp_limit(limit, min_val=1, max_val=500)
 
     try:
         response = await client.map(url, limit=limit)
@@ -251,12 +257,14 @@ async def map_website(url: str, limit: int = 50) -> dict:
             urls=urls[:limit],
         )
         logger.debug(f"map_website found {len(urls)} URLs on: {url}")
-        return output.model_dump(mode="json")
+        return output_dict(output)
 
     except Exception as e:
         logger.error(f"map_website failed for {url}: {e}")
-        return MapOutput(
-            url=url,
-            total_urls=0,
-            urls=[],
-        ).model_dump(mode="json")
+        return output_dict(
+            MapOutput(
+                url=url,
+                total_urls=0,
+                urls=[],
+            )
+        )

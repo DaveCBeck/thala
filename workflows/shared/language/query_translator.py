@@ -21,13 +21,11 @@ from typing import Optional
 from cachetools import TTLCache
 
 from workflows.shared.llm_utils import get_llm, ModelTier
+from workflows.shared.llm_utils.response_parsing import extract_response_content
 
 logger = logging.getLogger(__name__)
 
-# Cache translated queries (1h TTL - queries are more ephemeral than prompts)
 _query_cache: TTLCache = TTLCache(maxsize=1000, ttl=3600)
-
-# Lock to prevent concurrent translations of the same query
 _query_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -46,36 +44,21 @@ async def translate_query(
     target_language_name: str,
     cache_key: Optional[str] = None,
 ) -> str:
-    """
-    Translate a search query to the target language using Haiku.
-
-    Args:
-        query: The English search query to translate
-        target_language_code: ISO 639-1 code (e.g., "es", "zh")
-        target_language_name: Full language name (e.g., "Spanish")
-        cache_key: Optional cache key. If not provided, uses hash of query + language.
-
-    Returns:
-        Translated query in the target language
-    """
+    """Translate a search query to the target language using Haiku."""
     if target_language_code == "en":
         return query
 
-    # Generate cache key if not provided
     if cache_key is None:
         cache_key = f"query_{target_language_code}_{hash(query)}"
 
-    # Check cache first
     if cache_key in _query_cache:
         logger.debug(f"Query translation cache hit: {cache_key[:50]}...")
         return _query_cache[cache_key]
 
-    # Use lock to prevent concurrent translations of the same query
     if cache_key not in _query_locks:
         _query_locks[cache_key] = asyncio.Lock()
 
     async with _query_locks[cache_key]:
-        # Double-check cache after acquiring lock
         if cache_key in _query_cache:
             return _query_cache[cache_key]
 
@@ -98,17 +81,7 @@ async def _do_query_translation(query: str, target_language: str) -> str:
             {"role": "user", "content": user_prompt},
         ])
 
-        # Extract text content
-        if isinstance(response.content, str):
-            return response.content.strip()
-        elif isinstance(response.content, list):
-            for block in response.content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    return block.get("text", "").strip()
-                elif hasattr(block, "type") and block.type == "text":
-                    return getattr(block, "text", "").strip()
-
-        return str(response.content).strip()
+        return extract_response_content(response)
 
     except Exception as e:
         logger.warning(f"Query translation failed: {e}, using original query")
@@ -121,18 +94,7 @@ async def translate_queries(
     target_language_name: str,
     max_concurrent: int = 5,
 ) -> list[str]:
-    """
-    Translate multiple search queries concurrently.
-
-    Args:
-        queries: List of English search queries
-        target_language_code: ISO 639-1 code (e.g., "es", "zh")
-        target_language_name: Full language name (e.g., "Spanish")
-        max_concurrent: Maximum concurrent translation requests
-
-    Returns:
-        List of translated queries in the same order
-    """
+    """Translate multiple search queries concurrently."""
     if target_language_code == "en":
         return queries
 

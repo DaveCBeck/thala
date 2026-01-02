@@ -3,6 +3,7 @@
 import logging
 from typing import Optional
 
+from langchain_tools.utils import clamp_limit
 from workflows.shared.persistent_cache import get_cached, set_cached
 from .client import _get_openalex
 from .models import OpenAlexAuthorWorksResult, OpenAlexCitationResult, OpenAlexWork
@@ -43,7 +44,7 @@ async def get_forward_citations(
         return OpenAlexCitationResult(**cached)
 
     client = _get_openalex()
-    limit = min(max(1, limit), 200)
+    limit = clamp_limit(limit, min_val=1, max_val=200)
 
     try:
         if work_id_clean.startswith("W") or work_id_clean.startswith("https://openalex.org/"):
@@ -136,7 +137,7 @@ async def get_backward_citations(
         return OpenAlexCitationResult(**cached)
 
     client = _get_openalex()
-    limit = min(max(1, limit), 200)
+    limit = clamp_limit(limit, min_val=1, max_val=200)
 
     try:
         if work_id_clean.startswith("https://openalex.org/"):
@@ -244,7 +245,7 @@ async def get_author_works(
         return OpenAlexAuthorWorksResult(**cached)
 
     client = _get_openalex()
-    limit = min(max(1, limit), 100)
+    limit = clamp_limit(limit, min_val=1, max_val=100)
 
     try:
         author_url = f"/authors/{author_id}"

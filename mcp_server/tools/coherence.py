@@ -1,11 +1,14 @@
 """coherence tools - Full CRUD for beliefs, preferences, identity with embedding support."""
 
 from typing import Any
-from uuid import UUID
 
 from mcp.types import Tool
 
-from ..errors import EmbeddingError, NotFoundError, StoreConnectionError, ToolError, ValidationError
+from ..embedding_utils import generate_embedding
+from ..errors import NotFoundError, ToolError, ValidationError
+from ..response_utils import format_search_results, format_single_record
+from ..store_utils import get_es_substore
+from ..validation_utils import parse_uuid_arg
 
 
 def get_tools() -> list[Tool]:
@@ -156,23 +159,11 @@ async def handle(
     """Handle coherence tool calls."""
     from core.stores.schema import CoherenceRecord, SourceType
 
-    es_stores = stores.get("es")
-    if not es_stores:
-        raise StoreConnectionError("elasticsearch", "Elasticsearch stores not initialized")
-
-    coherence_store = es_stores.coherence
+    coherence_store = get_es_substore(stores, "coherence")
 
     if name == "coherence.add":
-        # Generate embedding if service available
-        embedding_model = None
-        if embedding_service:
-            try:
-                await embedding_service.embed(arguments["content"])  # Validate embedding works
-                embedding_model = embedding_service.model
-            except Exception as e:
-                raise EmbeddingError(str(e), embedding_service.provider_name if embedding_service else None)
+        _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
 
-        # Determine source type based on zotero_key
         source_type = SourceType.EXTERNAL if arguments.get("zotero_key") else SourceType.INTERNAL
 
         record = CoherenceRecord(
@@ -189,27 +180,22 @@ async def handle(
         return {"id": str(record_id), "success": True}
 
     elif name == "coherence.get":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         record = await coherence_store.get(record_id)
         if record is None:
             raise NotFoundError("coherence", arguments["id"])
-        return record.model_dump(mode="json")
+        return format_single_record(record)
 
     elif name == "coherence.update":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
 
-        # Build updates dict
         updates: dict[str, Any] = {"_change_reason": arguments["reason"]}
 
         if "content" in arguments:
             updates["content"] = arguments["content"]
-            # Regenerate embedding if content changes
-            if embedding_service:
-                try:
-                    await embedding_service.embed(arguments["content"])
-                    updates["embedding_model"] = embedding_service.model
-                except Exception as e:
-                    raise EmbeddingError(str(e), embedding_service.provider_name if embedding_service else None)
+            _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
+            if embedding_model:
+                updates["embedding_model"] = embedding_model
 
         if "confidence" in arguments:
             updates["confidence"] = arguments["confidence"]
@@ -227,7 +213,7 @@ async def handle(
         return {"id": arguments["id"], "success": True}
 
     elif name == "coherence.delete":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         reason = arguments["reason"]
 
         success = await coherence_store.delete(record_id, reason=reason)
@@ -240,10 +226,7 @@ async def handle(
         query = arguments["query"]
         size = arguments.get("size", 10)
         records = await coherence_store.search(query, size=size)
-        return {
-            "count": len(records),
-            "results": [r.model_dump(mode="json") for r in records],
-        }
+        return format_search_results(records)
 
     else:
         raise ToolError(f"Unknown coherence tool: {name}")

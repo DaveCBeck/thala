@@ -11,7 +11,7 @@ from typing import Any
 
 from workflows.research.state import DeepResearchState, DraftReport, calculate_completeness
 from workflows.research.prompts import REFINE_DRAFT_SYSTEM, get_today_str
-from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.utils import load_prompts_with_translation
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -62,16 +62,13 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
     # Format new findings
     new_findings_text = _format_findings_for_draft(findings)
 
-    # Get language-appropriate prompt
-    if language_config and language_config["code"] != "en":
-        prompt_template = await get_translated_prompt(
-            REFINE_DRAFT_SYSTEM,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="refine_draft_system",
-        )
-    else:
-        prompt_template = REFINE_DRAFT_SYSTEM
+    prompt_template, _ = await load_prompts_with_translation(
+        REFINE_DRAFT_SYSTEM,
+        "",
+        language_config,
+        "refine_draft_system",
+        "",
+    )
 
     prompt = prompt_template.format(
         date=get_today_str(),
@@ -80,7 +77,7 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
         new_findings=new_findings_text,
     )
 
-    llm = get_llm(ModelTier.SONNET)  # Sonnet for draft updates
+    llm = get_llm(ModelTier.SONNET)
 
     try:
         response = await llm.ainvoke([{"role": "user", "content": prompt}])

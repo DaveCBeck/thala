@@ -39,6 +39,7 @@ from workflows.document_processing.state import DocumentProcessingState
 from workflows.document_processing.subgraphs.chapter_summarization import (
     chapter_summarization_subgraph,
 )
+from workflows.shared.async_utils import gather_with_error_collection
 
 logger = logging.getLogger(__name__)
 
@@ -67,23 +68,9 @@ def route_by_doc_size(state: DocumentProcessingState) -> str:
 
 
 def create_document_processing_graph():
-    """
-    Create the main document processing graph.
-
-    Workflow:
-    1. Resolve input source
-    2. Create Zotero stub
-    3. Route to Marker or markdown chunker
-    4. Update store with chunks
-    5. Fan out to parallel summary and metadata agents
-    6. Save short summary
-    7. Update Zotero with metadata
-    8. Conditionally run chapter detection and 10:1 summary
-    9. Finalize workflow
-    """
+    """Create the main document processing graph."""
     builder = StateGraph(DocumentProcessingState)
 
-    # Add nodes with appropriate retry policies
     builder.add_node("resolve_input", resolve_input)
     builder.add_node("create_zotero_stub", create_zotero_stub)
     builder.add_node(
@@ -102,11 +89,9 @@ def create_document_processing_graph():
     builder.add_node("save_tenth_summary", save_tenth_summary)
     builder.add_node("finalize", finalize)
 
-    # Edge definitions
     builder.add_edge(START, "resolve_input")
     builder.add_edge("resolve_input", "create_zotero_stub")
 
-    # Conditional routing based on source type
     builder.add_conditional_edges(
         "create_zotero_stub",
         route_by_source_type,
@@ -116,25 +101,20 @@ def create_document_processing_graph():
         },
     )
 
-    # Both paths converge to update_store
     builder.add_edge("smart_chunker", "update_store")
     builder.add_edge("process_marker", "update_store")
 
-    # Fan out to parallel agents
     builder.add_conditional_edges(
         "update_store",
         fan_out_to_agents,
         ["generate_summary", "check_metadata"],
     )
 
-    # Both agents converge to save_short_summary
     builder.add_edge("generate_summary", "save_short_summary")
     builder.add_edge("check_metadata", "save_short_summary")
 
-    # Continue to update_zotero
     builder.add_edge("save_short_summary", "update_zotero")
 
-    # Route based on document size for 10:1 summary
     builder.add_edge("update_zotero", "detect_chapters")
     builder.add_conditional_edges(
         "detect_chapters",
@@ -145,11 +125,9 @@ def create_document_processing_graph():
         },
     )
 
-    # 10:1 summary path
     builder.add_edge("chapter_summarization", "save_tenth_summary")
     builder.add_edge("save_tenth_summary", "finalize")
 
-    # End of workflow
     builder.add_edge("finalize", END)
 
     return builder.compile()
@@ -163,24 +141,7 @@ async def process_document(
     langs: list[str] = None,
     extra_metadata: dict = None,
 ) -> dict[str, Any]:
-    """
-    Process a document through the full pipeline.
-
-    Uses Anthropic Claude models:
-    - Sonnet for summary and metadata extraction
-    - Opus with extended thinking for chapter summarization
-
-    Args:
-        source: File path, URL, or markdown text
-        title: Optional title override
-        item_type: Zotero item type
-        quality: Marker quality preset (fast, balanced, quality)
-        langs: Languages for OCR
-        extra_metadata: Additional Zotero fields
-
-    Returns:
-        Final workflow state with all results
-    """
+    """Process a document through the full pipeline."""
     graph = create_document_processing_graph()
 
     initial_state = {
@@ -212,34 +173,7 @@ async def process_documents_batch(
     documents: list[dict[str, Any]],
     concurrency: int = 5,
 ) -> list[dict[str, Any]]:
-    """
-    Process multiple documents with concurrent execution.
-
-    Each document is processed through the full pipeline. LLM calls within
-    each document use Anthropic Claude models. For maximum cost savings
-    when processing many documents, consider using the BatchProcessor
-    directly with custom batching logic.
-
-    Args:
-        documents: List of document configs, each with:
-            - source: File path, URL, or markdown text
-            - title: Optional title override
-            - item_type: Zotero item type (default: "document")
-            - quality: Marker quality preset (default: "balanced")
-            - langs: Languages for OCR (default: ["English"])
-            - extra_metadata: Additional Zotero fields
-        concurrency: Max concurrent document processing (default: 5)
-
-    Returns:
-        List of final workflow states for each document
-
-    Example:
-        results = await process_documents_batch([
-            {"source": "/path/to/doc1.pdf", "title": "Document 1"},
-            {"source": "/path/to/doc2.pdf", "title": "Document 2"},
-            {"source": "https://example.com/paper.pdf"},
-        ])
-    """
+    """Process multiple documents with concurrent execution."""
     semaphore = asyncio.Semaphore(concurrency)
 
     async def process_with_limit(doc_config: dict) -> dict[str, Any]:
@@ -256,20 +190,20 @@ async def process_documents_batch(
     logger.info(f"Starting batch processing of {len(documents)} documents (concurrency: {concurrency})")
 
     tasks = [process_with_limit(doc) for doc in documents]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    successes, errors = await gather_with_error_collection(tasks, logger, error_template="Document failed: {error}")
 
-    # Convert exceptions to error states
     processed_results = []
-    for i, result in enumerate(results):
-        if isinstance(result, Exception):
-            logger.error(f"Document {i} failed: {result}")
+    for i, doc in enumerate(documents):
+        error_match = next((e for e in errors if e["index"] == i), None)
+        if error_match:
             processed_results.append({
-                "input": documents[i],
+                "input": doc,
                 "current_status": "failed",
-                "errors": [{"node": "batch_processor", "error": str(result)}],
+                "errors": [{"node": "batch_processor", "error": error_match["error"]}],
             })
         else:
-            processed_results.append(result)
+            result_idx = i - sum(1 for e in errors if e["index"] < i)
+            processed_results.append(successes[result_idx])
 
     succeeded = sum(1 for r in processed_results if r.get("current_status") != "failed")
     logger.info(f"Batch processing complete: {succeeded}/{len(documents)} succeeded")

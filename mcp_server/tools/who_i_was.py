@@ -1,11 +1,13 @@
 """who_i_was tools - READ ONLY access to edit history."""
 
 from typing import Any
-from uuid import UUID
 
 from mcp.types import Tool
 
-from ..errors import NotFoundError, StoreConnectionError, ToolError
+from ..errors import NotFoundError, ToolError
+from ..response_utils import format_search_results, format_single_record
+from ..store_utils import get_es_substore
+from ..validation_utils import parse_uuid_arg
 
 
 def get_tools() -> list[Tool]:
@@ -74,21 +76,17 @@ async def handle(
     stores: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle who_i_was tool calls."""
-    es_stores = stores.get("es")
-    if not es_stores:
-        raise StoreConnectionError("elasticsearch", "Elasticsearch stores not initialized")
-
-    who_i_was_store = es_stores.who_i_was
+    who_i_was_store = get_es_substore(stores, "who_i_was")
 
     if name == "who_i_was.get":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         record = await who_i_was_store.get(record_id)
         if record is None:
             raise NotFoundError("who_i_was", arguments["id"])
-        return record.model_dump(mode="json")
+        return format_single_record(record)
 
     elif name == "who_i_was.get_history":
-        record_id = UUID(arguments["record_id"])
+        record_id = parse_uuid_arg(arguments, "record_id")
         records = await who_i_was_store.get_history(record_id)
         return {
             "record_id": arguments["record_id"],
@@ -100,10 +98,7 @@ async def handle(
         query = arguments["query"]
         size = arguments.get("size", 10)
         records = await who_i_was_store.search(query, size=size)
-        return {
-            "count": len(records),
-            "results": [r.model_dump(mode="json") for r in records],
-        }
+        return format_search_results(records)
 
     else:
         raise ToolError(f"Unknown who_i_was tool: {name}")

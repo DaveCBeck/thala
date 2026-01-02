@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from workflows.research.state import DeepResearchState
+from workflows.research.utils import extract_text_from_response
 from workflows.shared.llm_utils import ModelTier, get_llm
 from workflows.research.config.languages import LANGUAGE_NAMES
 
@@ -62,7 +63,7 @@ Your translation must be publication-quality and read naturally in {target_lang}
 
     user_prompt = f"Translate this research report to {target_lang}:\n\n{final_report}"
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=16384)  # OPUS for quality, high token limit for long reports
+    llm = get_llm(ModelTier.OPUS, max_tokens=16384)
 
     try:
         response = await llm.ainvoke([
@@ -70,19 +71,7 @@ Your translation must be publication-quality and read naturally in {target_lang}
             {"role": "user", "content": user_prompt},
         ])
 
-        # Handle response content
-        if isinstance(response.content, str):
-            translated = response.content.strip()
-        elif isinstance(response.content, list) and len(response.content) > 0:
-            first_block = response.content[0]
-            if isinstance(first_block, dict):
-                translated = first_block.get("text", "").strip()
-            elif hasattr(first_block, "text"):
-                translated = first_block.text.strip()
-            else:
-                translated = str(first_block).strip()
-        else:
-            translated = str(response.content).strip()
+        translated = extract_text_from_response(response)
 
         logger.info(f"Translated report from {source_lang} to {target_lang}: {len(translated)} chars")
 

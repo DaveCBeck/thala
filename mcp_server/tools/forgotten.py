@@ -1,11 +1,13 @@
 """forgotten tools - READ ONLY access to archived content."""
 
 from typing import Any
-from uuid import UUID
 
 from mcp.types import Tool
 
-from ..errors import NotFoundError, StoreConnectionError, ToolError
+from ..errors import NotFoundError, ToolError
+from ..response_utils import format_search_results, format_single_record
+from ..store_utils import get_es_substore
+from ..validation_utils import parse_uuid_arg
 
 
 def get_tools() -> list[Tool]:
@@ -58,27 +60,20 @@ async def handle(
     stores: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle forgotten tool calls."""
-    es_stores = stores.get("es")
-    if not es_stores:
-        raise StoreConnectionError("elasticsearch", "Elasticsearch stores not initialized")
-
-    forgotten_store = es_stores.forgotten
+    forgotten_store = get_es_substore(stores, "forgotten")
 
     if name == "forgotten.get":
-        record_id = UUID(arguments["id"])
+        record_id = parse_uuid_arg(arguments)
         record = await forgotten_store.get(record_id)
         if record is None:
             raise NotFoundError("forgotten", arguments["id"])
-        return record.model_dump(mode="json")
+        return format_single_record(record)
 
     elif name == "forgotten.search":
         query = arguments["query"]
         size = arguments.get("size", 10)
         records = await forgotten_store.search(query, size=size)
-        return {
-            "count": len(records),
-            "results": [r.model_dump(mode="json") for r in records],
-        }
+        return format_search_results(records)
 
     else:
         raise ToolError(f"Unknown forgotten tool: {name}")

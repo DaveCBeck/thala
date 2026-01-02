@@ -13,7 +13,7 @@ from typing import Any
 
 from workflows.research.state import DeepResearchState
 from workflows.research.prompts import ITERATE_PLAN_SYSTEM, ITERATE_PLAN_HUMAN, get_today_str
-from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.utils import load_prompts_with_translation, extract_json_from_llm_response
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -44,23 +44,13 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
             "current_status": "supervising",
         }
 
-    # Get language-appropriate prompts
-    if language_config and language_config["code"] != "en":
-        system_prompt_template = await get_translated_prompt(
-            ITERATE_PLAN_SYSTEM,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="iterate_plan_system",
-        )
-        human_prompt_template = await get_translated_prompt(
-            ITERATE_PLAN_HUMAN,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="iterate_plan_human",
-        )
-    else:
-        system_prompt_template = ITERATE_PLAN_SYSTEM
-        human_prompt_template = ITERATE_PLAN_HUMAN
+    system_prompt_template, human_prompt_template = await load_prompts_with_translation(
+        ITERATE_PLAN_SYSTEM,
+        ITERATE_PLAN_HUMAN,
+        language_config,
+        "iterate_plan_system",
+        "iterate_plan_human",
+    )
 
     system_prompt = system_prompt_template.format(
         date=get_today_str(),
@@ -68,7 +58,7 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
         research_brief=json.dumps(brief, indent=2),
     )
 
-    llm = get_llm(ModelTier.OPUS)  # OPUS for deep understanding
+    llm = get_llm(ModelTier.OPUS)
 
     try:
         response = await llm.ainvoke([
@@ -76,14 +66,7 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
             {"role": "user", "content": human_prompt_template},
         ])
 
-        content = response.content.strip()
-
-        # Extract JSON
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
-
-        plan_data = json.loads(content)
+        plan_data = extract_json_from_llm_response(response.content)
 
         # Build structured plan
         plan_parts = []

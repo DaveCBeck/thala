@@ -14,7 +14,7 @@ from workflows.research.prompts import (
     FINAL_REPORT_USER_TEMPLATE,
     get_today_str,
 )
-from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.utils import load_prompts_with_translation, extract_text_from_response
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ def _format_all_findings(findings: list) -> str:
 
     formatted = []
     source_index = 1
-    sources_map = {}  # url -> index
+    sources_map = {}
 
     for f in findings:
         section = f"""
@@ -95,23 +95,13 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         f"\n\n**Key Questions:**\n" + "\n".join([f"- {q}" for q in brief.get('key_questions', [])])
     )
 
-    # Get language-appropriate prompts
-    if language_config and language_config["code"] != "en":
-        system_prompt_template = await get_translated_prompt(
-            FINAL_REPORT_SYSTEM_STATIC,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="final_report_system",
-        )
-        user_prompt_template = await get_translated_prompt(
-            FINAL_REPORT_USER_TEMPLATE,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="final_report_user",
-        )
-    else:
-        system_prompt_template = FINAL_REPORT_SYSTEM_STATIC
-        user_prompt_template = FINAL_REPORT_USER_TEMPLATE
+    system_prompt_template, user_prompt_template = await load_prompts_with_translation(
+        FINAL_REPORT_SYSTEM_STATIC,
+        FINAL_REPORT_USER_TEMPLATE,
+        language_config,
+        "final_report_system",
+        "final_report_user",
+    )
 
     # Static system prompt (cached) - only contains instructions
     system_prompt = system_prompt_template.format(date=get_today_str())
@@ -124,7 +114,7 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         memory_context=memory_context or "No prior knowledge available.",
     )
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=8192)  # OPUS for quality
+    llm = get_llm(ModelTier.OPUS, max_tokens=8192)
 
     try:
         # Use cached invocation - system prompt is cached, user content is dynamic
@@ -134,20 +124,7 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
             user_prompt=user_prompt,
         )
 
-        # Handle response content (may be string or list of content blocks)
-        if isinstance(response.content, str):
-            report = response.content.strip()
-        elif isinstance(response.content, list) and len(response.content) > 0:
-            # Get text from first content block
-            first_block = response.content[0]
-            if isinstance(first_block, dict):
-                report = first_block.get("text", "").strip()
-            elif hasattr(first_block, "text"):
-                report = first_block.text.strip()
-            else:
-                report = str(first_block).strip()
-        else:
-            report = str(response.content).strip()
+        report = extract_text_from_response(response)
 
         # Extract citations from report
         citations = _extract_citations(report, findings)

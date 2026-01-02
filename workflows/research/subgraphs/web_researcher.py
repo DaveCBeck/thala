@@ -12,7 +12,6 @@ Uses the web-specific compression prompt that emphasizes:
 """
 
 import asyncio
-import json
 import logging
 from typing import Any
 
@@ -30,7 +29,7 @@ from workflows.research.prompts import (
     COMPRESS_RESEARCH_USER_TEMPLATE,
     get_today_str,
 )
-from workflows.research.prompts.translator import get_translated_prompt
+from workflows.research.utils import load_prompts_with_translation, extract_json_from_llm_response
 from workflows.research.subgraphs.researcher_base import (
     create_generate_queries,
     scrape_pages as base_scrape_pages,
@@ -57,7 +56,7 @@ async def _search_firecrawl(query: str) -> list[WebSearchResult]:
                     title=r.get("title", ""),
                     description=r.get("description"),
                     content=None,
-                    source_metadata=None,  # No structured metadata for web sources
+                    source_metadata=None,
                 )
             )
     except Exception as e:
@@ -75,9 +74,9 @@ async def _search_perplexity(query: str) -> list[WebSearchResult]:
                 WebSearchResult(
                     url=r.get("url", ""),
                     title=r.get("title", ""),
-                    description=r.get("snippet"),  # Perplexity uses 'snippet'
+                    description=r.get("snippet"),
                     content=None,
-                    source_metadata=None,  # No structured metadata for web sources
+                    source_metadata=None,
                 )
             )
     except Exception as e:
@@ -155,32 +154,22 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             for r in search_results
         ])
 
-    # Get language-appropriate prompts
-    if language_config and language_config["code"] != "en":
-        system_prompt = await get_translated_prompt(
-            COMPRESS_WEB_RESEARCH_SYSTEM,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="compress_web_research_system",
-        )
-        user_template = await get_translated_prompt(
-            COMPRESS_RESEARCH_USER_TEMPLATE,
-            language_code=language_config["code"],
-            language_name=language_config["name"],
-            prompt_name="compress_research_user",
-        )
-    else:
-        system_prompt = COMPRESS_WEB_RESEARCH_SYSTEM
-        user_template = COMPRESS_RESEARCH_USER_TEMPLATE
+    system_prompt, user_template = await load_prompts_with_translation(
+        COMPRESS_WEB_RESEARCH_SYSTEM,
+        COMPRESS_RESEARCH_USER_TEMPLATE,
+        language_config,
+        "compress_web_research_system",
+        "compress_research_user",
+    )
 
     # Build dynamic user prompt
     user_prompt = user_template.format(
         date=get_today_str(),
         question=question["question"],
-        raw_research=raw_research[:15000],  # Limit context
+        raw_research=raw_research[:15000],
     )
 
-    llm = get_llm(ModelTier.SONNET)  # Use Sonnet for better compression
+    llm = get_llm(ModelTier.SONNET)
 
     try:
         # Use cached system prompt for 90% cost reduction on repeated calls
@@ -190,14 +179,7 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             user_prompt=user_prompt,
         )
         content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
-        content = content.strip()
-
-        # Extract JSON
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
-
-        finding_data = json.loads(content)
+        finding_data = extract_json_from_llm_response(content)
 
         # Build URL -> original result map to preserve source_metadata
         url_to_result = {r.get("url", ""): r for r in search_results if r.get("url")}
@@ -212,7 +194,7 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
                     url=url,
                     title=s.get("title", original.get("title", "")),
                     description=s.get("relevance", original.get("description", "")),
-                    content=original.get("content"),  # Preserve scraped content
+                    content=original.get("content"),
                     source_metadata=original.get("source_metadata"),
                 )
             )

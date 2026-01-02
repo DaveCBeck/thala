@@ -18,12 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
-    """Run web and academic research workflows simultaneously.
-
-    Uses asyncio.gather to run both in parallel, waits for both to complete.
-    Each workflow is wrapped to capture errors independently so one failure
-    doesn't prevent the other from completing.
-    """
+    """Run web and academic research workflows simultaneously."""
     input_data = state["input"]
     quality = input_data["quality"]
     quality_config = QUALITY_MAPPING[quality]
@@ -62,7 +57,6 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
         """Run academic lit review with error handling."""
         started_at = datetime.utcnow()
 
-        # Generate research questions if not provided
         research_questions = input_data.get("research_questions") or [
             f"What are the main research themes in {input_data['query']}?",
             f"What methodological approaches are used to study {input_data['query']}?",
@@ -98,21 +92,18 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
                 top_of_mind_id=None,
             )
 
-    # Run both in parallel
     logger.info(
         f"Starting parallel research for query: {input_data['query'][:50]}... "
         f"(web: {quality_config['web_depth']}, academic: {quality_config['academic_quality']})"
     )
     web_result, academic_result = await asyncio.gather(run_web(), run_academic())
 
-    # Build return state update
     updates: dict[str, Any] = {
         "web_result": web_result,
         "academic_result": academic_result,
         "current_phase": "parallel_research_complete",
     }
 
-    # Collect errors if any
     errors = []
     if web_result["status"] == "failed":
         errors.append({"phase": "web_research", "error": web_result["error"]})
