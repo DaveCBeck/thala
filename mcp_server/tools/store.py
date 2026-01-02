@@ -47,6 +47,12 @@ def get_tools() -> list[Tool]:
                         "maxLength": 8,
                         "description": "8-char Zotero key (required if source_type='external')",
                     },
+                    "language_code": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 5,
+                        "description": "ISO 639-1 language code (e.g., 'en', 'es', 'zh')",
+                    },
                 },
                 "required": ["content", "source_type"],
                 "additionalProperties": False,
@@ -96,6 +102,12 @@ def get_tools() -> list[Tool]:
                     "metadata": {
                         "type": "object",
                         "description": "Updated metadata",
+                    },
+                    "language_code": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 5,
+                        "description": "Updated ISO 639-1 language code",
                     },
                 },
                 "required": ["id"],
@@ -189,6 +201,7 @@ async def handle(
             source_ids=source_ids,
             metadata=arguments.get("metadata", {}),
             zotero_key=arguments.get("zotero_key"),
+            language_code=arguments.get("language_code"),
             embedding_model=embedding_model,
         )
 
@@ -226,6 +239,9 @@ async def handle(
 
         if "metadata" in arguments:
             updates["metadata"] = arguments["metadata"]
+
+        if "language_code" in arguments:
+            updates["language_code"] = arguments["language_code"]
 
         if not updates:
             raise ValidationError("updates", "At least one field must be provided for update")

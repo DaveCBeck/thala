@@ -93,10 +93,10 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                 source_type=SourceType.INTERNAL,
                 content=content,
                 compression_level=0,
+                language_code=lang_code,
                 metadata={
                     "type": "multi_lang_language_result",
                     "topic": topic,
-                    "language_code": lang_code,
                     "language_name": result["language_name"],
                     "workflows_run": result["workflows_run"],
                     "source_count": result["source_count"],

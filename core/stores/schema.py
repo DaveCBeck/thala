@@ -37,6 +37,12 @@ class BaseRecord(BaseModel):
         description="8-char Zotero key, only for external sources"
     )
     content: str = Field(description="Main text content for embedding")
+    language_code: Optional[str] = Field(
+        None,
+        min_length=2,
+        max_length=5,
+        description="ISO 639-1 language code (e.g., 'en', 'es', 'zh')"
+    )
     metadata: dict = Field(
         default_factory=dict,
         description="Flexible metadata (source, related topics, etc.)"

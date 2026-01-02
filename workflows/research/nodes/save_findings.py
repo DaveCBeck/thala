@@ -40,6 +40,7 @@ async def save_findings(state: DeepResearchState) -> dict[str, Any]:
     brief = state.get("research_brief", {})
     citations = state.get("citations", [])
     diffusion = state.get("diffusion", {})
+    language_code = state.get("primary_language", "en")
 
     try:
         # Import store components
@@ -53,6 +54,7 @@ async def save_findings(state: DeepResearchState) -> dict[str, Any]:
             source_type=SourceType.INTERNAL,
             content=final_report,
             compression_level=0,  # Original research
+            language_code=language_code,
             metadata={
                 "type": "research_report",
                 "topic": brief.get("topic", "Unknown"),
