@@ -10,7 +10,6 @@ if the service is unavailable.
 
 import logging
 import os
-from enum import Enum
 from typing import Optional
 
 from cachetools import TTLCache
@@ -27,36 +26,6 @@ DEFAULT_SERVICE_URL = "http://localhost:8002"
 
 # Cache for search results (30 min TTL, max 100 items)
 _search_cache: TTLCache = TTLCache(maxsize=100, ttl=1800)
-
-
-class BookFormat(str, Enum):
-    """Supported book formats."""
-
-    PDF = "pdf"
-    EPUB = "epub"
-    TXT = "txt"
-    MOBI = "mobi"
-    AZW3 = "azw3"
-    FB2 = "fb2"
-    DJVU = "djvu"
-    CBZ = "cbz"
-    CBR = "cbr"
-    OTHER = "other"
-
-
-# Format priority for sorting results (lower = better)
-FORMAT_PRIORITY: dict[str, int] = {
-    BookFormat.PDF: 1,
-    BookFormat.EPUB: 2,
-    BookFormat.TXT: 3,
-    BookFormat.MOBI: 4,
-    BookFormat.AZW3: 5,
-    BookFormat.FB2: 6,
-    BookFormat.DJVU: 7,
-    BookFormat.CBZ: 8,
-    BookFormat.CBR: 9,
-    BookFormat.OTHER: 10,
-}
 
 
 class Book(BaseModel):

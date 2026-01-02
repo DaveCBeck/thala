@@ -4,6 +4,7 @@ Embedding generation service for stores.
 Supports OpenAI and Ollama providers.
 """
 
+import hashlib
 import os
 from abc import ABC, abstractmethod
 from typing import Any
@@ -11,7 +12,11 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from workflows.shared.persistent_cache import get_cached, set_cached
+
 load_dotenv()
+
+EMBEDDING_CACHE_TTL_DAYS = 90
 
 
 class EmbeddingError(Exception):
@@ -60,30 +65,63 @@ class OpenAIEmbeddings(EmbeddingProvider):
             timeout=60.0,
         )
 
+    def _cache_key(self, text: str) -> str:
+        """Generate cache key for text."""
+        return hashlib.sha256(f"{self.model}:{text}".encode()).hexdigest()
+
     async def embed(self, text: str) -> list[float]:
         """Generate embedding for text."""
+        cache_key = self._cache_key(text)
+        cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
+        if cached is not None:
+            return cached
+
         results = await self.embed_batch([text])
-        return results[0]
+        embedding = results[0]
+        set_cached("embeddings", cache_key, embedding)
+        return embedding
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for multiple texts."""
-        try:
-            response = await self._client.post(
-                "/embeddings",
-                json={"input": texts, "model": self.model},
-            )
-            response.raise_for_status()
-            data = response.json()
-            # Sort by index to ensure correct order
-            embeddings = sorted(data["data"], key=lambda x: x["index"])
-            return [e["embedding"] for e in embeddings]
-        except httpx.HTTPStatusError as e:
-            raise EmbeddingError(
-                f"OpenAI API error: {e.response.status_code} - {e.response.text}",
-                provider="openai",
-            )
-        except Exception as e:
-            raise EmbeddingError(str(e), provider="openai")
+        cache_keys = [self._cache_key(text) for text in texts]
+        results = [None] * len(texts)
+        uncached_indices = []
+        uncached_texts = []
+
+        # Check cache for each text
+        for i, (text, cache_key) in enumerate(zip(texts, cache_keys)):
+            cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
+            if cached is not None:
+                results[i] = cached
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text)
+
+        # Generate embeddings for uncached texts
+        if uncached_texts:
+            try:
+                response = await self._client.post(
+                    "/embeddings",
+                    json={"input": uncached_texts, "model": self.model},
+                )
+                response.raise_for_status()
+                data = response.json()
+                embeddings = sorted(data["data"], key=lambda x: x["index"])
+                new_embeddings = [e["embedding"] for e in embeddings]
+
+                # Cache and insert new embeddings
+                for idx, embedding in zip(uncached_indices, new_embeddings):
+                    results[idx] = embedding
+                    set_cached("embeddings", cache_keys[idx], embedding)
+            except httpx.HTTPStatusError as e:
+                raise EmbeddingError(
+                    f"OpenAI API error: {e.response.status_code} - {e.response.text}",
+                    provider="openai",
+                )
+            except Exception as e:
+                raise EmbeddingError(str(e), provider="openai")
+
+        return results
 
     async def close(self):
         """Close the HTTP client."""
@@ -102,15 +140,26 @@ class OllamaEmbeddings(EmbeddingProvider):
         self.host = host
         self._client = httpx.AsyncClient(base_url=host, timeout=120.0)
 
+    def _cache_key(self, text: str) -> str:
+        """Generate cache key for text."""
+        return hashlib.sha256(f"{self.model}:{text}".encode()).hexdigest()
+
     async def embed(self, text: str) -> list[float]:
         """Generate embedding for text."""
+        cache_key = self._cache_key(text)
+        cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
+        if cached is not None:
+            return cached
+
         try:
             response = await self._client.post(
                 "/api/embeddings",
                 json={"model": self.model, "prompt": text},
             )
             response.raise_for_status()
-            return response.json()["embedding"]
+            embedding = response.json()["embedding"]
+            set_cached("embeddings", cache_key, embedding)
+            return embedding
         except httpx.HTTPStatusError as e:
             raise EmbeddingError(
                 f"Ollama API error: {e.response.status_code}",

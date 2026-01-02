@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Target chunk size for fallback chunking (in words)
 FALLBACK_CHUNK_SIZE = 30000
+# Overlap size between chunks (in words) for context continuity
+CHUNK_OVERLAP_SIZE = 500
 
 
 def _extract_headings(markdown: str) -> list[dict]:
@@ -39,30 +41,68 @@ def _extract_headings(markdown: str) -> list[dict]:
     return headings
 
 
+def _find_word_boundary(text: str, target_pos: int, direction: int = -1) -> int:
+    """
+    Find nearest word boundary near target position.
+
+    Args:
+        text: Full text
+        target_pos: Target position
+        direction: -1 for backward search, 1 for forward
+
+    Returns:
+        Position of word boundary
+    """
+    if direction == -1:
+        # Search backward for whitespace
+        pos = target_pos
+        while pos > 0 and not text[pos].isspace():
+            pos -= 1
+        return pos
+    else:
+        # Search forward for whitespace
+        pos = target_pos
+        while pos < len(text) and not text[pos].isspace():
+            pos += 1
+        return pos
+
+
 def _create_fallback_chunks(markdown: str, word_count: int) -> list[ChapterInfo]:
     """
-    Create pseudo-chapters by splitting document into ~30k word chunks.
+    Create pseudo-chapters by splitting document into ~30k word chunks with overlap.
 
     Used as fallback when heading-based chapter detection fails.
     Splits on paragraph boundaries to avoid breaking mid-sentence.
+    Chunks overlap by ~500 words to maintain context continuity.
     """
     num_chunks = max(1, (word_count + FALLBACK_CHUNK_SIZE - 1) // FALLBACK_CHUNK_SIZE)
+
+    # Calculate overlap in characters (approximate)
+    avg_chars_per_word = len(markdown) / max(1, word_count)
+    overlap_chars = int(CHUNK_OVERLAP_SIZE * avg_chars_per_word)
+
+    # Adjust target size to account for overlap
     target_chunk_size = len(markdown) // num_chunks
 
     chunks = []
     current_pos = 0
+    overlap_start = 0
 
     for i in range(num_chunks):
-        start_pos = current_pos
+        # Start position includes overlap from previous chunk (except first chunk)
+        if i == 0:
+            start_pos = 0
+        else:
+            start_pos = overlap_start
 
         if i == num_chunks - 1:
             # Last chunk gets everything remaining
             end_pos = len(markdown)
         else:
             # Find a good split point near target
-            target_pos = start_pos + target_chunk_size
+            target_pos = current_pos + target_chunk_size
             # Look for paragraph break (double newline) near target
-            search_start = max(start_pos, target_pos - 2000)
+            search_start = max(current_pos, target_pos - 2000)
             search_end = min(len(markdown), target_pos + 2000)
             search_region = markdown[search_start:search_end]
 
@@ -71,8 +111,8 @@ def _create_fallback_chunks(markdown: str, word_count: int) -> list[ChapterInfo]
             if para_break != -1:
                 end_pos = search_start + para_break + 2
             else:
-                # No paragraph break, just split at target
-                end_pos = target_pos
+                # No paragraph break, split at word boundary
+                end_pos = _find_word_boundary(markdown, target_pos, direction=-1)
 
         chunk_text = markdown[start_pos:end_pos]
         chunk_word_count = count_words(chunk_text)
@@ -85,9 +125,17 @@ def _create_fallback_chunks(markdown: str, word_count: int) -> list[ChapterInfo]
             word_count=chunk_word_count,
         ))
 
+        # Set up overlap for next chunk
         current_pos = end_pos
+        overlap_start = max(0, end_pos - overlap_chars)
+        # Adjust overlap to start at word boundary
+        if overlap_start > 0 and i < num_chunks - 1:
+            overlap_start = _find_word_boundary(markdown, overlap_start, direction=1)
 
-    logger.info(f"Created {len(chunks)} fallback chunks (~{FALLBACK_CHUNK_SIZE} words each)")
+    logger.info(
+        f"Created {len(chunks)} fallback chunks "
+        f"(~{FALLBACK_CHUNK_SIZE} words each, {CHUNK_OVERLAP_SIZE} word overlap)"
+    )
     return chunks
 
 
@@ -152,7 +200,7 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     3. For multi-author books, identify chapter authors from metadata_updates
     4. Build ChapterInfo list with positions and word counts
 
-    If no headings found, treat entire document as single chapter.
+    If no headings found, use fallback chunking into ~30k word sections.
     If document is short (<50k words), skip chapter detection and 10:1 summary.
 
     Returns chapters list, needs_tenth_summary flag, and current_status.
@@ -183,20 +231,14 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         # Extract headings
         headings = _extract_headings(markdown)
 
-        # If no headings, treat entire document as single chapter
+        # If no headings, use fallback chunking
         if not headings:
-            logger.info("No headings found, treating as single chapter")
-            chapters = [ChapterInfo(
-                title="Full Document",
-                start_position=0,
-                end_position=len(markdown),
-                author=None,
-                word_count=word_count,
-            )]
+            logger.info("No headings found, using fallback chunking")
+            chapters = _create_fallback_chunks(markdown, word_count)
             return {
                 "chapters": chapters,
                 "needs_tenth_summary": True,
-                "current_status": "chapters_detected",
+                "current_status": "chapters_detected_fallback",
             }
 
         # Check if metadata indicates multi-author book
@@ -255,16 +297,15 @@ Guidelines:
             # Build chapter boundaries
             chapters = _build_chapter_boundaries(markdown, headings, analysis)
 
-            # If no chapters identified, treat entire document as single chapter
+            # If no chapters identified, use fallback chunking
             if not chapters:
-                logger.warning("No chapters identified by LLM, treating as single chapter")
-                chapters = [ChapterInfo(
-                    title="Full Document",
-                    start_position=0,
-                    end_position=len(markdown),
-                    author=None,
-                    word_count=word_count,
-                )]
+                logger.warning("No chapters identified by LLM, using fallback chunking")
+                chapters = _create_fallback_chunks(markdown, word_count)
+                return {
+                    "chapters": chapters,
+                    "needs_tenth_summary": True,
+                    "current_status": "chapters_detected_fallback",
+                }
 
             logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
             return {

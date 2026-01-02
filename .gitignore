@@ -4,7 +4,6 @@
 dev.md
 claude.md
 todo.md
-test_data/
 testing/test_data/
 testing/logs/
 
@@ -60,3 +59,6 @@ htmlcov/
 tmp/
 temp/
 *.bak
+
+# Cache
+.cache/

@@ -6,6 +6,8 @@ Contains:
 
 import logging
 
+from pydantic import BaseModel, Field
+
 from workflows.shared.llm_utils import (
     ModelTier,
     get_llm,
@@ -49,6 +51,15 @@ Focus Areas: {focus_areas}
 Generate academic search queries to find relevant literature on this topic."""
 
 
+class AcademicQueryResponse(BaseModel):
+    """Structured output for academic search queries."""
+
+    queries: list[str] = Field(
+        description="3-5 search queries optimized for academic literature search",
+        min_length=1,
+    )
+
+
 async def generate_search_queries(
     topic: str,
     research_questions: list[str],
@@ -68,9 +79,8 @@ async def generate_search_queries(
     Returns:
         List of search queries
     """
-    import json
-
     llm = get_llm(tier=tier)
+    structured_llm = llm.with_structured_output(AcademicQueryResponse)
 
     # Translate system prompt if needed
     system_prompt = GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM
@@ -89,22 +99,13 @@ async def generate_search_queries(
     )
 
     try:
-        response = await invoke_with_cache(
-            llm,
+        result: AcademicQueryResponse = await invoke_with_cache(
+            structured_llm,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
 
-        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
-        content = content.strip()
-
-        # Parse JSON response
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
-
-        result = json.loads(content)
-        queries = result.get("queries", [])
+        queries = result.queries
 
         if not queries:
             queries = [topic]

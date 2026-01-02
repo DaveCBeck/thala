@@ -1,11 +1,19 @@
 """Async client for Marker document processing service."""
 
 import asyncio
+import logging
 import os
 from typing import Any, Optional
 
 import httpx
 from pydantic import BaseModel, Field
+
+from workflows.shared.persistent_cache import compute_file_hash, get_cached, set_cached
+
+logger = logging.getLogger(__name__)
+
+CACHE_TYPE = "marker"
+CACHE_TTL_DAYS = 30
 
 
 class MarkerJobResult(BaseModel):
@@ -32,6 +40,7 @@ class MarkerClient:
         base_url: Optional[str] = None,
         timeout: Optional[float] = None,
         poll_interval: float = 2.0,
+        enable_cache: bool = True,
     ):
         """
         Initialize MarkerClient.
@@ -40,10 +49,12 @@ class MarkerClient:
             base_url: Marker API base URL (default: env MARKER_BASE_URL or http://localhost:8001)
             timeout: Max timeout for HTTP requests in seconds (default: None, no timeout)
             poll_interval: Seconds between status polls (default: env MARKER_POLL_INTERVAL or 2.0)
+            enable_cache: Enable persistent caching of results (default: True)
         """
         self.base_url = base_url or os.getenv("MARKER_BASE_URL", "http://localhost:8001")
         self.timeout = timeout
         self.poll_interval = float(os.getenv("MARKER_POLL_INTERVAL", str(poll_interval)))
+        self.enable_cache = enable_cache
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -149,6 +160,7 @@ class MarkerClient:
         file_path: str,
         quality: str = "balanced",
         langs: Optional[list[str]] = None,
+        absolute_path: Optional[str] = None,
     ) -> MarkerJobResult:
         """
         Submit job and wait for completion (convenience method).
@@ -157,12 +169,36 @@ class MarkerClient:
             file_path: Path to file relative to /data/input
             quality: Quality preset (fast, balanced, quality)
             langs: Languages for OCR (default: ["English"])
+            absolute_path: Absolute file path for cache key generation (optional)
 
         Returns:
             MarkerJobResult with conversion output
         """
+        if self.enable_cache and absolute_path:
+            try:
+                file_hash = compute_file_hash(absolute_path)
+                cache_key = f"{file_hash}:{quality}:{':'.join(langs or ['English'])}"
+
+                cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+                if cached:
+                    logger.info(f"Cache hit for Marker processing: {file_path}")
+                    return MarkerJobResult(**cached)
+            except Exception as e:
+                logger.warning(f"Cache lookup failed for {file_path}: {e}")
+
         job_id = await self.submit_job(file_path, quality, langs)
-        return await self.poll_until_complete(job_id)
+        result = await self.poll_until_complete(job_id)
+
+        if self.enable_cache and absolute_path:
+            try:
+                file_hash = compute_file_hash(absolute_path)
+                cache_key = f"{file_hash}:{quality}:{':'.join(langs or ['English'])}"
+                set_cached(CACHE_TYPE, cache_key, result.model_dump())
+                logger.debug(f"Cached Marker result for {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to cache result for {file_path}: {e}")
+
+        return result
 
     async def submit_jobs(
         self,
@@ -251,13 +287,10 @@ class MarkerClient:
                 elif status == "failed":
                     error = data.get("error", "Unknown error")
                     raise RuntimeError(f"Job {job_id} failed: {error}")
-                # pending/processing: continue polling
 
-            # Yield completed jobs
             for job_id, result in completed_this_round:
                 yield job_id, result
 
-            # Sleep before next poll round if still have pending
             if pending:
                 await asyncio.sleep(self.poll_interval)
 

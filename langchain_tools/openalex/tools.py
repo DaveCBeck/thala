@@ -6,6 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain.tools import tool
 
+from workflows.shared.persistent_cache import get_cached, set_cached
 from .client import _get_openalex
 from .models import OpenAlexSearchOutput
 from .parsing import _parse_work
@@ -13,6 +14,9 @@ from .parsing import _parse_work
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+CACHE_TYPE = "openalex"
+CACHE_TTL_DAYS = 30
 
 
 @tool
@@ -43,6 +47,13 @@ async def openalex_search(
     Returns:
         Academic works with titles, abstracts, authors, citations, and DOIs.
     """
+    cache_key = f"search:{query}:{limit}:{min_citations}:{from_year}:{to_year}:{language}"
+
+    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+    if cached:
+        logger.debug(f"Cache hit for search: {query}")
+        return cached
+
     client = _get_openalex()
     limit = min(max(1, limit), 50)
 
@@ -89,7 +100,10 @@ async def openalex_search(
             f"openalex_search returned {len(results)} results for: {query} "
             f"(total in index: {output.total_results})"
         )
-        return output.model_dump(mode="json")
+
+        result_dict = output.model_dump(mode="json")
+        set_cached(CACHE_TYPE, cache_key, result_dict)
+        return result_dict
 
     except Exception as e:
         logger.error(f"openalex_search failed: {e}")

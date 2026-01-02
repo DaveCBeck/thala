@@ -22,18 +22,15 @@ async def process_marker(state: dict) -> dict:
     input_data = state["input"]
     resolved_path = state["resolved_path"]
 
-    # Get relative path for Marker API
     marker_input_dir = Path(os.getenv("MARKER_INPUT_DIR", "/data/input"))
 
     logger.info(f"Processing with Marker: resolved_path={resolved_path}")
     logger.info(f"MARKER_INPUT_DIR: {marker_input_dir}")
 
-    # Verify the resolved path exists
     resolved_path_obj = Path(resolved_path)
     if not resolved_path_obj.exists():
         raise FileNotFoundError(f"Resolved path does not exist: {resolved_path}")
 
-    # Compute relative path
     try:
         relative_path = resolved_path_obj.relative_to(marker_input_dir)
     except ValueError as e:
@@ -45,15 +42,14 @@ async def process_marker(state: dict) -> dict:
 
     logger.info(f"Submitting to Marker: {relative_path}")
 
-    # Submit to Marker
     async with MarkerClient() as client:
         result = await client.convert(
             file_path=str(relative_path),
             quality=input_data.get("quality", "balanced"),
             langs=input_data.get("langs", ["English"]),
+            absolute_path=resolved_path,
         )
 
-    # Calculate metrics
     word_count = count_words(result.markdown)
     page_count = estimate_pages(result.markdown)
 

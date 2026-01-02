@@ -225,42 +225,63 @@ async def extract_all_summaries(
     es_ids = {}
     zotero_keys = {}
 
-    for doi, result in processing_results.items():
-        paper = papers_by_doi[doi]
-        es_record_id = result.get("es_record_id")
-        zotero_key = result.get("zotero_key")
-        short_summary = result.get("short_summary", "")
+    semaphore = asyncio.Semaphore(3)
+    completed_count = 0
+    total_to_extract = len(processing_results)
 
-        if not es_record_id:
-            logger.warning(f"No ES record ID for {doi}, skipping summary extraction")
+    async def extract_single_summary(doi: str, result: dict) -> tuple[str, Any, str, str]:
+        nonlocal completed_count
+        async with semaphore:
+            paper = papers_by_doi[doi]
+            es_record_id = result.get("es_record_id")
+            zotero_key = result.get("zotero_key")
+            short_summary = result.get("short_summary", "")
+
+            if not es_record_id:
+                logger.warning(f"No ES record ID for {doi}, skipping summary extraction")
+                return doi, None, None, None
+
+            try:
+                record = await store_manager.es_stores.store.get(
+                    UUID(es_record_id),
+                    index="store_l0"
+                )
+                if not record:
+                    logger.warning(f"Could not fetch L0 content for {doi}")
+                    return doi, None, None, None
+
+                content = record.content
+
+                summary = await extract_paper_summary(
+                    content=content,
+                    paper=paper,
+                    short_summary=short_summary,
+                    es_record_id=es_record_id,
+                    zotero_key=zotero_key,
+                )
+
+                completed_count += 1
+                title = paper.get("title", "Unknown")[:50]
+                logger.info(f"[{completed_count}/{total_to_extract}] Extracted summary: {title}")
+
+                return doi, summary, es_record_id, zotero_key
+
+            except Exception as e:
+                logger.error(f"Failed to extract summary for {doi}: {e}")
+                return doi, None, None, None
+
+    tasks = [extract_single_summary(doi, result) for doi, result in processing_results.items()]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Summary extraction task failed: {result}")
             continue
-
-        try:
-            record = await store_manager.es_stores.store.get(
-                UUID(es_record_id),
-                index="store_l0"
-            )
-            if not record:
-                logger.warning(f"Could not fetch L0 content for {doi}")
-                continue
-
-            content = record.content
-
-            summary = await extract_paper_summary(
-                content=content,
-                paper=paper,
-                short_summary=short_summary,
-                es_record_id=es_record_id,
-                zotero_key=zotero_key,
-            )
-
+        doi, summary, es_record_id, zotero_key = result
+        if summary:
             summaries[doi] = summary
             es_ids[doi] = es_record_id
             zotero_keys[doi] = zotero_key
-
-        except Exception as e:
-            logger.error(f"Failed to extract summary for {doi}: {e}")
-            continue
 
     logger.info(f"Extracted summaries for {len(summaries)} papers")
     return summaries, es_ids, zotero_keys

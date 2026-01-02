@@ -5,6 +5,7 @@ Searches for books matching the LLM recommendations using the
 Library Genesis / Open Library API.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -13,19 +14,21 @@ from workflows.research.subgraphs.book_finding.state import BookResult
 
 logger = logging.getLogger(__name__)
 
-# Search configuration
-MAX_RESULTS_PER_SEARCH = 3
+# Search configuration - higher limit to improve PDF availability
+MAX_RESULTS_PER_SEARCH = 15
 
 
 async def _search_single_book(
     recommendation_title: str,
     author: str | None,
+    language: str | None = None,
 ) -> BookResult | None:
     """Search for a single recommended book.
 
     Args:
         recommendation_title: Title of the recommended book
         author: Optional author name to improve search
+        language: Optional language filter (e.g., "en", "es")
 
     Returns:
         BookResult if found, None otherwise
@@ -36,10 +39,14 @@ async def _search_single_book(
         query = f"{recommendation_title} {author}"
 
     try:
-        result = await book_search.ainvoke({
+        search_params = {
             "query": query,
             "limit": MAX_RESULTS_PER_SEARCH,
-        })
+        }
+        if language:
+            search_params["language"] = language
+
+        result = await book_search.ainvoke(search_params)
 
         books = result.get("results", [])
         if not books:
@@ -71,7 +78,7 @@ async def search_books(state: dict) -> dict[str, Any]:
     """Search for all recommended books using book_search API.
 
     Collects recommendations from all three categories and searches
-    for each one, prioritizing PDF format.
+    for each one in parallel, prioritizing PDF format.
     """
     # Collect all recommendations from all categories
     all_recommendations = (
@@ -84,15 +91,31 @@ async def search_books(state: dict) -> dict[str, Any]:
         logger.warning("No recommendations to search for")
         return {"search_results": []}
 
+    # Extract language from state
+    language_config = state.get("language_config")
+    language = language_config.get("code") if language_config else None
+
+    # Search all recommendations in parallel
+    search_tasks = [
+        _search_single_book(
+            recommendation_title=rec["title"],
+            author=rec.get("author"),
+            language=language,
+        )
+        for rec in all_recommendations
+    ]
+    search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+    # Collect results and deduplicate
     results = []
     seen_md5 = set()
 
-    for rec in all_recommendations:
-        book = await _search_single_book(
-            recommendation_title=rec["title"],
-            author=rec.get("author"),
-        )
+    for result in search_results:
+        if isinstance(result, Exception):
+            logger.warning(f"Search task failed: {result}")
+            continue
 
+        book = result
         if book:
             # Deduplicate by MD5
             if book["md5"] and book["md5"] in seen_md5:

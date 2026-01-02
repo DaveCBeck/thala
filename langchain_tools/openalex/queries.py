@@ -3,11 +3,15 @@
 import logging
 from typing import Optional
 
+from workflows.shared.persistent_cache import get_cached, set_cached
 from .client import _get_openalex
 from .models import OpenAlexAuthorWorksResult, OpenAlexCitationResult, OpenAlexWork
 from .parsing import _parse_work
 
 logger = logging.getLogger(__name__)
+
+CACHE_TYPE = "openalex"
+CACHE_TTL_DAYS = 30
 
 
 async def get_forward_citations(
@@ -30,15 +34,32 @@ async def get_forward_citations(
     Returns:
         OpenAlexCitationResult with citing works sorted by citation count
     """
+    work_id_clean = work_id.replace("https://doi.org/", "").replace("http://doi.org/", "")
+    cache_key = f"forward:{work_id_clean}:{limit}:{min_citations}:{from_year}"
+
+    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+    if cached:
+        logger.debug(f"Cache hit for forward citations: {work_id_clean}")
+        return OpenAlexCitationResult(**cached)
+
     client = _get_openalex()
     limit = min(max(1, limit), 200)
 
-    # Normalize work_id (remove https://doi.org/ prefix if present)
-    work_id_clean = work_id.replace("https://doi.org/", "").replace("http://doi.org/", "")
-
     try:
-        # Build filter string
-        filters = [f"cites:{work_id_clean}"]
+        if work_id_clean.startswith("W") or work_id_clean.startswith("https://openalex.org/"):
+            openalex_id = work_id_clean.replace("https://openalex.org/", "")
+        else:
+            openalex_id = await resolve_doi_to_openalex_id(work_id_clean)
+            if not openalex_id:
+                logger.warning(f"Could not resolve DOI {work_id_clean} to OpenAlex ID")
+                return OpenAlexCitationResult(
+                    source_doi=work_id_clean,
+                    direction="forward",
+                    total_count=0,
+                    results=[],
+                )
+
+        filters = [f"cites:{openalex_id}"]
         if min_citations is not None:
             filters.append(f"cited_by_count:>{min_citations}")
         if from_year is not None:
@@ -70,12 +91,15 @@ async def get_forward_citations(
             f"(total: {total_count})"
         )
 
-        return OpenAlexCitationResult(
+        result = OpenAlexCitationResult(
             source_doi=work_id_clean,
             direction="forward",
             total_count=total_count,
             results=results,
         )
+
+        set_cached(CACHE_TYPE, cache_key, result.model_dump())
+        return result
 
     except Exception as e:
         logger.error(f"get_forward_citations failed for {work_id_clean}: {e}")
@@ -103,21 +127,23 @@ async def get_backward_citations(
     Returns:
         OpenAlexCitationResult with referenced works
     """
+    work_id_clean = work_id.replace("https://doi.org/", "").replace("http://doi.org/", "")
+    cache_key = f"backward:{work_id_clean}:{limit}"
+
+    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+    if cached:
+        logger.debug(f"Cache hit for backward citations: {work_id_clean}")
+        return OpenAlexCitationResult(**cached)
+
     client = _get_openalex()
     limit = min(max(1, limit), 200)
 
-    # Normalize work_id
-    work_id_clean = work_id.replace("https://doi.org/", "").replace("http://doi.org/", "")
-
     try:
-        # First, fetch the source work to get referenced_works
-        # Handle both DOI and OpenAlex ID formats
         if work_id_clean.startswith("https://openalex.org/"):
             work_url = work_id_clean.replace("https://openalex.org", "")
         elif work_id_clean.startswith("W"):
             work_url = f"/works/{work_id_clean}"
         else:
-            # Assume it's a DOI
             work_url = f"/works/doi:{work_id_clean}"
 
         response = await client.get(work_url)
@@ -127,20 +153,18 @@ async def get_backward_citations(
         referenced_works = source_work.get("referenced_works", [])
         if not referenced_works:
             logger.debug(f"No referenced works found for {work_id_clean}")
-            return OpenAlexCitationResult(
+            result = OpenAlexCitationResult(
                 source_doi=work_id_clean,
                 direction="backward",
                 total_count=0,
                 results=[],
             )
+            set_cached(CACHE_TYPE, cache_key, result.model_dump())
+            return result
 
-        # Limit referenced works to fetch
         referenced_works = referenced_works[:limit]
-
-        # Extract OpenAlex IDs from URLs (format: https://openalex.org/W123456789)
         openalex_ids = [w.split("/")[-1] for w in referenced_works if w]
 
-        # Fetch full metadata using pipe-delimited filter
         if openalex_ids:
             filter_str = "|".join(openalex_ids)
             params = {
@@ -165,19 +189,22 @@ async def get_backward_citations(
                 f"get_backward_citations returned {len(results)} results for {work_id_clean}"
             )
 
-            return OpenAlexCitationResult(
+            result = OpenAlexCitationResult(
                 source_doi=work_id_clean,
                 direction="backward",
                 total_count=len(referenced_works),
                 results=results,
             )
         else:
-            return OpenAlexCitationResult(
+            result = OpenAlexCitationResult(
                 source_doi=work_id_clean,
                 direction="backward",
                 total_count=0,
                 results=[],
             )
+
+        set_cached(CACHE_TYPE, cache_key, result.model_dump())
+        return result
 
     except Exception as e:
         logger.error(f"get_backward_citations failed for {work_id_clean}: {e}")
@@ -209,11 +236,17 @@ async def get_author_works(
     Returns:
         OpenAlexAuthorWorksResult with author info and their works
     """
+    cache_key = f"author:{author_id}:{limit}:{min_citations}:{from_year}"
+
+    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+    if cached:
+        logger.debug(f"Cache hit for author works: {author_id}")
+        return OpenAlexAuthorWorksResult(**cached)
+
     client = _get_openalex()
     limit = min(max(1, limit), 100)
 
     try:
-        # First, fetch author info
         author_url = f"/authors/{author_id}"
         response = await client.get(author_url)
         response.raise_for_status()
@@ -222,7 +255,6 @@ async def get_author_works(
         author_name = author_data.get("display_name", "Unknown")
         works_count = author_data.get("works_count", 0)
 
-        # Build filter string for works
         filters = [f"authorships.author.id:{author_id}"]
         if min_citations is not None:
             filters.append(f"cited_by_count:>{min_citations}")
@@ -252,12 +284,15 @@ async def get_author_works(
             f"get_author_works returned {len(results)} results for {author_id} ({author_name})"
         )
 
-        return OpenAlexAuthorWorksResult(
+        result = OpenAlexAuthorWorksResult(
             author_id=author_id,
             author_name=author_name,
             total_works=works_count,
             results=results,
         )
+
+        set_cached(CACHE_TYPE, cache_key, result.model_dump())
+        return result
 
     except Exception as e:
         logger.error(f"get_author_works failed for {author_id}: {e}")
@@ -280,10 +315,15 @@ async def resolve_doi_to_openalex_id(doi: str) -> Optional[str]:
     Returns:
         OpenAlex ID (format: W123456789) or None if not found
     """
-    client = _get_openalex()
-
-    # Normalize DOI (remove https://doi.org/ prefix)
     doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+    cache_key = f"resolve:{doi_clean}"
+
+    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+    if cached:
+        logger.debug(f"Cache hit for DOI resolution: {doi_clean}")
+        return cached
+
+    client = _get_openalex()
 
     try:
         work_url = f"/works/doi:{doi_clean}"
@@ -293,9 +333,9 @@ async def resolve_doi_to_openalex_id(doi: str) -> Optional[str]:
 
         openalex_id = work_data.get("id", "")
         if openalex_id:
-            # Extract just the ID from the URL (format: https://openalex.org/W123456789)
             openalex_id = openalex_id.split("/")[-1]
             logger.debug(f"Resolved DOI {doi_clean} to OpenAlex ID {openalex_id}")
+            set_cached(CACHE_TYPE, cache_key, openalex_id)
             return openalex_id
         else:
             logger.warning(f"No OpenAlex ID found for DOI {doi_clean}")
@@ -318,10 +358,15 @@ async def get_work_by_doi(doi: str) -> Optional[OpenAlexWork]:
     Returns:
         OpenAlexWork with full metadata, or None if not found
     """
-    client = _get_openalex()
-
-    # Normalize DOI (remove https://doi.org/ prefix)
     doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+    cache_key = f"work:{doi_clean}"
+
+    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+    if cached:
+        logger.debug(f"Cache hit for work by DOI: {doi_clean}")
+        return OpenAlexWork(**cached)
+
+    client = _get_openalex()
 
     try:
         work_url = f"/works/doi:{doi_clean}"
@@ -331,6 +376,8 @@ async def get_work_by_doi(doi: str) -> Optional[OpenAlexWork]:
 
         parsed = _parse_work(work_data)
         logger.debug(f"Fetched work by DOI {doi_clean}: {parsed.title[:50]}...")
+
+        set_cached(CACHE_TYPE, cache_key, parsed.model_dump())
         return parsed
 
     except Exception as e:
@@ -352,38 +399,58 @@ async def get_works_by_dois(dois: list[str]) -> list[OpenAlexWork]:
     if not dois:
         return []
 
-    client = _get_openalex()
-
-    # Normalize DOIs
     dois_clean = [
         d.replace("https://doi.org/", "").replace("http://doi.org/", "")
         for d in dois
     ]
 
+    results = []
+    uncached_dois = []
+
+    for doi_clean in dois_clean:
+        cache_key = f"work:{doi_clean}"
+        cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
+        if cached:
+            results.append(OpenAlexWork(**cached))
+            logger.debug(f"Cache hit for work: {doi_clean}")
+        else:
+            uncached_dois.append(doi_clean)
+
+    if not uncached_dois:
+        logger.debug(f"All {len(dois)} works retrieved from cache")
+        return results
+
+    client = _get_openalex()
+
     try:
-        # Use pipe-delimited filter for batch lookup
-        filter_str = "|".join(f"https://doi.org/{d}" for d in dois_clean)
+        filter_str = "|".join(f"https://doi.org/{d}" for d in uncached_dois)
         params = {
             "filter": f"doi:{filter_str}",
-            "per_page": min(len(dois_clean), 50),
+            "per_page": min(len(uncached_dois), 50),
         }
 
         response = await client.get("/works", params=params)
         response.raise_for_status()
         data = response.json()
 
-        results = []
         for work in data.get("results", []):
             try:
                 parsed = _parse_work(work)
                 results.append(parsed)
+
+                doi_clean = parsed.doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+                cache_key = f"work:{doi_clean}"
+                set_cached(CACHE_TYPE, cache_key, parsed.model_dump())
             except Exception as e:
                 logger.warning(f"Failed to parse work in batch: {e}")
                 continue
 
-        logger.debug(f"Batch fetched {len(results)}/{len(dois)} works by DOI")
+        logger.debug(
+            f"Batch fetched {len(results)}/{len(dois)} works "
+            f"({len(dois) - len(uncached_dois)} from cache, {len(uncached_dois)} from API)"
+        )
         return results
 
     except Exception as e:
         logger.error(f"get_works_by_dois failed: {e}")
-        return []
+        return results

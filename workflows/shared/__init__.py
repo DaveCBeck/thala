@@ -21,6 +21,13 @@ from .batch_processor import (
     BatchResult,
     get_batch_processor,
 )
+from .persistent_cache import (
+    get_cached,
+    set_cached,
+    clear_cache,
+    get_cache_stats,
+    compute_file_hash,
+)
 
 __all__ = [
     # Marker client
@@ -43,4 +50,10 @@ __all__ = [
     "BatchRequest",
     "BatchResult",
     "get_batch_processor",
+    # Persistent caching
+    "get_cached",
+    "set_cached",
+    "clear_cache",
+    "get_cache_stats",
+    "compute_file_hash",
 ]

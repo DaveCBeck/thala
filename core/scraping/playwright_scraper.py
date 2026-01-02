@@ -33,7 +33,7 @@ class PlaywrightScraper:
         """Initialize the Playwright scraper.
 
         Args:
-            timeout: Page load timeout in milliseconds (default: 30000)
+            timeout: Page load timeout in milliseconds (default: 60000)
             delay: Delay between requests in seconds (default: 1.5)
             headless: Run browser in headless mode (default: True)
         """
@@ -42,7 +42,7 @@ class PlaywrightScraper:
 
         # Config from env or defaults
         self._timeout = timeout or int(
-            os.environ.get("SCRAPER_PLAYWRIGHT_TIMEOUT", "30000")
+            os.environ.get("SCRAPER_PLAYWRIGHT_TIMEOUT", "60000")
         )
         self._delay = delay or float(
             os.environ.get("SCRAPER_PLAYWRIGHT_DELAY", "1.5")

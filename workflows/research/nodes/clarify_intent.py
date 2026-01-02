@@ -5,9 +5,10 @@ Determines if the user's research request needs clarification.
 If ambiguous, generates clarifying questions.
 """
 
-import json
 import logging
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from workflows.research.state import DeepResearchState, ClarificationQuestion
 from workflows.research.prompts import CLARIFY_INTENT_SYSTEM, CLARIFY_INTENT_HUMAN, get_today_str
@@ -15,6 +16,25 @@ from workflows.research.prompts.translator import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
+
+
+class ClarificationQuestionModel(BaseModel):
+    """Single clarification question."""
+
+    question: str
+    options: list[str] | None = None
+
+
+class ClarificationResponse(BaseModel):
+    """Structured output for clarification decision."""
+
+    need_clarification: bool = Field(
+        description="Whether the request needs clarification"
+    )
+    questions: list[ClarificationQuestionModel] = Field(
+        default_factory=list,
+        description="List of clarifying questions if needed"
+    )
 
 
 async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
@@ -49,30 +69,22 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
     system_prompt = system_prompt_template.format(date=get_today_str())
     human_prompt = human_prompt_template.format(query=query)
 
-    llm = get_llm(ModelTier.HAIKU)  # Fast model for simple decision
+    llm = get_llm(ModelTier.HAIKU)
+    structured_llm = llm.with_structured_output(ClarificationResponse)
 
     try:
-        response = await llm.ainvoke([
+        result: ClarificationResponse = await structured_llm.ainvoke([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": human_prompt},
         ])
 
-        content = response.content.strip()
-
-        # Extract JSON
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
-
-        result = json.loads(content)
-
-        if result.get("need_clarification", False):
+        if result.need_clarification:
             questions = [
                 ClarificationQuestion(
-                    question=q.get("question", ""),
-                    options=q.get("options"),
+                    question=q.question,
+                    options=q.options,
                 )
-                for q in result.get("questions", [])
+                for q in result.questions
             ]
 
             logger.info(f"Clarification needed: {len(questions)} questions")

@@ -13,12 +13,15 @@ Endpoints:
 Reference: https://github.com/zotero/translation-server
 """
 
+import hashlib
 import logging
 import os
 from typing import Any, Optional
 
 import httpx
 from pydantic import BaseModel, Field, ConfigDict
+
+from workflows.shared.persistent_cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +150,11 @@ class TranslationServerClient:
         Returns:
             TranslationResult with extracted metadata, or None if translation failed
         """
+        cache_key = hashlib.sha256(url.encode()).hexdigest()
+        cached_result = get_cached("translation_server", cache_key, ttl_days=30)
+        if cached_result is not None:
+            return cached_result
+
         client = await self._get_client()
 
         try:
@@ -168,16 +176,20 @@ class TranslationServerClient:
                             TranslationCreator.model_validate(c)
                             for c in item.get("creators", [])
                         ]
-                    return TranslationResult.model_validate(item)
+                    result = TranslationResult.model_validate(item)
+                    set_cached("translation_server", cache_key, result)
+                    return result
 
             elif response.status_code == 300:
                 # Multiple results - server returns selection dialog info
                 # We'll create a basic result with the URL
                 logger.info(f"Multiple translation matches for {url}, using basic result")
-                return TranslationResult(
+                result = TranslationResult(
                     item_type="webpage",
                     url=url,
                 )
+                set_cached("translation_server", cache_key, result)
+                return result
 
             elif response.status_code == 501:
                 # No translator available for this URL
