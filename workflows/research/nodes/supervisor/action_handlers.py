@@ -74,15 +74,10 @@ async def handle_conduct_research(
     if not current_allocation and action_data.get("llm_allocation"):
         # Use LLM's allocation decision
         llm_alloc = action_data["llm_allocation"]
-        # Validate total doesn't exceed 3
-        total = llm_alloc["web_count"] + llm_alloc["academic_count"] + llm_alloc["book_count"]
-        if total <= 3 and total > 0:
+        web_count = llm_alloc["web_count"]
+        if 1 <= web_count <= 3:
             current_allocation = llm_alloc
-            logger.info(
-                f"Using LLM allocation: web={llm_alloc['web_count']}, "
-                f"academic={llm_alloc['academic_count']}, book={llm_alloc['book_count']} "
-                f"({action_data.get('allocation_reasoning', 'no reasoning')})"
-            )
+            logger.info(f"Using LLM allocation: web={web_count}")
 
     result = {
         "pending_questions": questions,

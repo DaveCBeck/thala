@@ -36,10 +36,7 @@ async def _get_supervisor_decision_structured(
         # Include allocation from LLM decision
         action_data["llm_allocation"] = {
             "web_count": decision.web_researchers,
-            "academic_count": decision.academic_researchers,
-            "book_count": decision.book_researchers,
         }
-        action_data["allocation_reasoning"] = decision.allocation_reasoning
     elif action == "refine_draft":
         action_data["updates"] = decision.draft_updates or ""
         action_data["gaps"] = decision.remaining_gaps

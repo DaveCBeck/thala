@@ -41,8 +41,8 @@ class DeepResearchState(TypedDict):
     active_researchers: int  # Currently running (max 3)
     research_findings: Annotated[list[ResearchFinding], add]
 
-    # Researcher allocation for specialized researchers
-    researcher_allocation: Optional[ResearcherAllocation]  # {web_count, academic_count, book_count}
+    # Researcher allocation
+    researcher_allocation: Optional[ResearcherAllocation]  # {web_count: 1-3}
 
     # Supervisor messages (for tool-based agent)
     supervisor_messages: Annotated[list[BaseMessage], add_messages]

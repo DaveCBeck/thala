@@ -373,7 +373,7 @@ async def run_research(
         language: Single language mode (ISO 639-1 code, e.g., "es", "zh")
         translate_to: Translate final report to this language
         preserve_quotes: Keep direct quotes in original language when translating
-        researcher_allocation: Allocation as 3-digit string (web, academic, book)
+        researcher_allocation: Number of parallel web researchers ("1"-"3")
     """
     from workflows.research import deep_research
 
@@ -463,9 +463,7 @@ Examples:
         type=str,
         default=None,
         help=(
-            "Researcher allocation as 3-digit string (web, academic, book). "
-            "Examples: '111' (1 each, default), '210' (2 web, 1 academic), "
-            "'300' (3 web only). Total must not exceed 3. "
+            "Number of parallel web researchers ('1'-'3'). "
             "If not specified, LLM supervisor decides based on topic."
         )
     )
@@ -490,7 +488,7 @@ async def main():
     if args.translate_to:
         print(f"Translate To: {args.translate_to}")
     if args.allocation:
-        print(f"Allocation: {args.allocation} (web={args.allocation[0]}, academic={args.allocation[1]}, book={args.allocation[2]})")
+        print(f"Allocation: {args.allocation} web researchers")
     else:
         print("Allocation: LLM-decided (based on topic)")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")

@@ -51,25 +51,9 @@ class SupervisorDecision(BaseModel):
     # Researcher allocation (for conduct_research action)
     web_researchers: int = Field(
         default=1,
-        ge=0,
+        ge=1,
         le=3,
-        description="Number of web researchers (0-3). Best for current events, tech trends, tools, products.",
-    )
-    academic_researchers: int = Field(
-        default=1,
-        ge=0,
-        le=3,
-        description="Number of academic researchers (0-3). Best for peer-reviewed research, clinical studies, scientific methodology.",
-    )
-    book_researchers: int = Field(
-        default=1,
-        ge=0,
-        le=3,
-        description="Number of book researchers (0-3). Best for foundational theory, historical context, comprehensive overviews.",
-    )
-    allocation_reasoning: Optional[str] = Field(
-        default=None,
-        description="Brief explanation of why this researcher allocation was chosen based on topic type.",
+        description="Number of web researchers (1-3) to run in parallel.",
     )
 
     # For refine_draft action

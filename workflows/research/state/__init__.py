@@ -8,7 +8,7 @@ Defines TypedDict states for:
 - Language configuration for multi-lingual support
 """
 
-from .researcher_types import ResearcherType, ResearcherAllocation, parse_allocation
+from .researcher_types import ResearcherAllocation, parse_allocation
 from .language_config import LanguageConfig, TranslationConfig
 from .input_types import ResearchInput, ClarificationQuestion, ResearchBrief
 from .researcher_state import ResearchQuestion, WebSearchResult, ResearchFinding, ResearcherState
@@ -19,7 +19,7 @@ from .workflow_state import DeepResearchState
 
 __all__ = [
     # Researcher types
-    "ResearcherType", "ResearcherAllocation", "parse_allocation",
+    "ResearcherAllocation", "parse_allocation",
     # Language config
     "LanguageConfig", "TranslationConfig",
     # Input types

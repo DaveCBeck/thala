@@ -76,9 +76,7 @@ async def deep_research(
                      Useful when researching in non-English but need English output.
         preserve_quotes: Keep direct quotes in original language when translating.
                         Default: True
-        researcher_allocation: Researcher allocation as 3-digit string (web, academic, book).
-                              Examples: "111" (1 each, default), "210" (2 web, 1 academic),
-                              "300" (3 web only). Total must not exceed 3.
+        researcher_allocation: Number of parallel web researchers as single digit "1"-"3".
                               If None, supervisor LLM decides based on topic.
 
     Returns:
