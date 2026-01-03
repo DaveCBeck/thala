@@ -1,8 +1,8 @@
 """
-Book search node using book_search tool.
+Book search node with multi-query fallback strategy.
 
-Searches for books matching the LLM recommendations using the
-Library Genesis / Open Library API.
+Searches for books matching the LLM recommendations using multiple
+query strategies to maximize finding results.
 """
 
 import asyncio
@@ -14,8 +14,9 @@ from workflows.research.subgraphs.book_finding.state import BookResult
 
 logger = logging.getLogger(__name__)
 
-# Search configuration - higher limit to improve PDF availability
+# Search configuration
 MAX_RESULTS_PER_SEARCH = 15
+MAX_CONCURRENT_SEARCHES = 5
 
 
 async def _search_single_book(
@@ -23,7 +24,12 @@ async def _search_single_book(
     author: str | None,
     language: str | None = None,
 ) -> BookResult | None:
-    """Search for a single recommended book.
+    """Search for a single recommended book with fallback strategies.
+
+    Tries multiple query strategies:
+    1. Title + Author (if author known)
+    2. Title only
+    3. Author only (if author known)
 
     Args:
         recommendation_title: Title of the recommended book
@@ -33,45 +39,71 @@ async def _search_single_book(
     Returns:
         BookResult if found, None otherwise
     """
-    # Build search query
-    query = recommendation_title
+    # Build list of queries to try
+    queries = []
     if author:
-        query = f"{recommendation_title} {author}"
+        queries.append(f"{recommendation_title} {author}")
+    queries.append(recommendation_title)
+    if author:
+        queries.append(author)
 
-    try:
-        search_params = {
-            "query": query,
-            "limit": MAX_RESULTS_PER_SEARCH,
-        }
-        if language:
-            search_params["language"] = language
+    all_results = []
 
-        result = await book_search.ainvoke(search_params)
+    for query in queries:
+        try:
+            search_params = {
+                "query": query,
+                "limit": MAX_RESULTS_PER_SEARCH,
+            }
+            if language:
+                search_params["language"] = language
 
-        books = result.get("results", [])
-        if not books:
-            logger.info(f"No results found for: {query}")
-            return None
+            result = await book_search.ainvoke(search_params)
+            books = result.get("results", [])
 
-        # Prioritize PDF format, then take first result
-        pdf_books = [b for b in books if b.get("format", "").lower() == "pdf"]
-        best_book = pdf_books[0] if pdf_books else books[0]
+            if books:
+                logger.debug(f"Query '{query}' found {len(books)} results")
+                all_results.extend(books)
+                # If we found results with title+author, that's good enough
+                if len(queries) > 1 and query == queries[0]:
+                    break
+            else:
+                logger.debug(f"No results for query: '{query}'")
 
-        return BookResult(
-            title=best_book.get("title", ""),
-            authors=best_book.get("authors", "Unknown"),
-            md5=best_book.get("md5", ""),
-            url=best_book.get("url", ""),
-            format=best_book.get("format", ""),
-            size=best_book.get("size", ""),
-            abstract=best_book.get("abstract"),
-            matched_recommendation=recommendation_title,
-            content_summary=None,
-        )
+        except Exception as e:
+            logger.warning(f"Search failed for '{query}': {e}")
+            continue
 
-    except Exception as e:
-        logger.warning(f"Book search failed for '{query}': {e}")
+    if not all_results:
+        logger.info(f"No results found for: {recommendation_title}")
         return None
+
+    # Deduplicate by MD5
+    seen_md5 = set()
+    unique_results = []
+    for book in all_results:
+        md5 = book.get("md5", "")
+        if md5 and md5 not in seen_md5:
+            seen_md5.add(md5)
+            unique_results.append(book)
+
+    # Prioritize PDF format
+    pdf_books = [b for b in unique_results if b.get("format", "").lower() == "pdf"]
+    best_book = pdf_books[0] if pdf_books else unique_results[0]
+
+    logger.info(f"Found: {best_book.get('title', 'Unknown')} for '{recommendation_title}'")
+
+    return BookResult(
+        title=best_book.get("title", ""),
+        authors=best_book.get("authors", "Unknown"),
+        md5=best_book.get("md5", ""),
+        url=best_book.get("url", ""),
+        format=best_book.get("format", ""),
+        size=best_book.get("size", ""),
+        abstract=best_book.get("abstract"),
+        matched_recommendation=recommendation_title,
+        content_summary=None,
+    )
 
 
 async def search_books(state: dict) -> dict[str, Any]:
@@ -95,15 +127,19 @@ async def search_books(state: dict) -> dict[str, Any]:
     language_config = state.get("language_config")
     language = language_config.get("code") if language_config else None
 
+    # Limit concurrency to avoid overwhelming the service
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
+
+    async def search_with_semaphore(rec: dict) -> BookResult | None:
+        async with semaphore:
+            return await _search_single_book(
+                recommendation_title=rec["title"],
+                author=rec.get("author"),
+                language=language,
+            )
+
     # Search all recommendations in parallel
-    search_tasks = [
-        _search_single_book(
-            recommendation_title=rec["title"],
-            author=rec.get("author"),
-            language=language,
-        )
-        for rec in all_recommendations
-    ]
+    search_tasks = [search_with_semaphore(rec) for rec in all_recommendations]
     search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
     # Collect results and deduplicate

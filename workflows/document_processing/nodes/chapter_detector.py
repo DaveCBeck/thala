@@ -139,6 +139,73 @@ def _create_fallback_chunks(markdown: str, word_count: int) -> list[ChapterInfo]
     return chunks
 
 
+def _create_heading_based_chapters(
+    markdown: str,
+    headings: list[dict],
+    min_chapters: int = 2,
+) -> list[ChapterInfo]:
+    """
+    Create chapters from top-level headings when LLM detection fails.
+
+    Uses the highest heading level (smallest number) that has at least
+    min_chapters occurrences. This ensures we get meaningful divisions
+    rather than just one or two sections.
+
+    Args:
+        markdown: Full markdown text
+        headings: List of all headings with positions
+        min_chapters: Minimum chapters required (default 2)
+
+    Returns:
+        List of ChapterInfo, or empty list if no suitable structure found
+    """
+    if not headings:
+        return []
+
+    # Group headings by level
+    headings_by_level: dict[int, list[dict]] = {}
+    for h in headings:
+        level = h["level"]
+        if level not in headings_by_level:
+            headings_by_level[level] = []
+        headings_by_level[level].append(h)
+
+    # Find the highest level (lowest number) with enough headings
+    for level in sorted(headings_by_level.keys()):
+        level_headings = headings_by_level[level]
+        if len(level_headings) >= min_chapters:
+            logger.info(
+                f"Using H{level} headings as chapter boundaries "
+                f"({len(level_headings)} headings)"
+            )
+            # Build chapters from these headings
+            chapters = []
+            for i, heading in enumerate(level_headings):
+                start = heading["position"]
+                # End is start of next heading at same level, or end of document
+                if i + 1 < len(level_headings):
+                    end = level_headings[i + 1]["position"]
+                else:
+                    end = len(markdown)
+
+                chapter_text = markdown[start:end]
+                chapters.append(ChapterInfo(
+                    title=heading["text"],
+                    start_position=start,
+                    end_position=end,
+                    author=None,
+                    word_count=count_words(chapter_text),
+                ))
+            return chapters
+
+    # No level has enough headings
+    logger.debug(
+        f"No heading level has >= {min_chapters} headings: "
+        f"{[(l, len(h)) for l, h in sorted(headings_by_level.items())]}"
+    )
+    return []
+
+
 def _build_chapter_boundaries(
     markdown: str,
     headings: list[dict],
@@ -231,6 +298,17 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         # Extract headings
         headings = _extract_headings(markdown)
 
+        # Log heading structure for debugging
+        if headings:
+            heading_counts = {}
+            for h in headings:
+                level = h["level"]
+                heading_counts[level] = heading_counts.get(level, 0) + 1
+            logger.debug(
+                f"Found {len(headings)} headings: "
+                f"{', '.join(f'H{l}={c}' for l, c in sorted(heading_counts.items()))}"
+            )
+
         # If no headings, use fallback chunking
         if not headings:
             logger.info("No headings found, using fallback chunking")
@@ -252,13 +330,16 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         ])
 
         # Build prompt
-        prompt = """Analyze this list of document headings and identify which ones represent chapter-level divisions.
-Mark each heading with is_chapter=true if it represents a chapter boundary, false otherwise.
+        prompt = """Analyze this list of document headings and identify which ones represent major section divisions.
+Mark each heading with is_chapter=true if it represents a major division boundary, false otherwise.
 
 Guidelines:
-- Look for consistent patterns (e.g., all H1s, or "Chapter N" patterns)
-- Chapters should be major divisions of the document
-- Sub-sections within chapters should be marked false"""
+- Major divisions include: chapters, parts, numbered top-level sections (1, 2, 3 or 1.0, 2.0), or consistently-styled major headings
+- Be LIBERAL in identifying divisions - if headings appear to mark major content shifts, mark them as chapters
+- Common patterns: "Chapter N", "Part N", just numbers (1, 2, 3), Roman numerals (I, II, III), or descriptive titles at consistent heading levels
+- For academic papers: Introduction, Methods, Results, Discussion, Conclusion are major divisions
+- Sub-sections within chapters (e.g., 1.1, 1.2 under section 1) should be marked false
+- When in doubt, prefer marking more headings as chapters rather than fewer - splitting is better than one huge chunk"""
 
         if is_multi_author:
             prompt += "\n\nThis is a multi-author book. For each chapter, identify the author name if present in the heading."
@@ -297,9 +378,21 @@ Guidelines:
             # Build chapter boundaries
             chapters = _build_chapter_boundaries(markdown, headings, analysis)
 
-            # If no chapters identified, use fallback chunking
+            # If no chapters identified, try using top-level headings as fallback
             if not chapters:
-                logger.warning("No chapters identified by LLM, using fallback chunking")
+                logger.warning("No chapters identified by LLM, trying top-level heading fallback")
+                chapters = _create_heading_based_chapters(markdown, headings)
+
+                if chapters:
+                    logger.info(f"Created {len(chapters)} chapters from top-level headings")
+                    return {
+                        "chapters": chapters,
+                        "needs_tenth_summary": True,
+                        "current_status": "chapters_detected_heading_fallback",
+                    }
+
+                # Final fallback: arbitrary chunking
+                logger.warning("No usable heading structure, using size-based chunking")
                 chapters = _create_fallback_chunks(markdown, word_count)
                 return {
                     "chapters": chapters,

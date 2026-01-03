@@ -95,8 +95,8 @@ async def _search_books_internal(
         for r in data.get("results", []):
             book_language = r.get("language", "Unknown")
 
-            # Filter by language if specified
-            if language is not None:
+            # Filter by language if specified (skip filtering if book language is unknown)
+            if language is not None and book_language.lower().strip() != "unknown":
                 # Normalize comparison (case-insensitive, strip whitespace)
                 if book_language.lower().strip() != language.lower().strip():
                     continue
@@ -121,8 +121,9 @@ async def _search_books_internal(
             results=books,
         )
 
-        # Cache the result
-        _search_cache[cache_key] = output
+        # Only cache non-empty results to avoid caching temporary failures
+        if books:
+            _search_cache[cache_key] = output
 
         logger.debug(f"book_search returned {len(books)} results for '{query}'")
         return output
