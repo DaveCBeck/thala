@@ -32,6 +32,11 @@ WORKDIR /app
 COPY marker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Apply surya patches for parallel recognition postprocessing
+# This patches the installed surya package with our performance improvements
+COPY marker/patches/surya/settings.py /usr/local/lib/python3.11/dist-packages/surya/settings.py
+COPY marker/patches/surya/recognition/__init__.py /usr/local/lib/python3.11/dist-packages/surya/recognition/__init__.py
+
 # Copy shared utilities
 COPY common/ ./services/common/
 

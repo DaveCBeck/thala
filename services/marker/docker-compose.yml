@@ -9,6 +9,7 @@ services:
       - ./data/input:/data/input
       - ./data/output:/data/output
       - marker-cache:/root/.cache/huggingface
+      - surya-cache:/root/.cache/datalab
     environment:
       - TORCH_DEVICE=cuda
       - INFERENCE_RAM=16
@@ -19,6 +20,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # Performance optimizations
+      - COMPILE_ALL=true
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8
     depends_on:
       redis:
         condition: service_healthy
@@ -44,6 +49,7 @@ services:
       - ./data/input:/data/input
       - ./data/output:/data/output
       - marker-cache:/root/.cache/huggingface
+      - surya-cache:/root/.cache/datalab
     environment:
       - TORCH_DEVICE=cuda
       - INFERENCE_RAM=14
@@ -54,6 +60,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # Performance optimizations
+      - COMPILE_ALL=true
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8
     depends_on:
       redis:
         condition: service_healthy
@@ -91,4 +101,5 @@ services:
 
 volumes:
   marker-cache:
+  surya-cache:
   redis-data:
