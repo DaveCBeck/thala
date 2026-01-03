@@ -6,6 +6,7 @@ A multi-stage system for producing comprehensive literature reviews by:
 3. Processing papers for structured summaries
 4. Clustering into thematic groups
 5. Synthesizing into a coherent review
+6. Supervision loop for theoretical depth refinement
 """
 
 from workflows.research.subgraphs.academic_lit_review.citation_graph import (
@@ -34,6 +35,9 @@ from workflows.research.subgraphs.academic_lit_review.state import (
     ThematicCluster,
     # Synthesis types
     FormattedCitation,
+    # Supervision types
+    SupervisionState,
+    SupervisionExpansion,
     # Main state
     AcademicLitReviewState,
     # Reducers
@@ -79,6 +83,13 @@ from workflows.research.subgraphs.academic_lit_review.synthesis import (
     synthesis_subgraph,
     run_synthesis,
 )
+from workflows.research.subgraphs.academic_lit_review.supervision import (
+    run_supervision,
+    supervision_subgraph,
+    IdentifiedIssue,
+    SupervisorDecision,
+    MAX_SUPERVISION_DEPTH,
+)
 from workflows.research.subgraphs.academic_lit_review.graph import (
     academic_lit_review_graph,
     academic_lit_review,
@@ -109,6 +120,12 @@ __all__ = [
     "ThematicCluster",
     # Synthesis types
     "FormattedCitation",
+    # Supervision types
+    "SupervisionState",
+    "SupervisionExpansion",
+    "IdentifiedIssue",
+    "SupervisorDecision",
+    "MAX_SUPERVISION_DEPTH",
     # Main state
     "AcademicLitReviewState",
     # Reducers
@@ -146,6 +163,9 @@ __all__ = [
     "QualityMetrics",
     "synthesis_subgraph",
     "run_synthesis",
+    # Supervision subgraph
+    "supervision_subgraph",
+    "run_supervision",
     # Main workflow
     "academic_lit_review_graph",
     "academic_lit_review",

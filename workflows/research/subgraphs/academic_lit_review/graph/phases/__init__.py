@@ -5,6 +5,7 @@ from .diffusion import diffusion_phase_node
 from .processing import processing_phase_node
 from .clustering import clustering_phase_node
 from .synthesis import synthesis_phase_node
+from .supervision import supervision_phase_node
 
 __all__ = [
     "discovery_phase_node",
@@ -12,4 +13,5 @@ __all__ = [
     "processing_phase_node",
     "clustering_phase_node",
     "synthesis_phase_node",
+    "supervision_phase_node",
 ]

@@ -10,7 +10,7 @@ Contains:
 """
 
 from .cache import get_scrape_cache
-from .pdf_processor import is_pdf_url, fetch_pdf_via_marker
+from .pdf_processor import is_pdf_url, fetch_pdf_via_marker, fetch_pdf_from_url
 from .url_scraper import scrape_single_url, scrape_pages
 from .query_validator import validate_queries
 from .query_generator import create_generate_queries, generate_queries, RESEARCHER_QUERY_PROMPTS
@@ -19,6 +19,7 @@ __all__ = [
     "get_scrape_cache",
     "is_pdf_url",
     "fetch_pdf_via_marker",
+    "fetch_pdf_from_url",
     "scrape_single_url",
     "scrape_pages",
     "validate_queries",

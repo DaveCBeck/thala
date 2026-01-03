@@ -57,6 +57,17 @@ class HealthStatus(BaseModel):
     vpn_ip: Optional[str] = None
 
 
+class DownloadByMd5Response(BaseModel):
+    """Response for MD5 download."""
+
+    success: bool
+    md5: str
+    file_path: Optional[str] = None
+    file_size: Optional[int] = None
+    file_format: Optional[str] = None
+    error: Optional[str] = None
+
+
 class RetrieveAcademicClient(BaseAsyncHttpClient):
     """
     Async client for academic document retrieval service.
@@ -296,3 +307,86 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         saved_path = await self.download_file(job.job_id, local_path)
 
         return saved_path, result
+
+    async def download_by_md5(
+        self,
+        md5: str,
+        local_path: str,
+        identifier: Optional[str] = None,
+        timeout: float = 120.0,
+    ) -> tuple[str, DownloadByMd5Response]:
+        """
+        Download a document by MD5 hash.
+
+        This is used for books where we already have the MD5 from search.
+        The download happens through the VPN-enabled service.
+
+        Args:
+            md5: MD5 hash of the document
+            local_path: Where to save the file
+            identifier: Identifier for file naming (defaults to MD5)
+            timeout: Max time to wait for download
+
+        Returns:
+            Tuple of (local_path, response)
+
+        Raises:
+            Exception: If download fails
+        """
+        client = await self._get_client()
+
+        payload = {
+            "md5": md5,
+            "identifier": identifier or md5,
+        }
+
+        response = await client.post(
+            "/download/md5",
+            json=payload,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+
+        result = DownloadByMd5Response.model_validate(response.json())
+
+        if not result.success:
+            raise Exception(f"Download failed: {result.error}")
+
+        # Download the file from the service
+        saved_path = await self.download_file_by_path(result.file_path, local_path)
+
+        return saved_path, result
+
+    async def download_file_by_path(
+        self,
+        remote_path: str,
+        local_path: str,
+    ) -> str:
+        """
+        Download a file by its path on the service.
+
+        Args:
+            remote_path: Relative path on the service
+            local_path: Local path to save the file
+
+        Returns:
+            Path where file was saved
+        """
+        client = await self._get_client()
+
+        # Use streaming for potentially large files
+        async with client.stream(
+            "GET",
+            "/files",
+            params={"path": remote_path},
+        ) as response:
+            response.raise_for_status()
+
+            local_file = Path(local_path)
+            local_file.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(local_file, "wb") as f:
+                async for chunk in response.aiter_bytes():
+                    f.write(chunk)
+
+        return str(local_file)

@@ -45,9 +45,12 @@ async def _process_single_book(
             logger.info(f"Skipping non-PDF book: {book['title']} (format: {book['format']})")
             return None, book["title"]
 
-        # Download and convert via Marker
+        # Download via VPN and convert via Marker
         logger.info(f"Processing book: {book['title']}")
-        content = await fetch_pdf_via_marker(book["url"])
+        content = await fetch_pdf_via_marker(
+            md5=book["md5"],
+            identifier=book["title"],
+        )
 
         if not content:
             logger.warning(f"No content extracted from: {book['title']}")

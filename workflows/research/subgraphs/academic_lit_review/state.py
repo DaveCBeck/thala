@@ -293,6 +293,33 @@ class FormattedCitation(TypedDict):
 
 
 # =============================================================================
+# Supervision Types
+# =============================================================================
+
+
+class SupervisionExpansion(TypedDict):
+    """Record of a single supervision expansion iteration."""
+
+    iteration: int
+    topic: str
+    issue_type: str
+    research_query: str
+    papers_added: list[str]  # DOIs of papers added to corpus
+    integration_summary: str  # What was integrated and how
+
+
+class SupervisionState(TypedDict):
+    """State tracking for supervision loop execution."""
+
+    iteration: int
+    max_iterations: int
+    supervision_depth: int  # Prevents recursive supervision (max: 2)
+    current_review: str     # Evolving review text
+    issues_explored: list[str]  # Topics already explored (prevent re-exploration)
+    is_complete: bool       # True when pass_through or max iterations reached
+
+
+# =============================================================================
 # Main Workflow State
 # =============================================================================
 
@@ -335,6 +362,11 @@ class AcademicLitReviewState(TypedDict):
     final_review: Optional[str]  # Final integrated review
     references: list[FormattedCitation]
     prisma_documentation: Optional[str]  # Search methodology docs
+
+    # Supervision phase outputs
+    supervision: Optional[SupervisionState]
+    final_review_v2: Optional[str]  # Review after supervision iterations
+    supervision_expansions: Annotated[list[SupervisionExpansion], add]
 
     # Store integration
     elasticsearch_ids: dict[str, str]  # DOI -> ES record ID

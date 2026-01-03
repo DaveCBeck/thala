@@ -11,6 +11,7 @@ from .phases import (
     processing_phase_node,
     clustering_phase_node,
     synthesis_phase_node,
+    supervision_phase_node,
 )
 
 
@@ -19,7 +20,7 @@ def create_academic_lit_review_graph() -> StateGraph:
 
     Flow:
         START -> discovery -> diffusion -> processing
-              -> clustering -> synthesis -> END
+              -> clustering -> synthesis -> supervision -> END
     """
     builder = StateGraph(AcademicLitReviewState)
 
@@ -29,6 +30,7 @@ def create_academic_lit_review_graph() -> StateGraph:
     builder.add_node("processing", processing_phase_node)
     builder.add_node("clustering", clustering_phase_node)
     builder.add_node("synthesis", synthesis_phase_node)
+    builder.add_node("supervision", supervision_phase_node)
 
     # Add edges (linear flow)
     builder.add_edge(START, "discovery")
@@ -36,7 +38,8 @@ def create_academic_lit_review_graph() -> StateGraph:
     builder.add_edge("diffusion", "processing")
     builder.add_edge("processing", "clustering")
     builder.add_edge("clustering", "synthesis")
-    builder.add_edge("synthesis", END)
+    builder.add_edge("synthesis", "supervision")
+    builder.add_edge("supervision", END)
 
     return builder.compile()
 

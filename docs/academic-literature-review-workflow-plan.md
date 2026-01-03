@@ -12,6 +12,7 @@ The workflow transforms the existing `academic_researcher` from a simple search-
 4. Recursively expands coverage through diffusion stages
 5. Clusters and organizes sources thematically
 6. Synthesizes findings into a coherent, properly-cited literature review
+7. Iteratively refines for theoretical depth via supervision loop
 
 ---
 
@@ -155,6 +156,7 @@ On "high quality" setting, the system produces:
 | 3 | Processing | **document_processing workflow** + retrieve-academic | Batch API (50% savings) |
 | 4 | Organization | **Dual clustering** (BERTopic + Sonnet 4.5 1M) → **Opus synthesis** | 2 parallel strategies |
 | 5 | Synthesis | Write the review + **Zotero citations** | Section-parallel, then sequential |
+| 6 | Supervision | **Iterative refinement** for theoretical depth | Loop until pass-through |
 
 ---
 
@@ -1372,9 +1374,17 @@ sentence-transformers     # Embeddings for BERTopic clustering
 - [ ] Integrate with `process_citations` node for Zotero-backed references
 - [ ] Add quality verification pass
 
-### Phase 6: Integration & Testing (Week 6)
-- [ ] Create main `graph.py` connecting all phases
-- [ ] Add quality tier configurations
+### Phase 6: Supervision Loop ✓
+- [x] Create `supervision/` module with iterative review loop
+- [x] Implement supervisor analysis node (Opus) for theoretical gaps
+- [x] Implement focused expansion (reuses discovery/diffusion/processing)
+- [x] Implement integration node for restructuring review
+- [x] Add loop routing with pass-through detection
+- [x] Integrate as 6th phase after synthesis
+
+### Phase 7: Integration & Testing
+- [x] Create main `graph.py` connecting all phases
+- [x] Add quality tier configurations
 - [ ] Create test suite with sample topics
 - [ ] Add PRISMA documentation generation
 - [ ] Performance optimization (batch API, parallelism)

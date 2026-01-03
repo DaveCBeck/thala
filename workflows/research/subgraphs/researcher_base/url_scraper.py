@@ -8,7 +8,7 @@ from langchain_tools.firecrawl import scrape_url
 from workflows.research.state import ResearcherState, WebSearchResult
 
 from .cache import _scrape_cache
-from .pdf_processor import is_pdf_url, fetch_pdf_via_marker
+from .pdf_processor import is_pdf_url, fetch_pdf_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ async def scrape_single_url(
         # Route PDFs to Marker instead of Firecrawl
         if is_pdf_url(url):
             logger.info(f"Processing PDF via Marker: {url}")
-            content = await fetch_pdf_via_marker(url)
+            content = await fetch_pdf_from_url(url)
             if not content:
                 # Fallback to Firecrawl if Marker fails
                 logger.info(f"Marker failed, falling back to Firecrawl: {url}")
