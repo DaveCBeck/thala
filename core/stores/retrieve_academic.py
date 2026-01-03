@@ -18,7 +18,7 @@ Endpoints:
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Optional
 
 import httpx
 from pydantic import BaseModel, Field
@@ -226,6 +226,70 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                 )
 
             await asyncio.sleep(poll_interval)
+
+    async def poll_jobs_until_complete(
+        self,
+        jobs: list[tuple[str, str, str]],  # (doi, job_id, local_path)
+        poll_interval: float = 2.0,
+        timeout: float = 300.0,
+    ) -> AsyncGenerator[tuple[str, str, "RetrieveResult | Exception"], None]:
+        """
+        Poll multiple jobs, yielding results as each completes.
+
+        This is an async generator that yields (doi, local_path, result) tuples
+        as each job completes, allowing processing to start immediately while
+        other jobs continue downloading.
+
+        Args:
+            jobs: List of (doi, job_id, local_path) tuples to poll
+            poll_interval: Seconds between status checks (default: 2.0)
+            timeout: Max time to wait for any single job (default: 300.0)
+
+        Yields:
+            Tuple of (doi, local_path, RetrieveResult or Exception)
+        """
+        pending = {job_id: (doi, local_path) for doi, job_id, local_path in jobs}
+        start_times = {job_id: asyncio.get_event_loop().time() for _, job_id, _ in jobs}
+
+        while pending:
+            completed_this_round = []
+
+            for job_id, (doi, local_path) in list(pending.items()):
+                # Check timeout
+                elapsed = asyncio.get_event_loop().time() - start_times[job_id]
+                if elapsed > timeout:
+                    logger.warning(f"Job {job_id} for {doi} timed out after {timeout}s")
+                    completed_this_round.append(
+                        (doi, local_path, asyncio.TimeoutError(f"Timeout: {doi}"))
+                    )
+                    pending.pop(job_id)
+                    continue
+
+                try:
+                    result = await self.get_job_status(job_id)
+
+                    if result.status == "completed":
+                        # Download file before yielding
+                        await self.download_file(job_id, local_path)
+                        logger.info(f"Acquired full text for {doi}: {local_path}")
+                        completed_this_round.append((doi, local_path, result))
+                        pending.pop(job_id)
+                    elif result.status == "failed":
+                        error = Exception(f"{result.error_code}: {result.error}")
+                        logger.warning(f"Job {job_id} for {doi} failed: {result.error}")
+                        completed_this_round.append((doi, local_path, error))
+                        pending.pop(job_id)
+                except Exception as e:
+                    logger.error(f"Error polling job {job_id} for {doi}: {e}")
+                    completed_this_round.append((doi, local_path, e))
+                    pending.pop(job_id)
+
+            # Yield all completed items this round
+            for item in completed_this_round:
+                yield item
+
+            if pending:
+                await asyncio.sleep(poll_interval)
 
     async def download_file(
         self,

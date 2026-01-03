@@ -1,15 +1,18 @@
 """Paper acquisition and processing pipeline.
 
-Architecture: Phased Pipeline
-=============================
+Architecture: Streaming Producer-Consumer Pipeline
+==================================================
 Phase 1: Check cache for all papers (fast, parallel)
-Phase 2: Acquire all non-cached PDFs (rate-limited for external APIs)
-Phase 3: Process all acquired PDFs (parallel, fills marker queue)
+Phase 2+3: Streaming acquisition → processing
+  - Producer: Submit jobs with rate limiting, poll completions
+  - Queue: Buffer acquired papers for processing (bounded for backpressure)
+  - Consumer: Process papers as they arrive from queue
 
-This separation ensures:
-- Marker's Celery queue stays full (workers never idle)
+This architecture ensures:
+- Processing starts as soon as first paper downloads (not after all)
+- Marker GPU stays busy throughout the pipeline
+- Memory bounded by queue size (~8 papers × 50MB = ~400MB)
 - External API rate limiting is independent of processing speed
-- Post-processing starts as soon as any document completes
 """
 
 import asyncio
@@ -33,6 +36,10 @@ logger = logging.getLogger(__name__)
 # Processing concurrency can be higher than pipeline concurrency
 # since marker has its own queue and multiple workers
 MAX_PROCESSING_CONCURRENT = 4
+
+# Queue size for streaming pipeline - balances memory vs latency
+# ~8 PDFs × 50MB = ~400MB buffer max
+PROCESSING_QUEUE_SIZE = 8
 
 
 async def check_cache_for_paper(paper: PaperMetadata) -> tuple[str, Optional[dict]]:
@@ -102,15 +109,53 @@ async def acquire_full_text(
         return None
 
 
+async def _check_cache_phase(
+    papers: list[PaperMetadata],
+) -> tuple[dict[str, dict], list[PaperMetadata]]:
+    """Phase 1: Check cache for all papers.
+
+    Args:
+        papers: Papers to check
+
+    Returns:
+        Tuple of (cached_results dict, papers_to_acquire list)
+    """
+    papers_by_doi = {p.get("doi"): p for p in papers}
+
+    cache_tasks = [check_cache_for_paper(p) for p in papers]
+    cache_results = await asyncio.gather(*cache_tasks)
+
+    cached_results = {}
+    papers_to_acquire = []
+
+    for doi, cached in cache_results:
+        if cached:
+            cached_results[doi] = cached
+            logger.info(f"Cache hit: {doi}")
+        else:
+            papers_to_acquire.append(papers_by_doi[doi])
+
+    return cached_results, papers_to_acquire
+
+
 async def run_paper_pipeline(
     papers: list[PaperMetadata],
     max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
 ) -> tuple[dict[str, str], dict[str, dict], list[str], list[str]]:
-    """Run phased acquire→process pipeline for all papers.
+    """Run streaming acquire→process pipeline for all papers.
 
+    Architecture: Streaming Producer-Consumer Pipeline
+    ==================================================
     Phase 1: Check cache for all papers (parallel, fast)
-    Phase 2: Acquire all non-cached PDFs (rate-limited)
-    Phase 3: Process all acquired PDFs (parallel, fills marker queue)
+    Phase 2+3: Streaming acquisition → processing
+      - Producer: Submit jobs with rate limiting, poll completions
+      - Queue: Buffer acquired papers for processing
+      - Consumer: Process papers as they arrive from queue
+
+    This ensures:
+    - Processing starts as soon as first paper downloads (not after all)
+    - Marker GPU stays busy throughout the pipeline
+    - Memory bounded by queue size (~8 papers)
 
     Args:
         papers: Papers to process
@@ -134,109 +179,160 @@ async def run_paper_pipeline(
         # Phase 1: Check cache for all papers
         # ========================================
         logger.info(f"Phase 1: Checking cache for {total_papers} papers...")
-        cache_tasks = [check_cache_for_paper(p) for p in papers]
-        cache_results = await asyncio.gather(*cache_tasks)
-
-        cached_results = {}
-        papers_to_acquire = []
-        for doi, cached in cache_results:
-            if cached:
-                cached_results[doi] = cached
-                logger.info(f"Cache hit: {doi}")
-            else:
-                papers_to_acquire.append(papers_by_doi[doi])
+        cached_results, papers_to_acquire = await _check_cache_phase(papers)
 
         logger.info(
             f"Phase 1 complete: {len(cached_results)} cached, "
             f"{len(papers_to_acquire)} need acquisition"
         )
 
-        # ========================================
-        # Phase 2: Acquire all non-cached PDFs
-        # ========================================
-        acquired_paths = {}  # doi -> local_path
-        acquisition_failed = []
+        if not papers_to_acquire:
+            return {}, cached_results, [], []
 
-        if papers_to_acquire:
-            logger.info(f"Phase 2: Acquiring {len(papers_to_acquire)} PDFs...")
+        # ========================================
+        # Phase 2+3: Streaming acquire → process
+        # ========================================
+        logger.info(
+            f"Phase 2+3: Streaming acquisition and processing for "
+            f"{len(papers_to_acquire)} papers..."
+        )
+
+        # Shared state (thread-safe via single event loop)
+        acquired_paths: dict[str, str] = {}
+        acquisition_failed: list[str] = []
+        processing_results: dict[str, dict] = dict(cached_results)
+        processing_failed: list[str] = []
+
+        # Queue bridges acquisition → processing with backpressure
+        processing_queue: asyncio.Queue = asyncio.Queue(maxsize=PROCESSING_QUEUE_SIZE)
+
+        # Counters for progress logging
+        acquired_count = 0
+        processed_count = 0
+        total_to_acquire = len(papers_to_acquire)
+
+        async def acquisition_producer():
+            """Submit jobs with rate limiting, poll completions, push to queue."""
+            nonlocal acquired_count
+
             semaphore = asyncio.Semaphore(max_concurrent)
 
-            async def acquire_with_limit(paper: PaperMetadata, index: int) -> tuple[str, Optional[str]]:
+            async def submit_single(paper: PaperMetadata, index: int) -> tuple[str, str, str]:
+                """Submit a single retrieval job with rate limiting."""
                 async with semaphore:
                     if index > 0:
                         await asyncio.sleep(ACQUISITION_DELAY)
+
                     doi = paper.get("doi")
-                    path = await acquire_full_text(paper, client, output_dir)
-                    return doi, path
+                    title = paper.get("title", "Unknown")
+                    authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
 
-            acquire_tasks = [
-                acquire_with_limit(p, i) for i, p in enumerate(papers_to_acquire)
-            ]
-            acquire_results = await asyncio.gather(*acquire_tasks, return_exceptions=True)
+                    safe_doi = doi.replace("/", "_").replace(":", "_")
+                    local_path = str(output_dir / f"{safe_doi}.pdf")
 
-            for result in acquire_results:
-                if isinstance(result, Exception):
-                    logger.error(f"Acquisition task failed: {result}")
-                    continue
-                doi, path = result
-                if path:
-                    acquired_paths[doi] = path
-                else:
-                    acquisition_failed.append(doi)
+                    # Submit job (returns immediately with job_id)
+                    job = await client.retrieve(
+                        doi=doi,
+                        title=title,
+                        authors=authors,
+                        timeout_seconds=int(ACQUISITION_TIMEOUT),
+                    )
 
-            logger.info(
-                f"Phase 2 complete: {len(acquired_paths)} acquired, "
-                f"{len(acquisition_failed)} failed"
-            )
+                    return doi, job.job_id, local_path
 
-        # ========================================
-        # Phase 3: Process all acquired PDFs
-        # ========================================
-        processing_results = dict(cached_results)  # Start with cached
-        processing_failed = []
+            try:
+                # Submit all jobs with rate limiting
+                submit_tasks = [
+                    submit_single(p, i) for i, p in enumerate(papers_to_acquire)
+                ]
+                submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
 
-        if acquired_paths:
-            logger.info(f"Phase 3: Processing {len(acquired_paths)} documents...")
-            process_semaphore = asyncio.Semaphore(MAX_PROCESSING_CONCURRENT)
-            completed_count = 0
-            total_to_process = len(acquired_paths)
-
-            async def process_with_limit(doi: str, path: str) -> tuple[str, dict]:
-                nonlocal completed_count
-                async with process_semaphore:
-                    paper = papers_by_doi[doi]
-                    result = await process_single_document(doi, path, paper)
-                    completed_count += 1
-                    title = paper.get("title", "Unknown")[:50]
-                    if result.get("success"):
-                        logger.info(
-                            f"[{completed_count}/{total_to_process}] Completed: {title}"
-                        )
+                # Filter successful submissions
+                valid_jobs = []
+                for i, result in enumerate(submit_results):
+                    if isinstance(result, Exception):
+                        doi = papers_to_acquire[i].get("doi")
+                        logger.error(f"Failed to submit job for {doi}: {result}")
+                        acquisition_failed.append(doi)
                     else:
-                        logger.warning(
-                            f"[{completed_count}/{total_to_process}] Failed: {title}"
+                        valid_jobs.append(result)
+
+                logger.info(f"Submitted {len(valid_jobs)} retrieval jobs, polling for completions...")
+
+                # Poll and push completions to processing queue
+                async for doi, local_path, result in client.poll_jobs_until_complete(
+                    valid_jobs,
+                    poll_interval=2.0,
+                    timeout=ACQUISITION_TIMEOUT,
+                ):
+                    if isinstance(result, Exception):
+                        acquisition_failed.append(doi)
+                        logger.warning(f"Acquisition failed for {doi}: {result}")
+                    else:
+                        acquired_paths[doi] = local_path
+                        acquired_count += 1
+                        logger.info(
+                            f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}, "
+                            f"queuing for processing"
                         )
-                    return doi, result
+                        # Push to processing queue (blocks if queue full - backpressure)
+                        await processing_queue.put((doi, local_path, papers_by_doi[doi]))
 
-            process_tasks = [
-                process_with_limit(doi, path) for doi, path in acquired_paths.items()
-            ]
-            process_results = await asyncio.gather(*process_tasks, return_exceptions=True)
+            finally:
+                # Always signal end of acquisitions
+                await processing_queue.put(None)
 
-            for result in process_results:
-                if isinstance(result, Exception):
-                    logger.error(f"Processing task failed: {result}")
-                    continue
-                doi, proc_result = result
-                if proc_result.get("success"):
-                    processing_results[doi] = proc_result
-                else:
-                    processing_failed.append(doi)
+        async def processing_consumer():
+            """Process papers from queue as they arrive."""
+            nonlocal processed_count
 
-            logger.info(
-                f"Phase 3 complete: {len(processing_results) - len(cached_results)} processed, "
-                f"{len(processing_failed)} failed"
-            )
+            process_semaphore = asyncio.Semaphore(MAX_PROCESSING_CONCURRENT)
+            active_tasks: set[asyncio.Task] = set()
+
+            async def process_item(doi: str, path: str, paper: PaperMetadata):
+                """Process a single document with concurrency limiting."""
+                nonlocal processed_count
+                async with process_semaphore:
+                    try:
+                        result = await process_single_document(doi, path, paper)
+                        processed_count += 1
+                        title = paper.get("title", "Unknown")[:50]
+
+                        if result.get("success"):
+                            processing_results[doi] = result
+                            logger.info(
+                                f"[{processed_count}/{total_to_acquire}] Processed: {title}"
+                            )
+                        else:
+                            processing_failed.append(doi)
+                            logger.warning(
+                                f"[{processed_count}/{total_to_acquire}] Failed: {title}"
+                            )
+                    except Exception as e:
+                        processing_failed.append(doi)
+                        logger.error(f"Processing error for {doi}: {e}")
+
+            while True:
+                item = await processing_queue.get()
+
+                if item is None:
+                    # End signal - wait for active tasks to complete
+                    if active_tasks:
+                        await asyncio.gather(*active_tasks, return_exceptions=True)
+                    break
+
+                doi, path, paper = item
+
+                # Create processing task
+                task = asyncio.create_task(process_item(doi, path, paper))
+                active_tasks.add(task)
+                task.add_done_callback(active_tasks.discard)
+
+        # Run producer and consumer concurrently
+        await asyncio.gather(
+            acquisition_producer(),
+            processing_consumer(),
+        )
 
         # Final summary
         logger.info(
