@@ -3,8 +3,28 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKUP_DIR="${SCRIPT_DIR}/backups"
 MONITOR_PID_FILE="${SCRIPT_DIR}/monitor.pid"
+MONITOR_LOG_FILE="${SCRIPT_DIR}/monitor.log"
+LOGS_DIR="${SCRIPT_DIR}/logs"
+LOG_COLLECTOR_PID_FILE="${SCRIPT_DIR}/log_collector.pid"
+
+# Load THALA_MODE from .env if not already set
+if [[ -z "$THALA_MODE" && -f "${PROJECT_DIR}/.env" ]]; then
+    THALA_MODE=$(grep -E "^THALA_MODE=" "${PROJECT_DIR}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+fi
+
+# Use project venv Python if available, otherwise fall back to system python3
+if [[ -f "${PROJECT_DIR}/.venv/bin/python" ]]; then
+    PYTHON="${PROJECT_DIR}/.venv/bin/python"
+else
+    PYTHON="python3"
+fi
+
+is_dev_mode() {
+    [[ "$THALA_MODE" == "dev" ]]
+}
 
 # Service directories (order matters for startup - databases first)
 SERVICES=(
@@ -81,7 +101,7 @@ cmd_up() {
         if [[ -d "${SCRIPT_DIR}/${svc}" ]] && check_vpn_config "$svc"; then
             log "Starting VPN service: $svc..."
             docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
-            ((vpn_started++))
+            vpn_started=$((vpn_started + 1))
         fi
     done
     if [[ $vpn_started -eq 0 ]] && [[ ${#VPN_SERVICES[@]} -gt 0 ]]; then
@@ -93,13 +113,21 @@ cmd_up() {
     log "All services started."
     cmd_status
 
-    # Start background performance monitor
-    start_background_monitor
+    # Start dev mode monitoring (metrics + logs) if THALA_MODE=dev
+    log "Checking dev mode (THALA_MODE=$THALA_MODE)..."
+    if is_dev_mode; then
+        log "Dev mode detected - starting monitoring..."
+        start_background_monitor
+        start_log_collector
+    else
+        log "Not in dev mode - skipping monitoring"
+    fi
 }
 
 cmd_down() {
-    # Stop background monitor first
+    # Stop dev mode monitoring first
     stop_background_monitor
+    stop_log_collector
 
     log "Stopping all services..."
 
@@ -244,10 +272,15 @@ cmd_reset() {
 }
 
 cmd_monitor() {
-    python3 "${SCRIPT_DIR}/monitor.py" "${@}"
+    "$PYTHON" "${SCRIPT_DIR}/monitor.py" "${@}"
 }
 
 start_background_monitor() {
+    # Only run in dev mode
+    if ! is_dev_mode; then
+        return 0
+    fi
+
     # Start monitor in background with JSON output (saves to files)
     if [[ -f "$MONITOR_PID_FILE" ]]; then
         local pid=$(cat "$MONITOR_PID_FILE")
@@ -255,12 +288,24 @@ start_background_monitor() {
             log "Monitor already running (PID $pid)"
             return 0
         fi
+        # Stale PID file, remove it
+        rm -f "$MONITOR_PID_FILE"
     fi
 
-    log "Starting background monitor..."
-    nohup python3 "${SCRIPT_DIR}/monitor.py" --json > /dev/null 2>&1 &
-    echo $! > "$MONITOR_PID_FILE"
-    log "Monitor started (PID $(cat "$MONITOR_PID_FILE"))"
+    log "Starting background monitor (using $PYTHON)..."
+    # Log to file so we can debug failures, truncate on each start
+    nohup "$PYTHON" "${SCRIPT_DIR}/monitor.py" --json > "$MONITOR_LOG_FILE" 2>&1 &
+    local monitor_pid=$!
+    echo $monitor_pid > "$MONITOR_PID_FILE"
+
+    # Give it a moment to fail if there's an import error
+    sleep 1
+    if kill -0 "$monitor_pid" 2>/dev/null; then
+        log "Monitor started (PID $monitor_pid, log: $MONITOR_LOG_FILE)"
+    else
+        error "Monitor failed to start! Check $MONITOR_LOG_FILE"
+        rm -f "$MONITOR_PID_FILE"
+    fi
 }
 
 stop_background_monitor() {
@@ -273,6 +318,63 @@ stop_background_monitor() {
         else
             rm -f "$MONITOR_PID_FILE"
         fi
+    fi
+}
+
+start_log_collector() {
+    # Only run in dev mode
+    if ! is_dev_mode; then
+        return 0
+    fi
+
+    # Check if already running
+    if [[ -f "$LOG_COLLECTOR_PID_FILE" ]]; then
+        local pid=$(cat "$LOG_COLLECTOR_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log "Log collector already running (PID $pid)"
+            return 0
+        fi
+        rm -f "$LOG_COLLECTOR_PID_FILE"
+    fi
+
+    mkdir -p "$LOGS_DIR"
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+
+    log "Starting docker log collection (dev mode)..."
+
+    # Collect logs from all running containers in background
+    # Uses docker logs --follow to stream logs to files
+    local pids_file="${LOG_COLLECTOR_PID_FILE}.pids"
+    rm -f "$pids_file"
+
+    for container in $(docker ps --format '{{.Names}}' 2>/dev/null); do
+        local log_file="${LOGS_DIR}/${container}-${timestamp}.log"
+        # Start log streaming in background for each container
+        nohup docker logs -f "$container" > "$log_file" 2>&1 &
+        echo $! >> "$pids_file"
+    done
+
+    # Count how many we started
+    local count=$(wc -l < "$pids_file" 2>/dev/null || echo 0)
+    log "Log collector started ($count containers -> $LOGS_DIR/*-${timestamp}.log)"
+}
+
+stop_log_collector() {
+    # Kill all log streaming processes
+    if [[ -f "${LOG_COLLECTOR_PID_FILE}.pids" ]]; then
+        while read -r pid; do
+            kill "$pid" 2>/dev/null || true
+        done < "${LOG_COLLECTOR_PID_FILE}.pids"
+        rm -f "${LOG_COLLECTOR_PID_FILE}.pids"
+    fi
+
+    if [[ -f "$LOG_COLLECTOR_PID_FILE" ]]; then
+        local pid=$(cat "$LOG_COLLECTOR_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log "Stopping log collector (PID $pid)..."
+            kill "$pid" 2>/dev/null || true
+        fi
+        rm -f "$LOG_COLLECTOR_PID_FILE"
     fi
 }
 

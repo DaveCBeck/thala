@@ -164,7 +164,9 @@ async with RetrieveAcademicClient() as client:
 
 ## Monitoring
 
-Performance monitoring starts automatically with `services.sh up` and saves metrics to `services/metrics/YYYY-MM-DD.jsonl`.
+When `THALA_MODE=dev` in `.env`, monitoring starts automatically with `services.sh up`:
+- **Metrics**: Saved to `services/metrics/YYYY-MM-DD.jsonl`
+- **Container logs**: Streamed to `services/logs/<container>-<timestamp>.log`
 
 ```bash
 # Manual foreground monitoring (table output)
@@ -186,3 +188,5 @@ Metrics collected: CPU%, memory usage, health endpoint latency (avg, p90).
 ./services.sh logs zotero
 ./services.sh logs marker
 ```
+
+In dev mode, container logs are also captured to `services/logs/` on startup.

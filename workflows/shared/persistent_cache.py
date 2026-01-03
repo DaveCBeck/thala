@@ -3,11 +3,15 @@
 import hashlib
 import json
 import logging
+import os
 import pickle
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional, Callable
-import os
+from typing import Any, Callable, Optional
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

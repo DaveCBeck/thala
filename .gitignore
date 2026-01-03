@@ -20,6 +20,8 @@ services/backups/
 services/marker/data/
 services/metrics/
 services/monitor.pid
+services/log_collector.pid.pids
+services/logs/
 
 # Note: services/retrieve-academic is a git submodule (private repo)
 # It's tracked via .gitmodules, not ignored
