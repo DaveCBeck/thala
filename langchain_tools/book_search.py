@@ -26,6 +26,9 @@ _book_search_client = None
 # Default service URL (can be overridden by env var)
 DEFAULT_SERVICE_URL = "http://localhost:8002"
 
+# Global cache disable flag
+CACHE_DISABLED = os.getenv("THALA_CACHE_DISABLED", "").lower() in ("1", "true", "yes")
+
 # Cache for search results (30 min TTL, max 100 items)
 _search_cache: TTLCache = TTLCache(maxsize=100, ttl=1800)
 
@@ -76,8 +79,8 @@ async def _search_books_internal(
     """
     cache_key = f"search:{query}:{limit}:{language or ''}"
 
-    # Check cache
-    if cache_key in _search_cache:
+    # Check cache (unless disabled)
+    if not CACHE_DISABLED and cache_key in _search_cache:
         logger.debug(f"Cache hit for book search: {query}")
         return _search_cache[cache_key]
 
@@ -93,20 +96,12 @@ async def _search_books_internal(
         # Convert service response to Book objects
         books: list[Book] = []
         for r in data.get("results", []):
-            book_language = r.get("language", "Unknown")
-
-            # Filter by language if specified (skip filtering if book language is unknown)
-            if language is not None and book_language.lower().strip() != "unknown":
-                # Normalize comparison (case-insensitive, strip whitespace)
-                if book_language.lower().strip() != language.lower().strip():
-                    continue
-
             books.append(
                 Book(
                     title=r.get("title", ""),
                     authors=r.get("authors", "Unknown"),
                     publisher=r.get("publisher"),
-                    language=book_language,
+                    language=r.get("language", "Unknown"),
                     format=r.get("format", "other"),
                     size=r.get("size", "Unknown"),
                     md5=r.get("md5", ""),
@@ -122,7 +117,7 @@ async def _search_books_internal(
         )
 
         # Only cache non-empty results to avoid caching temporary failures
-        if books:
+        if books and not CACHE_DISABLED:
             _search_cache[cache_key] = output
 
         logger.debug(f"book_search returned {len(books)} results for '{query}'")

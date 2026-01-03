@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(os.getenv("THALA_CACHE_DIR", "/home/dave/thala/.cache"))
 
+# Global cache disable flag - set THALA_CACHE_DISABLED=1 to disable all caching
+CACHE_DISABLED = os.getenv("THALA_CACHE_DISABLED", "").lower() in ("1", "true", "yes")
+
 
 def _get_cache_path(cache_type: str, key: str, format: str = "pickle") -> Path:
     """Get cache file path for a given type and key."""
@@ -51,6 +54,9 @@ def get_cached(
     Returns:
         Cached value or None if not found/expired
     """
+    if CACHE_DISABLED:
+        return None
+
     cache_path = _get_cache_path(cache_type, key, format)
 
     if not _is_cache_valid(cache_path, ttl_days):
@@ -82,6 +88,9 @@ def set_cached(
         value: Value to cache
         format: 'pickle' or 'json' (default: pickle)
     """
+    if CACHE_DISABLED:
+        return
+
     cache_path = _get_cache_path(cache_type, key, format)
 
     try:

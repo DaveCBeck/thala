@@ -2,12 +2,16 @@
 
 import hashlib
 import logging
+import os
 from functools import wraps
 from typing import Callable, Optional, Any
 
-from workflows.shared.persistent_cache import get_cached, set_cached
+from workflows.shared.persistent_cache import get_cached, set_cached, CACHE_DISABLED
 
 logger = logging.getLogger(__name__)
+
+# Re-export for convenience
+__all__ = ["generate_cache_key", "async_cached", "CACHE_DISABLED"]
 
 
 def generate_cache_key(*parts: str) -> str:
