@@ -4,11 +4,14 @@ Embedding generation service for stores.
 Supports OpenAI and Ollama providers.
 """
 
+import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
+import numpy as np
 from dotenv import load_dotenv
 
 from core.utils import generate_cache_key
@@ -16,7 +19,76 @@ from workflows.shared.persistent_cache import get_cached, set_cached
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 EMBEDDING_CACHE_TTL_DAYS = 90
+
+# OpenAI text-embedding-3-small has 8192 token limit
+# Use conservative estimate: ~4 chars per token
+OPENAI_MAX_TOKENS = 8192
+CHARS_PER_TOKEN_ESTIMATE = 4
+SAFE_CHAR_LIMIT = (OPENAI_MAX_TOKENS - 200) * CHARS_PER_TOKEN_ESTIMATE  # ~32k chars
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count for text (conservative estimate)."""
+    return len(text) // CHARS_PER_TOKEN_ESTIMATE
+
+
+def chunk_text_by_sections(text: str, max_chars: int = SAFE_CHAR_LIMIT) -> list[str]:
+    """
+    Split text into chunks that fit within token limits.
+
+    Splits on markdown headers (## ) first, then by paragraphs if needed.
+    """
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks = []
+
+    # First try splitting by markdown headers
+    sections = re.split(r'\n(?=## )', text)
+
+    current_chunk = ""
+    for section in sections:
+        if not section.strip():
+            continue
+
+        # If section itself is too large, split by paragraphs
+        if len(section) > max_chars:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+
+            # Split large section by paragraphs
+            paragraphs = section.split('\n\n')
+            para_chunk = ""
+            for para in paragraphs:
+                if len(para_chunk) + len(para) + 2 <= max_chars:
+                    para_chunk = para_chunk + "\n\n" + para if para_chunk else para
+                else:
+                    if para_chunk:
+                        chunks.append(para_chunk.strip())
+                    # If single paragraph is too large, split by sentences
+                    if len(para) > max_chars:
+                        # Just truncate very long paragraphs
+                        chunks.append(para[:max_chars].strip())
+                    else:
+                        para_chunk = para
+            if para_chunk:
+                chunks.append(para_chunk.strip())
+
+        elif len(current_chunk) + len(section) + 2 <= max_chars:
+            current_chunk = current_chunk + "\n\n" + section if current_chunk else section
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = section
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return [c for c in chunks if c.strip()]
 
 
 class EmbeddingError(Exception):
@@ -214,6 +286,31 @@ class EmbeddingService:
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for multiple texts."""
         return await self._provider.embed_batch(texts)
+
+    async def embed_long(self, text: str) -> list[float]:
+        """
+        Generate embedding for potentially long text.
+
+        If text exceeds token limits, chunks it and averages the embeddings.
+        This preserves semantic information from all parts of the document.
+        """
+        if len(text) <= SAFE_CHAR_LIMIT:
+            return await self.embed(text)
+
+        # Chunk the text
+        chunks = chunk_text_by_sections(text)
+        logger.info(
+            f"Text too long for single embedding ({len(text)} chars, ~{estimate_tokens(text)} tokens). "
+            f"Chunking into {len(chunks)} parts and averaging."
+        )
+
+        # Embed all chunks
+        embeddings = await self.embed_batch(chunks)
+
+        # Average the embeddings
+        avg_embedding = np.mean(embeddings, axis=0).tolist()
+
+        return avg_embedding
 
     async def close(self):
         """Close provider resources."""

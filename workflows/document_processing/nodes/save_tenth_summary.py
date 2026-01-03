@@ -72,8 +72,8 @@ async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
         # Generate embedding and save to stores
         store_manager = get_store_manager()
 
-        # Generate embedding
-        embedding = await store_manager.embedding.embed(tenth_summary)
+        # Generate embedding (use embed_long to handle large summaries)
+        embedding = await store_manager.embedding.embed_long(tenth_summary)
         record.embedding = embedding
         record.embedding_model = store_manager.embedding.model
 
