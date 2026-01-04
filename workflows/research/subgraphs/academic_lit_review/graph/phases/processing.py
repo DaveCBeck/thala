@@ -22,18 +22,24 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
 
     topic = input_data["topic"]
 
-    logger.info(f"Starting processing phase for {len(paper_corpus)} papers")
+    # Use filtered papers_to_process list (set by diffusion phase), not full corpus
+    papers_to_process_dois = state.get("papers_to_process", list(paper_corpus.keys()))
+    papers_to_process = [
+        paper_corpus[doi] for doi in papers_to_process_dois if doi in paper_corpus
+    ]
 
-    if not paper_corpus:
+    logger.info(
+        f"Starting processing phase for {len(papers_to_process)} papers "
+        f"(filtered from {len(paper_corpus)} discovered)"
+    )
+
+    if not papers_to_process:
         logger.warning("No papers to process")
         return {
             "paper_summaries": {},
             "current_phase": "clustering",
             "current_status": "Processing skipped (no papers)",
         }
-
-    # Convert corpus to list of PaperMetadata
-    papers_to_process = list(paper_corpus.values())
 
     processing_result = await run_paper_processing(
         papers=papers_to_process,

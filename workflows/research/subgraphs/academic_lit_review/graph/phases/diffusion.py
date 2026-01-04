@@ -58,18 +58,19 @@ async def diffusion_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
     )
 
     final_corpus = diffusion_result.get("paper_corpus", paper_corpus)
+    final_corpus_dois = diffusion_result.get("final_corpus_dois", list(final_corpus.keys()))
     diffusion_state = diffusion_result.get("diffusion", {})
     saturation_reason = diffusion_result.get("saturation_reason", "Unknown")
 
     logger.info(
-        f"Diffusion complete: {len(final_corpus)} papers in corpus. "
-        f"Reason: {saturation_reason}"
+        f"Diffusion complete: {len(final_corpus_dois)} papers selected from "
+        f"{len(final_corpus)} discovered. Reason: {saturation_reason}"
     )
 
     return {
         "paper_corpus": final_corpus,
         "diffusion": diffusion_state,
-        "papers_to_process": list(final_corpus.keys()),
+        "papers_to_process": final_corpus_dois,
         "current_phase": "processing",
-        "current_status": f"Diffusion complete: {len(final_corpus)} papers ({saturation_reason})",
+        "current_status": f"Diffusion complete: {len(final_corpus_dois)} papers ({saturation_reason})",
     }

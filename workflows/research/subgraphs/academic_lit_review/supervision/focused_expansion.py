@@ -105,17 +105,20 @@ async def run_focused_expansion(
         quality_settings=quality_settings,
     )
 
-    # Get expanded corpus, still excluding known papers
+    # Get filtered corpus from diffusion (respects max_papers limit)
     expanded_corpus = diffusion_result.get("paper_corpus", paper_corpus)
+    final_corpus_dois = diffusion_result.get("final_corpus_dois", list(expanded_corpus.keys()))
+
+    # Filter to only new papers (not in parent corpus) AND in the filtered list
     final_corpus = {
-        doi: paper
-        for doi, paper in expanded_corpus.items()
-        if doi not in exclude_dois
+        doi: expanded_corpus[doi]
+        for doi in final_corpus_dois
+        if doi in expanded_corpus and doi not in exclude_dois
     }
 
     logger.info(
         f"Diffusion expanded to {len(expanded_corpus)} papers, "
-        f"{len(final_corpus)} are new"
+        f"filtered to {len(final_corpus_dois)}, {len(final_corpus)} are new"
     )
 
     if not final_corpus:
