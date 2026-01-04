@@ -46,6 +46,33 @@ class PaperSummarySchema(BaseModel):
 
 logger = logging.getLogger(__name__)
 
+
+async def _fetch_content_for_extraction(store_manager, es_record_id: str, doi: str) -> str | None:
+    """Fetch content for extraction, preferring L2 (10:1 summary) over L0 (original).
+
+    L2 is preferred because:
+    - For books/long documents, L2 captures the entire content in compressed form
+    - L0 would require truncation for long documents, losing most of the content
+    - L2 fits comfortably in LLM context windows
+
+    Falls back to L0 if L2 is not available (e.g., short papers that skip 10:1 summarization).
+    """
+    record_uuid = UUID(es_record_id)
+
+    # Try L2 first (10:1 summary) - better for long documents
+    record = await store_manager.es_stores.store.get(record_uuid, compression_level=2)
+    if record and record.content:
+        logger.debug(f"Using L2 (10:1 summary) for {doi}")
+        return record.content
+
+    # Fall back to L0 (original) for papers without L2
+    record = await store_manager.es_stores.store.get(record_uuid, compression_level=0)
+    if record and record.content:
+        logger.debug(f"Using L0 (original) for {doi}")
+        return record.content
+
+    return None
+
 PAPER_SUMMARY_EXTRACTION_SYSTEM = """Analyze this academic paper and extract structured information.
 
 Extract the following in JSON format:
@@ -84,7 +111,7 @@ async def extract_paper_summary(
     """Extract structured summary from paper content.
 
     Args:
-        content: Full paper content (L0 markdown)
+        content: Paper content (L2 10:1 summary preferred, L0 fallback)
         paper: Paper metadata
         short_summary: 100-word summary from document_processing
         es_record_id: Elasticsearch record ID
@@ -103,16 +130,20 @@ async def extract_paper_summary(
 Authors: {authors_str}
 Venue: {paper.get('venue', 'Unknown')}
 
-Content (first 40k chars):
-{content[:40000]}
+Content:
+{content}
 
 Extract structured information from this paper."""
+
+    # Use SONNET_1M for large content (>600k chars ≈ >150k tokens)
+    # Most L2 summaries are <50k chars; only L0 fallbacks for books might be larger
+    tier = ModelTier.SONNET_1M if len(content) > 600_000 else ModelTier.HAIKU
 
     try:
         extracted = await extract_json_cached(
             text=user_prompt,
             system_instructions=PAPER_SUMMARY_EXTRACTION_SYSTEM,
-            tier=ModelTier.HAIKU,
+            tier=tier,
         )
 
         return PaperSummary(
@@ -286,15 +317,12 @@ async def extract_all_summaries(
                 return doi, None, None, None
 
             try:
-                record = await store_manager.es_stores.store.get(
-                    UUID(es_record_id),
-                    index="store_l0"
+                content = await _fetch_content_for_extraction(
+                    store_manager, es_record_id, doi
                 )
-                if not record:
-                    logger.warning(f"Could not fetch L0 content for {doi}")
+                if not content:
+                    logger.warning(f"Could not fetch content for {doi}")
                     return doi, None, None, None
-
-                content = record.content
 
                 summary = await extract_paper_summary(
                     content=content,
@@ -354,17 +382,16 @@ async def _extract_all_summaries_batched(
             continue
 
         try:
-            record = await store_manager.es_stores.store.get(
-                UUID(es_record_id),
-                index="store_l0"
+            content = await _fetch_content_for_extraction(
+                store_manager, es_record_id, doi
             )
-            if not record:
-                logger.warning(f"Could not fetch L0 content for {doi}")
+            if not content:
+                logger.warning(f"Could not fetch content for {doi}")
                 continue
 
             paper_data[doi] = {
                 "paper": paper,
-                "content": record.content,
+                "content": content,
                 "es_record_id": es_record_id,
                 "zotero_key": zotero_key,
                 "short_summary": short_summary,
@@ -398,15 +425,18 @@ async def _extract_all_summaries_batched(
 Authors: {authors_str}
 Venue: {paper.get('venue', 'Unknown')}
 
-Content (first 40k chars):
-{content[:40000]}
+Content:
+{content}
 
 Extract structured information from this paper."""
+
+        # Use SONNET_1M for large content (>600k chars ≈ >150k tokens)
+        tier = ModelTier.SONNET_1M if len(content) > 600_000 else ModelTier.HAIKU
 
         processor.add_request(
             custom_id=doi,  # Use DOI as custom_id
             prompt=user_prompt,
-            model=ModelTier.HAIKU,
+            model=tier,
             max_tokens=2048,
             system=PAPER_SUMMARY_EXTRACTION_SYSTEM,
             tools=[extraction_tool],

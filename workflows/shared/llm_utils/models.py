@@ -19,11 +19,13 @@ class ModelTier(Enum):
     """Model tiers for different task complexities.
 
     HAIKU: Quick tasks, simple text generation
-    SONNET: Standard tasks, summarization, metadata extraction
+    SONNET: Standard tasks, summarization, metadata extraction (200k context)
+    SONNET_1M: Same as SONNET but with 1M token context window for long documents
     OPUS: Complex tasks requiring deep analysis (supports extended thinking)
     """
     HAIKU = "claude-haiku-4-5-20251001"
     SONNET = "claude-sonnet-4-5-20250929"
+    SONNET_1M = "claude-sonnet-4-5-20250929"  # Same model, uses extended context
     OPUS = "claude-opus-4-5-20251101"
 
 
