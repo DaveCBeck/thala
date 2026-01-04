@@ -25,8 +25,8 @@ async def check_document_exists_by_doi(doi: str) -> Optional[dict[str, Any]]:
             query={
                 "bool": {
                     "must": [
-                        {"term": {"metadata.doi": doi}},
-                        {"term": {"metadata.processing_status": "completed"}}
+                        {"term": {"metadata.doi.keyword": doi}},
+                        {"term": {"metadata.processing_status.keyword": "completed"}}
                     ]
                 }
             },

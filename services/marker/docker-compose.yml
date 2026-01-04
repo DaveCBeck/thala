@@ -21,7 +21,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       # Performance optimizations
-      - COMPILE_ALL=true
+      # COMPILE_ALL disabled - causes failures with variable page sizes
       - OMP_NUM_THREADS=8
       - MKL_NUM_THREADS=8
     depends_on:
@@ -61,7 +61,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       # Performance optimizations
-      - COMPILE_ALL=true
+      # COMPILE_ALL disabled - causes failures with variable page sizes
       - OMP_NUM_THREADS=8
       - MKL_NUM_THREADS=8
     depends_on:

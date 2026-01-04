@@ -52,10 +52,10 @@ def _build_es_query(
     filters = []
 
     if language_code:
-        filters.append({"term": {"language_code": language_code}})
+        filters.append({"term": {"language_code.keyword": language_code}})
 
     if record_type:
-        filters.append({"term": {"metadata.type": record_type}})
+        filters.append({"term": {"metadata.type.keyword": record_type}})
 
     if extra_filters:
         filters.extend(extra_filters)
@@ -95,7 +95,7 @@ async def search_store(
     if compression_level is not None:
         filters.append({"term": {"compression_level": compression_level}})
     if source_type:
-        filters.append({"term": {"source_type": source_type}})
+        filters.append({"term": {"source_type.keyword": source_type}})
 
     es_query = _build_es_query(
         query,

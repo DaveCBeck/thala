@@ -20,7 +20,10 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+import httpx
+
 from core.stores.retrieve_academic import RetrieveAcademicClient
+from langchain_tools.firecrawl import scrape_url
 from workflows.research.subgraphs.academic_lit_review.state import PaperMetadata
 
 from .cache import check_document_exists_by_doi
@@ -40,6 +43,78 @@ MAX_PROCESSING_CONCURRENT = 4
 # Queue size for streaming pipeline - balances memory vs latency
 # ~8 PDFs × 50MB = ~400MB buffer max
 PROCESSING_QUEUE_SIZE = 8
+
+# Timeout for OA URL downloads
+OA_DOWNLOAD_TIMEOUT = 60.0
+
+
+def _is_pdf_url(url: str) -> bool:
+    """Check if URL points to a PDF file."""
+    # Check URL path for .pdf extension
+    clean_url = url.lower().split("?")[0].split("#")[0].rstrip("/")
+    return clean_url.endswith(".pdf")
+
+
+async def try_oa_download(
+    oa_url: str,
+    local_path: Path,
+    doi: str,
+) -> tuple[Optional[str], bool]:
+    """Try to download paper from Open Access URL.
+
+    Handles both PDF URLs (direct download) and HTML URLs (firecrawl scrape).
+
+    Args:
+        oa_url: Open Access URL from OpenAlex
+        local_path: Path to save PDF (if PDF URL)
+        doi: DOI for logging
+
+    Returns:
+        Tuple of (source, is_markdown):
+        - For PDF: (local_path_str, False) on success
+        - For HTML: (markdown_content, True) on success
+        - (None, False) on failure
+    """
+    try:
+        if _is_pdf_url(oa_url):
+            # Direct PDF download
+            logger.info(f"[OA] Downloading PDF for {doi}: {oa_url}")
+            async with httpx.AsyncClient(timeout=OA_DOWNLOAD_TIMEOUT) as client:
+                response = await client.get(oa_url, follow_redirects=True)
+                response.raise_for_status()
+
+                # Verify it's actually a PDF
+                content_type = response.headers.get("content-type", "").lower()
+                if "pdf" not in content_type and not response.content[:4] == b"%PDF":
+                    logger.warning(f"[OA] URL returned non-PDF content for {doi}: {content_type}")
+                    return None, False
+
+                # Save to local path
+                with open(local_path, "wb") as f:
+                    f.write(response.content)
+
+                logger.info(f"[OA] Downloaded PDF for {doi}: {len(response.content) / 1024:.1f} KB")
+                return str(local_path), False
+
+        else:
+            # HTML page - scrape with firecrawl
+            logger.info(f"[OA] Scraping HTML page for {doi}: {oa_url}")
+            response = await scrape_url.ainvoke({"url": oa_url})
+            markdown = response.get("markdown", "")
+
+            if not markdown or len(markdown) < 500:
+                logger.warning(f"[OA] Scraped content too short for {doi}: {len(markdown)} chars")
+                return None, False
+
+            logger.info(f"[OA] Scraped HTML for {doi}: {len(markdown)} chars")
+            return markdown, True
+
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"[OA] HTTP error for {doi}: {e.response.status_code}")
+        return None, False
+    except Exception as e:
+        logger.warning(f"[OA] Failed to download from OA URL for {doi}: {type(e).__name__}: {e}")
+        return None, False
 
 
 async def check_cache_for_paper(paper: PaperMetadata) -> tuple[str, Optional[dict]]:
@@ -217,20 +292,43 @@ async def run_paper_pipeline(
 
             semaphore = asyncio.Semaphore(max_concurrent)
 
-            async def submit_single(paper: PaperMetadata, index: int) -> tuple[str, str, str]:
-                """Submit a single retrieval job with rate limiting."""
+            # Track OA vs retrieve-academic acquisitions
+            oa_acquired_count = 0
+
+            async def try_acquire_single(
+                paper: PaperMetadata, index: int
+            ) -> tuple[str, Optional[str], Optional[str], bool]:
+                """Try OA first, then submit to retrieve-academic if needed.
+
+                Returns:
+                    (doi, job_id_or_none, local_path, is_markdown)
+                    - If OA succeeded: (doi, None, source, is_markdown) - source is path or markdown
+                    - If needs retrieve: (doi, job_id, local_path, False)
+                    - If failed: raises exception
+                """
+                nonlocal oa_acquired_count
+
                 async with semaphore:
                     if index > 0:
                         await asyncio.sleep(ACQUISITION_DELAY)
 
                     doi = paper.get("doi")
                     title = paper.get("title", "Unknown")
-                    authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
+                    oa_url = paper.get("oa_url")
 
                     safe_doi = doi.replace("/", "_").replace(":", "_")
-                    local_path = str(output_dir / f"{safe_doi}.pdf")
+                    local_path = output_dir / f"{safe_doi}.pdf"
 
-                    # Submit job (returns immediately with job_id)
+                    # Try OA download first if URL available
+                    if oa_url:
+                        source, is_markdown = await try_oa_download(oa_url, local_path, doi)
+                        if source:
+                            oa_acquired_count += 1
+                            # Return with job_id=None to signal OA success
+                            return doi, None, source, is_markdown
+
+                    # Fall back to retrieve-academic
+                    authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
                     job = await client.retrieve(
                         doi=doi,
                         title=title,
@@ -238,45 +336,60 @@ async def run_paper_pipeline(
                         timeout_seconds=int(ACQUISITION_TIMEOUT),
                     )
 
-                    return doi, job.job_id, local_path
+                    return doi, job.job_id, str(local_path), False
 
             try:
-                # Submit all jobs with rate limiting
+                # Try OA and submit retrieve jobs with rate limiting
                 submit_tasks = [
-                    submit_single(p, i) for i, p in enumerate(papers_to_acquire)
+                    try_acquire_single(p, i) for i, p in enumerate(papers_to_acquire)
                 ]
                 submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
 
-                # Filter successful submissions
+                # Process results: OA successes go directly to queue, others need polling
                 valid_jobs = []
                 for i, result in enumerate(submit_results):
                     if isinstance(result, Exception):
                         doi = papers_to_acquire[i].get("doi")
-                        logger.error(f"Failed to submit job for {doi}: {result}")
+                        logger.error(f"Failed to acquire {doi}: {result}")
                         acquisition_failed.append(doi)
                     else:
-                        valid_jobs.append(result)
+                        doi, job_id, source, is_markdown = result
+                        if job_id is None:
+                            # OA success - push directly to processing queue
+                            acquired_paths[doi] = source
+                            acquired_count += 1
+                            logger.info(
+                                f"[{acquired_count}/{total_to_acquire}] Acquired via OA: {doi}"
+                            )
+                            await processing_queue.put((doi, source, papers_by_doi[doi], is_markdown))
+                        else:
+                            # Needs retrieve-academic polling
+                            valid_jobs.append((doi, job_id, source))
 
-                logger.info(f"Submitted {len(valid_jobs)} retrieval jobs, polling for completions...")
+                logger.info(
+                    f"Acquired {oa_acquired_count} via OA, "
+                    f"submitted {len(valid_jobs)} to retrieve-academic"
+                )
 
-                # Poll and push completions to processing queue
-                async for doi, local_path, result in client.poll_jobs_until_complete(
-                    valid_jobs,
-                    poll_interval=2.0,
-                    timeout=ACQUISITION_TIMEOUT,
-                ):
-                    if isinstance(result, Exception):
-                        acquisition_failed.append(doi)
-                        logger.warning(f"Acquisition failed for {doi}: {result}")
-                    else:
-                        acquired_paths[doi] = local_path
-                        acquired_count += 1
-                        logger.info(
-                            f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}, "
-                            f"queuing for processing"
-                        )
-                        # Push to processing queue (blocks if queue full - backpressure)
-                        await processing_queue.put((doi, local_path, papers_by_doi[doi]))
+                # Poll retrieve-academic jobs for completions
+                if valid_jobs:
+                    async for doi, local_path, result in client.poll_jobs_until_complete(
+                        valid_jobs,
+                        poll_interval=2.0,
+                        timeout=ACQUISITION_TIMEOUT,
+                    ):
+                        if isinstance(result, Exception):
+                            acquisition_failed.append(doi)
+                            logger.warning(f"Acquisition failed for {doi}: {result}")
+                        else:
+                            acquired_paths[doi] = local_path
+                            acquired_count += 1
+                            logger.info(
+                                f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}, "
+                                f"queuing for processing"
+                            )
+                            # Push to processing queue (blocks if queue full - backpressure)
+                            await processing_queue.put((doi, local_path, papers_by_doi[doi], False))
 
             finally:
                 # Always signal end of acquisitions
@@ -289,12 +402,14 @@ async def run_paper_pipeline(
             process_semaphore = asyncio.Semaphore(MAX_PROCESSING_CONCURRENT)
             active_tasks: set[asyncio.Task] = set()
 
-            async def process_item(doi: str, path: str, paper: PaperMetadata):
+            async def process_item(
+                doi: str, source: str, paper: PaperMetadata, is_markdown: bool
+            ):
                 """Process a single document with concurrency limiting."""
                 nonlocal processed_count
                 async with process_semaphore:
                     try:
-                        result = await process_single_document(doi, path, paper)
+                        result = await process_single_document(doi, source, paper, is_markdown)
                         processed_count += 1
                         title = paper.get("title", "Unknown")[:50]
 
@@ -321,10 +436,10 @@ async def run_paper_pipeline(
                         await asyncio.gather(*active_tasks, return_exceptions=True)
                     break
 
-                doi, path, paper = item
+                doi, source, paper, is_markdown = item
 
                 # Create processing task
-                task = asyncio.create_task(process_item(doi, path, paper))
+                task = asyncio.create_task(process_item(doi, source, paper, is_markdown))
                 active_tasks.add(task)
                 task.add_done_callback(active_tasks.discard)
 

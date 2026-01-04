@@ -12,31 +12,38 @@ logger = logging.getLogger(__name__)
 
 async def process_single_document(
     doi: str,
-    local_path: str,
+    source: str,
     paper: PaperMetadata,
+    is_markdown: bool = False,
 ) -> dict[str, Any]:
     """Process a single document through document_processing workflow.
 
     Args:
         doi: Paper DOI
-        local_path: Local file path
+        source: Local file path OR markdown content (if is_markdown=True)
         paper: Paper metadata
+        is_markdown: If True, source is markdown text, not a file path
 
     Returns:
         Processing result with es_record_id, zotero_key, etc.
     """
     try:
-        source_path = Path(local_path)
-        if not source_path.exists():
-            logger.error(f"Source file does not exist: {local_path}")
-            return {
-                "doi": doi,
-                "success": False,
-                "errors": [{"node": "process_document", "error": f"File not found: {local_path}"}],
-            }
+        if is_markdown:
+            # Source is markdown content from OA HTML scrape
+            logger.info(f"Processing {doi}: markdown content ({len(source)} chars)")
+        else:
+            # Source is a file path
+            source_path = Path(source)
+            if not source_path.exists():
+                logger.error(f"Source file does not exist: {source}")
+                return {
+                    "doi": doi,
+                    "success": False,
+                    "errors": [{"node": "process_document", "error": f"File not found: {source}"}],
+                }
 
-        file_size_mb = source_path.stat().st_size / (1024 * 1024)
-        logger.info(f"Processing {doi}: {local_path} ({file_size_mb:.1f} MB)")
+            file_size_mb = source_path.stat().st_size / (1024 * 1024)
+            logger.info(f"Processing {doi}: {source} ({file_size_mb:.1f} MB)")
 
         extra_metadata = {
             "DOI": doi,
@@ -46,7 +53,7 @@ async def process_single_document(
         }
 
         result = await process_document(
-            source=local_path,
+            source=source,
             title=paper.get("title", "Unknown"),
             item_type="journalArticle",
             quality="fast",

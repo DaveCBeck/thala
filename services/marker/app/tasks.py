@@ -27,11 +27,20 @@ celery.conf.update(
     enable_utc=True,
     task_track_started=True,
     result_extended=True,
-    # Task time limits
-    task_soft_time_limit=600,  # 10 minutes soft limit
-    task_time_limit=900,  # 15 minutes hard limit
+    # Task time limits - large PDFs (500+ pages) can take 2+ hours
+    task_soft_time_limit=10800,  # 3 hours soft limit
+    task_time_limit=14400,  # 4 hours hard limit
     # Worker prefetch (1 task at a time for GPU workloads)
     worker_prefetch_multiplier=1,
+    # Redis broker visibility timeout - must exceed task_time_limit
+    # When a task is not acked within this time, it gets requeued
+    broker_transport_options={
+        "visibility_timeout": 18000,  # 5 hours
+    },
+    # Only ack task after it completes (prevents requeue on worker crash)
+    task_acks_late=True,
+    # Don't requeue tasks that were started but worker died
+    task_reject_on_worker_lost=True,
 )
 
 
