@@ -44,6 +44,19 @@ celery.conf.update(
 )
 
 
+def _is_blocklisted(file_path: str) -> bool:
+    """Check if file is in the blocklist."""
+    from pathlib import Path
+
+    blocklist_path = Path("/data/input/blocklist.txt")
+    if not blocklist_path.exists():
+        return False
+
+    filename = Path(file_path).name
+    blocklist = blocklist_path.read_text().strip().splitlines()
+    return filename in blocklist or file_path in blocklist
+
+
 @celery.task(bind=True, name="convert_document")
 def convert_document(
     self,
@@ -64,6 +77,15 @@ def convert_document(
     Returns:
         Dict with markdown, json, chunks, and metadata
     """
+    # Check blocklist first
+    if _is_blocklisted(file_path):
+        logger.warning(f"[{file_path}] Skipped - file is blocklisted")
+        return {
+            "status": "skipped",
+            "result": None,
+            "error": "File is blocklisted",
+        }
+
     # Log memory before processing
     before = get_memory_stats()
     logger.info(

@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -30,6 +31,17 @@ from .llm_utils import ModelTier
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+
+def sanitize_custom_id(identifier: str) -> str:
+    """Convert identifier to valid Anthropic batch custom_id.
+
+    The API requires custom_id to match pattern ^[a-zA-Z0-9_-]{1,64}$.
+    This replaces any invalid character with underscore and truncates to 64 chars.
+    """
+    # Replace any character that's not alphanumeric, underscore, or hyphen
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", identifier)
+    return sanitized[:64]
 
 
 @dataclass
@@ -80,6 +92,8 @@ class BatchProcessor:
         self.poll_interval = poll_interval
         self.max_wait_hours = max_wait_hours
         self.pending_requests: list[BatchRequest] = []
+        # Map sanitized custom_id back to original for result lookup
+        self._id_mapping: dict[str, str] = {}  # sanitized -> original
 
     def add_request(
         self,
@@ -119,11 +133,19 @@ class BatchProcessor:
     def clear_requests(self) -> None:
         """Clear all pending requests."""
         self.pending_requests.clear()
+        self._id_mapping.clear()
 
     def _build_batch_requests(self) -> list[dict]:
-        """Convert pending requests to API format."""
+        """Convert pending requests to API format.
+
+        Automatically sanitizes custom_ids and stores mapping for result lookup.
+        """
         batch_requests = []
         for req in self.pending_requests:
+            # Sanitize custom_id and store mapping
+            sanitized_id = sanitize_custom_id(req.custom_id)
+            self._id_mapping[sanitized_id] = req.custom_id
+
             params: dict[str, Any] = {
                 "model": req.model.value,
                 "max_tokens": req.max_tokens,
@@ -148,7 +170,7 @@ class BatchProcessor:
                 params["tool_choice"] = req.tool_choice
 
             batch_requests.append({
-                "custom_id": req.custom_id,
+                "custom_id": sanitized_id,
                 "params": params,
             })
 
@@ -204,7 +226,10 @@ class BatchProcessor:
         return results
 
     async def _fetch_results(self, results_url: str) -> dict[str, BatchResult]:
-        """Fetch and parse batch results from the results URL."""
+        """Fetch and parse batch results from the results URL.
+
+        Results are keyed by original (unsanitized) custom_id for caller convenience.
+        """
         results: dict[str, BatchResult] = {}
 
         async with httpx.AsyncClient() as client:
@@ -223,7 +248,9 @@ class BatchProcessor:
                     continue
 
                 result_data = json.loads(line)
-                custom_id = result_data["custom_id"]
+                sanitized_id = result_data["custom_id"]
+                # Map back to original ID for caller convenience
+                original_id = self._id_mapping.get(sanitized_id, sanitized_id)
                 result = result_data["result"]
 
                 if result["type"] == "succeeded":
@@ -241,8 +268,8 @@ class BatchProcessor:
                             # Tool input is already valid JSON - serialize it
                             content = json.dumps(block.get("input", {}))
 
-                    results[custom_id] = BatchResult(
-                        custom_id=custom_id,
+                    results[original_id] = BatchResult(
+                        custom_id=original_id,
                         success=True,
                         content=content,
                         thinking=thinking,
@@ -250,14 +277,14 @@ class BatchProcessor:
                     )
                 elif result["type"] == "errored":
                     error = result.get("error", {})
-                    results[custom_id] = BatchResult(
-                        custom_id=custom_id,
+                    results[original_id] = BatchResult(
+                        custom_id=original_id,
                         success=False,
                         error=f"{error.get('type', 'unknown')}: {error.get('message', 'Unknown error')}",
                     )
                 elif result["type"] in ("canceled", "expired"):
-                    results[custom_id] = BatchResult(
-                        custom_id=custom_id,
+                    results[original_id] = BatchResult(
+                        custom_id=original_id,
                         success=False,
                         error=f"Request {result['type']}",
                     )

@@ -47,15 +47,6 @@ class PaperSummarySchema(BaseModel):
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_custom_id(identifier: str) -> str:
-    """Convert identifier to valid Anthropic batch custom_id.
-
-    The API requires custom_id to match pattern ^[a-zA-Z0-9_-]{1,64}$.
-    DOIs contain '/' and '.' which must be replaced.
-    """
-    return identifier.replace("/", "_").replace(".", "_")[:64]
-
-
 async def _fetch_content_for_extraction(store_manager, es_record_id: str, doi: str) -> str | None:
     """Fetch content for extraction, preferring L2 (10:1 summary) over L0 (original).
 
@@ -443,7 +434,7 @@ Extract structured information from this paper."""
         tier = ModelTier.SONNET_1M if len(content) > 600_000 else ModelTier.HAIKU
 
         processor.add_request(
-            custom_id=_sanitize_custom_id(doi),
+            custom_id=doi,
             prompt=user_prompt,
             model=tier,
             max_tokens=2048,
@@ -461,7 +452,7 @@ Extract structured information from this paper."""
 
     for doi, data in paper_data.items():
         paper = data["paper"]
-        result = results.get(_sanitize_custom_id(doi))
+        result = results.get(doi)
 
         if result and result.success:
             try:
