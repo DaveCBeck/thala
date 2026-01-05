@@ -13,6 +13,7 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
     diffusion = state["diffusion"]
     quality_settings = state["quality_settings"]
     paper_corpus = state.get("paper_corpus", {})
+    max_papers = quality_settings.get("max_papers", 100)
 
     # Check stopping conditions
     saturation_reason = None
@@ -22,8 +23,8 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
         saturation_reason = f"Reached maximum stages ({diffusion['max_stages']})"
 
     # 2. Max papers reached
-    elif len(paper_corpus) >= quality_settings["max_papers"]:
-        saturation_reason = f"Reached maximum papers ({quality_settings['max_papers']})"
+    elif len(paper_corpus) >= max_papers:
+        saturation_reason = f"Reached maximum papers ({max_papers})"
 
     # 3. Consecutive low coverage (2 stages with delta < threshold)
     elif diffusion["consecutive_low_coverage"] >= 2:
@@ -41,7 +42,7 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
     else:
         logger.info(
             f"Continuing diffusion: stage {diffusion['current_stage']}/{diffusion['max_stages']}, "
-            f"corpus size {len(paper_corpus)}/{quality_settings['max_papers']}"
+            f"corpus size {len(paper_corpus)}/{max_papers}"
         )
         return {
             "diffusion": diffusion,
@@ -54,7 +55,7 @@ async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     quality_settings = state["quality_settings"]
     diffusion = state["diffusion"]
     saturation_reason = state.get("saturation_reason", "Unknown")
-    max_papers = quality_settings["max_papers"]
+    max_papers = quality_settings.get("max_papers", 100)
 
     # Filter to top N papers by relevance score if we exceeded max_papers
     if len(paper_corpus) > max_papers:

@@ -222,7 +222,8 @@ Text:
                             target_words=target_words,
                             chapter_author=chapter.get("author"),
                         ),
-                        model=ModelTier.OPUS,
+                        # TODO: Upgrade to ModelTier.OPUS before production
+                        model=ModelTier.HAIKU,
                         max_tokens=12000,
                         thinking_budget=8000,
                     )

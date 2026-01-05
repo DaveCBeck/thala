@@ -42,7 +42,7 @@ class LitReviewInput(TypedDict):
 
     topic: str
     research_questions: list[str]
-    quality: Literal["quick", "standard", "comprehensive", "high_quality"]
+    quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"]
     date_range: Optional[tuple[int, int]]  # (start_year, end_year)
     include_books: bool
     focus_areas: Optional[list[str]]  # Specific sub-topics to prioritize
@@ -64,6 +64,14 @@ class QualitySettings(TypedDict):
 
 # Quality presets mapping quality levels to settings
 QUALITY_PRESETS: dict[str, QualitySettings] = {
+    "test": QualitySettings(
+        max_stages=1,
+        max_papers=5,
+        target_word_count=500,
+        min_citations_filter=0,
+        saturation_threshold=0.5,
+        use_batch_api=False,
+    ),
     "quick": QualitySettings(
         max_stages=2,
         max_papers=50,

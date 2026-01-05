@@ -6,10 +6,11 @@ Connects all phases into a complete literature review pipeline:
 3. Processing: Acquire full text, extract summaries via document_processing
 4. Clustering: Dual-strategy thematic organization (BERTopic + LLM + Opus)
 5. Synthesis: Write coherent literature review with proper citations
+6. Supervision: Iterative improvement loop to enhance review quality
 
 Flow:
     START -> discovery_phase -> diffusion_phase -> processing_phase
-          -> clustering_phase -> synthesis_phase -> END
+          -> clustering_phase -> synthesis_phase -> supervision_phase -> END
 """
 
 # Configure LangSmith tracing before other imports
@@ -25,6 +26,7 @@ from .phases import (
     processing_phase_node,
     clustering_phase_node,
     synthesis_phase_node,
+    supervision_phase_node,
 )
 
 __all__ = [
@@ -36,4 +38,5 @@ __all__ = [
     "processing_phase_node",
     "clustering_phase_node",
     "synthesis_phase_node",
+    "supervision_phase_node",
 ]

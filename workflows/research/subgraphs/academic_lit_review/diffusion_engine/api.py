@@ -1,5 +1,6 @@
 """Public API for running diffusion engine."""
 
+import logging
 from typing import Any
 
 from workflows.research.subgraphs.academic_lit_review.state import (
@@ -11,6 +12,8 @@ from workflows.research.subgraphs.academic_lit_review.state import (
 from workflows.research.subgraphs.academic_lit_review.citation_graph import CitationGraph
 from .types import DiffusionEngineState
 from .graph import diffusion_engine_subgraph
+
+logger = logging.getLogger(__name__)
 
 
 async def run_diffusion(
@@ -32,6 +35,16 @@ async def run_diffusion(
     Returns:
         Dict with final_corpus_dois, paper_corpus, citation_graph, diffusion state
     """
+    # Validate and provide defaults for quality_settings
+    if not quality_settings:
+        logger.warning("Empty quality_settings received, using defaults")
+        quality_settings = {"max_stages": 3, "saturation_threshold": 0.12}
+    elif "max_stages" not in quality_settings or "saturation_threshold" not in quality_settings:
+        logger.warning(
+            f"Incomplete quality_settings (keys: {list(quality_settings.keys())}), "
+            "missing keys will use defaults"
+        )
+
     # Initialize citation graph with corpus papers
     citation_graph = CitationGraph()
     for doi, metadata in paper_corpus.items():
@@ -56,9 +69,9 @@ async def run_diffusion(
         paper_corpus=paper_corpus,
         diffusion=LitReviewDiffusionState(
             current_stage=0,
-            max_stages=quality_settings["max_stages"],
+            max_stages=quality_settings.get("max_stages", 3),
             stages=[],
-            saturation_threshold=quality_settings["saturation_threshold"],
+            saturation_threshold=quality_settings.get("saturation_threshold", 0.12),
             is_saturated=False,
             consecutive_low_coverage=0,
             total_papers_discovered=0,

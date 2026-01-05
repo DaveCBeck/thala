@@ -12,7 +12,7 @@ Usage:
     python test_academic_lit_review.py "transformer architectures" standard --language es
     python test_academic_lit_review.py  # Uses default topic and quick quality
 
-Valid quality levels: quick, standard, comprehensive, high_quality (default: quick)
+Valid quality levels: test, quick, standard, comprehensive, high_quality (default: quick)
 Valid languages: en, es, zh, ja, de, fr, pt, ko, ru, ar, it, nl, pl, tr, vi, th, id, hi, bn, sv, no, da, fi, cs, el, he, uk, ro, hu (default: en)
 
 Environment:
@@ -58,7 +58,7 @@ logger.info(f"Logging to file: {LOG_FILE}")
 OUTPUT_DIR = Path(__file__).parent / "test_data"
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 
-VALID_QUALITIES = ["quick", "standard", "comprehensive", "high_quality"]
+VALID_QUALITIES = ["test", "quick", "standard", "comprehensive", "high_quality"]
 DEFAULT_QUALITY = "quick"
 
 
@@ -479,6 +479,7 @@ async def run_with_checkpoints(
         processing_phase_node,
         clustering_phase_node,
         synthesis_phase_node,
+        supervision_phase_node,
     )
 
     logger.info(f"Starting checkpointed literature review on: {topic}")
@@ -510,19 +511,24 @@ async def run_with_checkpoints(
     logger.info("Running synthesis phase...")
     state.update(await synthesis_phase_node(state))
 
+    # Phase 6: Supervision (iterative improvement)
+    logger.info("Running supervision phase...")
+    state.update(await supervision_phase_node(state))
+
     return state
 
 
 async def run_from_diffusion_checkpoint(checkpoint_prefix: str) -> dict:
     """Resume workflow from after-diffusion checkpoint.
 
-    Runs: processing -> clustering -> synthesis
+    Runs: processing -> clustering -> synthesis -> supervision
     Skips: discovery, diffusion
     """
     from workflows.research.subgraphs.academic_lit_review.graph import (
         processing_phase_node,
         clustering_phase_node,
         synthesis_phase_node,
+        supervision_phase_node,
     )
 
     checkpoint_name = f"{checkpoint_prefix}_after_diffusion"
@@ -546,18 +552,23 @@ async def run_from_diffusion_checkpoint(checkpoint_prefix: str) -> dict:
     logger.info("Running synthesis phase...")
     state.update(await synthesis_phase_node(state))
 
+    # Phase 6: Supervision
+    logger.info("Running supervision phase...")
+    state.update(await supervision_phase_node(state))
+
     return state
 
 
 async def run_from_processing_checkpoint(checkpoint_prefix: str) -> dict:
     """Resume workflow from after-processing checkpoint.
 
-    Runs: clustering -> synthesis
+    Runs: clustering -> synthesis -> supervision
     Skips: discovery, diffusion, processing
     """
     from workflows.research.subgraphs.academic_lit_review.graph import (
         clustering_phase_node,
         synthesis_phase_node,
+        supervision_phase_node,
     )
 
     checkpoint_name = f"{checkpoint_prefix}_after_processing"
@@ -575,6 +586,10 @@ async def run_from_processing_checkpoint(checkpoint_prefix: str) -> dict:
     # Phase 5: Synthesis
     logger.info("Running synthesis phase...")
     state.update(await synthesis_phase_node(state))
+
+    # Phase 6: Supervision
+    logger.info("Running supervision phase...")
+    state.update(await supervision_phase_node(state))
 
     return state
 
@@ -762,7 +777,7 @@ async def main():
             json.dump(analysis, f, indent=2)
         logger.info(f"Analysis saved to: {analysis_file}")
 
-        # Save final review as markdown
+        # Save final review (v1, before supervision) as markdown
         if result.get("final_review"):
             report_file = OUTPUT_DIR / f"lit_review_{timestamp}.md"
             with open(report_file, "w") as f:
@@ -771,7 +786,18 @@ async def main():
                 f.write(f"*Quality: {quality} | Language: {language}*\n\n")
                 f.write("---\n\n")
                 f.write(result["final_review"])
-            logger.info(f"Review saved to: {report_file}")
+            logger.info(f"Review (v1) saved to: {report_file}")
+
+        # Save supervised review (v2, after supervision loop) as markdown
+        if result.get("final_review_v2"):
+            report_v2_file = OUTPUT_DIR / f"lit_review_v2_{timestamp}.md"
+            with open(report_v2_file, "w") as f:
+                f.write(f"# Literature Review (Supervised): {topic}\n\n")
+                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+                f.write(f"*Quality: {quality} | Language: {language}*\n\n")
+                f.write("---\n\n")
+                f.write(result["final_review_v2"])
+            logger.info(f"Review (v2) saved to: {report_v2_file}")
 
         # Save PRISMA documentation
         if result.get("prisma_documentation"):

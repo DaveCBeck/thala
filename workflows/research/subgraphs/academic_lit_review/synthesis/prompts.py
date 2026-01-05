@@ -218,10 +218,4 @@ Check for:
 5. Redundancy
 6. Balance across sections
 
-Output a JSON object:
-{
-  "issues": ["issue 1", "issue 2", ...],
-  "suggestions": ["suggestion 1", ...],
-  "overall_quality": "good" | "acceptable" | "needs_revision",
-  "citation_issues": ["specific citation problems..."]
-}"""
+Provide your assessment of the review quality."""

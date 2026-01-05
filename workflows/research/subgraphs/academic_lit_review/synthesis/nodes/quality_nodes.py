@@ -1,13 +1,13 @@
 """Quality verification nodes for synthesis subgraph."""
 
-import json
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, get_llm
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import QUALITY_CHECK_SYSTEM_PROMPT
+from ..schemas import QualityCheckOutput
 from ..citation_utils import calculate_quality_metrics
 
 logger = logging.getLogger(__name__)
@@ -45,25 +45,19 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
                 prompt_name="lit_review_quality_system",
             )
 
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=quality_system,
-            user_prompt=f"Review this literature review sample for quality:\n\n{sample}",
-        )
+        # Use structured output to enforce JSON schema
+        structured_llm = llm.with_structured_output(QualityCheckOutput)
+        messages = [
+            {"role": "system", "content": quality_system},
+            {"role": "user", "content": f"Review this literature review sample for quality:\n\n{sample}"},
+        ]
 
-        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+        quality_result: QualityCheckOutput = await structured_llm.ainvoke(messages)
 
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
+        if quality_result.issues:
+            metrics["issues"].extend(quality_result.issues[:5])
 
-        quality_result = json.loads(content)
-        additional_issues = quality_result.get("issues", [])
-
-        if additional_issues:
-            metrics["issues"].extend(additional_issues[:5])
-
-        if quality_result.get("overall_quality") == "needs_revision":
+        if quality_result.overall_quality == "needs_revision":
             quality_passed = False
 
     except Exception as e:

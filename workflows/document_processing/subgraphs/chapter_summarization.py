@@ -104,8 +104,9 @@ Context: {chapter_context}{chunk_info}
 Content:
 {content}"""
 
+    # TODO: Upgrade to ModelTier.OPUS before production
     llm = get_llm(
-        tier=ModelTier.OPUS,
+        tier=ModelTier.HAIKU,
         thinking_budget=8000,
         max_tokens=8000 + 4096,
     )
@@ -302,10 +303,11 @@ Context: {chapter_context}
 Chapter content:
 {chapter_content}"""
 
+            # TODO: Upgrade to ModelTier.OPUS before production
             processor.add_request(
                 custom_id=f"chapter-{i}",
                 prompt=user_prompt,
-                model=ModelTier.OPUS,
+                model=ModelTier.HAIKU,
                 max_tokens=8000 + 4096,
                 system=CHAPTER_SUMMARIZATION_SYSTEM,
                 thinking_budget=8000,

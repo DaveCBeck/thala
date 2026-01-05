@@ -22,15 +22,17 @@ async def initialize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     """Initialize diffusion state from discovery seeds."""
     discovery_seeds = state.get("discovery_seeds", [])
     quality_settings = state["quality_settings"]
+    max_stages = quality_settings.get("max_stages", 3)
+    saturation_threshold = quality_settings.get("saturation_threshold", 0.12)
 
     if not discovery_seeds:
         logger.warning("No discovery seeds provided for diffusion")
         return {
             "diffusion": LitReviewDiffusionState(
                 current_stage=0,
-                max_stages=quality_settings["max_stages"],
+                max_stages=max_stages,
                 stages=[],
-                saturation_threshold=quality_settings["saturation_threshold"],
+                saturation_threshold=saturation_threshold,
                 is_saturated=True,
                 consecutive_low_coverage=0,
                 total_papers_discovered=0,
@@ -43,9 +45,9 @@ async def initialize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     # Initialize diffusion tracking
     diffusion_state = LitReviewDiffusionState(
         current_stage=0,
-        max_stages=quality_settings["max_stages"],
+        max_stages=max_stages,
         stages=[],
-        saturation_threshold=quality_settings["saturation_threshold"],
+        saturation_threshold=saturation_threshold,
         is_saturated=False,
         consecutive_low_coverage=0,
         total_papers_discovered=len(discovery_seeds),
@@ -55,8 +57,8 @@ async def initialize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
 
     logger.info(
         f"Initialized diffusion with {len(discovery_seeds)} seeds, "
-        f"max_stages={quality_settings['max_stages']}, "
-        f"saturation_threshold={quality_settings['saturation_threshold']}"
+        f"max_stages={max_stages}, "
+        f"saturation_threshold={saturation_threshold}"
     )
 
     return {

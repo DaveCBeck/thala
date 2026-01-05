@@ -75,6 +75,9 @@ class BatchProcessor:
     Results are available when the batch completes (typically within 1 hour).
     """
 
+    # Beta header for 1M context window (Sonnet 4/4.5 only, Tier 4+)
+    CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
     def __init__(self, poll_interval: int = 60, max_wait_hours: float = 24):
         """
         Initialize batch processor.
@@ -94,6 +97,8 @@ class BatchProcessor:
         self.pending_requests: list[BatchRequest] = []
         # Map sanitized custom_id back to original for result lookup
         self._id_mapping: dict[str, str] = {}  # sanitized -> original
+        # Track if any request needs 1M context
+        self._needs_1m_context: bool = False
 
     def add_request(
         self,
@@ -129,11 +134,15 @@ class BatchProcessor:
             tools=tools,
             tool_choice=tool_choice,
         ))
+        # Track if 1M context is needed for this batch
+        if model == ModelTier.SONNET_1M:
+            self._needs_1m_context = True
 
     def clear_requests(self) -> None:
         """Clear all pending requests."""
         self.pending_requests.clear()
         self._id_mapping.clear()
+        self._needs_1m_context = False
 
     def _build_batch_requests(self) -> list[dict]:
         """Convert pending requests to API format.
@@ -192,8 +201,15 @@ class BatchProcessor:
         batch_requests = self._build_batch_requests()
         logger.info(f"Submitting batch with {len(batch_requests)} requests")
 
-        # Create the batch
-        batch = self.client.messages.batches.create(requests=batch_requests)
+        # Create the batch - use beta API if 1M context is needed
+        if self._needs_1m_context:
+            logger.info("Using 1M context window beta for this batch")
+            batch = self.client.beta.messages.batches.create(
+                requests=batch_requests,
+                betas=[self.CONTEXT_1M_BETA],
+            )
+        else:
+            batch = self.client.messages.batches.create(requests=batch_requests)
         batch_id = batch.id
         logger.info(f"Created batch {batch_id}, status: {batch.processing_status}")
 
@@ -204,7 +220,11 @@ class BatchProcessor:
                 break
 
             await asyncio.sleep(self.poll_interval)
-            batch = self.client.messages.batches.retrieve(batch_id)
+            # Use same API for retrieval as for creation
+            if self._needs_1m_context:
+                batch = self.client.beta.messages.batches.retrieve(batch_id)
+            else:
+                batch = self.client.messages.batches.retrieve(batch_id)
             logger.debug(
                 f"Batch {batch_id} status: {batch.processing_status}, "
                 f"counts: {batch.request_counts}"
@@ -277,10 +297,17 @@ class BatchProcessor:
                     )
                 elif result["type"] == "errored":
                     error = result.get("error", {})
+                    # Handle nested error structure from Anthropic batch API
+                    # Structure: {"type": "error", "error": {"type": "...", "message": "..."}}
+                    if error.get("type") == "error" and "error" in error:
+                        inner_error = error["error"]
+                        error_msg = f"{inner_error.get('type', 'unknown')}: {inner_error.get('message', 'Unknown error')}"
+                    else:
+                        error_msg = f"{error.get('type', 'unknown')}: {error.get('message', 'Unknown error')}"
                     results[original_id] = BatchResult(
                         custom_id=original_id,
                         success=False,
-                        error=f"{error.get('type', 'unknown')}: {error.get('message', 'Unknown error')}",
+                        error=error_msg,
                     )
                 elif result["type"] in ("canceled", "expired"):
                     results[original_id] = BatchResult(
@@ -310,7 +337,16 @@ class BatchProcessor:
             return {}
 
         batch_requests = self._build_batch_requests()
-        batch = self.client.messages.batches.create(requests=batch_requests)
+
+        # Create the batch - use beta API if 1M context is needed
+        if self._needs_1m_context:
+            logger.info("Using 1M context window beta for this batch")
+            batch = self.client.beta.messages.batches.create(
+                requests=batch_requests,
+                betas=[self.CONTEXT_1M_BETA],
+            )
+        else:
+            batch = self.client.messages.batches.create(requests=batch_requests)
         batch_id = batch.id
 
         max_polls = int(self.max_wait_hours * 3600 / self.poll_interval)
@@ -321,7 +357,11 @@ class BatchProcessor:
                 break
 
             await asyncio.sleep(self.poll_interval)
-            batch = self.client.messages.batches.retrieve(batch_id)
+            # Use same API for retrieval as for creation
+            if self._needs_1m_context:
+                batch = self.client.beta.messages.batches.retrieve(batch_id)
+            else:
+                batch = self.client.messages.batches.retrieve(batch_id)
 
             # Call callback periodically
             if poll_count % polls_per_callback == 0:

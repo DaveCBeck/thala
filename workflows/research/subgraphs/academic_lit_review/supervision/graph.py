@@ -7,10 +7,18 @@ Implements an iterative loop that:
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
+from workflows.research.subgraphs.academic_lit_review.state import (
+    LitReviewInput,
+    PaperMetadata,
+    PaperSummary,
+    QualitySettings,
+    ThematicCluster,
+)
 from workflows.research.subgraphs.academic_lit_review.supervision.nodes import (
     analyze_review_node,
     expand_topic_node,
@@ -24,9 +32,37 @@ from workflows.research.subgraphs.academic_lit_review.supervision.routing import
 logger = logging.getLogger(__name__)
 
 
-# Define the state schema for the supervision subgraph
-# This is a subset of the main workflow state plus supervision-specific fields
-SupervisionSubgraphState = dict[str, Any]
+class SupervisionSubgraphState(TypedDict, total=False):
+    """State schema for the supervision subgraph.
+
+    Defines all fields to ensure LangGraph properly preserves state
+    across node transitions. Uses total=False to allow partial updates.
+    """
+
+    # Review content
+    current_review: str
+    final_review_v2: Optional[str]
+
+    # Context from main workflow
+    input: LitReviewInput
+    paper_corpus: dict[str, PaperMetadata]
+    paper_summaries: dict[str, PaperSummary]
+    clusters: list[ThematicCluster]
+    quality_settings: QualitySettings
+    zotero_keys: dict[str, str]
+
+    # Supervision tracking
+    iteration: int
+    max_iterations: int
+    supervision_depth: int
+    issues_explored: list[str]
+    is_complete: bool
+
+    # Outputs
+    supervision_expansions: list[dict]
+    decision: Optional[dict]
+    expansion_result: Optional[dict]
+    completion_reason: Optional[str]
 
 
 def finalize_supervision_node(state: dict[str, Any]) -> dict[str, Any]:

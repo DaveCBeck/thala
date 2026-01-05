@@ -62,7 +62,7 @@ from workflows.research.subgraphs.academic_lit_review import academic_lit_review
 result = await academic_lit_review(
     topic="machine learning in drug discovery",
     research_questions=["How are GNNs used for molecular property prediction?"],
-    quality="standard",  # quick | standard | comprehensive | high_quality
+    quality="standard",  # test | quick | standard | comprehensive | high_quality
     language="en",       # ISO 639-1 code (29 languages supported)
 )
 ```

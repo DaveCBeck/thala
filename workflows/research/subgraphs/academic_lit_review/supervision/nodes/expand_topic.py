@@ -98,4 +98,9 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
                 "zotero_keys": {},
                 "processed_dois": [],
             },
+            # Return empty dicts for consistency with success case
+            # These will merge with nothing, preserving existing state
+            "paper_corpus": {},
+            "paper_summaries": {},
+            "zotero_keys": {},
         }

@@ -135,9 +135,10 @@ Content:
 
 Extract structured information from this paper."""
 
-    # Use SONNET_1M for large content (>600k chars ≈ >150k tokens)
-    # Most L2 summaries are <50k chars; only L0 fallbacks for books might be larger
-    tier = ModelTier.SONNET_1M if len(content) > 600_000 else ModelTier.HAIKU
+    # Use SONNET_1M for large content (>500k chars ≈ >125k tokens)
+    # This threshold accounts for ~75k tokens of overhead (system prompt, metadata)
+    # ensuring we stay under 200k limit for standard context, or use 1M for larger
+    tier = ModelTier.SONNET_1M if len(content) > 500_000 else ModelTier.HAIKU
 
     try:
         extracted = await extract_json_cached(
@@ -430,8 +431,9 @@ Content:
 
 Extract structured information from this paper."""
 
-        # Use SONNET_1M for large content (>600k chars ≈ >150k tokens)
-        tier = ModelTier.SONNET_1M if len(content) > 600_000 else ModelTier.HAIKU
+        # Use SONNET_1M for large content (>500k chars ≈ >125k tokens)
+        # This threshold accounts for ~75k tokens of overhead (system prompt, metadata)
+        tier = ModelTier.SONNET_1M if len(content) > 500_000 else ModelTier.HAIKU
 
         processor.add_request(
             custom_id=doi,
