@@ -35,12 +35,10 @@ class MultiLangQualitySettings(TypedDict):
 # =============================================================================
 
 
-class WorkflowSelection(TypedDict):
-    """Which research workflows to run per language."""
-
-    web: bool
-    academic: bool
-    books: bool
+# WorkflowSelection is a dynamic dict mapping workflow keys to enabled status.
+# This allows new workflows to be registered without modifying this type.
+# Example: {"web": True, "academic": True, "books": False, "custom": True}
+WorkflowSelection = dict[str, bool]
 
 
 # =============================================================================

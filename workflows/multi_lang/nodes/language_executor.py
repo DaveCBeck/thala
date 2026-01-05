@@ -1,117 +1,16 @@
-"""Language executor node for multi-lingual research workflow."""
+"""Language executor node for multi-lingual research workflow.
+
+Uses the workflow registry for pluggable workflow dispatch.
+"""
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from workflows.multi_lang.state import MultiLangState, LanguageResult
+from workflows.multi_lang.workflow_registry import WORKFLOW_REGISTRY
 from workflows.shared.llm_utils.models import get_llm, ModelTier
 
 logger = logging.getLogger(__name__)
-
-
-async def _run_web_research(
-    topic: str,
-    language_config: dict,
-    quality: str,
-    research_questions: list[str] | None = None,
-) -> dict:
-    """Run deep_research workflow in the target language."""
-    from workflows.research.graph.api import deep_research
-
-    try:
-        result = await deep_research(
-            query=topic,
-            depth=quality,
-            language=language_config["code"],
-        )
-
-        return {
-            "final_report": result.get("final_report"),
-            "source_count": len(result.get("research_findings", [])),
-            "status": "completed" if result.get("final_report") else "failed",
-            "errors": result.get("errors", []),
-        }
-    except Exception as e:
-        logger.error(f"Web research failed for {language_config['code']}: {e}")
-        return {
-            "final_report": None,
-            "source_count": 0,
-            "status": "failed",
-            "errors": [{"phase": "web_research", "error": str(e)}],
-        }
-
-
-async def _run_academic_research(
-    topic: str,
-    language_config: dict,
-    quality: str,
-    research_questions: list[str] | None = None,
-) -> dict:
-    """Run academic_lit_review in the target language."""
-    from workflows.research.subgraphs.academic_lit_review.graph.api import (
-        academic_lit_review,
-    )
-
-    try:
-        # Default questions if not provided
-        questions = research_questions or [
-            f"What is the current state of research on {topic}?",
-            f"What are the key findings and debates about {topic}?",
-        ]
-
-        result = await academic_lit_review(
-            topic=topic,
-            research_questions=questions,
-            quality=quality,
-            language=language_config["code"],
-        )
-
-        return {
-            "final_report": result.get("final_review"),
-            "source_count": len(result.get("paper_corpus", {})),
-            "status": "completed" if result.get("final_review") else "failed",
-            "errors": result.get("errors", []),
-        }
-    except Exception as e:
-        logger.error(f"Academic research failed for {language_config['code']}: {e}")
-        return {
-            "final_report": None,
-            "source_count": 0,
-            "status": "failed",
-            "errors": [{"phase": "academic_research", "error": str(e)}],
-        }
-
-
-async def _run_book_research(
-    topic: str,
-    language_config: dict,
-    quality: str,
-) -> dict:
-    """Run book_finding in the target language."""
-    from workflows.research.subgraphs.book_finding.graph.api import book_finding
-
-    try:
-        result = await book_finding(
-            theme=topic,
-            quality=quality,
-            language=language_config["code"],
-        )
-
-        return {
-            "final_report": result.get("final_markdown"),
-            "source_count": len(result.get("processed_books", [])),
-            "status": "completed" if result.get("final_markdown") else "failed",
-            "errors": result.get("errors", []),
-        }
-    except Exception as e:
-        logger.error(f"Book research failed for {language_config['code']}: {e}")
-        return {
-            "final_report": None,
-            "source_count": 0,
-            "status": "failed",
-            "errors": [{"phase": "book_research", "error": str(e)}],
-        }
 
 
 async def _compress_language_findings(
@@ -243,45 +142,37 @@ async def execute_next_language(state: MultiLangState) -> dict:
     research_questions = state["input"].get("research_questions")
 
     workflow_results = []
+    workflows_run = []
     total_sources = 0
     all_errors = []
 
-    # Run web research
-    if workflows.get("web", False):
-        logger.info(f"Running web research for {language_name}")
-        result = await _run_web_research(topic, language_config, quality, research_questions)
-        workflow_results.append({
-            "workflow_type": "Web Research",
-            "report": result["final_report"],
-            "source_count": result["source_count"],
-            "status": result["status"],
-        })
-        total_sources += result["source_count"]
-        all_errors.extend(result.get("errors", []))
+    # Run workflows from registry
+    for workflow_key, config in WORKFLOW_REGISTRY.items():
+        # Check if this workflow is enabled (use registry default if not specified)
+        if not workflows.get(workflow_key, config["default_enabled"]):
+            continue
 
-    # Run academic research
-    if workflows.get("academic", False):
-        logger.info(f"Running academic research for {language_name}")
-        result = await _run_academic_research(topic, language_config, quality, research_questions)
-        workflow_results.append({
-            "workflow_type": "Academic Research",
-            "report": result["final_report"],
-            "source_count": result["source_count"],
-            "status": result["status"],
-        })
-        total_sources += result["source_count"]
-        all_errors.extend(result.get("errors", []))
+        logger.info(f"Running {config['name']} for {language_name}")
 
-    # Run book research
-    if workflows.get("books", False):
-        logger.info(f"Running book research for {language_name}")
-        result = await _run_book_research(topic, language_config, quality)
+        # Build arguments for the workflow runner
+        kwargs = {
+            "topic": topic,
+            "language_config": language_config,
+            "quality": quality,
+        }
+        if config["requires_questions"]:
+            kwargs["research_questions"] = research_questions
+
+        # Run the workflow
+        result = await config["runner"](**kwargs)
+
         workflow_results.append({
-            "workflow_type": "Book Research",
+            "workflow_type": config["name"],
             "report": result["final_report"],
             "source_count": result["source_count"],
             "status": result["status"],
         })
+        workflows_run.append(workflow_key)
         total_sources += result["source_count"]
         all_errors.extend(result.get("errors", []))
 
@@ -314,15 +205,6 @@ async def execute_next_language(state: MultiLangState) -> dict:
     full_report = "\n\n".join(
         r["report"] for r in workflow_results if r["report"]
     )
-
-    # Track which workflows ran
-    workflows_run = []
-    if workflows.get("web"):
-        workflows_run.append("web")
-    if workflows.get("academic"):
-        workflows_run.append("academic")
-    if workflows.get("books"):
-        workflows_run.append("books")
 
     # Create LanguageResult
     language_result = LanguageResult(

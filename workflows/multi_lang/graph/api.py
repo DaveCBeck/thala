@@ -12,10 +12,10 @@ from workflows.multi_lang.state import (
     MultiLangState,
     MultiLangInput,
     MultiLangQualitySettings,
-    WorkflowSelection,
     CheckpointPhase,
 )
 from workflows.multi_lang.graph.construction import multi_lang_graph
+from workflows.multi_lang.workflow_registry import build_workflow_selection
 
 
 class MultiLangResult:
@@ -108,12 +108,8 @@ async def multi_lang_research(
     if mode == "set_languages" and not languages:
         languages = ["en"]
 
-    # Build workflow selection
-    workflow_selection = WorkflowSelection(
-        web=workflows.get("web", True) if workflows else True,
-        academic=workflows.get("academic", False) if workflows else False,
-        books=workflows.get("books", False) if workflows else False,
-    )
+    # Build workflow selection from registry (applies user overrides to defaults)
+    workflow_selection = build_workflow_selection(workflows)
 
     # Build quality settings
     quality_settings = MultiLangQualitySettings(

@@ -47,7 +47,7 @@ Run an academic literature review workflow with checkpointing support.
 .venv/bin/python3 testing/test_academic_lit_review.py "topic" quick --checkpoint-prefix mytest
 ```
 
-Quality options: `quick`, `standard`, `comprehensive`, `high_quality`
+Quality options: `test`, `quick`, `standard`, `comprehensive`, `high_quality`
 Language: ISO 639-1 code (e.g., `en`, `es`, `zh`, `ja`, `de`, `fr`)
 
 **Checkpointing for fast iteration:**
@@ -66,6 +66,30 @@ The workflow saves checkpoints after expensive phases (diffusion, processing). R
 ```
 
 Checkpoints are saved to `testing/test_data/checkpoints/`.
+
+### `test_multi_lang_academic.py`
+Run academic literature review across multiple languages with cross-language synthesis.
+
+```bash
+# Specific languages
+.venv/bin/python3 testing/test_multi_lang_academic.py "AI ethics" quick --languages en,es,de
+
+# Major 10 languages (en, zh, es, de, fr, ja, pt, ru, ar, ko)
+.venv/bin/python3 testing/test_multi_lang_academic.py "climate policy" quick --languages major
+
+# With custom research questions
+.venv/bin/python3 testing/test_multi_lang_academic.py "topic" standard --languages en,zh -q "Question 1?" "Question 2?"
+```
+
+Quality options: `quick`, `standard`, `comprehensive`
+Languages: comma-separated codes or `major` for top 10
+
+**Outputs** (saved to `testing/test_data/`):
+- `multilang-{lang}-{datetime}.md` - Per-language reports (translated to English)
+- `multilang-comparative-{datetime}.md` - Cross-language analysis
+- `multilang-final-{datetime}.md` - Integrated synthesis
+
+Uses the multi_lang workflow with `workflows={"academic": True}`.
 
 ### `test_book_finding.py`
 Run the book finding workflow to discover relevant books across three categories.
