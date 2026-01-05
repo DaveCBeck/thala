@@ -128,12 +128,26 @@ Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
     return {"cluster_analyses": cluster_analyses}
 
 
+def _build_cluster_analysis_tool() -> tuple[list[dict], dict]:
+    """Build Anthropic tool definition for structured cluster analysis output."""
+    tool = {
+        "name": "cluster_analysis",
+        "description": "Output the cluster analysis results",
+        "input_schema": ClusterAnalysisOutput.model_json_schema(),
+    }
+    tool_choice = {"type": "tool", "name": "cluster_analysis"}
+    return [tool], tool_choice
+
+
 async def _per_cluster_analysis_batched(
     final_clusters: list[ThematicCluster],
     paper_summaries: dict,
 ) -> dict[str, Any]:
     """Analyze clusters using Anthropic Batch API for 50% cost reduction."""
     processor = BatchProcessor(poll_interval=30)
+
+    # Build tool definition for structured output
+    tools, tool_choice = _build_cluster_analysis_tool()
 
     cluster_ids = []  # Track order for result mapping
     for i, cluster in enumerate(final_clusters):
@@ -169,6 +183,8 @@ Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
             model=ModelTier.SONNET,
             max_tokens=4096,
             system=CLUSTER_ANALYSIS_SYSTEM_PROMPT,
+            tools=tools,
+            tool_choice=tool_choice,
         )
         cluster_ids.append(cluster["cluster_id"])
 
@@ -181,11 +197,11 @@ Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
 
         if result and result.success:
             try:
-                content = result.content.strip()
-                if content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(lines[1:-1])
+                content = result.content.strip() if result.content else ""
+                if not content:
+                    raise ValueError("Empty response content from batch API")
 
+                # Tool use output is already JSON-serialized by BatchProcessor
                 parsed = json.loads(content)
 
                 cluster_analyses.append(ClusterAnalysis(
