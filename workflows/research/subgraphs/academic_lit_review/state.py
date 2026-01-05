@@ -60,6 +60,7 @@ class QualitySettings(TypedDict):
     min_citations_filter: int  # Minimum citations for discovery
     saturation_threshold: float  # Coverage delta threshold
     use_batch_api: bool  # Use Anthropic Batch API
+    supervision_loops: str  # Which supervision loops to run: "none", "one", "two", "three", "four", "all"
 
 
 # Quality presets mapping quality levels to settings
@@ -71,6 +72,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         min_citations_filter=0,
         saturation_threshold=0.5,
         use_batch_api=False,
+        supervision_loops="all",  # All loops with minimal iterations
     ),
     "quick": QualitySettings(
         max_stages=2,
@@ -79,6 +81,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         min_citations_filter=5,
         saturation_threshold=0.15,
         use_batch_api=False,
+        supervision_loops="all",  # All loops with minimal iterations
     ),
     "standard": QualitySettings(
         max_stages=3,
@@ -87,6 +90,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         min_citations_filter=10,
         saturation_threshold=0.12,
         use_batch_api=True,
+        supervision_loops="all",  # Full multi-loop supervision
     ),
     "comprehensive": QualitySettings(
         max_stages=4,
@@ -95,6 +99,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         min_citations_filter=10,
         saturation_threshold=0.10,
         use_batch_api=True,
+        supervision_loops="all",  # Full multi-loop supervision
     ),
     "high_quality": QualitySettings(
         max_stages=5,
@@ -103,6 +108,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         min_citations_filter=10,
         saturation_threshold=0.10,
         use_batch_api=True,
+        supervision_loops="all",  # Full multi-loop supervision
     ),
 }
 
@@ -316,6 +322,37 @@ class SupervisionExpansion(TypedDict):
     integration_summary: str  # What was integrated and how
 
 
+class LoopCheckpoint(TypedDict):
+    """Checkpoint state for restart capability."""
+
+    loop_number: int
+    iteration: int
+    review_snapshot: str
+    timestamp: str  # ISO format datetime string
+
+
+class RevisionRecord(TypedDict):
+    """Record of what each loop changed."""
+
+    loop_number: int
+    iteration: int
+    summary: str  # Haiku-generated summary
+    changes_made: list[str]
+    reasoning: str
+
+
+class MultiLoopProgress(TypedDict):
+    """Progress tracking across all supervision loops."""
+
+    current_loop: int  # 1-5
+    loop_iterations: dict[str, int]  # "loop_1" -> iterations used (string keys for TypedDict)
+    shared_iteration_budget: int  # Total iterations remaining
+    max_shared_iterations: int
+    checkpoints: list[LoopCheckpoint]
+    revision_history: list[RevisionRecord]
+    loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max 1)
+
+
 class SupervisionState(TypedDict):
     """State tracking for supervision loop execution."""
 
@@ -325,6 +362,8 @@ class SupervisionState(TypedDict):
     current_review: str     # Evolving review text
     issues_explored: list[str]  # Topics already explored (prevent re-exploration)
     is_complete: bool       # True when pass_through or max iterations reached
+    loop_progress: MultiLoopProgress
+    human_review_items: list[str]
 
 
 # =============================================================================

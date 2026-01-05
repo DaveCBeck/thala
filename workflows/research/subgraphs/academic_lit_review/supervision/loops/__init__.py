@@ -1,15 +1,37 @@
 """Supervision loop implementations.
 
-This module will contain different supervision loop types.
-Currently implemented: theoretical_depth
-
-Future loops may include:
-- fact_checking: Verify claims and citations
-- methodological_rigor: Check research methodology coverage
-- coherence: Ensure narrative flow and structure
+This module contains supervision loop types:
+- Loop 2: Literature Base Expansion - Identify and integrate missing literature bases
+- Loop 3: Structure and Cohesion - Structural editing with two-agent pattern
+- Loop 4: Section-level deep editing - Parallel section editing with holistic review
+- Loop 4.5: Cohesion Check - Post-editing cohesion validation
+- Loop 5: Fact and Reference Checking - Sequential fact/reference verification
 """
 
-# Loop implementations will be added here as they are developed
-# from .theoretical_depth import TheoreticalDepthLoop
+from .loop2_literature import create_loop2_graph, run_loop2_standalone, Loop2State
+from .loop3_structure import create_loop3_graph, run_loop3_standalone, Loop3State
+from .loop4_editing import create_loop4_graph, run_loop4_standalone, Loop4State
+from .loop4_5_cohesion import check_cohesion, run_loop4_5_standalone
+from .loop5_factcheck import create_loop5_graph, run_loop5_standalone, Loop5State
 
-__all__ = []
+__all__ = [
+    # Loop 2
+    "create_loop2_graph",
+    "run_loop2_standalone",
+    "Loop2State",
+    # Loop 3
+    "create_loop3_graph",
+    "run_loop3_standalone",
+    "Loop3State",
+    # Loop 4
+    "create_loop4_graph",
+    "run_loop4_standalone",
+    "Loop4State",
+    # Loop 4.5
+    "check_cohesion",
+    "run_loop4_5_standalone",
+    # Loop 5
+    "create_loop5_graph",
+    "run_loop5_standalone",
+    "Loop5State",
+]
