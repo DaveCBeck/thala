@@ -352,7 +352,7 @@ async def run_literature_review(
     language: str = "en",
 ) -> dict:
     """Run the academic literature review workflow on a topic."""
-    from workflows.research.subgraphs.academic_lit_review import academic_lit_review
+    from workflows.academic_lit_review import academic_lit_review
 
     logger.info(f"Starting literature review on: {topic}")
     logger.info(f"Quality: {quality}")
@@ -389,7 +389,7 @@ def build_initial_state(
     to allow running phases individually with checkpointing.
     """
     import uuid
-    from workflows.research.subgraphs.academic_lit_review.state import (
+    from workflows.academic_lit_review.state import (
         QUALITY_PRESETS,
         LitReviewInput,
         LitReviewDiffusionState,
@@ -473,13 +473,12 @@ async def run_with_checkpoints(
     - {prefix}_after_diffusion: After paper corpus is complete
     - {prefix}_after_processing: After paper summaries are complete
     """
-    from workflows.research.subgraphs.academic_lit_review.graph import (
+    from workflows.academic_lit_review.graph import (
         discovery_phase_node,
         diffusion_phase_node,
         processing_phase_node,
         clustering_phase_node,
         synthesis_phase_node,
-        supervision_phase_node,
     )
 
     logger.info(f"Starting checkpointed literature review on: {topic}")
@@ -511,24 +510,19 @@ async def run_with_checkpoints(
     logger.info("Running synthesis phase...")
     state.update(await synthesis_phase_node(state))
 
-    # Phase 6: Supervision (iterative improvement)
-    logger.info("Running supervision phase...")
-    state.update(await supervision_phase_node(state))
-
     return state
 
 
 async def run_from_diffusion_checkpoint(checkpoint_prefix: str) -> dict:
     """Resume workflow from after-diffusion checkpoint.
 
-    Runs: processing -> clustering -> synthesis -> supervision
+    Runs: processing -> clustering -> synthesis
     Skips: discovery, diffusion
     """
-    from workflows.research.subgraphs.academic_lit_review.graph import (
+    from workflows.academic_lit_review.graph import (
         processing_phase_node,
         clustering_phase_node,
         synthesis_phase_node,
-        supervision_phase_node,
     )
 
     checkpoint_name = f"{checkpoint_prefix}_after_diffusion"
@@ -552,23 +546,18 @@ async def run_from_diffusion_checkpoint(checkpoint_prefix: str) -> dict:
     logger.info("Running synthesis phase...")
     state.update(await synthesis_phase_node(state))
 
-    # Phase 6: Supervision
-    logger.info("Running supervision phase...")
-    state.update(await supervision_phase_node(state))
-
     return state
 
 
 async def run_from_processing_checkpoint(checkpoint_prefix: str) -> dict:
     """Resume workflow from after-processing checkpoint.
 
-    Runs: clustering -> synthesis -> supervision
+    Runs: clustering -> synthesis
     Skips: discovery, diffusion, processing
     """
-    from workflows.research.subgraphs.academic_lit_review.graph import (
+    from workflows.academic_lit_review.graph import (
         clustering_phase_node,
         synthesis_phase_node,
-        supervision_phase_node,
     )
 
     checkpoint_name = f"{checkpoint_prefix}_after_processing"
@@ -586,10 +575,6 @@ async def run_from_processing_checkpoint(checkpoint_prefix: str) -> dict:
     # Phase 5: Synthesis
     logger.info("Running synthesis phase...")
     state.update(await synthesis_phase_node(state))
-
-    # Phase 6: Supervision
-    logger.info("Running supervision phase...")
-    state.update(await supervision_phase_node(state))
 
     return state
 
@@ -797,7 +782,7 @@ async def main():
                 f.write(f"*Quality: {quality} | Language: {language}*\n\n")
                 f.write("---\n\n")
                 f.write(result["final_review_v2"])
-            logger.info(f"Review (v2) saved to: {report_v2_file}")
+            logger.info(f"Review (v2) saved to: {report_file}")
 
         # Save PRISMA documentation
         if result.get("prisma_documentation"):

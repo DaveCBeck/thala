@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from workflows.research.graph.api import deep_research
-from workflows.research.subgraphs.academic_lit_review import academic_lit_review
+from workflows.academic_lit_review import academic_lit_review
 from workflows.wrapped.state import WrappedResearchState, WorkflowResult, QUALITY_MAPPING
 
 logger = logging.getLogger(__name__)

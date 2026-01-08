@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from workflows.research.subgraphs.book_finding import book_finding
+from workflows.book_finding import book_finding
 from workflows.wrapped.state import WrappedResearchState, WorkflowResult, QUALITY_MAPPING
 
 logger = logging.getLogger(__name__)

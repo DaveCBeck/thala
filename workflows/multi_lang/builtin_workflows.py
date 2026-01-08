@@ -77,7 +77,7 @@ async def run_academic_research(
     Returns:
         Normalized WorkflowResult dict
     """
-    from workflows.research.subgraphs.academic_lit_review.graph.api import (
+    from workflows.academic_lit_review.graph.api import (
         academic_lit_review,
     )
 
@@ -128,7 +128,7 @@ async def run_book_research(
     Returns:
         Normalized WorkflowResult dict
     """
-    from workflows.research.subgraphs.book_finding.graph.api import book_finding
+    from workflows.book_finding.graph.api import book_finding
 
     try:
         result = await book_finding(

@@ -118,7 +118,11 @@ async def extract_json_cached(
     schema_hint: Optional[str] = None,
     tier: ModelTier = ModelTier.SONNET,
 ) -> dict[str, Any]:
-    """Extract structured JSON from text using Claude with prompt caching."""
+    """Extract structured JSON from text using Claude with prompt caching.
+
+    DEPRECATED: Consider using get_structured_output(enable_prompt_cache=True)
+    instead for type-safe extraction with automatic caching.
+    """
     llm = get_llm(tier=tier)
 
     system_prompt = system_instructions

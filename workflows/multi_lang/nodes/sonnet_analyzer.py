@@ -3,7 +3,7 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils.models import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.multi_lang.prompts.analysis import (
     CROSS_ANALYSIS_SYSTEM,
     CROSS_ANALYSIS_USER,
@@ -120,17 +120,13 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
             language_findings=language_findings,
         )
 
-        # Get Sonnet with structured output
-        llm = get_llm(ModelTier.SONNET, max_tokens=16384)
-        structured_llm = llm.with_structured_output(CrossAnalysisOutput)
-
-        # Run analysis
-        messages = [
-            {"role": "system", "content": CROSS_ANALYSIS_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        result = await structured_llm.ainvoke(messages)
+        result: CrossAnalysisOutput = await get_structured_output(
+            output_schema=CrossAnalysisOutput,
+            user_prompt=user_prompt,
+            system_prompt=CROSS_ANALYSIS_SYSTEM,
+            tier=ModelTier.SONNET,
+            max_tokens=16384,
+        )
 
         # Remove English from integration priority if present
         integration_priority = [

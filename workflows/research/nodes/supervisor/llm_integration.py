@@ -3,6 +3,7 @@
 import logging
 
 from workflows.research.state import SupervisorDecision
+from workflows.shared.llm_utils import get_structured_output, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +17,12 @@ async def _get_supervisor_decision_structured(
 
     Raises: Exception if structured output fails
     """
-    structured_llm = llm.with_structured_output(SupervisorDecision)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    decision: SupervisorDecision = await structured_llm.ainvoke(messages)
+    decision: SupervisorDecision = await get_structured_output(
+        output_schema=SupervisorDecision,
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+        tier=ModelTier.OPUS,
+    )
 
     action = decision.action
     action_data = {}

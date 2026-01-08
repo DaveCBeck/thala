@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from workflows.research.state import DeepResearchState, ClarificationQuestion
 from workflows.research.prompts import CLARIFY_INTENT_SYSTEM, CLARIFY_INTENT_HUMAN, get_today_str
 from workflows.research.utils import load_prompts_with_translation
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +59,13 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
     system_prompt = system_prompt_template.format(date=get_today_str())
     human_prompt = human_prompt_template.format(query=query)
 
-    llm = get_llm(ModelTier.HAIKU)
-    structured_llm = llm.with_structured_output(ClarificationResponse)
-
     try:
-        result: ClarificationResponse = await structured_llm.ainvoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": human_prompt},
-        ])
+        result: ClarificationResponse = await get_structured_output(
+            output_schema=ClarificationResponse,
+            user_prompt=human_prompt,
+            system_prompt=system_prompt,
+            tier=ModelTier.HAIKU,
+        )
 
         if result.need_clarification:
             questions = [

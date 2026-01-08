@@ -3,7 +3,7 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils.models import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.multi_lang.prompts.integration import (
     INITIAL_SYNTHESIS_SYSTEM,
     INITIAL_SYNTHESIS_USER,
@@ -70,15 +70,14 @@ async def _create_initial_synthesis(
         english_findings=english_result["findings_summary"],
     )
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=16384)
-    structured_llm = llm.with_structured_output(InitialSynthesisOutput)
+    result: InitialSynthesisOutput = await get_structured_output(
+        output_schema=InitialSynthesisOutput,
+        user_prompt=user_prompt,
+        system_prompt=INITIAL_SYNTHESIS_SYSTEM,
+        tier=ModelTier.OPUS,
+        max_tokens=16384,
+    )
 
-    messages = [
-        {"role": "system", "content": INITIAL_SYNTHESIS_SYSTEM},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    result = await structured_llm.ainvoke(messages)
     return result.synthesis_document
 
 
@@ -101,15 +100,14 @@ async def _integrate_language(
         language_findings=language_result["findings_summary"],
     )
 
-    llm = get_llm(ModelTier.OPUS, thinking_budget=8000, max_tokens=16384)
-    structured_llm = llm.with_structured_output(IntegrationOutput)
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    result = await structured_llm.ainvoke(messages)
+    result: IntegrationOutput = await get_structured_output(
+        output_schema=IntegrationOutput,
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+        tier=ModelTier.OPUS,
+        max_tokens=16384,
+        thinking_budget=8000,
+    )
 
     integration_step: OpusIntegrationStep = {
         "language_code": language_code,
@@ -146,15 +144,14 @@ async def _finalize_synthesis(
         integration_notes=integration_notes_formatted,
     )
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=16384)
-    structured_llm = llm.with_structured_output(FinalEnhancementOutput)
+    result: FinalEnhancementOutput = await get_structured_output(
+        output_schema=FinalEnhancementOutput,
+        user_prompt=user_prompt,
+        system_prompt=FINAL_ENHANCEMENT_SYSTEM,
+        tier=ModelTier.OPUS,
+        max_tokens=16384,
+    )
 
-    messages = [
-        {"role": "system", "content": FINAL_ENHANCEMENT_SYSTEM},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    result = await structured_llm.ainvoke(messages)
     return result.finalized_document
 
 

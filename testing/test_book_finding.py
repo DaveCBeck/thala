@@ -282,7 +282,7 @@ async def run_book_finding(
     language: str = "en",
 ) -> dict:
     """Run the book finding workflow on a theme."""
-    from workflows.research.subgraphs.book_finding import book_finding
+    from workflows.book_finding import book_finding
 
     logger.info(f"Starting book finding for theme: {theme}")
     logger.info(f"Quality: {quality}")

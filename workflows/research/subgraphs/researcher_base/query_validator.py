@@ -3,7 +3,7 @@
 import logging
 
 from workflows.research.state import QueryValidationBatch
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,6 @@ async def validate_queries(
     """
     if not queries:
         return []
-
-    llm = get_llm(ModelTier.HAIKU)
-    structured_llm = llm.with_structured_output(QueryValidationBatch)
 
     # Build context
     context_parts = [f"Research Question: {research_question}"]
@@ -61,8 +58,10 @@ Accept queries that would help find information about the research topic.
 """
 
     try:
-        result: QueryValidationBatch = await structured_llm.ainvoke(
-            [{"role": "user", "content": prompt}]
+        result: QueryValidationBatch = await get_structured_output(
+            output_schema=QueryValidationBatch,
+            user_prompt=prompt,
+            tier=ModelTier.HAIKU,
         )
 
         valid_queries = []

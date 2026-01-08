@@ -9,7 +9,7 @@ from workflows.research.prompts import (
     GENERATE_ACADEMIC_QUERIES_SYSTEM,
     GENERATE_BOOK_QUERIES_SYSTEM,
 )
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 from .query_validator import validate_queries
 
@@ -47,9 +47,6 @@ def create_generate_queries(researcher_type: str = "web"):
         question = state["question"]
         language_config = state.get("language_config")
 
-        llm = get_llm(ModelTier.HAIKU)
-        structured_llm = llm.with_structured_output(SearchQueries)
-
         # Get researcher-specific base prompt
         base_prompt = RESEARCHER_QUERY_PROMPTS.get(researcher_type, GENERATE_WEB_QUERIES_SYSTEM)
 
@@ -70,7 +67,11 @@ Question: {question['question']}
 """
 
         try:
-            result: SearchQueries = await structured_llm.ainvoke([{"role": "user", "content": prompt}])
+            result: SearchQueries = await get_structured_output(
+                output_schema=SearchQueries,
+                user_prompt=prompt,
+                tier=ModelTier.HAIKU,
+            )
 
             # Validate queries are relevant
             valid_queries = await validate_queries(

@@ -12,7 +12,7 @@ from workflows.multi_lang.prompts.relevance import (
 )
 from workflows.multi_lang.state import LanguageRelevanceCheck, MultiLangState
 from workflows.shared.language.query_translator import translate_query
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -101,16 +101,13 @@ async def _check_language_relevance(
         quick_search_results=results_text,
     )
 
-    # Get Haiku with structured output
-    llm = get_llm(ModelTier.HAIKU, max_tokens=512)
-    structured_llm = llm.with_structured_output(RelevanceDecision)
-
     try:
-        decision = await structured_llm.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        decision: RelevanceDecision = await get_structured_output(
+            output_schema=RelevanceDecision,
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            tier=ModelTier.HAIKU,
+            max_tokens=512,
         )
 
         return {

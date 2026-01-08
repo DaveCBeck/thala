@@ -42,7 +42,11 @@ async def extract_json(
     schema_hint: Optional[str] = None,
     tier: ModelTier = ModelTier.SONNET,
 ) -> dict[str, Any]:
-    """Extract structured JSON from text using Claude."""
+    """Extract structured JSON from text using Claude.
+
+    DEPRECATED: Consider using get_structured_output() instead for type-safe
+    extraction with automatic strategy selection.
+    """
     llm = get_llm(tier=tier)
 
     full_prompt = prompt
@@ -111,7 +115,11 @@ async def extract_structured(
     schema: dict[str, Any],
     tier: ModelTier = ModelTier.SONNET,
 ) -> dict[str, Any]:
-    """Extract structured data using Anthropic tool use (guaranteed valid JSON)."""
+    """Extract structured data using Anthropic tool use (guaranteed valid JSON).
+
+    DEPRECATED: Consider using get_structured_output() instead, which provides
+    the same functionality with automatic strategy selection and retry logic.
+    """
     import anthropic
 
     client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))

@@ -57,7 +57,7 @@ For academic papers and books, use the dedicated standalone workflows:
 
 ### Academic Literature Review
 ```python
-from workflows.research.subgraphs.academic_lit_review import academic_lit_review
+from workflows.academic_lit_review import academic_lit_review
 
 result = await academic_lit_review(
     topic="machine learning in drug discovery",
@@ -69,7 +69,7 @@ result = await academic_lit_review(
 
 ### Book Finding
 ```python
-from workflows.research.subgraphs.book_finding import book_finding
+from workflows.book_finding import book_finding
 
 result = await book_finding(
     theme="organizational resilience",
@@ -158,7 +158,7 @@ result = await deep_research(
 )
 
 # For academic research, use the standalone workflow
-from workflows.research.subgraphs.academic_lit_review import academic_lit_review
+from workflows.academic_lit_review import academic_lit_review
 result = await academic_lit_review(
     topic="postcolonial literary theory",
     research_questions=["How has Said's Orientalism influenced the field?"],
