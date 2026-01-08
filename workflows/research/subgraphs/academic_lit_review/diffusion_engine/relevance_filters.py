@@ -82,6 +82,7 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
     """Two-stage relevance: Stage 2 - LLM scoring for remaining candidates."""
     candidates = state.get("current_stage_candidates", [])
     input_data = state["input"]
+    quality_settings = state["quality_settings"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     language_config = state.get("language_config")
@@ -102,6 +103,7 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
         language_config=language_config,
         tier=ModelTier.HAIKU,
         max_concurrent=10,
+        use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
     # Extract DOIs

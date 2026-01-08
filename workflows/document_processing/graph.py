@@ -140,6 +140,7 @@ async def process_document(
     quality: str = "balanced",
     langs: list[str] = None,
     extra_metadata: dict = None,
+    use_batch_api: bool = True,  # Set False for rapid iteration (skips batch API)
 ) -> dict[str, Any]:
     """Process a document through the full pipeline."""
     graph = create_document_processing_graph()
@@ -152,6 +153,7 @@ async def process_document(
             "quality": quality,
             "langs": langs or ["English"],
             "extra_metadata": extra_metadata or {},
+            "use_batch_api": use_batch_api,
         },
         "store_records": [],
         "errors": [],

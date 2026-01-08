@@ -71,7 +71,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=500,
         min_citations_filter=0,
         saturation_threshold=0.5,
-        use_batch_api=False,
+        use_batch_api=True,
         supervision_loops="all",  # All loops with minimal iterations
     ),
     "quick": QualitySettings(
@@ -80,7 +80,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=3000,
         min_citations_filter=5,
         saturation_threshold=0.15,
-        use_batch_api=False,
+        use_batch_api=True,
         supervision_loops="all",  # All loops with minimal iterations
     ),
     "standard": QualitySettings(
@@ -346,8 +346,7 @@ class MultiLoopProgress(TypedDict):
 
     current_loop: int  # 1-5
     loop_iterations: dict[str, int]  # "loop_1" -> iterations used (string keys for TypedDict)
-    shared_iteration_budget: int  # Total iterations remaining
-    max_shared_iterations: int
+    max_iterations_per_loop: int  # Budget per loop (not shared across loops)
     checkpoints: list[LoopCheckpoint]
     revision_history: list[RevisionRecord]
     loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max 1)

@@ -162,6 +162,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
     """
     raw_results = state.get("raw_results", [])
     input_data = state["input"]
+    quality_settings = state["quality_settings"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     language_config = state.get("language_config")
@@ -205,6 +206,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
         language_config=language_config,
         tier=ModelTier.HAIKU,
         max_concurrent=10,
+        use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
     # Extract DOIs

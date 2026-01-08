@@ -68,13 +68,13 @@ async def supervision_phase_node(state: AcademicLitReviewState) -> dict[str, Any
     clusters = state.get("clusters", [])
     zotero_keys = state.get("zotero_keys", {})
 
-    # Calculate max iterations based on quality tier
+    # Calculate max iterations per loop based on quality tier
     max_stages = quality_settings.get("max_stages", 3)
-    max_shared_iterations = max_stages * 3  # Scale with quality
+    max_iterations_per_loop = max_stages  # Each loop gets this many iterations
 
     logger.info(
         f"Supervision starting with {len(final_review)} char review, "
-        f"{len(paper_corpus)} papers in corpus, max_iterations={max_shared_iterations}"
+        f"{len(paper_corpus)} papers in corpus, max_iterations_per_loop={max_iterations_per_loop}"
     )
 
     supervision_result = await run_supervision_configurable(
@@ -85,7 +85,7 @@ async def supervision_phase_node(state: AcademicLitReviewState) -> dict[str, Any
         clusters=clusters,
         input_data=input_data,
         quality_settings=quality_settings,
-        max_shared_iterations=max_shared_iterations,
+        max_iterations_per_loop=max_iterations_per_loop,
         loops=supervision_loops,
     )
 

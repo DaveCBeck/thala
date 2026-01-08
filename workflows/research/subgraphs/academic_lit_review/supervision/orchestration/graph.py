@@ -32,18 +32,8 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
     logger.info("Running Loop 1: Theoretical depth expansion")
 
     before_text = state["current_review"]
-
-    # Determine max iterations from shared budget
     loop_progress = state["loop_progress"]
-    remaining_budget = loop_progress["shared_iteration_budget"]
-    max_iterations = min(3, remaining_budget)
-
-    if max_iterations <= 0:
-        logger.warning("No iteration budget remaining for Loop 1, skipping")
-        return {
-            "loop1_result": {"iterations": 0, "completion_reason": "No budget"},
-            "loop_progress": loop_progress,
-        }
+    max_iterations = loop_progress["max_iterations_per_loop"]
 
     result = await run_supervision(
         final_review=state["current_review"],
@@ -60,7 +50,6 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
 
     # Update loop progress
     loop_progress["loop_iterations"]["loop_1"] = iterations_used
-    loop_progress["shared_iteration_budget"] -= iterations_used
     loop_progress["current_loop"] = 2
 
     # Document revision
@@ -98,17 +87,8 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
     logger.info("Running Loop 2: Literature base expansion")
 
     before_text = state["current_review"]
-
     loop_progress = state["loop_progress"]
-    remaining_budget = loop_progress["shared_iteration_budget"]
-    max_iterations = min(3, remaining_budget)
-
-    if max_iterations <= 0:
-        logger.warning("No iteration budget remaining for Loop 2, skipping")
-        return {
-            "loop2_result": {"iterations": 0, "completion_reason": "No budget"},
-            "loop_progress": loop_progress,
-        }
+    max_iterations = loop_progress["max_iterations_per_loop"]
 
     result = await run_loop2_standalone(
         review=state["current_review"],
@@ -125,7 +105,6 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
 
     # Update loop progress
     loop_progress["loop_iterations"]["loop_2"] = iterations_used
-    loop_progress["shared_iteration_budget"] -= iterations_used
     loop_progress["current_loop"] = 3
 
     # Document revision
@@ -164,17 +143,8 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
     logger.info("Running Loop 3: Structure and cohesion")
 
     before_text = state["current_review"]
-
     loop_progress = state["loop_progress"]
-    remaining_budget = loop_progress["shared_iteration_budget"]
-    max_iterations = min(3, remaining_budget)
-
-    if max_iterations <= 0:
-        logger.warning("No iteration budget remaining for Loop 3, skipping")
-        return {
-            "loop3_result": {"iterations": 0, "completion_reason": "No budget"},
-            "loop_progress": loop_progress,
-        }
+    max_iterations = loop_progress["max_iterations_per_loop"]
 
     result = await run_loop3_standalone(
         review=state["current_review"],
@@ -187,7 +157,6 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
 
     # Update loop progress
     loop_progress["loop_iterations"]["loop_3"] = iterations_used
-    loop_progress["shared_iteration_budget"] -= iterations_used
     loop_progress["current_loop"] = 4
 
     # Document revision
@@ -223,17 +192,8 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
     logger.info("Running Loop 4: Section-level deep editing")
 
     before_text = state["current_review"]
-
     loop_progress = state["loop_progress"]
-    remaining_budget = loop_progress["shared_iteration_budget"]
-    max_iterations = min(3, remaining_budget)
-
-    if max_iterations <= 0:
-        logger.warning("No iteration budget remaining for Loop 4, skipping")
-        return {
-            "loop4_result": {"iterations": 0, "completion_reason": "No budget"},
-            "loop_progress": loop_progress,
-        }
+    max_iterations = loop_progress["max_iterations_per_loop"]
 
     result = await run_loop4_standalone(
         review=state["current_review"],
@@ -247,7 +207,6 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
 
     # Update loop progress
     loop_progress["loop_iterations"]["loop_4"] = iterations_used
-    loop_progress["shared_iteration_budget"] -= iterations_used
     loop_progress["current_loop"] = 4.5  # Move to Loop 4.5
 
     # Document revision
@@ -358,7 +317,7 @@ def finalize_node(state: OrchestrationState) -> dict[str, Any]:
 
     completion_reason = (
         f"All loops complete. Total iterations: {total_iterations}. "
-        f"Budget remaining: {loop_progress['shared_iteration_budget']}"
+        f"Max per loop: {loop_progress['max_iterations_per_loop']}"
     )
 
     return {
@@ -383,14 +342,15 @@ def increment_loop3_repeat_node(state: OrchestrationState) -> dict[str, Any]:
 def route_after_loop4_5(state: OrchestrationState) -> str:
     """Route after Loop 4.5 cohesion check.
 
-    If needs_restructuring AND loop3_repeat_count < 1: return to Loop 3
+    If needs_restructuring AND loop3_repeat_count < max_iterations_per_loop: return to Loop 3
     Otherwise: proceed to Loop 5
     """
     loop4_5_result = state.get("loop4_5_result", {})
     needs_restructuring = loop4_5_result.get("needs_restructuring", False)
     repeat_count = state.get("loop3_repeat_count", 0)
 
-    if needs_restructuring and repeat_count < 1:
+    max_repeats = state["loop_progress"]["max_iterations_per_loop"]
+    if needs_restructuring and repeat_count < max_repeats:
         logger.info("Cohesion check: returning to Loop 3 for restructuring")
         return "increment_and_loop3"
     else:
@@ -414,7 +374,7 @@ def create_orchestration_graph() -> StateGraph:
 
     Flow:
         START → loop1 → loop2 → loop3 → loop4 → loop4_5 → route
-            → (needs_restructuring AND repeat_count < 1) → increment_and_loop3 → loop3
+            → (needs_restructuring AND repeat_count < max_iterations) → increment_and_loop3 → loop3
             → (approved OR max_repeat) → loop5 → finalize → END
     """
     builder = StateGraph(OrchestrationState)
@@ -468,7 +428,7 @@ async def run_supervision_orchestration(
     clusters: list,
     input_data: dict,
     quality_settings: dict,
-    max_shared_iterations: int = 10,
+    max_iterations_per_loop: int = 3,
 ) -> dict:
     """Run full supervision orchestration through all loops.
 
@@ -480,7 +440,7 @@ async def run_supervision_orchestration(
         clusters: Thematic clusters from main workflow
         input_data: LitReviewInput with topic and research questions
         quality_settings: Quality tier settings
-        max_shared_iterations: Total iteration budget across all loops
+        max_iterations_per_loop: Max iterations each loop can use (independent budgets)
 
     Returns:
         Dictionary containing:
@@ -500,8 +460,7 @@ async def run_supervision_orchestration(
             "loop_4": 0,
             "loop_5": 0,
         },
-        shared_iteration_budget=max_shared_iterations,
-        max_shared_iterations=max_shared_iterations,
+        max_iterations_per_loop=max_iterations_per_loop,
         checkpoints=[],
         revision_history=[],
         loop3_repeat_count=0,
@@ -570,7 +529,7 @@ async def run_supervision_configurable(
     clusters: list,
     input_data: dict,
     quality_settings: dict,
-    max_shared_iterations: int = 10,
+    max_iterations_per_loop: int = 3,
     loops: str = "all",
 ) -> dict:
     """Run configurable supervision with specified number of loops.
@@ -583,7 +542,7 @@ async def run_supervision_configurable(
         clusters: Thematic clusters from main workflow
         input_data: LitReviewInput with topic and research questions
         quality_settings: Quality tier settings
-        max_shared_iterations: Total iteration budget across all loops
+        max_iterations_per_loop: Max iterations each loop can use (independent budgets)
         loops: Which loops to run - "none", "one", "two", "three", "four", "all"
 
     Returns:
@@ -617,7 +576,7 @@ async def run_supervision_configurable(
             clusters=clusters,
             input_data=input_data,
             quality_settings=quality_settings,
-            max_shared_iterations=max_shared_iterations,
+            max_iterations_per_loop=max_iterations_per_loop,
         )
         result["loops_run"] = ["loop1", "loop2", "loop3", "loop4", "loop4_5", "loop5"]
         return result
@@ -632,9 +591,6 @@ async def run_supervision_configurable(
     loops_run = []
     all_results = {}
     human_review_items = []
-
-    # Calculate per-loop iteration budget
-    budget_per_loop = max(1, max_shared_iterations // loop_count)
 
     # Loop 1: Theoretical Depth (always runs if loop_count >= 1)
     if loop_count >= 1:
@@ -672,7 +628,7 @@ async def run_supervision_configurable(
             zotero_keys=current_zotero,
             input_data=input_data,
             quality_settings=quality_settings,
-            max_iterations=budget_per_loop,
+            max_iterations=max_iterations_per_loop,
         )
 
         current_review = loop2_result.get("current_review", current_review)
@@ -689,7 +645,7 @@ async def run_supervision_configurable(
         loop3_result = await run_loop3_standalone(
             review=current_review,
             input_data=input_data,
-            max_iterations=budget_per_loop,
+            max_iterations=max_iterations_per_loop,
         )
 
         current_review = loop3_result.get("current_review", current_review)
@@ -704,7 +660,7 @@ async def run_supervision_configurable(
             review=current_review,
             paper_summaries=current_summaries,
             input_data=input_data,
-            max_iterations=budget_per_loop,
+            max_iterations=max_iterations_per_loop,
         )
 
         current_review = loop4_result.get("edited_review", current_review)

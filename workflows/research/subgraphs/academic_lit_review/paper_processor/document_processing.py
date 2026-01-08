@@ -15,6 +15,7 @@ async def process_single_document(
     source: str,
     paper: PaperMetadata,
     is_markdown: bool = False,
+    use_batch_api: bool = True,
 ) -> dict[str, Any]:
     """Process a single document through document_processing workflow.
 
@@ -23,6 +24,7 @@ async def process_single_document(
         source: Local file path OR markdown content (if is_markdown=True)
         paper: Paper metadata
         is_markdown: If True, source is markdown text, not a file path
+        use_batch_api: If False, skip batch API for rapid iteration
 
     Returns:
         Processing result with es_record_id, zotero_key, etc.
@@ -58,6 +60,7 @@ async def process_single_document(
             item_type="journalArticle",
             quality="fast",
             extra_metadata=extra_metadata,
+            use_batch_api=use_batch_api,
         )
 
         status = result.get("current_status", "unknown")

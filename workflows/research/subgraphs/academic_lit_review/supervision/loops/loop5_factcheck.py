@@ -1,9 +1,10 @@
-"""Loop 5: Fact and reference checking."""
+"""Loop 5: Fact and reference checking with tool access."""
 
 import logging
 from typing import Any
 from typing_extensions import TypedDict
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 
 from workflows.shared.llm_utils import get_llm, ModelTier
@@ -22,7 +23,11 @@ from ..utils import (
     apply_edits,
     SectionInfo,
     EditValidationResult,
+    format_paper_summaries_with_budget,
+    create_manifest_note,
 )
+from ..store_query import SupervisionStoreQuery
+from ..tools import create_paper_tools, run_tool_agent
 
 
 class Loop5State(TypedDict):
@@ -51,31 +56,62 @@ def split_sections_node(state: Loop5State) -> dict[str, Any]:
 
 
 async def fact_check_node(state: Loop5State) -> dict[str, Any]:
-    """Sequential fact checking across all sections using Haiku."""
+    """Sequential fact checking across all sections using Haiku with tool access."""
     logger.info(f"Loop 5: Starting fact checking across {len(state['sections'])} sections")
-    llm = get_llm(tier=ModelTier.HAIKU, max_tokens=4096)
-    structured_llm = llm.with_structured_output(DocumentEdits)
+
+    # Initialize store query for dynamic content access
+    store_query = SupervisionStoreQuery(state["paper_summaries"])
+
+    # Create tools scoped to this paper set
+    paper_tools = create_paper_tools(state["paper_summaries"], store_query)
 
     all_edits: list[Edit] = []
     all_ambiguous: list[str] = []
 
-    # Format paper summaries for context
-    paper_summaries_text = _format_paper_summaries(state["paper_summaries"])
-
     for section in state["sections"]:
+        # Pre-fetch content for papers cited in this section (baseline context)
+        detailed_content = await store_query.get_papers_for_section(
+            section["section_content"],
+            compression_level=2,
+            max_total_chars=20000,  # Reduced - tools can fetch more
+        )
+
+        # Format with enhanced detail
+        paper_summaries_text = format_paper_summaries_with_budget(
+            state["paper_summaries"],
+            detailed_content,
+            max_total_chars=30000,
+        )
+
+        # Create manifest note
+        manifest_note = create_manifest_note(
+            papers_with_detail=len(detailed_content),
+            papers_total=len(state["paper_summaries"]),
+            compression_level=2,
+        )
+
         messages = [
-            {"role": "system", "content": LOOP5_FACT_CHECK_SYSTEM},
-            {
-                "role": "user",
-                "content": LOOP5_FACT_CHECK_USER.format(
+            SystemMessage(content=LOOP5_FACT_CHECK_SYSTEM),
+            HumanMessage(
+                content=LOOP5_FACT_CHECK_USER.format(
                     section_content=section["section_content"],
                     full_document=state["current_review"],
-                    paper_summaries=paper_summaries_text,
+                    paper_summaries=f"{manifest_note}\n\n{paper_summaries_text}",
                 ),
-            },
+            ),
         ]
 
-        result: DocumentEdits = await structured_llm.ainvoke(messages)
+        # Use tool-enabled agent for fact checking
+        llm = get_llm(tier=ModelTier.HAIKU, max_tokens=4096)
+        result: DocumentEdits = await run_tool_agent(
+            llm=llm,
+            tools=paper_tools,
+            messages=messages,
+            output_schema=DocumentEdits,
+            max_tool_calls=5,  # Budget: 5 tool calls per section
+            max_total_chars=30000,  # Budget: 30K chars from tools
+        )
+
         all_edits.extend(result.edits)
         all_ambiguous.extend(result.ambiguous_claims)
 
@@ -87,33 +123,66 @@ async def fact_check_node(state: Loop5State) -> dict[str, Any]:
 
 
 async def reference_check_node(state: Loop5State) -> dict[str, Any]:
-    """Sequential reference checking across all sections using Haiku."""
+    """Sequential reference checking across all sections using Haiku with tool access."""
     logger.info(f"Loop 5: Starting reference checking across {len(state['sections'])} sections")
-    llm = get_llm(tier=ModelTier.HAIKU, max_tokens=4096)
-    structured_llm = llm.with_structured_output(DocumentEdits)
+
+    # Initialize store query for dynamic content access
+    store_query = SupervisionStoreQuery(state["paper_summaries"])
+
+    # Create tools scoped to this paper set
+    paper_tools = create_paper_tools(state["paper_summaries"], store_query)
 
     all_edits: list[Edit] = state.get("all_edits", []).copy()
     all_todos: list[str] = []
 
     # Format citation keys for checking
     citation_keys_text = _format_citation_keys(state["zotero_keys"])
-    paper_summaries_text = _format_paper_summaries(state["paper_summaries"])
 
     for section in state["sections"]:
+        # Pre-fetch content for papers cited in this section (baseline context)
+        detailed_content = await store_query.get_papers_for_section(
+            section["section_content"],
+            compression_level=2,
+            max_total_chars=20000,  # Reduced - tools can fetch more
+        )
+
+        # Format with enhanced detail
+        paper_summaries_text = format_paper_summaries_with_budget(
+            state["paper_summaries"],
+            detailed_content,
+            max_total_chars=30000,
+        )
+
+        # Create manifest note
+        manifest_note = create_manifest_note(
+            papers_with_detail=len(detailed_content),
+            papers_total=len(state["paper_summaries"]),
+            compression_level=2,
+        )
+
         messages = [
-            {"role": "system", "content": LOOP5_REF_CHECK_SYSTEM},
-            {
-                "role": "user",
-                "content": LOOP5_REF_CHECK_USER.format(
+            SystemMessage(content=LOOP5_REF_CHECK_SYSTEM),
+            HumanMessage(
+                content=LOOP5_REF_CHECK_USER.format(
                     section_content=section["section_content"],
                     full_document=state["current_review"],
                     citation_keys=citation_keys_text,
-                    paper_summaries=paper_summaries_text,
+                    paper_summaries=f"{manifest_note}\n\n{paper_summaries_text}",
                 ),
-            },
+            ),
         ]
 
-        result: DocumentEdits = await structured_llm.ainvoke(messages)
+        # Use tool-enabled agent for reference checking
+        llm = get_llm(tier=ModelTier.HAIKU, max_tokens=4096)
+        result: DocumentEdits = await run_tool_agent(
+            llm=llm,
+            tools=paper_tools,
+            messages=messages,
+            output_schema=DocumentEdits,
+            max_tool_calls=5,  # Budget: 5 tool calls per section
+            max_total_chars=30000,  # Budget: 30K chars from tools
+        )
+
         all_edits.extend(result.edits)
         all_todos.extend(result.unaddressed_todos)
 

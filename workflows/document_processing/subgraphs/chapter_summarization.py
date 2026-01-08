@@ -213,6 +213,7 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     try:
         markdown = state["processing_result"]["markdown"]
         chapters = state["chapters"]
+        use_batch_api = state["input"].get("use_batch_api", True)
 
         if not chapters:
             logger.warning("No chapters to summarize")
@@ -221,8 +222,8 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                 "current_status": "no_chapters",
             }
 
-        # Use batch API for 5+ chapters (50% cost reduction)
-        if len(chapters) >= 5:
+        # Use batch API for 5+ chapters (50% cost reduction) when enabled
+        if use_batch_api and len(chapters) >= 5:
             chapter_summaries = await _summarize_chapters_batched(chapters, markdown)
         else:
             # Fall back to concurrent calls for small documents

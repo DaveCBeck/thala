@@ -35,7 +35,7 @@ class OrchestrationState(TypedDict, total=False):
 
     # Multi-loop tracking
     loop_progress: MultiLoopProgress
-    loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max 1)
+    loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max = max_iterations_per_loop)
 
     # Outputs from each loop
     loop1_result: Optional[dict]

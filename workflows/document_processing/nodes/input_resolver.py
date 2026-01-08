@@ -4,7 +4,9 @@ Resolve input source to a path accessible by Marker.
 
 import logging
 import os
+import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,6 +15,9 @@ import httpx
 from workflows.shared.text_utils import count_words
 
 logger = logging.getLogger(__name__)
+
+# Max filename length (leave room for extension and timestamp)
+MAX_FILENAME_BASE = 100
 
 
 def _looks_like_file_path(source: str) -> bool:
@@ -90,8 +95,15 @@ async def resolve_input(state: dict) -> dict:
         source_type = "markdown_text"
         is_already_markdown = True
 
-        # Write to file for processing
-        filename = input_data.get("title", "input").replace(" ", "_") + ".md"
+        # Write to file for processing (truncate title to avoid filename length errors)
+        title = input_data.get("title", "input")
+        # Sanitize: replace spaces and remove problematic chars
+        safe_title = re.sub(r"[^\w\s-]", "", title).replace(" ", "_")
+        # Truncate and add timestamp for uniqueness
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if len(safe_title) > MAX_FILENAME_BASE:
+            safe_title = safe_title[:MAX_FILENAME_BASE]
+        filename = f"{safe_title}_{timestamp}.md"
         resolved_path = marker_input_dir / filename
 
         logger.info(f"Writing markdown text ({len(source)} chars) to: {resolved_path}")

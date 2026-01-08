@@ -77,17 +77,38 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
         max_iterations=max_iterations,
     )
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=2048)
-    response = await llm.with_structured_output(LiteratureBaseDecision).ainvoke([
-        {"role": "system", "content": LOOP2_ANALYZER_SYSTEM},
-        {"role": "user", "content": user_prompt},
-    ])
+    MAX_RETRIES = 2
+    last_error = None
 
-    logger.info(f"Analyzer decision: {response.action}")
-    if response.action == "expand_base":
-        logger.info(f"Identified literature base: {response.literature_base.name}")
+    for attempt in range(MAX_RETRIES):
+        try:
+            llm = get_llm(ModelTier.OPUS, max_tokens=2048)
+            structured_llm = llm.with_structured_output(LiteratureBaseDecision, method="json_schema")
+            response = await structured_llm.ainvoke([
+                {"role": "system", "content": LOOP2_ANALYZER_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ])
 
-    return {"decision": response.model_dump()}
+            logger.info(f"Analyzer decision: {response.action}")
+            if response.action == "expand_base":
+                logger.info(f"Identified literature base: {response.literature_base.name}")
+
+            return {"decision": response.model_dump()}
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Loop 2 analysis attempt {attempt + 1} failed: {e}")
+            continue
+
+    # All retries failed - return pass_through fallback
+    logger.error(f"Loop 2 analysis failed after {MAX_RETRIES} attempts: {last_error}")
+    return {
+        "decision": {
+            "action": "pass_through",
+            "literature_base": None,
+            "reasoning": f"Analysis failed after {MAX_RETRIES} attempts: {last_error}",
+        }
+    }
 
 
 async def run_mini_review_node(state: Loop2State) -> dict:

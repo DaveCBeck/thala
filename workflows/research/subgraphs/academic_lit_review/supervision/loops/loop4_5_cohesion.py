@@ -23,20 +23,37 @@ async def check_cohesion(document: str) -> CohesionCheckResult:
     Returns:
         CohesionCheckResult with needs_restructuring bool and reasoning
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     llm = get_llm(
         tier=ModelTier.OPUS,
         thinking_budget=4000,
         max_tokens=4096,
     )
 
-    # Get structured output
-    structured_llm = llm.with_structured_output(CohesionCheckResult)
-
     prompt = LOOP4_5_COHESION_PROMPT.format(document=document)
+    messages = [{"role": "user", "content": prompt}]
 
-    result = await structured_llm.ainvoke([{"role": "user", "content": prompt}])
+    MAX_RETRIES = 2
+    last_error = None
 
-    return result
+    for attempt in range(MAX_RETRIES):
+        try:
+            structured_llm = llm.with_structured_output(CohesionCheckResult, method="json_schema")
+            result = await structured_llm.ainvoke(messages)
+            return result
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Cohesion check attempt {attempt + 1} failed: {e}")
+            continue
+
+    # All retries failed - return safe fallback (no restructuring needed)
+    logger.error(f"Cohesion check failed after {MAX_RETRIES} attempts: {last_error}")
+    return CohesionCheckResult(
+        needs_restructuring=False,
+        reasoning=f"Analysis failed after {MAX_RETRIES} attempts: {last_error}",
+    )
 
 
 async def run_loop4_5_standalone(document: str) -> dict[str, Any]:

@@ -21,6 +21,9 @@ from workflows.research.subgraphs.academic_lit_review.supervision.prompts import
 from workflows.research.subgraphs.academic_lit_review.supervision.utils import (
     number_paragraphs,
     strip_paragraph_numbers,
+    validate_structural_edits,
+    apply_structural_edits,
+    verify_edits_applied,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,13 @@ class Loop3State(TypedDict):
     iteration: int
     max_iterations: int
     is_complete: bool
+
+    # Validation tracking (new fields)
+    valid_edits: list[dict]
+    invalid_edits: list[dict]
+    validation_errors: dict[int, str]
+    applied_edits: list[str]
+    fallback_used: bool
 
 
 def number_paragraphs_node(state: Loop3State) -> dict[str, Any]:
@@ -66,6 +76,7 @@ async def analyze_structure_node(state: Loop3State) -> dict[str, Any]:
 
     Uses Opus with extended thinking to carefully assess structural issues.
     Only suggests changes if they genuinely strengthen the piece.
+    Includes retry logic for parsing failures.
     """
     numbered_doc = state["numbered_document"]
     input_data = state["input"]
@@ -87,35 +98,50 @@ async def analyze_structure_node(state: Loop3State) -> dict[str, Any]:
         max_tokens=12096,
     )
 
-    try:
-        structured_llm = llm.with_structured_output(EditManifest)
-        messages = [
-            {"role": "system", "content": LOOP3_ANALYST_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
+    MAX_RETRIES = 2
+    last_error = None
 
-        manifest: EditManifest = await structured_llm.ainvoke(messages)
+    for attempt in range(MAX_RETRIES):
+        try:
+            structured_llm = llm.with_structured_output(EditManifest, method="json_schema")
+            messages = [
+                {"role": "system", "content": LOOP3_ANALYST_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ]
 
-        logger.info(
-            f"Loop 3 Analyst: needs_restructuring={manifest.needs_restructuring}, "
-            f"edits={len(manifest.edits)}, todos={len(manifest.todo_markers)}"
-        )
+            manifest: EditManifest = await structured_llm.ainvoke(messages)
 
-        return {
-            "edit_manifest": manifest.model_dump(),
-        }
+            # Warn if needs_restructuring but no edits
+            if manifest.needs_restructuring and len(manifest.edits) == 0 and len(manifest.todo_markers) == 0:
+                logger.warning(
+                    "Manifest indicates needs_restructuring=True but edits and todo_markers are empty. "
+                    f"Assessment: {manifest.overall_assessment[:100]}..."
+                )
 
-    except Exception as e:
-        logger.error(f"Structure analysis failed: {e}")
-        # On error, pass through without changes
-        return {
-            "edit_manifest": {
-                "edits": [],
-                "todo_markers": [],
-                "overall_assessment": f"Analysis error: {e}",
-                "needs_restructuring": False,
-            },
-        }
+            logger.info(
+                f"Loop 3 Analyst (attempt {attempt + 1}): needs_restructuring={manifest.needs_restructuring}, "
+                f"edits={len(manifest.edits)}, todos={len(manifest.todo_markers)}"
+            )
+
+            return {
+                "edit_manifest": manifest.model_dump(),
+            }
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Structure analysis attempt {attempt + 1} failed: {e}")
+            continue
+
+    # All retries failed
+    logger.error(f"Structure analysis failed after {MAX_RETRIES} attempts: {last_error}")
+    return {
+        "edit_manifest": {
+            "edits": [],
+            "todo_markers": [],
+            "overall_assessment": f"Analysis failed after {MAX_RETRIES} attempts: {last_error}",
+            "needs_restructuring": False,
+        },
+    }
 
 
 def route_after_analysis(state: Loop3State) -> str:
@@ -128,16 +154,123 @@ def route_after_analysis(state: Loop3State) -> str:
     needs_restructuring = manifest.get("needs_restructuring", False)
 
     if needs_restructuring:
-        logger.info("Routing to execute_manifest (restructuring needed)")
+        logger.info("Routing to validate_edits (restructuring needed)")
         return "restructure_needed"
     else:
         logger.info("Routing to finalize (pass-through)")
         return "pass_through"
 
 
-async def execute_manifest_node(state: Loop3State) -> dict[str, Any]:
-    """Execute the edit manifest to restructure the document.
+def validate_edits_node(state: Loop3State) -> dict[str, Any]:
+    """Validate that structural edits reference valid paragraphs."""
+    manifest = state.get("edit_manifest")
+    paragraph_mapping = state.get("paragraph_mapping", {})
 
+    if not manifest or not manifest.get("edits"):
+        logger.info("No edits to validate")
+        return {
+            "valid_edits": [],
+            "invalid_edits": [],
+            "validation_errors": {},
+        }
+
+    # Parse edits to StructuralEdit objects
+    edits = [StructuralEdit(**e) for e in manifest.get("edits", [])]
+
+    result = validate_structural_edits(paragraph_mapping, edits)
+
+    logger.info(
+        f"Edit validation: {len(result['valid_edits'])} valid, "
+        f"{len(result['invalid_edits'])} invalid"
+    )
+
+    if result["invalid_edits"]:
+        for idx, error in result["errors"].items():
+            logger.warning(f"Invalid edit {idx}: {error}")
+
+    return {
+        "valid_edits": [e.model_dump() for e in result["valid_edits"]],
+        "invalid_edits": [e.model_dump() for e in result["invalid_edits"]],
+        "validation_errors": result["errors"],
+    }
+
+
+def route_after_validation(state: Loop3State) -> str:
+    """Route based on validation results."""
+    valid_edits = state.get("valid_edits", [])
+    invalid_edits = state.get("invalid_edits", [])
+    manifest = state.get("edit_manifest")
+
+    if not manifest or not manifest.get("needs_restructuring"):
+        return "no_edits"
+
+    if valid_edits:
+        logger.info(f"Routing to programmatic application ({len(valid_edits)} valid edits)")
+        return "has_valid_edits"
+
+    if invalid_edits:
+        # All edits failed validation, try LLM fallback
+        logger.warning(
+            f"All {len(invalid_edits)} edits invalid, falling back to LLM execution"
+        )
+        return "llm_fallback"
+
+    # No edits at all
+    return "no_edits"
+
+
+def apply_edits_programmatically_node(state: Loop3State) -> dict[str, Any]:
+    """Apply validated edits programmatically using paragraph mapping."""
+    paragraph_mapping = state.get("paragraph_mapping", {})
+    valid_edits = state.get("valid_edits", [])
+
+    if not valid_edits:
+        logger.info("No valid edits to apply programmatically")
+        return {"fallback_used": False}
+
+    # Convert back to StructuralEdit objects
+    edits = [StructuralEdit(**e) for e in valid_edits]
+
+    restructured, applied_descriptions = apply_structural_edits(
+        paragraph_mapping, edits
+    )
+
+    logger.info(f"Programmatically applied {len(applied_descriptions)} edits")
+    for desc in applied_descriptions:
+        logger.debug(f"  - {desc}")
+
+    return {
+        "current_review": restructured,
+        "applied_edits": applied_descriptions,
+        "fallback_used": False,
+    }
+
+
+def verify_application_node(state: Loop3State) -> dict[str, Any]:
+    """Verify that edits were actually applied to the document."""
+    original_mapping = state.get("paragraph_mapping", {})
+    current_review = state.get("current_review", "")
+    valid_edits = state.get("valid_edits", [])
+
+    if not valid_edits:
+        return {}
+
+    edits = [StructuralEdit(**e) for e in valid_edits]
+    verifications = verify_edits_applied(original_mapping, current_review, edits)
+
+    failed = [k for k, v in verifications.items() if not v]
+    if failed:
+        logger.warning(f"Edit verification failures: {failed}")
+    else:
+        logger.info(f"All {len(verifications)} edits verified as applied")
+
+    return {}
+
+
+async def execute_manifest_node(state: Loop3State) -> dict[str, Any]:
+    """Execute the edit manifest to restructure the document (LLM fallback).
+
+    Used when programmatic edit application fails or isn't possible.
     Uses Opus to carefully execute structural changes while preserving
     citations and academic formatting.
     """
@@ -146,7 +279,7 @@ async def execute_manifest_node(state: Loop3State) -> dict[str, Any]:
 
     if not manifest:
         logger.warning("No manifest to execute")
-        return {}
+        return {"fallback_used": True}
 
     # Format manifest for prompt
     manifest_text = _format_manifest(manifest)
@@ -182,16 +315,17 @@ async def execute_manifest_node(state: Loop3State) -> dict[str, Any]:
         else:
             restructured_text = response.content
 
-        logger.info("Successfully executed edit manifest")
+        logger.info("Successfully executed edit manifest (LLM fallback)")
 
         return {
             "current_review": restructured_text,
+            "fallback_used": True,
         }
 
     except Exception as e:
         logger.error(f"Manifest execution failed: {e}")
         # Return unchanged on error
-        return {}
+        return {"fallback_used": True}
 
 
 def validate_result_node(state: Loop3State) -> dict[str, Any]:
@@ -293,6 +427,15 @@ def _format_manifest(manifest: dict) -> str:
 def create_loop3_graph():
     """Create Loop 3 StateGraph for structural editing.
 
+    Graph flow:
+    - analyze_structure -> validate_edits (if restructuring needed)
+    - validate_edits -> apply_edits_programmatic (if valid edits)
+                    -> execute_manifest_llm (if all invalid, fallback)
+                    -> finalize (if no edits)
+    - apply_edits_programmatic -> verify_application -> validate_result
+    - execute_manifest_llm -> validate_result
+    - validate_result -> continue loop or finalize
+
     Returns a compiled graph ready for execution.
     """
     graph = StateGraph(Loop3State)
@@ -300,7 +443,10 @@ def create_loop3_graph():
     # Add nodes
     graph.add_node("number_paragraphs", number_paragraphs_node)
     graph.add_node("analyze_structure", analyze_structure_node)
-    graph.add_node("execute_manifest", execute_manifest_node)
+    graph.add_node("validate_edits", validate_edits_node)  # NEW
+    graph.add_node("apply_edits_programmatic", apply_edits_programmatically_node)  # NEW
+    graph.add_node("verify_application", verify_application_node)  # NEW
+    graph.add_node("execute_manifest_llm", execute_manifest_node)  # RENAMED (LLM fallback)
     graph.add_node("validate_result", validate_result_node)
     graph.add_node("increment_iteration", increment_iteration)
     graph.add_node("finalize", finalize_node)
@@ -314,13 +460,28 @@ def create_loop3_graph():
         "analyze_structure",
         route_after_analysis,
         {
-            "restructure_needed": "execute_manifest",
+            "restructure_needed": "validate_edits",  # Go to validation first
             "pass_through": "finalize",
         },
     )
 
-    # Restructuring path
-    graph.add_edge("execute_manifest", "validate_result")
+    # Route after validation
+    graph.add_conditional_edges(
+        "validate_edits",
+        route_after_validation,
+        {
+            "has_valid_edits": "apply_edits_programmatic",
+            "llm_fallback": "execute_manifest_llm",  # Use LLM if validation failed
+            "no_edits": "finalize",
+        },
+    )
+
+    # Programmatic path
+    graph.add_edge("apply_edits_programmatic", "verify_application")
+    graph.add_edge("verify_application", "validate_result")
+
+    # LLM fallback path
+    graph.add_edge("execute_manifest_llm", "validate_result")
 
     # Check if should continue
     graph.add_conditional_edges(
@@ -376,6 +537,12 @@ async def run_loop3_standalone(
         "iteration": 0,
         "max_iterations": max_iterations,
         "is_complete": False,
+        # New validation tracking fields
+        "valid_edits": [],
+        "invalid_edits": [],
+        "validation_errors": {},
+        "applied_edits": [],
+        "fallback_used": False,
     }
 
     logger.info(f"Running Loop 3 standalone with max_iterations={max_iterations}")

@@ -82,44 +82,52 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
         max_tokens=12096,
     )
 
-    try:
-        # Get structured output
-        structured_llm = llm.with_structured_output(SupervisorDecision)
-        messages = [
-            {"role": "system", "content": SUPERVISOR_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
+    messages = [
+        {"role": "system", "content": SUPERVISOR_SYSTEM},
+        {"role": "user", "content": user_prompt},
+    ]
 
-        decision: SupervisorDecision = await structured_llm.ainvoke(messages)
+    MAX_RETRIES = 2
+    last_error = None
 
-        logger.info(
-            f"Supervisor decision: action={decision.action}, "
-            f"reasoning={decision.reasoning[:100]}..."
-        )
+    for attempt in range(MAX_RETRIES):
+        try:
+            structured_llm = llm.with_structured_output(SupervisorDecision, method="json_schema")
+            decision: SupervisorDecision = await structured_llm.ainvoke(messages)
 
-        # Build state updates
-        updates: dict[str, Any] = {
-            "decision": decision.model_dump(),
-        }
+            logger.info(
+                f"Supervisor decision: action={decision.action}, "
+                f"reasoning={decision.reasoning[:100]}..."
+            )
 
-        if decision.action == "pass_through":
-            updates["is_complete"] = True
-        elif decision.issue:
-            # Add issue to explored list to prevent re-exploration
-            updates["issues_explored"] = issues_explored + [decision.issue.topic]
+            # Build state updates
+            updates: dict[str, Any] = {
+                "decision": decision.model_dump(),
+            }
 
-        return updates
+            if decision.action == "pass_through":
+                updates["is_complete"] = True
+            elif decision.issue:
+                # Add issue to explored list to prevent re-exploration
+                updates["issues_explored"] = issues_explored + [decision.issue.topic]
 
-    except Exception as e:
-        logger.error(f"Supervisor analysis failed: {e}")
-        # On error, treat as pass-through to avoid infinite loop
-        return {
-            "decision": {
-                "action": "pass_through",
-                "reasoning": f"Analysis error, defaulting to pass-through: {e}",
-            },
-            "is_complete": True,
-        }
+            return updates
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Supervisor analysis attempt {attempt + 1} failed: {e}")
+            continue
+
+    # All retries failed - treat as pass-through to avoid infinite loop
+    logger.error(f"Supervisor analysis failed after {MAX_RETRIES} attempts: {last_error}")
+    return {
+        "decision": {
+            "action": "pass_through",
+            "issue": None,
+            "reasoning": f"Analysis failed after {MAX_RETRIES} attempts: {last_error}",
+        },
+        "is_complete": True,
+    }
 
 
 def _format_cluster_summary(clusters: list[dict]) -> str:

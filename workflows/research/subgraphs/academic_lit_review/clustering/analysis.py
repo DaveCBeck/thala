@@ -37,13 +37,15 @@ async def per_cluster_analysis_node(state: dict) -> dict[str, Any]:
     """
     final_clusters = state.get("final_clusters", [])
     paper_summaries = state.get("paper_summaries", {})
+    quality_settings = state.get("quality_settings", {})
+    use_batch_api = quality_settings.get("use_batch_api", True)
 
     if not final_clusters:
         logger.warning("No clusters to analyze")
         return {"cluster_analyses": []}
 
-    # Use batch API for 5+ clusters (50% cost reduction)
-    if len(final_clusters) >= 5:
+    # Use batch API for 5+ clusters (50% cost reduction) when enabled
+    if use_batch_api and len(final_clusters) >= 5:
         return await _per_cluster_analysis_batched(final_clusters, paper_summaries)
 
     # Fall back to concurrent calls for small batches

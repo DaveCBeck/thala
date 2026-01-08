@@ -239,6 +239,7 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
     backward_results = state.get("backward_results", [])
     existing_dois = state.get("existing_dois", set())
     input_data = state["input"]
+    quality_settings = state["quality_settings"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     citation_edges = state.get("citation_edges", [])
@@ -292,6 +293,7 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
         threshold=0.6,
         tier=ModelTier.HAIKU,
         max_concurrent=10,
+        use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
     # Extract DOIs

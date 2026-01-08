@@ -190,6 +190,7 @@ Extract structured information from this paper."""
 
 async def extract_summary_from_metadata(
     paper: PaperMetadata,
+    existing_short_summary: str | None = None,
 ) -> PaperSummary:
     """Extract summary from paper metadata when full text is unavailable.
 
@@ -198,6 +199,8 @@ async def extract_summary_from_metadata(
 
     Args:
         paper: Paper metadata including abstract
+        existing_short_summary: Optional short_summary from document processing
+            (preferred over generating from abstract if available)
 
     Returns:
         PaperSummary with fields populated from metadata
@@ -221,6 +224,9 @@ Abstract:
 
 Extract structured information based on this metadata."""
 
+    # Generate a Zotero key for fallback papers (consistent with sync path)
+    generated_zotero_key = doi.replace("/", "_").replace(".", "")[:20].upper()
+
     try:
         extracted = await extract_json_cached(
             text=user_prompt,
@@ -228,7 +234,9 @@ Extract structured information based on this metadata."""
             tier=ModelTier.HAIKU,
         )
 
-        short_summary = abstract[:500] if abstract else f"Study on {title}"
+        # Use existing short_summary from document processing if available,
+        # otherwise fall back to abstract
+        short_summary = existing_short_summary or (abstract[:500] if abstract else f"Study on {title}")
 
         return PaperSummary(
             doi=doi,
@@ -238,7 +246,7 @@ Extract structured information based on this metadata."""
             venue=paper.get("venue"),
             short_summary=short_summary,
             es_record_id=None,
-            zotero_key=None,
+            zotero_key=generated_zotero_key,
             key_findings=extracted.get("key_findings", []),
             methodology=extracted.get("methodology", "Not available from abstract"),
             limitations=extracted.get("limitations", []),
@@ -251,15 +259,17 @@ Extract structured information based on this metadata."""
 
     except Exception as e:
         logger.warning(f"Failed to extract metadata summary for {doi}: {e}")
+        # Use existing short_summary from document processing if available
+        fallback_summary = existing_short_summary or (abstract[:500] if abstract else title)
         return PaperSummary(
             doi=doi,
             title=title,
             authors=authors,
             year=paper.get("year", 0),
             venue=paper.get("venue"),
-            short_summary=abstract[:500] if abstract else title,
+            short_summary=fallback_summary,
             es_record_id=None,
-            zotero_key=None,
+            zotero_key=generated_zotero_key,
             key_findings=[],
             methodology="Not available",
             limitations=[],
@@ -274,7 +284,8 @@ Extract structured information based on this metadata."""
 async def extract_all_summaries(
     processing_results: dict[str, dict],
     papers_by_doi: dict[str, PaperMetadata],
-) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str]]:
+    use_batch_api: bool = True,  # Set False for rapid iteration (skips batch API)
+) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str], set[str]]:
     """Extract structured summaries for all processed papers.
 
     Uses Anthropic Batch API for 50% cost reduction when processing 5+ papers.
@@ -284,15 +295,16 @@ async def extract_all_summaries(
         papers_by_doi: DOI -> PaperMetadata mapping
 
     Returns:
-        Tuple of (summaries, es_ids, zotero_keys)
+        Tuple of (summaries, es_ids, zotero_keys, failed_dois)
+        failed_dois contains DOIs that were in processing_results but failed extraction
     """
     store_manager = get_store_manager()
 
     if not processing_results:
-        return {}, {}, {}
+        return {}, {}, {}, set()
 
-    # Use batch API for 5+ papers
-    if len(processing_results) >= 5:
+    # Use batch API for 5+ papers when enabled
+    if use_batch_api and len(processing_results) >= 5:
         return await _extract_all_summaries_batched(
             processing_results, papers_by_doi, store_manager
         )
@@ -301,11 +313,13 @@ async def extract_all_summaries(
     summaries = {}
     es_ids = {}
     zotero_keys = {}
+    failed_dois = set()
     semaphore = asyncio.Semaphore(3)
     completed_count = 0
     total_to_extract = len(processing_results)
 
-    async def extract_single_summary(doi: str, result: dict) -> tuple[str, Any, str, str]:
+    async def extract_single_summary(doi: str, result: dict) -> tuple[str, Any, str, str, str]:
+        """Returns (doi, summary, es_record_id, zotero_key, failure_reason)."""
         nonlocal completed_count
         async with semaphore:
             paper = papers_by_doi[doi]
@@ -314,16 +328,16 @@ async def extract_all_summaries(
             short_summary = result.get("short_summary", "")
 
             if not es_record_id:
-                logger.warning(f"No ES record ID for {doi}, skipping summary extraction")
-                return doi, None, None, None
+                logger.warning(f"No ES record ID for {doi}, will need fallback")
+                return doi, None, None, None, "no_es_record_id"
 
             try:
                 content = await _fetch_content_for_extraction(
                     store_manager, es_record_id, doi
                 )
                 if not content:
-                    logger.warning(f"Could not fetch content for {doi}")
-                    return doi, None, None, None
+                    logger.warning(f"Could not fetch content for {doi}, will need fallback")
+                    return doi, None, None, None, "content_fetch_failed"
 
                 summary = await extract_paper_summary(
                     content=content,
@@ -337,11 +351,11 @@ async def extract_all_summaries(
                 title = paper.get("title", "Unknown")[:50]
                 logger.info(f"[{completed_count}/{total_to_extract}] Extracted summary: {title}")
 
-                return doi, summary, es_record_id, zotero_key
+                return doi, summary, es_record_id, zotero_key, None
 
             except Exception as e:
                 logger.error(f"Failed to extract summary for {doi}: {e}")
-                return doi, None, None, None
+                return doi, None, None, None, f"extraction_error: {e}"
 
     tasks = [extract_single_summary(doi, result) for doi, result in processing_results.items()]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -350,27 +364,33 @@ async def extract_all_summaries(
         if isinstance(result, Exception):
             logger.error(f"Summary extraction task failed: {result}")
             continue
-        doi, summary, es_record_id, zotero_key = result
+        doi, summary, es_record_id, zotero_key, failure_reason = result
         if summary:
             summaries[doi] = summary
             es_ids[doi] = es_record_id
             zotero_keys[doi] = zotero_key
+        elif failure_reason:
+            failed_dois.add(doi)
 
-    logger.info(f"Extracted summaries for {len(summaries)} papers")
-    return summaries, es_ids, zotero_keys
+    logger.info(f"Extracted summaries for {len(summaries)} papers, {len(failed_dois)} failed")
+    return summaries, es_ids, zotero_keys, failed_dois
 
 
 async def _extract_all_summaries_batched(
     processing_results: dict[str, dict],
     papers_by_doi: dict[str, PaperMetadata],
     store_manager,
-) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str], set[str]]:
     """Extract summaries using Anthropic Batch API for 50% cost reduction.
 
     Uses tool calling to guarantee valid JSON responses.
+
+    Returns:
+        Tuple of (summaries, es_ids, zotero_keys, failed_dois)
     """
     # First, fetch all L0 content (this is I/O, not LLM calls)
     paper_data = {}  # doi -> {paper, content, es_record_id, zotero_key, short_summary}
+    failed_dois = set()  # Track DOIs that fail at any stage
 
     for doi, result in processing_results.items():
         paper = papers_by_doi[doi]
@@ -379,7 +399,8 @@ async def _extract_all_summaries_batched(
         short_summary = result.get("short_summary", "")
 
         if not es_record_id:
-            logger.warning(f"No ES record ID for {doi}, skipping")
+            logger.warning(f"No ES record ID for {doi}, will need fallback")
+            failed_dois.add(doi)
             continue
 
         try:
@@ -387,7 +408,8 @@ async def _extract_all_summaries_batched(
                 store_manager, es_record_id, doi
             )
             if not content:
-                logger.warning(f"Could not fetch content for {doi}")
+                logger.warning(f"Could not fetch content for {doi}, will need fallback")
+                failed_dois.add(doi)
                 continue
 
             paper_data[doi] = {
@@ -399,9 +421,10 @@ async def _extract_all_summaries_batched(
             }
         except Exception as e:
             logger.error(f"Failed to fetch content for {doi}: {e}")
+            failed_dois.add(doi)
 
     if not paper_data:
-        return {}, {}, {}
+        return {}, {}, {}, failed_dois
 
     # Build batch requests with tool calling for guaranteed JSON
     processor = BatchProcessor(poll_interval=30)
@@ -484,9 +507,11 @@ Extract structured information from this paper."""
 
             except Exception as e:
                 logger.warning(f"Failed to parse extraction result for {doi}: {e}")
+                failed_dois.add(doi)
         else:
             error_msg = result.error if result else "No result returned"
             logger.warning(f"Summary extraction failed for {doi}: {error_msg}")
+            failed_dois.add(doi)
 
-    logger.info(f"Extracted summaries for {len(summaries)} papers (batch)")
-    return summaries, es_ids, zotero_keys
+    logger.info(f"Extracted summaries for {len(summaries)} papers (batch), {len(failed_dois)} failed")
+    return summaries, es_ids, zotero_keys, failed_dois

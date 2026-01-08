@@ -1,9 +1,10 @@
-"""Loop 4: Section-Level Deep Editing with parallel processing."""
+"""Loop 4: Section-Level Deep Editing with parallel processing and tool access."""
 
 import asyncio
 import logging
 from typing import Any, Optional
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
@@ -24,6 +25,15 @@ from workflows.research.subgraphs.academic_lit_review.supervision.prompts import
 from workflows.research.subgraphs.academic_lit_review.supervision.utils import (
     split_into_sections,
     SectionInfo,
+    format_paper_summaries_with_budget,
+    create_manifest_note,
+)
+from workflows.research.subgraphs.academic_lit_review.supervision.store_query import (
+    SupervisionStoreQuery,
+)
+from workflows.research.subgraphs.academic_lit_review.supervision.tools import (
+    create_paper_tools,
+    run_tool_agent,
 )
 from workflows.shared.llm_utils import get_llm, ModelTier
 
@@ -77,16 +87,19 @@ def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
 
 
 async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Phase A: Parallel section editing with concurrent Opus calls."""
+    """Phase A: Parallel section editing with concurrent Opus calls and dynamic store access."""
     sections = state.get("sections", [])
     full_document = state.get("current_review", "")
     paper_summaries = state.get("paper_summaries", {})
+
+    # Initialize store query service for dynamic content access
+    store_query = SupervisionStoreQuery(paper_summaries)
 
     # Limit to 5 concurrent editors
     semaphore = asyncio.Semaphore(5)
 
     async def edit_section(section: SectionInfo) -> tuple[str, SectionEditResult]:
-        """Edit a single section with Opus."""
+        """Edit a single section with Opus, dynamic store access, and search tools."""
         async with semaphore:
             section_id = section["section_id"]
             section_content = section["section_content"]
@@ -98,33 +111,63 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                 if "<!-- TODO:" in line
             ]
 
-            # Format paper summaries for prompt
-            summary_text = "\n\n".join([
-                f"[@{doi}] {s['title']} ({s['year']})\n{s['short_summary']}"
-                for doi, s in paper_summaries.items()
-            ])
+            # Pre-fetch content for papers already cited in this section
+            # This provides baseline context; tools allow fetching more on demand
+            detailed_content = await store_query.get_papers_for_section(
+                section_content,
+                max_papers=5,  # Reduced since tools can fetch more
+                compression_level=2,  # L2 10:1 summaries
+                max_total_chars=30000,  # Leave room for tool results
+            )
 
-            # Call Opus for section editing
-            llm = get_llm(ModelTier.OPUS)
+            # Format summaries with detailed content prioritized
+            summary_text = format_paper_summaries_with_budget(
+                paper_summaries,
+                detailed_content,
+                max_total_chars=50000,  # Smaller budget, tools can add more
+            )
 
+            # Create manifest note showing data availability
+            manifest_note = create_manifest_note(
+                papers_with_detail=len(detailed_content),
+                papers_total=len(paper_summaries),
+                compression_level=2,
+            )
+
+            # Create tools scoped to this paper set
+            paper_tools = create_paper_tools(paper_summaries, store_query)
+
+            # Build messages
             user_prompt = LOOP4_SECTION_EDITOR_USER.format(
                 full_document=full_document,
                 section_id=section_id,
                 section_content=section_content,
-                paper_summaries=summary_text,
+                paper_summaries=f"{manifest_note}\n\n{summary_text}",
                 todos_in_section="\n".join(todos) if todos else "None"
             )
 
             messages = [
-                {"role": "system", "content": LOOP4_SECTION_EDITOR_SYSTEM},
-                {"role": "user", "content": user_prompt},
+                SystemMessage(content=LOOP4_SECTION_EDITOR_SYSTEM),
+                HumanMessage(content=user_prompt),
             ]
 
-            response = await llm.with_structured_output(SectionEditResult).ainvoke(
-                messages
+            # Call Opus with tools for section editing
+            # High max_tokens since output includes full edited section
+            llm = get_llm(ModelTier.OPUS, max_tokens=16384)
+
+            response = await run_tool_agent(
+                llm=llm,
+                tools=paper_tools,
+                messages=messages,
+                output_schema=SectionEditResult,
+                max_tool_calls=5,  # Budget: 5 tool calls per section
+                max_total_chars=50000,  # Budget: 50K chars from tools
             )
 
-            logger.info(f"Edited section '{section_id}' (confidence: {response.confidence:.2f})")
+            logger.info(
+                f"Edited section '{section_id}' (confidence: {response.confidence:.2f}, "
+                f"papers_with_detail: {len(detailed_content)}, tools_available: True)"
+            )
             return section_id, response
 
     # Execute all section edits in parallel
@@ -203,7 +246,8 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 3)
 
-    llm = get_llm(ModelTier.OPUS)
+    # Holistic review output is smaller but give headroom for detailed feedback
+    llm = get_llm(ModelTier.OPUS, max_tokens=8192)
 
     user_prompt = LOOP4_HOLISTIC_USER.format(
         document=document,
@@ -217,14 +261,33 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
         {"role": "user", "content": user_prompt},
     ]
 
-    result = await llm.with_structured_output(HolisticReviewResult).ainvoke(
-        messages
-    )
+    MAX_RETRIES = 2
+    last_error = None
 
-    logger.info(
-        f"Holistic review: {len(result.sections_approved)} approved, "
-        f"{len(result.sections_flagged)} flagged (coherence: {result.overall_coherence_score:.2f})"
-    )
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = await llm.with_structured_output(
+                HolisticReviewResult, method="json_schema"
+            ).ainvoke(messages)
+
+            logger.info(
+                f"Holistic review: {len(result.sections_approved)} approved, "
+                f"{len(result.sections_flagged)} flagged (coherence: {result.overall_coherence_score:.2f})"
+            )
+            break
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Holistic review attempt {attempt + 1} failed: {e}")
+            continue
+    else:
+        # All retries failed - return safe fallback
+        logger.error(f"Holistic review failed after {MAX_RETRIES} attempts: {last_error}")
+        result = HolisticReviewResult(
+            sections_approved=[],
+            sections_flagged=[],
+            flagged_reasons={},
+            overall_coherence_score=0.5,
+        )
 
     return {
         "holistic_result": result,

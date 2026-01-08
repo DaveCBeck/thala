@@ -5,9 +5,11 @@ Pydantic schemas for structured LLM outputs (supervisor decisions).
 TypedDict state types are imported from the main state module.
 """
 
-from typing import Literal, Optional
+import json
+import re
+from typing import Literal, Optional, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Re-export TypedDict types from main state module
 from workflows.research.subgraphs.academic_lit_review.state import (
@@ -118,16 +120,49 @@ class StructuralEdit(BaseModel):
     edit_type: Literal["reorder_sections", "merge_sections", "add_transition", "flag_redundancy"] = Field(
         description="Type of structural edit"
     )
-    source_paragraph: int = Field(description="Paragraph number to act on")
-    target_paragraph: Optional[int] = Field(default=None, description="Target paragraph for reorder/merge")
-    notes: str = Field(description="Explanation of why this edit improves the document")
+    source_paragraph: int = Field(ge=1, description="Paragraph number to act on (must be >= 1)")
+    target_paragraph: Optional[int] = Field(default=None, ge=1, description="Target paragraph for reorder/merge/add_transition")
+    notes: str = Field(min_length=1, description="Explanation of why this edit improves the document")
+
+    @model_validator(mode='after')
+    def validate_target_required(self) -> 'StructuralEdit':
+        """Ensure target_paragraph is provided for edit types that require it."""
+        if self.edit_type in ("reorder_sections", "merge_sections", "add_transition"):
+            if self.target_paragraph is None:
+                raise ValueError(f"{self.edit_type} requires target_paragraph to be specified")
+            if self.source_paragraph == self.target_paragraph:
+                raise ValueError(f"source_paragraph and target_paragraph cannot be the same ({self.source_paragraph})")
+        return self
 
 class EditManifest(BaseModel):
     """Complete edit manifest from Loop 3 Analyst."""
     edits: list[StructuralEdit] = Field(default_factory=list, description="List of structural edits")
     todo_markers: list[str] = Field(default_factory=list, description="<!-- TODO: ... --> markers to insert")
-    overall_assessment: str = Field(description="Summary of structural issues found")
+    overall_assessment: str = Field(min_length=10, description="Summary of structural issues found")
     needs_restructuring: bool = Field(description="Whether document needs restructuring")
+
+    @field_validator("edits", mode="before")
+    @classmethod
+    def validate_edits_list(cls, v: Any) -> list:
+        """Ensure edits is a proper list, surface parsing failures."""
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            raise ValueError(f"edits must be a list, got string: {v[:100]}...")
+        return v if v is not None else []
+
+    @model_validator(mode='after')
+    def validate_consistency(self) -> 'EditManifest':
+        """Warn if needs_restructuring but no edits provided."""
+        if self.needs_restructuring and len(self.edits) == 0 and len(self.todo_markers) == 0:
+            # Don't raise an error, but this is logged as a warning in the calling code
+            # The LLM should provide edits when needs_restructuring is True
+            pass
+        return self
 
 # =============================================================================
 # Loop 4: Section-Level Deep Editing
@@ -138,8 +173,36 @@ class SectionEditResult(BaseModel):
     section_id: str = Field(description="Identifier of the edited section")
     edited_content: str = Field(description="The edited section content")
     notes: str = Field(description="Cross-references and suggested edits for other sections")
-    new_paper_todos: list[str] = Field(default_factory=list, description="TODOs for potential new papers")
+    new_paper_todos: list[str] = Field(default_factory=list, description="TODOs for potential new papers (as a JSON array of strings)")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence in the edits")
+
+    @field_validator("new_paper_todos", mode="before")
+    @classmethod
+    def parse_string_todos(cls, v: Any) -> list[str]:
+        """Handle LLM returning a numbered list or prose string instead of JSON array."""
+        if isinstance(v, str):
+            if not v.strip():
+                return []
+            # Try parsing as JSON first
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed]
+            except json.JSONDecodeError:
+                pass
+            # Fall back to splitting by newlines and cleaning up numbered list format
+            lines = v.strip().split("\n")
+            items = []
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                # Remove common numbered list prefixes: "1.", "1)", "- ", "* "
+                cleaned = re.sub(r'^(\d+[\.\)]\s*|[-*]\s*)', '', line).strip()
+                if cleaned:
+                    items.append(cleaned)
+            return items if items else [v]  # Return original as single item if no structure found
+        return v if v is not None else []
 
 class HolisticReviewResult(BaseModel):
     """Output from Phase B holistic reviewer."""
@@ -177,6 +240,21 @@ class DocumentEdits(BaseModel):
     reasoning: str = Field(description="Overall reasoning for the edits")
     ambiguous_claims: list[str] = Field(default_factory=list, description="Claims needing human review")
     unaddressed_todos: list[str] = Field(default_factory=list, description="TODOs that couldn't be resolved")
+
+    @field_validator("ambiguous_claims", "unaddressed_todos", mode="before")
+    @classmethod
+    def parse_json_strings(cls, v: Any) -> list[str]:
+        """Handle LLM returning JSON string instead of list."""
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            # If not valid JSON list, return as single-item list
+            return [v] if v.strip() else []
+        return v if v is not None else []
 
 
 # =============================================================================

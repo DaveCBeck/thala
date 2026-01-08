@@ -14,7 +14,7 @@ def merge_metadata(existing: dict, new: dict) -> dict:
     return {**existing, **new}
 
 
-class DocumentInput(TypedDict):
+class DocumentInput(TypedDict, total=False):
     """Input specification for document processing."""
     source: str
     title: Optional[str]
@@ -22,6 +22,7 @@ class DocumentInput(TypedDict):
     quality: Literal["fast", "balanced", "quality"]
     langs: list[str]
     extra_metadata: dict
+    use_batch_api: bool  # Set False for rapid iteration (skips batch API, default True)
 
 
 class ChapterInfo(TypedDict):

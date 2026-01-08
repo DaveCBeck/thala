@@ -308,6 +308,7 @@ async def _check_cache_phase(
 async def run_paper_pipeline(
     papers: list[PaperMetadata],
     max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
+    use_batch_api: bool = True,
 ) -> tuple[dict[str, str], dict[str, dict], list[str], list[str]]:
     """Run streaming acquire→process pipeline for all papers.
 
@@ -501,7 +502,7 @@ async def run_paper_pipeline(
                 nonlocal processed_count
                 async with process_semaphore:
                     try:
-                        result = await process_single_document(doi, source, paper, is_markdown)
+                        result = await process_single_document(doi, source, paper, is_markdown, use_batch_api)
                         processed_count += 1
                         title = paper.get("title", "Unknown")[:50]
 

@@ -6,6 +6,7 @@ claude.md
 todo.md
 testing/test_data/
 testing/logs/
+testing/traces/
 
 # Environment variables
 .env

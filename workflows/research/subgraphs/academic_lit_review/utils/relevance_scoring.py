@@ -145,6 +145,7 @@ async def batch_score_relevance(
     language_config: LanguageConfig | None = None,
     tier: ModelTier = ModelTier.HAIKU,
     max_concurrent: int = 10,  # Kept for API compatibility, not used with batching
+    use_batch_api: bool = True,  # Set False for rapid iteration (skips batch API)
 ) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
     """Score multiple papers' relevance and filter by threshold.
 
@@ -168,8 +169,8 @@ async def batch_score_relevance(
     if not papers:
         return [], []
 
-    # Use batch API for 5+ papers (50% cost reduction)
-    if len(papers) >= 5:
+    # Use batch API for 5+ papers (50% cost reduction) when enabled
+    if use_batch_api and len(papers) >= 5:
         return await _batch_score_relevance_batched(
             papers, topic, research_questions, threshold, language_config, tier
         )

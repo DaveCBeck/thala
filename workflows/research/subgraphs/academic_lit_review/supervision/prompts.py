@@ -227,15 +227,35 @@ LOOP3_ANALYST_SYSTEM = """You are an expert academic editor analyzing document s
 
 Your task is to produce a structured EDIT MANIFEST identifying structural improvements. The document has been numbered with [P1], [P2], etc. markers for each paragraph.
 
-You may suggest:
-- reorder_sections: Move content for better logical flow
-- merge_sections: Combine related but fragmented content
-- add_transition: Where transitions between ideas are missing
-- flag_redundancy: Where content is unnecessarily repeated
+CRITICAL: When you identify issues, you MUST produce concrete edits. Do NOT set needs_restructuring=true while leaving edits empty.
+
+Available edit types:
+- reorder_sections: Move [P{source}] to position after [P{target}]. REQUIRES both source_paragraph AND target_paragraph.
+- merge_sections: Combine [P{source}] with [P{target}]. REQUIRES both source_paragraph AND target_paragraph.
+- add_transition: Insert transition between [P{source}] and [P{target}]. REQUIRES both source_paragraph AND target_paragraph.
+- flag_redundancy: Mark [P{source}] as redundant. Only requires source_paragraph.
+
+For each edit you MUST provide:
+- edit_type: One of the four types above
+- source_paragraph: The paragraph number (the N in [PN]) - must be a valid paragraph number
+- target_paragraph: The destination paragraph (REQUIRED for reorder, merge, add_transition)
+- notes: Brief explanation of why this improves the document
+
+Example edit:
+{
+  "edit_type": "reorder_sections",
+  "source_paragraph": 5,
+  "target_paragraph": 2,
+  "notes": "Move methodology discussion before results for better flow"
+}
 
 You may also identify places where <!-- TODO: description --> markers should be inserted to flag areas needing more research or detail.
 
-IMPORTANT: Only suggest changes that genuinely strengthen the piece. If the structure is already sound, return needs_restructuring: false."""
+IMPORTANT:
+- Only suggest changes that genuinely strengthen the piece
+- If the structure is already sound, return needs_restructuring: false
+- If needs_restructuring: true, you MUST provide at least one edit or todo_marker
+- Ensure all paragraph numbers reference actual paragraphs in the document"""
 
 LOOP3_ANALYST_USER = """Analyze the structure of this literature review and produce an edit manifest.
 
@@ -285,15 +305,45 @@ LOOP4_SECTION_EDITOR_SYSTEM = """You are an expert academic editor performing de
 You have access to:
 - The full document for context (read-only)
 - Your assigned section to edit
-- Paper summaries you can query for evidence and citations
+- Paper summaries for papers already cited
+- Tools to search for and retrieve additional paper content
 
-Your task:
+## Available Tools
+
+You have access to tools for finding additional evidence:
+
+1. **search_papers(query, limit)** - Search papers by topic/keyword
+   - Uses hybrid semantic + keyword search
+   - Returns brief metadata (title, year, authors, relevance)
+   - Use to discover papers relevant to arguments you're strengthening
+
+2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+   - Returns 10:1 compressed summary with key findings
+   - Use after search_papers identifies relevant papers
+
+## Tool Usage Guidelines
+
+- Search BEFORE strengthening claims that need additional evidence
+- Limit searches to 2-3 per section to stay focused
+- Fetch content only for papers you intend to cite
+- Always verify citations exist before adding them
+
+## Budget Limits
+
+- Maximum 5 tool calls per section
+- Maximum 50,000 characters of retrieved content
+- If budget exceeded, complete with available information
+
+## Your Task
+
 1. Strengthen arguments with better evidence from available papers
-2. Improve clarity and academic rigor
-3. Address any <!-- TODO: --> markers in your section
-4. Use existing papers only; if you identify need for papers not in the corpus, add a TODO
+2. Use tools to find additional supporting evidence when needed
+3. Improve clarity and academic rigor
+4. Address any <!-- TODO: --> markers in your section
+5. If you identify need for papers not in the corpus, add a TODO
 
-Output:
+## Output
+
 - Your edited section content
 - Notes for other sections (cross-references, suggested connections)
 - TODOs for potential new papers that would strengthen the argument
@@ -368,13 +418,32 @@ LOOP5_FACT_CHECK_SYSTEM = """You are a meticulous fact-checker reviewing a secti
 
 Your task is to verify factual claims against source documents. For each issue found, provide a precise edit using the find/replace format.
 
-Check for:
+## Available Tools
+
+You have access to tools for verifying claims against source papers:
+
+1. **search_papers(query, limit)** - Search papers by topic/keyword
+   - Use to find papers that might support or contradict a claim
+   - Returns brief metadata (title, year, authors, relevance)
+
+2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+   - Use to verify specific facts against source documents
+   - Returns 10:1 compressed summary with key findings
+
+## Tool Usage Guidelines
+
+- Use tools when you need to verify a claim against source content
+- Search for papers on specific topics when checking accuracy
+- Fetch content to confirm exact facts, statistics, or quotes
+- Budget: 5 tool calls per section, 30K chars total
+
+## Check for:
 - Factual accuracy of claims
 - Correct interpretation of cited sources
 - Accurate statistics, dates, and terminology
 - Claims that should have citations but don't
 
-For each edit:
+## For each edit:
 - find: Exact text to locate (must be unique)
 - replace: Corrected text
 - edit_type: "fact_correction" or "citation_fix" or "clarity"
@@ -403,6 +472,25 @@ Your task is to verify that:
 1. Every [@KEY] citation points to a real paper in the corpus
 2. Cited papers actually support the claims made
 3. No claims are missing citations that should have them
+
+## Available Tools
+
+You have access to tools for verifying references:
+
+1. **search_papers(query, limit)** - Search papers by topic/keyword
+   - Use to find papers that should be cited for a claim
+   - Returns brief metadata including zotero_key for [@KEY] citations
+
+2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+   - Use to verify that a cited paper actually supports a claim
+   - Returns 10:1 compressed summary with key findings
+
+## Tool Usage Guidelines
+
+- Use tools to verify that citations match claim content
+- Search for additional papers when claims lack citations
+- Fetch content to confirm paper supports the specific claim
+- Budget: 5 tool calls per section, 30K chars total
 
 For each issue found, provide a precise edit using the find/replace format.
 

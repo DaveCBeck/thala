@@ -109,13 +109,13 @@ async def run_mini_review(
         quality_settings=quality_settings,
     )
 
-    final_corpus = diffusion_result.get("paper_corpus", initial_corpus)
-
-    # Filter diffusion results to exclude parent DOIs
+    # Use filtered corpus DOIs from diffusion (respects paper limits)
+    final_corpus_dois = diffusion_result.get("final_corpus_dois", [])
+    full_corpus = diffusion_result.get("paper_corpus", initial_corpus)
     final_corpus = {
-        doi: metadata
-        for doi, metadata in final_corpus.items()
-        if doi not in exclude_dois
+        doi: full_corpus[doi]
+        for doi in final_corpus_dois
+        if doi in full_corpus and doi not in exclude_dois
     }
     logger.info(f"Diffusion: {len(final_corpus)} papers after filtering")
 
