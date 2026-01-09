@@ -406,6 +406,7 @@ class AcademicLitReviewState(TypedDict):
     # Synthesis outputs
     section_drafts: dict[str, str]  # Section name -> draft text
     final_review: Optional[str]  # Final integrated review
+    final_report: Optional[str]  # Alias for final_review (standardized field name)
     references: list[FormattedCitation]
     prisma_documentation: Optional[str]  # Search methodology docs
 
@@ -423,5 +424,6 @@ class AcademicLitReviewState(TypedDict):
     completed_at: Optional[datetime]
     current_phase: str  # "discovery", "diffusion", "processing", etc.
     current_status: str  # Human-readable status message
+    status: Optional[str]  # Standardized: "success", "partial", "failed"
     langsmith_run_id: Optional[str]  # LangSmith run ID for tracing
     errors: Annotated[list[dict], add]

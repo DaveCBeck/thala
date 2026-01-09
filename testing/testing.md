@@ -1,12 +1,27 @@
 # Testing
 
-## Prerequisites
+Test scripts for Thala workflows with LangSmith tracing and checkpointing support.
 
-Start services and confirm they're running before executing test scripts:
+## Prerequisites
 
 ```bash
 ./services/services.sh up
 ./services/services.sh status
+```
+
+Ensure `THALA_MODE=dev` in `.env` for LangSmith tracing.
+
+## Directory Structure
+
+```
+testing/
+├── testing.md                  # This file
+├── test_*.py                   # Test scripts
+├── test_data/                  # Output files
+│   ├── checkpoints/            # Workflow state checkpoints
+│   └── *.md, *.json            # Results
+├── logs/                       # Timestamped logs
+└── traces/                     # LangSmith trace exports
 ```
 
 ## Scripts
@@ -15,10 +30,10 @@ Start services and confirm they're running before executing test scripts:
 Run a full research workflow with LangSmith tracing.
 
 ```bash
-.venv/bin/python3 testing/test_research_workflow.py "your topic" [depth]
-.venv/bin/python3 testing/test_research_workflow.py "AI agents" quick
-.venv/bin/python3 testing/test_research_workflow.py "AI agents" comprehensive
-.venv/bin/python3 testing/test_research_workflow.py  # default topic, standard depth
+python -m testing.test_research_workflow "your topic" [depth]
+python -m testing.test_research_workflow "AI agents" quick
+python -m testing.test_research_workflow "AI agents" comprehensive
+python -m testing.test_research_workflow  # default topic, standard depth
 ```
 
 Depth options: `quick`, `standard` (default), `comprehensive`
@@ -29,7 +44,7 @@ Outputs results to `testing/test_data/` and displays the `langsmith_run_id` for 
 Test the document processing workflow.
 
 ```bash
-.venv/bin/python3 testing/test_document_processing.py
+python -m testing.test_document_processing
 ```
 
 ### `test_academic_lit_review.py`
@@ -37,14 +52,14 @@ Run an academic literature review workflow with checkpointing support.
 
 ```bash
 # Full run with automatic checkpoints
-.venv/bin/python3 testing/test_academic_lit_review.py "transformer architectures" quick
-.venv/bin/python3 testing/test_academic_lit_review.py "AI in drug discovery" standard
+python -m testing.test_academic_lit_review "transformer architectures" quick
+python -m testing.test_academic_lit_review "AI in drug discovery" standard
 
 # Multilingual support (29 languages)
-.venv/bin/python3 testing/test_academic_lit_review.py "machine learning" standard --language es
+python -m testing.test_academic_lit_review "machine learning" standard --language es
 
 # Named checkpoints for iterative testing
-.venv/bin/python3 testing/test_academic_lit_review.py "topic" quick --checkpoint-prefix mytest
+python -m testing.test_academic_lit_review "topic" quick --checkpoint-prefix mytest
 ```
 
 Quality options: `test`, `quick`, `standard`, `comprehensive`, `high_quality`
@@ -56,29 +71,48 @@ The workflow saves checkpoints after expensive phases (diffusion, processing). R
 
 ```bash
 # Resume from after-processing (fastest - only runs clustering + synthesis)
-.venv/bin/python3 testing/test_academic_lit_review.py --resume-from processing --checkpoint-prefix mytest
+python -m testing.test_academic_lit_review --resume-from processing --checkpoint-prefix mytest
 
 # Resume from after-diffusion (runs processing + clustering + synthesis)
-.venv/bin/python3 testing/test_academic_lit_review.py --resume-from diffusion --checkpoint-prefix mytest
+python -m testing.test_academic_lit_review --resume-from diffusion --checkpoint-prefix mytest
 
 # Original behavior without checkpoints
-.venv/bin/python3 testing/test_academic_lit_review.py "topic" quick --no-checkpoint
+python -m testing.test_academic_lit_review "topic" quick --no-checkpoint
 ```
 
 Checkpoints are saved to `testing/test_data/checkpoints/`.
+
+### `test_supervised_lit_review.py`
+Run academic literature review with multi-loop supervision for enhanced quality.
+
+```bash
+python -m testing.test_supervised_lit_review "transformer architectures" quick
+python -m testing.test_supervised_lit_review "AI in drug discovery" standard --loops all
+python -m testing.test_supervised_lit_review "machine learning" standard --loops two
+python -m testing.test_supervised_lit_review "topic" standard --language es
+```
+
+Quality options: `test`, `quick`, `standard`, `comprehensive`, `high_quality`
+Supervision loops: `none`, `one`, `two`, `three`, `four`, `all` (default: `all`)
+
+Supervision loops applied after the base lit review:
+- Loop 1: Citation coverage & missing sources
+- Loop 2: Structural editing & logical flow
+- Loop 3: Fact-checking & claim verification
+- Loop 4: Gap analysis & completeness
 
 ### `test_multi_lang_academic.py`
 Run academic literature review across multiple languages with cross-language synthesis.
 
 ```bash
 # Specific languages
-.venv/bin/python3 testing/test_multi_lang_academic.py "AI ethics" quick --languages en,es,de
+python -m testing.test_multi_lang_academic "AI ethics" quick --languages en,es,de
 
 # Major 10 languages (en, zh, es, de, fr, ja, pt, ru, ar, ko)
-.venv/bin/python3 testing/test_multi_lang_academic.py "climate policy" quick --languages major
+python -m testing.test_multi_lang_academic "climate policy" quick --languages major
 
 # With custom research questions
-.venv/bin/python3 testing/test_multi_lang_academic.py "topic" standard --languages en,zh -q "Question 1?" "Question 2?"
+python -m testing.test_multi_lang_academic "topic" standard --languages en,zh -q "Question 1?" "Question 2?"
 ```
 
 Quality options: `quick`, `standard`, `comprehensive`
@@ -95,9 +129,9 @@ Uses the multi_lang workflow with `workflows={"academic": True}`.
 Run the book finding workflow to discover relevant books across three categories.
 
 ```bash
-.venv/bin/python3 testing/test_book_finding.py "organizational resilience"
-.venv/bin/python3 testing/test_book_finding.py "creative leadership" standard
-.venv/bin/python3 testing/test_book_finding.py "liderazgo creativo" quick --language es
+python -m testing.test_book_finding "organizational resilience"
+python -m testing.test_book_finding "creative leadership" standard
+python -m testing.test_book_finding "liderazgo creativo" quick --language es
 ```
 
 Quality options: `quick`, `standard`, `comprehensive`
@@ -108,11 +142,11 @@ Run the wrapped research workflow that orchestrates web, academic, and book rese
 
 ```bash
 # Full run with automatic checkpoints
-.venv/bin/python3 testing/test_wrapped_research.py "AI agents in creative work" quick
-.venv/bin/python3 testing/test_wrapped_research.py "Impact of LLMs" standard
+python -m testing.test_wrapped_research "AI agents in creative work" quick
+python -m testing.test_wrapped_research "Impact of LLMs" standard
 
 # Named checkpoints for iterative testing
-.venv/bin/python3 testing/test_wrapped_research.py "topic" quick --checkpoint-prefix mytest
+python -m testing.test_wrapped_research "topic" quick --checkpoint-prefix mytest
 ```
 
 Quality options: `quick`, `standard`, `comprehensive`
@@ -123,13 +157,13 @@ The workflow saves checkpoints after expensive phases (parallel research, book f
 
 ```bash
 # Resume from after-parallel (runs books + summary + save)
-.venv/bin/python3 testing/test_wrapped_research.py --resume-from parallel --checkpoint-prefix mytest
+python -m testing.test_wrapped_research --resume-from parallel --checkpoint-prefix mytest
 
 # Resume from after-books (runs summary + save only)
-.venv/bin/python3 testing/test_wrapped_research.py --resume-from books --checkpoint-prefix mytest
+python -m testing.test_wrapped_research --resume-from books --checkpoint-prefix mytest
 
 # Original behavior without manual checkpoints
-.venv/bin/python3 testing/test_wrapped_research.py "topic" quick --no-checkpoint
+python -m testing.test_wrapped_research "topic" quick --no-checkpoint
 ```
 
 Checkpoints are saved to `testing/test_data/checkpoints/wrapped/`.
@@ -140,9 +174,9 @@ Checkpoints are saved to `testing/test_data/checkpoints/wrapped/`.
 Inspect a LangSmith run - supervisor decisions, research questions, findings.
 
 ```bash
-.venv/bin/python3 testing/retrieve_langsmith_run.py <run_id>
-.venv/bin/python3 testing/retrieve_langsmith_run.py <run_id> -v      # verbose
-.venv/bin/python3 testing/retrieve_langsmith_run.py <run_id> --json  # JSON output
+python -m scripts.traces.retrieve_langsmith_run <run_id>
+python -m scripts.traces.retrieve_langsmith_run <run_id> -v      # verbose
+python -m scripts.traces.retrieve_langsmith_run <run_id> --json  # JSON output
 ```
 
 ## Workflow
@@ -152,3 +186,37 @@ Inspect a LangSmith run - supervisor decisions, research questions, findings.
 3. Inspect with `retrieve_langsmith_run.py`
 
 Or use the [LangSmith UI](https://smith.langchain.com/) directly.
+
+## Test Utilities
+
+### Checkpointing
+
+Save/load workflow state for iterative testing:
+
+```python
+from workflows.shared.checkpointing import save_checkpoint, load_checkpoint
+
+# Save after expensive phases
+save_checkpoint(state, "after_processing", prefix="mytest")
+
+# Resume later
+state = load_checkpoint("after_processing", prefix="mytest")
+```
+
+### Trace Analysis
+
+```bash
+# Export trace to JSON
+python -m scripts.traces.retrieve_langsmith_run <run_id> --json > trace.json
+
+# Analyze trace structure
+python -m scripts.traces.analyze_trace_structure <trace_file>
+```
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `THALA_MODE=dev` | Enable LangSmith tracing |
+| `LANGSMITH_API_KEY` | LangSmith authentication |
+| `LANGSMITH_PROJECT` | Project name (default: `thala-dev`) |

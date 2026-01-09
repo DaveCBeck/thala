@@ -7,13 +7,14 @@ This module defines the adapter functions for the three core workflows:
 - books: Book finding using book_finding
 
 These are registered automatically when the multi_lang module is imported.
+
+Note: These adapters use a different signature than the shared wrappers
+because multi_lang passes language_config dict instead of language code.
 """
 
 import logging
-from workflows.multi_lang.workflow_registry import (
-    register_workflow,
-    WorkflowResult,
-)
+from workflows.shared.wrappers.registry import register_workflow
+from workflows.shared.wrappers.result_types import WorkflowResult
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ async def run_web_research(
     Returns:
         Normalized WorkflowResult dict
     """
-    from workflows.research.graph.api import deep_research
+    from workflows.web_research.graph.api import deep_research
 
     try:
         result = await deep_research(
@@ -45,9 +46,9 @@ async def run_web_research(
         )
 
         return WorkflowResult(
-            final_report=result.get("final_report"),
+            final_report=result.get("final_report"),  # Use standardized field
             source_count=len(result.get("research_findings", [])),
-            status="completed" if result.get("final_report") else "failed",
+            status=result.get("status", "completed" if result.get("final_report") else "failed"),
             errors=result.get("errors", []),
         )
     except Exception as e:
@@ -96,9 +97,9 @@ async def run_academic_research(
         )
 
         return WorkflowResult(
-            final_report=result.get("final_review"),
+            final_report=result.get("final_report"),  # Use standardized field
             source_count=len(result.get("paper_corpus", {})),
-            status="completed" if result.get("final_review") else "failed",
+            status=result.get("status", "completed" if result.get("final_report") else "failed"),
             errors=result.get("errors", []),
         )
     except Exception as e:
@@ -138,9 +139,9 @@ async def run_book_research(
         )
 
         return WorkflowResult(
-            final_report=result.get("final_markdown"),
+            final_report=result.get("final_report"),  # Use standardized field
             source_count=len(result.get("processed_books", [])),
-            status="completed" if result.get("final_markdown") else "failed",
+            status=result.get("status", "completed" if result.get("final_report") else "failed"),
             errors=result.get("errors", []),
         )
     except Exception as e:

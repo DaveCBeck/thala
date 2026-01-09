@@ -156,6 +156,7 @@ async def run_supervision(
     quality_settings: dict[str, Any],
     input_data: dict[str, Any],
     zotero_keys: dict[str, str],
+    config: dict | None = None,
 ) -> dict[str, Any]:
     """Run the supervision loop on a completed literature review.
 
@@ -167,6 +168,7 @@ async def run_supervision(
         quality_settings: Quality settings (determines max_iterations)
         input_data: Original input with topic and research questions
         zotero_keys: Existing Zotero citation keys
+        config: Optional LangGraph config with run_id and run_name for tracing
 
     Returns:
         Dictionary containing:
@@ -214,7 +216,10 @@ async def run_supervision(
     )
 
     # Run the subgraph
-    final_state = await supervision_subgraph.ainvoke(initial_state)
+    if config:
+        final_state = await supervision_subgraph.ainvoke(initial_state, config=config)
+    else:
+        final_state = await supervision_subgraph.ainvoke(initial_state)
 
     # Extract results
     iterations = final_state.get("iteration", 0)

@@ -1,6 +1,7 @@
 """Orchestration graph for multi-loop supervision."""
 
 import logging
+import uuid
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -34,6 +35,8 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
     before_text = state["current_review"]
     loop_progress = state["loop_progress"]
     max_iterations = loop_progress["max_iterations_per_loop"]
+    topic = state["input"].get("topic", "")[:20]
+    loop_run_id = uuid.uuid4()
 
     result = await run_supervision(
         final_review=state["current_review"],
@@ -43,6 +46,10 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
         quality_settings=state["quality_settings"],
         input_data=state["input"],
         zotero_keys=state["zotero_keys"],
+        config={
+            "run_id": loop_run_id,
+            "run_name": f"loop1_theory:{topic}",
+        },
     )
 
     after_text = result.get("final_review_v2", state["current_review"])
@@ -89,6 +96,8 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
     before_text = state["current_review"]
     loop_progress = state["loop_progress"]
     max_iterations = loop_progress["max_iterations_per_loop"]
+    topic = state["input"].get("topic", "")[:20]
+    loop_run_id = uuid.uuid4()
 
     result = await run_loop2_standalone(
         review=state["current_review"],
@@ -98,6 +107,10 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
         input_data=state["input"],
         quality_settings=state["quality_settings"],
         max_iterations=max_iterations,
+        config={
+            "run_id": loop_run_id,
+            "run_name": f"loop2_literature:{topic}",
+        },
     )
 
     after_text = result.get("current_review", state["current_review"])
@@ -145,11 +158,17 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
     before_text = state["current_review"]
     loop_progress = state["loop_progress"]
     max_iterations = loop_progress["max_iterations_per_loop"]
+    topic = state["input"].get("topic", "")[:20]
+    loop_run_id = uuid.uuid4()
 
     result = await run_loop3_standalone(
         review=state["current_review"],
         input_data=state["input"],
         max_iterations=max_iterations,
+        config={
+            "run_id": loop_run_id,
+            "run_name": f"loop3_structure:{topic}",
+        },
     )
 
     after_text = result.get("current_review", state["current_review"])
@@ -194,6 +213,8 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
     before_text = state["current_review"]
     loop_progress = state["loop_progress"]
     max_iterations = loop_progress["max_iterations_per_loop"]
+    topic = state["input"].get("topic", "")[:20]
+    loop_run_id = uuid.uuid4()
 
     result = await run_loop4_standalone(
         review=state["current_review"],
@@ -201,6 +222,10 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
         input_data=state["input"],
         zotero_keys=state["zotero_keys"],
         max_iterations=max_iterations,
+        config={
+            "run_id": loop_run_id,
+            "run_name": f"loop4_editing:{topic}",
+        },
     )
 
     after_text = result.get("edited_review", state["current_review"])
@@ -261,12 +286,18 @@ async def run_loop5_node(state: OrchestrationState) -> dict[str, Any]:
     logger.info("Running Loop 5: Fact and reference checking")
 
     before_text = state["current_review"]
+    topic = state["input"].get("topic", "")[:20]
+    loop_run_id = uuid.uuid4()
 
     result = await run_loop5_standalone(
         review=state["current_review"],
         paper_summaries=state["paper_summaries"],
         zotero_keys=state["zotero_keys"],
         max_iterations=1,  # Loop 5 typically runs once
+        config={
+            "run_id": loop_run_id,
+            "run_name": f"loop5_factcheck:{topic}",
+        },
     )
 
     after_text = result.get("current_review", state["current_review"])
@@ -490,7 +521,16 @@ async def run_supervision_orchestration(
     )
 
     graph = create_orchestration_graph()
-    final_state = await graph.ainvoke(initial_state)
+    topic = input_data.get("topic", "")[:20]
+    orch_run_id = uuid.uuid4()
+    logger.info(f"Starting supervision orchestration, LangSmith run ID: {orch_run_id}")
+    final_state = await graph.ainvoke(
+        initial_state,
+        config={
+            "run_id": orch_run_id,
+            "run_name": f"supervision:{topic}",
+        },
+    )
 
     logger.info(
         f"Orchestration complete: {final_state.get('completion_reason', 'Unknown')}"
@@ -592,11 +632,13 @@ async def run_supervision_configurable(
     loops_run = []
     all_results = {}
     human_review_items = []
+    topic = input_data.get("topic", "")[:20]
 
     # Loop 1: Theoretical Depth (always runs if loop_count >= 1)
     if loop_count >= 1:
         logger.info("Running Loop 1: Theoretical depth expansion")
         loops_run.append("loop1")
+        loop1_run_id = uuid.uuid4()
 
         loop1_result = await run_supervision(
             final_review=current_review,
@@ -606,6 +648,10 @@ async def run_supervision_configurable(
             quality_settings=quality_settings,
             input_data=input_data,
             zotero_keys=current_zotero,
+            config={
+                "run_id": loop1_run_id,
+                "run_name": f"loop1_theory:{topic}",
+            },
         )
 
         current_review = loop1_result.get("final_review_v2", current_review)
@@ -621,6 +667,7 @@ async def run_supervision_configurable(
     if loop_count >= 2:
         logger.info("Running Loop 2: Literature base expansion")
         loops_run.append("loop2")
+        loop2_run_id = uuid.uuid4()
 
         loop2_result = await run_loop2_standalone(
             review=current_review,
@@ -630,6 +677,10 @@ async def run_supervision_configurable(
             input_data=input_data,
             quality_settings=quality_settings,
             max_iterations=max_iterations_per_loop,
+            config={
+                "run_id": loop2_run_id,
+                "run_name": f"loop2_literature:{topic}",
+            },
         )
 
         current_review = loop2_result.get("current_review", current_review)
@@ -642,11 +693,16 @@ async def run_supervision_configurable(
     if loop_count >= 3:
         logger.info("Running Loop 3: Structure and cohesion")
         loops_run.append("loop3")
+        loop3_run_id = uuid.uuid4()
 
         loop3_result = await run_loop3_standalone(
             review=current_review,
             input_data=input_data,
             max_iterations=max_iterations_per_loop,
+            config={
+                "run_id": loop3_run_id,
+                "run_name": f"loop3_structure:{topic}",
+            },
         )
 
         current_review = loop3_result.get("current_review", current_review)
@@ -656,6 +712,7 @@ async def run_supervision_configurable(
     if loop_count >= 4:
         logger.info("Running Loop 4: Section-level deep editing")
         loops_run.append("loop4")
+        loop4_run_id = uuid.uuid4()
 
         loop4_result = await run_loop4_standalone(
             review=current_review,
@@ -663,6 +720,10 @@ async def run_supervision_configurable(
             input_data=input_data,
             zotero_keys=current_zotero,
             max_iterations=max_iterations_per_loop,
+            config={
+                "run_id": loop4_run_id,
+                "run_name": f"loop4_editing:{topic}",
+            },
         )
 
         current_review = loop4_result.get("edited_review", current_review)
@@ -681,10 +742,15 @@ async def run_supervision_configurable(
         # If needs restructuring, run Loop 3 again (once)
         if cohesion_result.needs_restructuring:
             logger.info("Cohesion check flagged issues - running Loop 3 again")
+            loop3_repeat_run_id = uuid.uuid4()
             loop3_repeat = await run_loop3_standalone(
                 review=current_review,
                 input_data=input_data,
                 max_iterations=2,  # Limited iterations for repeat
+                config={
+                    "run_id": loop3_repeat_run_id,
+                    "run_name": f"loop3_repeat:{topic}",
+                },
             )
             current_review = loop3_repeat.get("current_review", current_review)
 

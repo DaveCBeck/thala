@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Any
 
-from workflows.research.subgraphs.researcher_base import fetch_pdf_via_marker
+from workflows.web_research.subgraphs.researcher_base import fetch_pdf_via_marker
 from workflows.book_finding.state import (
     BookResult,
     BookFindingQualitySettings,

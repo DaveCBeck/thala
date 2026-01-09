@@ -6,7 +6,7 @@ configurable supervision loops to enhance quality.
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from workflows.academic_lit_review.graph.api import academic_lit_review
 from workflows.academic_lit_review.state import QUALITY_PRESETS
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 async def supervised_lit_review(
     topic: str,
     research_questions: list[str],
-    quality: str = "standard",
+    quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"] = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
     include_books: bool = True,
@@ -91,16 +91,31 @@ async def supervised_lit_review(
     )
 
     # Check for errors in lit review
-    if lit_review_result.get("errors"):
+    has_errors = bool(lit_review_result.get("errors"))
+    if has_errors:
         logger.warning(f"Lit review had errors: {lit_review_result['errors']}")
 
     final_review = lit_review_result.get("final_review", "")
 
-    # If no supervision requested or no review to supervise, return as-is
-    if supervision_loops == "none" or not final_review:
+    # A valid review should be substantial (at least 500 chars)
+    # If we have errors and a tiny "review", it's not a real review
+    has_valid_review = final_review and len(final_review) >= 500
+
+    # If no supervision requested, no valid review, or lit review failed - return as-is
+    if supervision_loops == "none" or not has_valid_review:
+        if has_errors and not has_valid_review:
+            logger.error("Lit review failed - skipping supervision loops")
         logger.info("Skipping supervision (disabled or no review content)")
+        # Determine status: failed if no valid review, otherwise use lit_review status
+        if has_errors and not has_valid_review:
+            status = "failed"
+        else:
+            status = lit_review_result.get("status", "success" if has_valid_review else "failed")
         return {
             **lit_review_result,
+            # Ensure standardized fields from academic_lit_review are present
+            "final_report": lit_review_result.get("final_report", final_review),
+            "status": status,
             "final_review_v2": None,
             "supervision": None,
             "human_review_items": [],
@@ -165,9 +180,20 @@ async def supervised_lit_review(
             f"Reason: {completion_reason}"
         )
 
+        # Determine final status
+        all_errors = lit_review_result.get("errors", [])
+        if final_review_v2 and not all_errors:
+            status = "success"
+        elif final_review_v2 and all_errors:
+            status = "partial"
+        else:
+            status = "failed"
+
         return {
             **lit_review_result,
             "final_review_v2": final_review_v2,
+            "final_report": final_review_v2,  # Standardized: use supervised version
+            "status": status,  # Standardized status
             "paper_corpus": merged_corpus,
             "paper_summaries": merged_summaries,
             "supervision": {
@@ -184,6 +210,8 @@ async def supervised_lit_review(
         logger.error(f"Supervision failed: {e}")
         return {
             **lit_review_result,
+            "final_report": lit_review_result.get("final_report", final_review),  # Use original
+            "status": "partial",  # Lit review succeeded but supervision failed
             "final_review_v2": None,
             "supervision": {"error": str(e)},
             "human_review_items": [],

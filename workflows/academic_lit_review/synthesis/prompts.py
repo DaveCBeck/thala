@@ -160,8 +160,16 @@ Your task:
 4. Format with proper markdown headers
 5. Ensure logical flow
 
-Do NOT change the substantive content or citations.
-Focus on flow, transitions, and formatting.
+CRITICAL - CITATION PRESERVATION:
+- You MUST preserve ALL citations in their exact [@KEY] format
+- Do NOT change [@ABC123] to any other format
+- Do NOT remove or omit any citations
+- Do NOT convert to numbered references [1], [2], etc.
+- Do NOT convert to inline (Author, Year) format
+- The [@KEY] citations will be processed into a reference list automatically
+
+Do NOT change the substantive content of any section.
+Focus ONLY on transitions, section ordering, and adding the abstract.
 
 Output the complete document with this structure:
 # [Title]

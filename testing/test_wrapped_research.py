@@ -17,74 +17,43 @@ Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
 """
 
-import argparse
 import asyncio
-import json
-import logging
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
-# Setup logging - both console and file
-LOG_DIR = Path(__file__).parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-# Create a unique log file for each run
-_log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-LOG_FILE = LOG_DIR / f"wrapped_research_{_log_timestamp}.log"
-
-# Configure root logger for both console and file
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),  # Console output
-        logging.FileHandler(LOG_FILE, mode='w'),  # File output
-    ]
+from testing.utils import (
+    setup_logging,
+    get_output_dir,
+    save_json_result,
+    save_markdown_report,
+    save_checkpoint,
+    load_checkpoint,
+    get_checkpoint_dir,
+    print_section_header,
+    safe_preview,
+    print_timing,
+    print_errors,
+    print_quality_analysis,
+    create_test_parser,
+    add_quality_argument,
+    add_date_range_arguments,
+    add_checkpoint_arguments,
+    add_research_questions_argument,
 )
-logger = logging.getLogger(__name__)
-logger.info(f"Logging to file: {LOG_FILE}")
+
+# Setup logging
+logger = setup_logging("wrapped_research")
 
 # Output directory for results
-OUTPUT_DIR = Path(__file__).parent / "test_data"
-CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints" / "wrapped"
+OUTPUT_DIR = get_output_dir()
+CHECKPOINT_DIR = get_checkpoint_dir() / "wrapped"
 
 VALID_QUALITIES = ["quick", "standard", "comprehensive"]
 DEFAULT_QUALITY = "quick"
-
-
-# =============================================================================
-# Checkpoint Utilities
-# =============================================================================
-
-
-def save_checkpoint(state: dict, name: str) -> Path:
-    """Save workflow state to a checkpoint file for later resumption."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    checkpoint_file = CHECKPOINT_DIR / f"{name}.json"
-    with open(checkpoint_file, "w") as f:
-        json.dump(state, f, indent=2, default=str)
-    logger.info(f"Checkpoint saved: {checkpoint_file}")
-    return checkpoint_file
-
-
-def load_checkpoint(name: str) -> dict | None:
-    """Load workflow state from a checkpoint file."""
-    checkpoint_file = CHECKPOINT_DIR / f"{name}.json"
-    if not checkpoint_file.exists():
-        logger.error(f"Checkpoint not found: {checkpoint_file}")
-        return None
-    with open(checkpoint_file, "r") as f:
-        state = json.load(f)
-    logger.info(f"Checkpoint loaded: {checkpoint_file}")
-    return state
 
 
 # =============================================================================
@@ -109,9 +78,7 @@ def print_workflow_result_summary(result: dict, workflow_type: str) -> None:
         print(f"  Length: {char_count:,} chars ({word_count:,} words)")
 
         # Show preview
-        preview = output[:800]
-        if len(output) > 800:
-            preview += "\n  ... [truncated] ..."
+        preview = safe_preview(output, 800)
         # Indent preview
         preview = "\n  ".join(preview.split("\n"))
         print(f"  Preview:\n  {preview}")
@@ -120,58 +87,18 @@ def print_workflow_result_summary(result: dict, workflow_type: str) -> None:
         print(f"  Error: {error}")
 
     # Timing
-    started = result.get("started_at")
-    completed = result.get("completed_at")
-    if started and completed:
-        try:
-            if isinstance(started, str):
-                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            if isinstance(completed, str):
-                completed = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-            if hasattr(started, 'replace') and started.tzinfo is not None:
-                started = started.replace(tzinfo=None)
-            if hasattr(completed, 'replace') and completed.tzinfo is not None:
-                completed = completed.replace(tzinfo=None)
-            duration = (completed - started).total_seconds()
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            print(f"  Duration: {minutes}m {seconds}s")
-        except Exception:
-            pass
+    print_timing(result.get("started_at"), result.get("completed_at"))
 
 
 def print_result_summary(result: dict, query: str) -> None:
     """Print a detailed summary of the wrapped research result."""
-    print("\n" + "=" * 80)
-    print("WRAPPED RESEARCH RESULT")
-    print("=" * 80)
+    print_section_header("WRAPPED RESEARCH RESULT")
 
     # Query and metadata
     print(f"\nQuery: {query}")
 
     # Overall timing
-    started = result.get("started_at")
-    completed = result.get("completed_at")
-    if started and completed:
-        try:
-            if isinstance(started, str):
-                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            if isinstance(completed, str):
-                completed = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-            if hasattr(started, 'replace') and started.tzinfo is not None:
-                started = started.replace(tzinfo=None)
-            if hasattr(completed, 'replace') and completed.tzinfo is not None:
-                completed = completed.replace(tzinfo=None)
-            duration = (completed - started).total_seconds()
-            hours = int(duration // 3600)
-            minutes = int((duration % 3600) // 60)
-            seconds = int(duration % 60)
-            if hours > 0:
-                print(f"Total Duration: {hours}h {minutes}m {seconds}s")
-            else:
-                print(f"Total Duration: {minutes}m {seconds}s ({duration:.1f}s total)")
-        except Exception as e:
-            print(f"Duration: (error calculating: {e})")
+    print_timing(result.get("started_at"), result.get("completed_at"))
 
     # Individual workflow results
     print("\n" + "-" * 80)
@@ -190,11 +117,7 @@ def print_result_summary(result: dict, query: str) -> None:
         print("-" * 80)
         word_count = len(combined.split())
         print(f"Length: {len(combined):,} chars ({word_count:,} words)")
-        # Show first 2000 chars
-        preview = combined[:2000]
-        if len(combined) > 2000:
-            preview += "\n\n... [truncated] ..."
-        print(preview)
+        print(safe_preview(combined, 2000))
 
     # Top of Mind IDs
     top_of_mind_ids = result.get("top_of_mind_ids", {})
@@ -211,13 +134,7 @@ def print_result_summary(result: dict, query: str) -> None:
         print(f"\nLangSmith Run ID: {langsmith_run_id}")
 
     # Errors
-    errors = result.get("errors", [])
-    if errors:
-        print(f"\n--- Errors ({len(errors)}) ---")
-        for err in errors:
-            phase = err.get("phase", "unknown")
-            error = err.get("error", "unknown")
-            print(f"  [{phase}]: {error}")
+    print_errors(result.get("errors", []))
 
     print("\n" + "=" * 80)
 
@@ -287,40 +204,6 @@ def analyze_quality(result: dict) -> dict:
     return analysis
 
 
-def print_quality_analysis(analysis: dict) -> None:
-    """Print quality analysis summary."""
-    print("\n" + "=" * 80)
-    print("QUALITY ANALYSIS")
-    print("=" * 80)
-
-    # Metrics
-    print("\n--- Metrics ---")
-    metrics = analysis.get("metrics", {})
-    for key, value in metrics.items():
-        if isinstance(value, float):
-            print(f"  {key}: {value:.2f}")
-        else:
-            print(f"  {key}: {value}")
-
-    # Issues
-    issues = analysis.get("issues", [])
-    if issues:
-        print(f"\n--- Issues Found ({len(issues)}) ---")
-        for issue in issues:
-            print(f"  - {issue}")
-    else:
-        print("\n--- No Issues Found ---")
-
-    # Suggestions
-    suggestions = analysis.get("suggestions", [])
-    if suggestions:
-        print(f"\n--- Suggestions ---")
-        for suggestion in suggestions:
-            print(f"  - {suggestion}")
-
-    print("\n" + "=" * 80)
-
-
 # =============================================================================
 # Workflow Execution
 # =============================================================================
@@ -370,7 +253,6 @@ async def run_with_checkpoints(
         WrappedResearchState,
         WrappedResearchInput,
         CheckpointPhase,
-        QUALITY_MAPPING,
     )
     from workflows.wrapped.nodes import (
         run_parallel_research,
@@ -419,7 +301,7 @@ async def run_with_checkpoints(
     logger.info("Running parallel research phase (web + academic)...")
     updates = await run_parallel_research(state)
     state = {**state, **updates}
-    save_checkpoint(state, f"{checkpoint_prefix}_after_parallel")
+    save_checkpoint(state, f"{checkpoint_prefix}_after_parallel", CHECKPOINT_DIR)
 
     # Phase 2: Generate book query
     logger.info("Generating book query from research...")
@@ -430,7 +312,7 @@ async def run_with_checkpoints(
     logger.info("Running book finding phase...")
     updates = await run_book_finding(state)
     state = {**state, **updates}
-    save_checkpoint(state, f"{checkpoint_prefix}_after_books")
+    save_checkpoint(state, f"{checkpoint_prefix}_after_books", CHECKPOINT_DIR)
 
     # Phase 4: Generate final summary
     logger.info("Generating final summary...")
@@ -443,7 +325,7 @@ async def run_with_checkpoints(
     state = {**state, **updates}
 
     state["completed_at"] = datetime.utcnow()
-    save_checkpoint(state, f"{checkpoint_prefix}_final")
+    save_checkpoint(state, f"{checkpoint_prefix}_final", CHECKPOINT_DIR)
 
     return state
 
@@ -462,7 +344,7 @@ async def run_from_parallel_checkpoint(checkpoint_prefix: str) -> dict:
     )
 
     checkpoint_name = f"{checkpoint_prefix}_after_parallel"
-    state = load_checkpoint(checkpoint_name)
+    state = load_checkpoint(checkpoint_name, CHECKPOINT_DIR)
     if not state:
         raise ValueError(f"Checkpoint not found: {checkpoint_name}")
 
@@ -477,7 +359,7 @@ async def run_from_parallel_checkpoint(checkpoint_prefix: str) -> dict:
     logger.info("Running book finding phase...")
     updates = await run_book_finding(state)
     state = {**state, **updates}
-    save_checkpoint(state, f"{checkpoint_prefix}_after_books")
+    save_checkpoint(state, f"{checkpoint_prefix}_after_books", CHECKPOINT_DIR)
 
     # Phase 4: Generate final summary
     logger.info("Generating final summary...")
@@ -490,7 +372,7 @@ async def run_from_parallel_checkpoint(checkpoint_prefix: str) -> dict:
     state = {**state, **updates}
 
     state["completed_at"] = datetime.utcnow()
-    save_checkpoint(state, f"{checkpoint_prefix}_final")
+    save_checkpoint(state, f"{checkpoint_prefix}_final", CHECKPOINT_DIR)
 
     return state
 
@@ -507,7 +389,7 @@ async def run_from_books_checkpoint(checkpoint_prefix: str) -> dict:
     )
 
     checkpoint_name = f"{checkpoint_prefix}_after_books"
-    state = load_checkpoint(checkpoint_name)
+    state = load_checkpoint(checkpoint_name, CHECKPOINT_DIR)
     if not state:
         raise ValueError(f"Checkpoint not found: {checkpoint_name}")
 
@@ -524,7 +406,7 @@ async def run_from_books_checkpoint(checkpoint_prefix: str) -> dict:
     state = {**state, **updates}
 
     state["completed_at"] = datetime.utcnow()
-    save_checkpoint(state, f"{checkpoint_prefix}_final")
+    save_checkpoint(state, f"{checkpoint_prefix}_final", CHECKPOINT_DIR)
 
     return state
 
@@ -536,10 +418,11 @@ async def run_from_books_checkpoint(checkpoint_prefix: str) -> dict:
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
+    parser = create_test_parser(
         description="Run wrapped research workflow (web + academic + books)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        default_topic="The impact of AI agents on knowledge work and creative processes",
+        topic_help="Research query/topic",
+        epilog_examples="""
 Examples:
   %(prog)s "AI agents in creative work"              # Quick run with checkpoints
   %(prog)s "AI agents in creative work" standard     # Standard quality
@@ -553,38 +436,11 @@ Checkpoint examples:
         """
     )
 
-    parser.add_argument(
-        "query",
-        nargs="?",
-        default="The impact of AI agents on knowledge work and creative processes",
-        help="Research query/topic"
-    )
-    parser.add_argument(
-        "quality",
-        nargs="?",
-        default=DEFAULT_QUALITY,
-        choices=VALID_QUALITIES,
-        help=f"Quality level (default: {DEFAULT_QUALITY})"
-    )
-    parser.add_argument(
-        "--questions", "-q",
-        type=str,
-        nargs="+",
-        default=None,
-        help="Research questions for academic review (if not provided, will be auto-generated)"
-    )
-    parser.add_argument(
-        "--from-year",
-        type=int,
-        default=None,
-        help="Start year for academic date filter"
-    )
-    parser.add_argument(
-        "--to-year",
-        type=int,
-        default=None,
-        help="End year for academic date filter"
-    )
+    add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
+    add_research_questions_argument(parser)
+    add_date_range_arguments(parser)
+
+    # Custom checkpoint args for wrapped workflow
     parser.add_argument(
         "--resume-from",
         type=str,
@@ -611,7 +467,7 @@ async def main():
     """Run wrapped research workflow test."""
     args = parse_args()
 
-    query = args.query
+    query = args.topic  # Note: topic arg is used as query
     quality = args.quality
     checkpoint_prefix = args.checkpoint_prefix
 
@@ -633,9 +489,7 @@ async def main():
     else:
         mode = "with manual checkpoints"
 
-    print(f"\n{'=' * 80}")
-    print("WRAPPED RESEARCH WORKFLOW TEST")
-    print(f"{'=' * 80}")
+    print_section_header("WRAPPED RESEARCH WORKFLOW TEST")
     print(f"\nQuery: {query}")
     print(f"Quality: {quality}")
     print(f"Mode: {mode}")
@@ -655,7 +509,6 @@ async def main():
         # Choose run function based on mode
         if args.resume_from == "parallel":
             result = await run_from_parallel_checkpoint(checkpoint_prefix)
-            # Extract query from checkpoint for display
             query = result.get("input", {}).get("query", query)
         elif args.resume_from == "books":
             result = await run_from_books_checkpoint(checkpoint_prefix)
@@ -684,70 +537,55 @@ async def main():
         print_quality_analysis(analysis)
 
         # Save results
-        OUTPUT_DIR.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        # Save full result
-        result_file = OUTPUT_DIR / f"wrapped_result_{timestamp}.json"
-        with open(result_file, "w") as f:
-            json.dump(result, f, indent=2, default=str)
+        result_file = save_json_result(result, "wrapped_result")
         logger.info(f"Full result saved to: {result_file}")
 
-        # Save analysis
-        analysis_file = OUTPUT_DIR / f"wrapped_analysis_{timestamp}.json"
-        with open(analysis_file, "w") as f:
-            json.dump(analysis, f, indent=2)
+        analysis_file = save_json_result(analysis, "wrapped_analysis")
         logger.info(f"Analysis saved to: {analysis_file}")
 
         # Save individual workflow outputs as markdown
-        safe_query = query[:50].replace(" ", "_").replace("/", "-")
-
         # Web research
         web_result = result.get("web_result", {})
         if web_result and web_result.get("final_output"):
-            web_file = OUTPUT_DIR / f"wrapped_web_{timestamp}.md"
-            with open(web_file, "w") as f:
-                f.write(f"# Web Research: {query}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality}*\n\n")
-                f.write("---\n\n")
-                f.write(web_result["final_output"])
+            web_file = save_markdown_report(
+                web_result["final_output"],
+                "wrapped_web",
+                title=f"Web Research: {query}",
+                metadata={"quality": quality},
+            )
             logger.info(f"Web research saved to: {web_file}")
 
         # Academic review
         academic_result = result.get("academic_result", {})
         if academic_result and academic_result.get("final_output"):
-            academic_file = OUTPUT_DIR / f"wrapped_academic_{timestamp}.md"
-            with open(academic_file, "w") as f:
-                f.write(f"# Academic Literature Review: {query}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality}*\n\n")
-                f.write("---\n\n")
-                f.write(academic_result["final_output"])
+            academic_file = save_markdown_report(
+                academic_result["final_output"],
+                "wrapped_academic",
+                title=f"Academic Literature Review: {query}",
+                metadata={"quality": quality},
+            )
             logger.info(f"Academic review saved to: {academic_file}")
 
         # Book recommendations
         book_result = result.get("book_result", {})
         if book_result and book_result.get("final_output"):
-            book_file = OUTPUT_DIR / f"wrapped_books_{timestamp}.md"
-            with open(book_file, "w") as f:
-                f.write(f"# Book Recommendations: {query}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality}*\n\n")
-                f.write("---\n\n")
-                f.write(book_result["final_output"])
+            book_file = save_markdown_report(
+                book_result["final_output"],
+                "wrapped_books",
+                title=f"Book Recommendations: {query}",
+                metadata={"quality": quality},
+            )
             logger.info(f"Book recommendations saved to: {book_file}")
 
         # Combined summary
         combined = result.get("combined_summary")
         if combined:
-            combined_file = OUTPUT_DIR / f"wrapped_combined_{timestamp}.md"
-            with open(combined_file, "w") as f:
-                f.write(f"# Combined Research Summary: {query}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality}*\n\n")
-                f.write("---\n\n")
-                f.write(combined)
+            combined_file = save_markdown_report(
+                combined,
+                "wrapped_combined",
+                title=f"Combined Research Summary: {query}",
+                metadata={"quality": quality},
+            )
             logger.info(f"Combined summary saved to: {combined_file}")
 
         return result, analysis

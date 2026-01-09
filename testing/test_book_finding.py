@@ -20,76 +20,115 @@ Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
 """
 
-import argparse
 import asyncio
-import json
-import logging
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
-# Setup logging - both console and file
-LOG_DIR = Path(__file__).parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-# Create a unique log file for each run
-_log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-LOG_FILE = LOG_DIR / f"book_finding_{_log_timestamp}.log"
-
-# Configure root logger for both console and file
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),  # Console output
-        logging.FileHandler(LOG_FILE, mode='w'),  # File output
-    ]
+from testing.utils import (
+    setup_logging,
+    get_output_dir,
+    save_json_result,
+    save_markdown_report,
+    print_section_header,
+    safe_preview,
+    print_timing,
+    print_errors,
+    print_quality_analysis,
+    BaseQualityAnalyzer,
+    QualityMetrics,
+    create_test_parser,
+    add_quality_argument,
+    add_language_argument,
 )
-logger = logging.getLogger(__name__)
-logger.info(f"Logging to file: {LOG_FILE}")
+
+# Setup logging
+logger = setup_logging("book_finding")
 
 # Output directory for results
-OUTPUT_DIR = Path(__file__).parent / "test_data"
+OUTPUT_DIR = get_output_dir()
 
 VALID_QUALITIES = ["quick", "standard", "comprehensive"]
 DEFAULT_QUALITY = "quick"
 
 
+class BookFindingQualityAnalyzer(BaseQualityAnalyzer):
+    """Quality analyzer for book finding workflow results."""
+
+    output_field = "final_report"
+    output_field_alt = "final_markdown"
+    min_word_count = 200
+    min_source_count = 3
+
+    def _analyze_workflow_specific(self, metrics: QualityMetrics) -> None:
+        """Analyze book-specific metrics."""
+        analogous = self.result.get("analogous_recommendations", [])
+        inspiring = self.result.get("inspiring_recommendations", [])
+        expressive = self.result.get("expressive_recommendations", [])
+
+        metrics.workflow_specific["analogous_count"] = len(analogous)
+        metrics.workflow_specific["inspiring_count"] = len(inspiring)
+        metrics.workflow_specific["expressive_count"] = len(expressive)
+        metrics.workflow_specific["total_recommendations"] = len(analogous) + len(inspiring) + len(expressive)
+
+        # Processing metrics
+        processed = self.result.get("processed_books", [])
+        failed = self.result.get("processing_failed", [])
+        search_results = self.result.get("search_results", [])
+
+        metrics.workflow_specific["books_found"] = len(search_results)
+        metrics.workflow_specific["books_processed"] = len(processed)
+        metrics.workflow_specific["books_failed"] = len(failed)
+
+        total_recommended = metrics.workflow_specific["total_recommendations"]
+        if total_recommended > 0 and search_results:
+            metrics.workflow_specific["search_success_rate"] = len(search_results) / total_recommended
+
+        if search_results:
+            metrics.workflow_specific["processing_success_rate"] = len(processed) / len(search_results)
+
+    def _identify_issues(self, metrics: QualityMetrics) -> None:
+        """Identify book-finding specific issues."""
+        super()._identify_issues(metrics)
+
+        if metrics.workflow_specific.get("analogous_count", 0) == 0:
+            metrics.issues.append("No analogous domain recommendations generated")
+        if metrics.workflow_specific.get("inspiring_count", 0) == 0:
+            metrics.issues.append("No inspiring action recommendations generated")
+        if metrics.workflow_specific.get("expressive_count", 0) == 0:
+            metrics.issues.append("No expressive fiction recommendations generated")
+
+        search_rate = metrics.workflow_specific.get("search_success_rate", 1)
+        if search_rate < 0.5:
+            metrics.issues.append(f"Low search success rate ({search_rate:.0%})")
+
+        process_rate = metrics.workflow_specific.get("processing_success_rate", 1)
+        if process_rate < 0.5:
+            metrics.issues.append(f"Low processing success rate ({process_rate:.0%})")
+
+    def _generate_suggestions(self, metrics: QualityMetrics) -> None:
+        """Generate book-finding specific suggestions."""
+        if not metrics.issues:
+            metrics.suggestions.append("Book finding completed successfully")
+            return
+
+        if "search success rate" in str(metrics.issues).lower():
+            metrics.suggestions.append("Some recommended books may not be available - this is normal")
+        if "processing success rate" in str(metrics.issues).lower():
+            metrics.suggestions.append("PDF processing can fail for various reasons - summaries still generated from recommendations")
+
+
 def print_result_summary(result: dict, theme: str) -> None:
     """Print a detailed summary of the book finding result."""
-    print("\n" + "=" * 80)
-    print("BOOK FINDING RESULT")
-    print("=" * 80)
+    print_section_header("BOOK FINDING RESULT")
 
     # Theme
     print(f"\nTheme: {theme}")
 
     # Timing
-    started = result.get("started_at")
-    completed = result.get("completed_at")
-    if started and completed:
-        try:
-            if isinstance(started, str):
-                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            if isinstance(completed, str):
-                completed = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-            if hasattr(started, 'replace') and started.tzinfo is not None:
-                started = started.replace(tzinfo=None)
-            if hasattr(completed, 'replace') and completed.tzinfo is not None:
-                completed = completed.replace(tzinfo=None)
-            duration = (completed - started).total_seconds()
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            print(f"Duration: {minutes}m {seconds}s ({duration:.1f}s total)")
-        except Exception as e:
-            print(f"Duration: (error calculating: {e})")
+    print_timing(result.get("started_at"), result.get("completed_at"))
 
     # Recommendations
     analogous = result.get("analogous_recommendations", [])
@@ -142,135 +181,16 @@ def print_result_summary(result: dict, theme: str) -> None:
         if len(failed) > 5:
             print(f"  ... and {len(failed) - 5} more")
 
-    # Final markdown preview
-    final_markdown = result.get("final_markdown", "")
-    if final_markdown:
+    # Final report preview
+    final_report = result.get("final_report") or result.get("final_markdown", "")
+    if final_report:
         print(f"\n--- Final Output ---")
-        word_count = len(final_markdown.split())
-        print(f"Length: {len(final_markdown)} chars ({word_count} words)")
-        # Show first 1000 chars
-        preview = final_markdown[:1000]
-        if len(final_markdown) > 1000:
-            preview += "\n\n... [truncated] ..."
-        print(preview)
+        word_count = len(final_report.split())
+        print(f"Length: {len(final_report)} chars ({word_count} words)")
+        print(safe_preview(final_report, 1000))
 
     # Errors
-    errors = result.get("errors", [])
-    if errors:
-        print(f"\n--- Errors ({len(errors)}) ---")
-        for err in errors:
-            phase = err.get("phase", "unknown")
-            error = err.get("error", "unknown")
-            print(f"  [{phase}]: {error}")
-
-    print("\n" + "=" * 80)
-
-
-def analyze_quality(result: dict) -> dict:
-    """Analyze book finding quality and return metrics."""
-    analysis = {
-        "metrics": {},
-        "issues": [],
-        "suggestions": [],
-    }
-
-    # Recommendation metrics
-    analogous = result.get("analogous_recommendations", [])
-    inspiring = result.get("inspiring_recommendations", [])
-    expressive = result.get("expressive_recommendations", [])
-
-    analysis["metrics"]["analogous_count"] = len(analogous)
-    analysis["metrics"]["inspiring_count"] = len(inspiring)
-    analysis["metrics"]["expressive_count"] = len(expressive)
-    analysis["metrics"]["total_recommendations"] = len(analogous) + len(inspiring) + len(expressive)
-
-    if len(analogous) == 0:
-        analysis["issues"].append("No analogous domain recommendations generated")
-    if len(inspiring) == 0:
-        analysis["issues"].append("No inspiring action recommendations generated")
-    if len(expressive) == 0:
-        analysis["issues"].append("No expressive fiction recommendations generated")
-
-    # Processing metrics
-    processed = result.get("processed_books", [])
-    failed = result.get("processing_failed", [])
-    search_results = result.get("search_results", [])
-
-    analysis["metrics"]["books_found"] = len(search_results)
-    analysis["metrics"]["books_processed"] = len(processed)
-    analysis["metrics"]["books_failed"] = len(failed)
-
-    total_recommended = analysis["metrics"]["total_recommendations"]
-    if total_recommended > 0:
-        search_rate = len(search_results) / total_recommended
-        analysis["metrics"]["search_success_rate"] = search_rate
-        if search_rate < 0.5:
-            analysis["issues"].append(f"Low search success rate ({search_rate:.0%})")
-
-    if len(search_results) > 0:
-        process_rate = len(processed) / len(search_results)
-        analysis["metrics"]["processing_success_rate"] = process_rate
-        if process_rate < 0.5:
-            analysis["issues"].append(f"Low processing success rate ({process_rate:.0%})")
-
-    # Output quality
-    final_markdown = result.get("final_markdown", "")
-    if final_markdown and not final_markdown.startswith("# Book Finding Failed"):
-        word_count = len(final_markdown.split())
-        analysis["metrics"]["output_word_count"] = word_count
-        analysis["metrics"]["completed"] = True
-    else:
-        analysis["metrics"]["completed"] = False
-        analysis["issues"].append("Book finding failed or incomplete")
-
-    # Errors
-    errors = result.get("errors", [])
-    analysis["metrics"]["error_count"] = len(errors)
-    if errors:
-        analysis["issues"].append(f"{len(errors)} errors encountered")
-
-    # Generate suggestions
-    if not analysis["issues"]:
-        analysis["suggestions"].append("Book finding completed successfully")
-    else:
-        if "Low search success rate" in str(analysis["issues"]):
-            analysis["suggestions"].append("Some recommended books may not be available - this is normal")
-        if "Low processing success rate" in str(analysis["issues"]):
-            analysis["suggestions"].append("PDF processing can fail for various reasons - summaries still generated from recommendations")
-
-    return analysis
-
-
-def print_quality_analysis(analysis: dict) -> None:
-    """Print quality analysis summary."""
-    print("\n" + "=" * 80)
-    print("QUALITY ANALYSIS")
-    print("=" * 80)
-
-    # Metrics
-    print("\n--- Metrics ---")
-    metrics = analysis.get("metrics", {})
-    for key, value in metrics.items():
-        if isinstance(value, float):
-            print(f"  {key}: {value:.2f}")
-        else:
-            print(f"  {key}: {value}")
-
-    # Issues
-    issues = analysis.get("issues", [])
-    if issues:
-        print(f"\n--- Issues Found ({len(issues)}) ---")
-        for issue in issues:
-            print(f"  - {issue}")
-    else:
-        print("\n--- No Issues Found ---")
-
-    # Suggestions
-    suggestions = analysis.get("suggestions", [])
-    if suggestions:
-        print(f"\n--- Suggestions ---")
-        for suggestion in suggestions:
-            print(f"  - {suggestion}")
+    print_errors(result.get("errors", []))
 
     print("\n" + "=" * 80)
 
@@ -301,10 +221,11 @@ async def run_book_finding(
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
+    parser = create_test_parser(
         description="Run book finding workflow",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        default_topic="The intersection of technology and human creativity",
+        topic_help="Theme to explore for book recommendations",
+        epilog_examples="""
 Examples:
   %(prog)s "organizational resilience"              # Quick book finding
   %(prog)s "creative leadership" standard           # Standard quality
@@ -313,30 +234,14 @@ Examples:
         """
     )
 
-    parser.add_argument(
-        "theme",
-        nargs="?",
-        default="The intersection of technology and human creativity",
-        help="Theme to explore for book recommendations"
-    )
-    parser.add_argument(
-        "quality",
-        nargs="?",
-        default=DEFAULT_QUALITY,
-        choices=VALID_QUALITIES,
-        help=f"Quality level (default: {DEFAULT_QUALITY})"
-    )
+    add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
+    add_language_argument(parser)
+
     parser.add_argument(
         "--brief", "-b",
         type=str,
         default=None,
         help="Additional context to guide recommendations"
-    )
-    parser.add_argument(
-        "--language", "-l",
-        type=str,
-        default="en",
-        help="Language code for output (default: en). Supported: en, es, zh, ja, de, fr, pt, ko, ru, ar, it, nl, pl, tr, vi, th, id, hi, bn, sv, no, da, fi, cs, el, he, uk, ro, hu"
     )
 
     return parser.parse_args()
@@ -346,14 +251,12 @@ async def main():
     """Run book finding test."""
     args = parse_args()
 
-    theme = args.theme
+    theme = args.topic  # Note: topic arg is used as theme
     quality = args.quality
     brief = args.brief
     language = args.language
 
-    print(f"\n{'=' * 80}")
-    print("BOOK FINDING TEST")
-    print(f"{'=' * 80}")
+    print_section_header("BOOK FINDING TEST")
     print(f"\nTheme: {theme}")
     print(f"Quality: {quality}")
     print(f"Language: {language}")
@@ -375,37 +278,29 @@ async def main():
         print_result_summary(result, theme)
 
         # Analyze quality
-        analysis = analyze_quality(result)
-        print_quality_analysis(analysis)
+        analyzer = BookFindingQualityAnalyzer(result)
+        metrics = analyzer.analyze()
+        print_quality_analysis(metrics)
 
         # Save results
-        OUTPUT_DIR.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        # Save full result
-        result_file = OUTPUT_DIR / f"book_finding_result_{timestamp}.json"
-        with open(result_file, "w") as f:
-            json.dump(result, f, indent=2, default=str)
+        result_file = save_json_result(result, "book_finding_result")
         logger.info(f"Full result saved to: {result_file}")
 
-        # Save analysis
-        analysis_file = OUTPUT_DIR / f"book_finding_analysis_{timestamp}.json"
-        with open(analysis_file, "w") as f:
-            json.dump(analysis, f, indent=2)
+        analysis_file = save_json_result(metrics.to_dict(), "book_finding_analysis")
         logger.info(f"Analysis saved to: {analysis_file}")
 
         # Save final output as markdown
-        if result.get("final_markdown"):
-            report_file = OUTPUT_DIR / f"book_finding_{timestamp}.md"
-            with open(report_file, "w") as f:
-                f.write(f"# Book Recommendations: {theme}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality} | Language: {language}*\n\n")
-                f.write("---\n\n")
-                f.write(result["final_markdown"])
+        final_report = result.get("final_report") or result.get("final_markdown")
+        if final_report:
+            report_file = save_markdown_report(
+                final_report,
+                "book_finding",
+                title=f"Book Recommendations: {theme}",
+                metadata={"quality": quality, "language": language},
+            )
             logger.info(f"Report saved to: {report_file}")
 
-        return result, analysis
+        return result, metrics.to_dict()
 
     except Exception as e:
         logger.error(f"Book finding failed: {e}", exc_info=True)

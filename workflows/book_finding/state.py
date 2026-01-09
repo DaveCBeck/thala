@@ -76,7 +76,9 @@ class BookFindingQualitySettings(TypedDict):
     use_opus_for_recommendations: bool
 
 
-BOOK_QUALITY_PRESETS: dict[str, BookFindingQualitySettings] = {
+# Quality presets for book finding workflow
+# Named QUALITY_PRESETS for consistency with other workflows
+QUALITY_PRESETS: dict[str, BookFindingQualitySettings] = {
     "quick": BookFindingQualitySettings(
         recommendations_per_category=2,
         max_concurrent_downloads=2,
@@ -102,6 +104,9 @@ BOOK_QUALITY_PRESETS: dict[str, BookFindingQualitySettings] = {
         use_opus_for_recommendations=True,
     ),
 }
+
+# Backwards compatibility alias
+BOOK_QUALITY_PRESETS = QUALITY_PRESETS
 
 
 # =============================================================================
@@ -145,9 +150,11 @@ class BookFindingState(TypedDict):
 
     # Output
     final_markdown: Optional[str]
+    final_report: Optional[str]  # Alias for final_markdown (standardized field name)
 
     # Workflow metadata
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     current_phase: str
+    status: Optional[str]  # Standardized: "success", "partial", "failed"
     errors: Annotated[list[dict], add]

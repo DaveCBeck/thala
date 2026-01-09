@@ -137,10 +137,10 @@ Content:
 
 Extract structured information from this paper."""
 
-    # Use SONNET_1M for large content (>500k chars ≈ >125k tokens)
-    # This threshold accounts for ~75k tokens of overhead (system prompt, metadata)
+    # Use SONNET_1M for large content (>400k chars ≈ >100k tokens)
+    # This threshold accounts for ~100k tokens of overhead (system prompt, metadata, response)
     # ensuring we stay under 200k limit for standard context, or use 1M for larger
-    tier = ModelTier.SONNET_1M if len(content) > 500_000 else ModelTier.HAIKU
+    tier = ModelTier.SONNET_1M if len(content) > 400_000 else ModelTier.HAIKU
 
     try:
         extracted = await extract_json_cached(
@@ -427,8 +427,9 @@ async def _extract_all_summaries_batched(
     if not paper_data:
         return {}, {}, {}, failed_dois
 
-    # Build batch requests
-    requests = []
+    # Build batch requests, separated by tier
+    haiku_requests = []
+    sonnet_1m_requests = []
     doi_to_data = {}
 
     for doi, data in paper_data.items():
@@ -450,26 +451,43 @@ Content:
 
 Extract structured information from this paper."""
 
-        # Use SONNET_1M for large content (>500k chars ≈ >125k tokens)
-        tier = ModelTier.SONNET_1M if len(content) > 500_000 else ModelTier.HAIKU
-
-        requests.append(StructuredRequest(
+        request = StructuredRequest(
             id=doi,
             user_prompt=user_prompt,
-        ))
-        doi_to_data[doi] = (data, tier)
+        )
 
-    logger.info(f"Submitting batch of {len(requests)} papers for summary extraction")
+        # Use SONNET_1M for large content (>400k chars ≈ >100k tokens)
+        if len(content) > 400_000:
+            sonnet_1m_requests.append(request)
+            doi_to_data[doi] = (data, ModelTier.SONNET_1M)
+        else:
+            haiku_requests.append(request)
+            doi_to_data[doi] = (data, ModelTier.HAIKU)
 
-    # Use the first tier for the batch call (most will be HAIKU)
-    # TODO: Handle mixed tiers better - for now, use HAIKU as default
-    batch_results = await get_structured_output(
-        output_schema=PaperSummarySchema,
-        requests=requests,
-        system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
-        tier=ModelTier.HAIKU,
-        max_tokens=2048,
-    )
+    # Run batches for each tier
+    all_results = {}
+
+    if haiku_requests:
+        logger.info(f"Submitting batch of {len(haiku_requests)} papers (HAIKU)")
+        haiku_results = await get_structured_output(
+            output_schema=PaperSummarySchema,
+            requests=haiku_requests,
+            system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            tier=ModelTier.HAIKU,
+            max_tokens=2048,
+        )
+        all_results.update(haiku_results.results)
+
+    if sonnet_1m_requests:
+        logger.info(f"Submitting batch of {len(sonnet_1m_requests)} papers (SONNET_1M)")
+        sonnet_results = await get_structured_output(
+            output_schema=PaperSummarySchema,
+            requests=sonnet_1m_requests,
+            system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            tier=ModelTier.SONNET_1M,
+            max_tokens=2048,
+        )
+        all_results.update(sonnet_results.results)
 
     summaries = {}
     es_ids = {}
@@ -478,7 +496,7 @@ Extract structured information from this paper."""
     for doi in paper_data.keys():
         data, tier = doi_to_data[doi]
         paper = data["paper"]
-        result = batch_results.results.get(doi)
+        result = all_results.get(doi)
 
         if result and result.success:
             try:

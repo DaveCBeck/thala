@@ -12,7 +12,7 @@ from ...caching import create_cached_messages
 from ...models import get_llm
 from ...response_parsing import extract_json_from_response, extract_response_content
 from ..types import StructuredOutputConfig, StructuredOutputResult, StructuredOutputStrategy
-from .base import StrategyExecutor
+from .base import StrategyExecutor, coerce_to_schema
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -57,7 +57,8 @@ Do not include any text outside the JSON object. Do not wrap in markdown code bl
         content = extract_response_content(response)
 
         parsed = extract_json_from_response(content)
-        validated = output_schema.model_validate(parsed)
+        coerced = coerce_to_schema(parsed, output_schema)
+        validated = output_schema.model_validate(coerced)
 
         return StructuredOutputResult.ok(
             value=validated,

@@ -16,7 +16,7 @@ Language options:
     --languages en,es,de,zh   Specific language codes (comma-separated)
     --languages major         Use MAJOR_10_LANGUAGES (en, zh, es, de, fr, ja, pt, ru, ar, ko)
 
-Valid quality levels: test, quick, standard, comprehensive (default: test)
+Valid quality levels: quick, standard, comprehensive (default: quick)
 
 Outputs saved to testing/test_data/:
     multilang-{lang}-{datetime}.md     Per-language reports
@@ -27,47 +27,32 @@ Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
 """
 
-import argparse
 import asyncio
-import logging
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
-# Setup logging - both console and file
-LOG_DIR = Path(__file__).parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-# Create a unique log file for each run
-_log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-LOG_FILE = LOG_DIR / f"multi_lang_academic_{_log_timestamp}.log"
-
-# Configure root logger for both console and file
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(LOG_FILE, mode='w'),
-    ]
+from testing.utils import (
+    setup_logging,
+    get_output_dir,
+    print_section_header,
+    format_duration,
+    create_test_parser,
+    add_quality_argument,
+    add_research_questions_argument,
 )
-logger = logging.getLogger(__name__)
-logger.info(f"Logging to file: {LOG_FILE}")
+
+# Setup logging
+logger = setup_logging("multi_lang_academic")
 
 # Output directory for results
-OUTPUT_DIR = Path(__file__).parent / "test_data"
+OUTPUT_DIR = get_output_dir()
 
 # Major 10 languages for comprehensive coverage
 MAJOR_10_LANGUAGES = ["en", "zh", "es", "de", "fr", "ja", "pt", "ru", "ar", "ko"]
 
-# Note: multi_lang quality uses quick/standard/comprehensive (not test/high_quality)
 VALID_QUALITIES = ["quick", "standard", "comprehensive"]
 DEFAULT_QUALITY = "quick"
 DEFAULT_LANGUAGES = ["en", "es"]
@@ -119,7 +104,7 @@ Provide only the English translation, no commentary."""
 # =============================================================================
 
 
-async def save_markdown_outputs(result, timestamp: str) -> dict[str, Path]:
+async def save_markdown_outputs(result, timestamp: str) -> dict[str, str]:
     """Save all markdown outputs from the multi_lang result.
 
     Non-English reports are translated to English before saving.
@@ -159,7 +144,7 @@ async def save_markdown_outputs(result, timestamp: str) -> dict[str, Path]:
                 f.write(f"**Workflows:** {', '.join(lang_result.get('workflows_run', []))}\n\n")
                 f.write("---\n\n")
                 f.write(translated_report)
-            saved_files[f"lang_{lang_code}"] = filepath
+            saved_files[f"lang_{lang_code}"] = str(filepath)
             logger.info(f"Saved {lang_code} report: {filepath}")
 
     # Save comparative analysis
@@ -169,7 +154,7 @@ async def save_markdown_outputs(result, timestamp: str) -> dict[str, Path]:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("# Cross-Language Comparative Analysis\n\n")
             f.write(result.comparative)
-        saved_files["comparative"] = filepath
+        saved_files["comparative"] = str(filepath)
         logger.info(f"Saved comparative analysis: {filepath}")
 
     # Save final synthesis
@@ -179,7 +164,7 @@ async def save_markdown_outputs(result, timestamp: str) -> dict[str, Path]:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("# Integrated Multi-Language Literature Review\n\n")
             f.write(result.synthesis)
-        saved_files["final"] = filepath
+        saved_files["final"] = str(filepath)
         logger.info(f"Saved final synthesis: {filepath}")
 
     return saved_files
@@ -187,9 +172,7 @@ async def save_markdown_outputs(result, timestamp: str) -> dict[str, Path]:
 
 def print_result_summary(result) -> None:
     """Print a summary of multi-lang results."""
-    print("\n" + "=" * 80)
-    print("MULTI-LANGUAGE ACADEMIC LITERATURE REVIEW RESULTS")
-    print("=" * 80)
+    print_section_header("MULTI-LANGUAGE ACADEMIC LITERATURE REVIEW RESULTS")
 
     # Language results
     lang_results = result.language_results
@@ -255,10 +238,11 @@ def parse_languages(languages_str: str) -> list[str]:
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
+    parser = create_test_parser(
         description="Run multi-language academic literature review",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        default_topic="The impact of large language models on software engineering practices",
+        topic_help="Research topic for literature review",
+        epilog_examples="""
 Examples:
   %(prog)s "transformer architectures" quick --languages en,es,de
   %(prog)s "AI in healthcare" standard --languages major
@@ -266,32 +250,16 @@ Examples:
         """
     )
 
-    parser.add_argument(
-        "topic",
-        nargs="?",
-        default="The impact of large language models on software engineering practices",
-        help="Research topic for literature review"
-    )
-    parser.add_argument(
-        "quality",
-        nargs="?",
-        default=DEFAULT_QUALITY,
-        choices=VALID_QUALITIES,
-        help=f"Quality level (default: {DEFAULT_QUALITY})"
-    )
+    add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
+
     parser.add_argument(
         "--languages", "-L",
         type=str,
         default=",".join(DEFAULT_LANGUAGES),
         help="Languages: comma-separated codes (en,es,de) or 'major' for top 10"
     )
-    parser.add_argument(
-        "--questions", "-q",
-        type=str,
-        nargs="+",
-        default=None,
-        help="Research questions (if not provided, will be auto-generated)"
-    )
+
+    add_research_questions_argument(parser)
 
     return parser.parse_args()
 
@@ -316,9 +284,7 @@ async def main():
             f"What are the key findings and debates in {topic}?",
         ]
 
-    print(f"\n{'=' * 80}")
-    print("MULTI-LANGUAGE ACADEMIC LITERATURE REVIEW")
-    print(f"{'=' * 80}")
+    print_section_header("MULTI-LANGUAGE ACADEMIC LITERATURE REVIEW")
     print(f"\nTopic: {topic}")
     print(f"Quality: {quality}")
     print(f"Languages: {', '.join(languages)} ({len(languages)} total)")
@@ -337,7 +303,7 @@ async def main():
             mode="set_languages",
             languages=languages,
             research_questions=research_questions,
-            workflows={"academic": True},  # Only run academic workflow
+            workflows={"academic": True},
             quality=quality,
         )
 
@@ -354,19 +320,8 @@ async def main():
 
         # Duration
         if result.started_at and result.completed_at:
-            try:
-                start = result.started_at
-                end = result.completed_at
-                if isinstance(start, str):
-                    start = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                if isinstance(end, str):
-                    end = datetime.fromisoformat(end.replace("Z", "+00:00"))
-                duration = (end - start).total_seconds()
-                minutes = int(duration // 60)
-                seconds = int(duration % 60)
-                print(f"\nTotal duration: {minutes}m {seconds}s")
-            except Exception:
-                pass
+            duration_str = format_duration(result.started_at, result.completed_at)
+            print(f"\nTotal duration: {duration_str}")
 
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")

@@ -39,6 +39,8 @@ from .llm_utils.response_parsing import (
     extract_response_content,
 )
 from .checkpointing import CheckpointManager
+from .url_utils import download_url, DownloadError, ContentTypeError
+from .ttl_cache import get_ttl_cache, clear_ttl_cache, get_ttl_cache_stats
 
 __all__ = [
     # Marker client
@@ -80,4 +82,12 @@ __all__ = [
     "extract_response_content",
     # Checkpointing
     "CheckpointManager",
+    # URL utilities
+    "download_url",
+    "DownloadError",
+    "ContentTypeError",
+    # TTL cache
+    "get_ttl_cache",
+    "clear_ttl_cache",
+    "get_ttl_cache_stats",
 ]

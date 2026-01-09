@@ -66,3 +66,4 @@ temp/
 
 # Cache
 .cache/
+.lit-review-state/

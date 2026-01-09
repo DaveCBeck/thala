@@ -6,6 +6,7 @@ the complete workflow from theme to markdown output.
 """
 
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Literal, Optional
 
@@ -13,7 +14,7 @@ from workflows.shared.language import get_language_config
 from workflows.book_finding.state import (
     BookFindingInput,
     BookFindingState,
-    BOOK_QUALITY_PRESETS,
+    QUALITY_PRESETS,
 )
 from .construction import book_finding_graph
 
@@ -66,7 +67,7 @@ async def book_finding(
         print(result["final_markdown"])
     """
     # Get quality settings, defaulting to standard if invalid
-    quality_settings = BOOK_QUALITY_PRESETS.get(quality, BOOK_QUALITY_PRESETS["standard"])
+    quality_settings = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
 
     # Get language configuration
     language_config = get_language_config(language)
@@ -89,19 +90,42 @@ async def book_finding(
         processed_books=[],
         processing_failed=[],
         final_markdown=None,
+        final_report=None,
         started_at=datetime.utcnow(),
         completed_at=None,
         current_phase="starting",
+        status=None,
         errors=[],
     )
 
+    run_id = uuid.uuid4()
     logger.info(f"Starting book finding for theme: {theme[:100]}... (language: {language})")
+    logger.info(f"LangSmith run ID: {run_id}")
 
     try:
-        result = await book_finding_graph.ainvoke(initial_state)
+        result = await book_finding_graph.ainvoke(
+            initial_state,
+            config={
+                "run_id": run_id,
+                "run_name": f"books:{theme[:30]}",
+            },
+        )
+
+        final_markdown = result.get("final_markdown", "")
+        errors = result.get("errors", [])
+
+        # Determine standardized status
+        if final_markdown and not errors:
+            status = "success"
+        elif final_markdown and errors:
+            status = "partial"
+        else:
+            status = "failed"
 
         return {
-            "final_markdown": result.get("final_markdown", ""),
+            "final_markdown": final_markdown,
+            "final_report": final_markdown,  # Standardized field name
+            "status": status,  # Standardized status
             "processed_books": result.get("processed_books", []),
             "analogous_recommendations": result.get("analogous_recommendations", []),
             "inspiring_recommendations": result.get("inspiring_recommendations", []),
@@ -110,13 +134,16 @@ async def book_finding(
             "processing_failed": result.get("processing_failed", []),
             "started_at": initial_state["started_at"],
             "completed_at": result.get("completed_at"),
-            "errors": result.get("errors", []),
+            "langsmith_run_id": str(run_id),
+            "errors": errors,
         }
 
     except Exception as e:
         logger.error(f"Book finding workflow failed: {e}")
         return {
             "final_markdown": f"# Book Finding Failed\n\nError: {e}",
+            "final_report": f"# Book Finding Failed\n\nError: {e}",  # Standardized
+            "status": "failed",  # Standardized
             "processed_books": [],
             "analogous_recommendations": [],
             "inspiring_recommendations": [],
@@ -125,5 +152,6 @@ async def book_finding(
             "processing_failed": [],
             "started_at": initial_state["started_at"],
             "completed_at": datetime.utcnow(),
+            "langsmith_run_id": str(run_id),
             "errors": [{"phase": "unknown", "error": str(e)}],
         }

@@ -476,6 +476,7 @@ async def run_loop3_standalone(
     review: str,
     input_data: LitReviewInput,
     max_iterations: int = 3,
+    config: dict | None = None,
 ) -> dict:
     """Run Loop 3 as standalone operation for testing.
 
@@ -483,6 +484,7 @@ async def run_loop3_standalone(
         review: Current literature review text
         input_data: Original input parameters with topic and research questions
         max_iterations: Maximum number of restructuring iterations
+        config: Optional LangGraph config with run_id and run_name for tracing
 
     Returns:
         Dictionary containing:
@@ -511,7 +513,10 @@ async def run_loop3_standalone(
 
     logger.info(f"Running Loop 3 standalone with max_iterations={max_iterations}")
 
-    final_state = await compiled_graph.ainvoke(initial_state)
+    if config:
+        final_state = await compiled_graph.ainvoke(initial_state, config=config)
+    else:
+        final_state = await compiled_graph.ainvoke(initial_state)
 
     return {
         "current_review": final_state.get("current_review", review),

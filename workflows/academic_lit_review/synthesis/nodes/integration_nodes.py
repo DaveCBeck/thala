@@ -7,6 +7,7 @@ from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import INTEGRATION_SYSTEM_PROMPT, INTEGRATION_USER_TEMPLATE
+from ..citation_utils import extract_citations_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,22 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
 
     integrated = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
 
-    logger.info(f"Integrated review: {len(integrated.split())} words")
+    # Validate citation preservation
+    input_citations = extract_citations_from_text(thematic_text)
+    output_citations = extract_citations_from_text(integrated)
+
+    if input_citations and not output_citations:
+        logger.warning(
+            f"Citation format lost during integration! "
+            f"Input had {len(input_citations)} citations, output has 0. "
+            f"The LLM may have reformatted [@KEY] citations."
+        )
+    elif len(output_citations) < len(input_citations) * 0.5:
+        logger.warning(
+            f"Significant citation loss during integration: "
+            f"{len(input_citations)} -> {len(output_citations)} citations"
+        )
+
+    logger.info(f"Integrated review: {len(integrated.split())} words, {len(output_citations)} citations preserved")
 
     return {"integrated_review": integrated}

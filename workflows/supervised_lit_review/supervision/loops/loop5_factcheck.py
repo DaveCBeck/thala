@@ -318,6 +318,7 @@ async def run_loop5_standalone(
     paper_summaries: dict,
     zotero_keys: dict,
     max_iterations: int = 1,
+    config: dict | None = None,
 ) -> dict:
     """Run Loop 5 as standalone operation for testing.
 
@@ -326,6 +327,7 @@ async def run_loop5_standalone(
         paper_summaries: Paper summaries for fact checking
         zotero_keys: DOI -> Zotero key mapping for citation checking
         max_iterations: Maximum iterations (usually 1 for fact checking)
+        config: Optional LangGraph config with run_id and run_name for tracing
 
     Returns:
         Dict with:
@@ -354,7 +356,10 @@ async def run_loop5_standalone(
         is_complete=False,
     )
 
-    result = await graph.ainvoke(initial_state)
+    if config:
+        result = await graph.ainvoke(initial_state, config=config)
+    else:
+        result = await graph.ainvoke(initial_state)
 
     return {
         "current_review": result["current_review"],

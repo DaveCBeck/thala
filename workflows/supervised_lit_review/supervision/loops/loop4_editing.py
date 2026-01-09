@@ -511,6 +511,7 @@ async def run_loop4_standalone(
     input_data: LitReviewInput,
     zotero_keys: dict[str, str],
     max_iterations: int = 3,
+    config: dict | None = None,
 ) -> dict:
     """Run Loop 4 as standalone operation for testing.
 
@@ -520,6 +521,7 @@ async def run_loop4_standalone(
         input_data: Original research input
         zotero_keys: Dictionary of DOI -> zotero citation key for validation
         max_iterations: Maximum editing iterations
+        config: Optional LangGraph config with run_id and run_name for tracing
 
     Returns:
         Dictionary containing:
@@ -545,7 +547,10 @@ async def run_loop4_standalone(
 
     logger.info(f"Starting Loop 4 standalone: max_iterations={max_iterations}")
 
-    final_state = await loop4_graph.ainvoke(initial_state)
+    if config:
+        final_state = await loop4_graph.ainvoke(initial_state, config=config)
+    else:
+        final_state = await loop4_graph.ainvoke(initial_state)
 
     return {
         "edited_review": final_state.get("current_review", review),

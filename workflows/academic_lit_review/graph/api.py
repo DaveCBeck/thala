@@ -1,7 +1,8 @@
 """Main entry point for academic literature review workflow."""
 
 import logging
-from typing import Any, Optional
+import uuid
+from typing import Any, Literal, Optional
 
 from workflows.academic_lit_review.state import (
     LitReviewInput,
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def academic_lit_review(
     topic: str,
     research_questions: list[str],
-    quality: str = "standard",
+    quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"] = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
     include_books: bool = True,
@@ -103,10 +104,30 @@ async def academic_lit_review(
     logger.info(f"LangSmith run ID: {initial_state['langsmith_run_id']}")
 
     try:
-        result = await academic_lit_review_graph.ainvoke(initial_state)
+        run_id = uuid.UUID(initial_state["langsmith_run_id"])
+        result = await academic_lit_review_graph.ainvoke(
+            initial_state,
+            config={
+                "run_id": run_id,
+                "run_name": f"lit_review:{topic[:30]}",
+            },
+        )
+
+        final_review = result.get("final_review", "")
+        errors = result.get("errors", [])
+
+        # Determine standardized status
+        if final_review and not errors:
+            status = "success"
+        elif final_review and errors:
+            status = "partial"
+        else:
+            status = "failed"
 
         return {
-            "final_review": result.get("final_review", ""),
+            "final_review": final_review,
+            "final_report": final_review,  # Standardized field name
+            "status": status,  # Standardized status
             "paper_corpus": result.get("paper_corpus", {}),
             "paper_summaries": result.get("paper_summaries", {}),
             "clusters": result.get("clusters", []),
@@ -120,13 +141,15 @@ async def academic_lit_review(
             "started_at": initial_state["started_at"],
             "completed_at": result.get("completed_at"),
             "langsmith_run_id": initial_state["langsmith_run_id"],
-            "errors": result.get("errors", []),
+            "errors": errors,
         }
 
     except Exception as e:
         logger.error(f"Literature review failed: {e}")
         return {
             "final_review": f"Literature review generation failed: {e}",
+            "final_report": f"Literature review generation failed: {e}",  # Standardized
+            "status": "failed",  # Standardized
             "paper_corpus": {},
             "paper_summaries": {},
             "clusters": [],

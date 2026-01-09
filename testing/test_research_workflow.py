@@ -21,37 +21,130 @@ Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
 """
 
-import argparse
 import asyncio
-import json
-import logging
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+from testing.utils import (
+    setup_logging,
+    get_output_dir,
+    save_json_result,
+    save_markdown_report,
+    print_section_header,
+    safe_preview,
+    print_timing,
+    print_key_value,
+    print_list_preview,
+    print_errors,
+    print_quality_analysis,
+    BaseQualityAnalyzer,
+    QualityMetrics,
+    create_test_parser,
+    add_quality_argument,
+    add_language_argument,
+    add_translation_arguments,
 )
-logger = logging.getLogger(__name__)
+
+# Setup logging
+logger = setup_logging("research")
 
 # Output directory for results
-OUTPUT_DIR = Path(__file__).parent / "test_data"
+OUTPUT_DIR = get_output_dir()
 
 VALID_DEPTHS = ["quick", "standard", "comprehensive"]
 DEFAULT_DEPTH = "standard"
 
 
+class ResearchQualityAnalyzer(BaseQualityAnalyzer):
+    """Quality analyzer for research workflow results."""
+
+    output_field = "final_report"
+    min_word_count = 500
+    max_word_count = 5000
+    min_source_count = 5
+
+    def _count_sources(self, metrics: QualityMetrics) -> None:
+        """Count sources from findings and citations."""
+        findings = self.result.get("research_findings", [])
+        total_sources = sum(len(f.get("sources", [])) for f in findings)
+
+        citations = self.result.get("citations", [])
+        metrics.source_count = max(total_sources, len(citations))
+
+    def _analyze_workflow_specific(self, metrics: QualityMetrics) -> None:
+        """Analyze research-specific metrics."""
+        findings = self.result.get("research_findings", [])
+        metrics.workflow_specific["total_findings"] = len(findings)
+
+        # Confidence scores
+        confidence_scores = [f.get("confidence", 0) for f in findings]
+        if confidence_scores:
+            metrics.workflow_specific["avg_confidence"] = sum(confidence_scores) / len(confidence_scores)
+
+        # Gaps
+        all_gaps = []
+        for finding in findings:
+            all_gaps.extend(finding.get("gaps", []))
+        metrics.workflow_specific["unique_gaps"] = len(set(all_gaps))
+
+        # Diffusion metrics
+        diffusion = self.result.get("diffusion", {})
+        if diffusion:
+            metrics.workflow_specific["completeness_score"] = diffusion.get("completeness_score", 0)
+            metrics.workflow_specific["iterations_used"] = diffusion.get("iteration", 0)
+            metrics.workflow_specific["max_iterations"] = diffusion.get("max_iterations", 0)
+            metrics.workflow_specific["areas_explored"] = len(diffusion.get("areas_explored", []))
+            metrics.workflow_specific["areas_remaining"] = len(diffusion.get("areas_to_explore", []))
+
+        # Translation
+        if self.result.get("translated_report"):
+            metrics.workflow_specific["translation_generated"] = True
+            metrics.workflow_specific["translation_length"] = len(self.result["translated_report"])
+
+        # Citations
+        citations = self.result.get("citations", [])
+        metrics.workflow_specific["citation_count"] = len(citations)
+
+    def _identify_issues(self, metrics: QualityMetrics) -> None:
+        """Identify research-specific issues."""
+        super()._identify_issues(metrics)
+
+        avg_conf = metrics.workflow_specific.get("avg_confidence", 0)
+        if avg_conf and avg_conf < 0.6:
+            metrics.issues.append(f"Low average confidence ({avg_conf:.0%})")
+
+        completeness = metrics.workflow_specific.get("completeness_score", 0)
+        if completeness and completeness < 0.7:
+            metrics.issues.append(f"Low completeness score ({completeness:.0%})")
+
+        areas_remaining = metrics.workflow_specific.get("areas_remaining", 0)
+        if areas_remaining:
+            diffusion = self.result.get("diffusion", {})
+            areas = diffusion.get("areas_to_explore", [])[:3]
+            metrics.issues.append(f"Unexplored areas: {', '.join(areas)}")
+
+    def _generate_suggestions(self, metrics: QualityMetrics) -> None:
+        """Generate research-specific suggestions."""
+        if not metrics.issues:
+            metrics.suggestions.append("Research appears comprehensive - no major issues detected")
+            return
+
+        if "source count" in str(metrics.issues).lower():
+            metrics.suggestions.append("Consider increasing max_sources or adding more search sources")
+        if "confidence" in str(metrics.issues).lower():
+            metrics.suggestions.append("Improve source quality filtering or add domain-specific sources")
+        if "completeness" in str(metrics.issues).lower():
+            metrics.suggestions.append("Consider increasing max_iterations for more thorough research")
+        if "Unexplored" in str(metrics.issues):
+            metrics.suggestions.append("Diffusion algorithm may need tuning for better coverage")
+
+
 def print_result_summary(result: dict, topic: str) -> None:
     """Print a detailed summary of the research workflow result."""
-    print("\n" + "=" * 80)
-    print(f"RESEARCH WORKFLOW RESULT")
-    print("=" * 80)
+    print_section_header("RESEARCH WORKFLOW RESULT")
 
     # Topic and Status
     print(f"\nTopic: {topic}")
@@ -59,55 +152,36 @@ def print_result_summary(result: dict, topic: str) -> None:
     print(f"Status: {status}")
 
     # Timing
-    started = result.get("started_at")
-    completed = result.get("completed_at")
-    if started and completed:
-        try:
-            if isinstance(started, str):
-                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            if isinstance(completed, str):
-                completed = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-            if hasattr(started, 'replace') and started.tzinfo is not None:
-                started = started.replace(tzinfo=None)
-            if hasattr(completed, 'replace') and completed.tzinfo is not None:
-                completed = completed.replace(tzinfo=None)
-            duration = (completed - started).total_seconds()
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            print(f"Duration: {minutes}m {seconds}s ({duration:.1f}s total)")
-        except Exception as e:
-            print(f"Duration: (error calculating: {e})")
+    print_timing(result.get("started_at"), result.get("completed_at"))
 
     # Research Brief
     brief = result.get("research_brief")
     if brief:
         print(f"\n--- Research Brief ---")
-        print(f"Topic: {brief.get('topic', 'N/A')}")
-        print(f"Scope: {brief.get('scope', 'N/A')}")
-        objectives = brief.get("objectives", [])
-        if objectives:
-            print(f"Objectives ({len(objectives)}):")
-            for obj in objectives[:5]:
-                print(f"  - {obj}")
-        key_questions = brief.get("key_questions", [])
-        if key_questions:
-            print(f"Key Questions ({len(key_questions)}):")
-            for q in key_questions[:5]:
-                print(f"  - {q}")
+        print_key_value("Topic", brief.get("topic", "N/A"))
+        print_key_value("Scope", brief.get("scope", "N/A"))
+        print_list_preview(
+            brief.get("objectives", []),
+            "Objectives",
+            format_item=str,
+        )
+        print_list_preview(
+            brief.get("key_questions", []),
+            "Key Questions",
+            format_item=str,
+        )
 
     # Memory Context
     memory_context = result.get("memory_context")
     if memory_context:
         print(f"\n--- Memory Context ---")
-        preview = memory_context[:500] + "..." if len(memory_context) > 500 else memory_context
-        print(preview)
+        print(safe_preview(memory_context, 500))
 
     # Research Plan
     research_plan = result.get("research_plan")
     if research_plan:
         print(f"\n--- Research Plan ---")
-        preview = research_plan[:800] + "..." if len(research_plan) > 800 else research_plan
-        print(preview)
+        print(safe_preview(research_plan, 800))
 
     # Diffusion State
     diffusion = result.get("diffusion")
@@ -115,11 +189,11 @@ def print_result_summary(result: dict, topic: str) -> None:
         print(f"\n--- Diffusion Algorithm ---")
         print(f"Iterations: {diffusion.get('iteration', 0)}/{diffusion.get('max_iterations', 'N/A')}")
         print(f"Completeness Score: {diffusion.get('completeness_score', 0):.1%}")
-        areas_explored = diffusion.get("areas_explored", [])
-        if areas_explored:
-            print(f"Areas Explored ({len(areas_explored)}):")
-            for area in areas_explored[:10]:
-                print(f"  - {area}")
+        print_list_preview(
+            diffusion.get("areas_explored", []),
+            "Areas Explored",
+            max_items=10,
+        )
 
     # Research Findings
     findings = result.get("research_findings", [])
@@ -129,9 +203,7 @@ def print_result_summary(result: dict, topic: str) -> None:
             conf = finding.get("confidence", 0)
             sources = finding.get("sources", [])
             print(f"\n  [{i}] Confidence: {conf:.0%}, Sources: {len(sources)}")
-            finding_text = finding.get("finding", "")[:300]
-            if len(finding.get("finding", "")) > 300:
-                finding_text += "..."
+            finding_text = safe_preview(finding.get("finding", ""), 300, suffix="...")
             print(f"      {finding_text}")
             gaps = finding.get("gaps", [])
             if gaps:
@@ -139,12 +211,11 @@ def print_result_summary(result: dict, topic: str) -> None:
         if len(findings) > 5:
             print(f"\n  ... and {len(findings) - 5} more findings")
 
-    # Draft Report (if available)
+    # Draft Report
     draft = result.get("draft_report")
     if draft:
         print(f"\n--- Draft Report (v{draft.get('version', 0)}) ---")
-        content = draft.get("content", "")
-        print(f"Length: {len(content)} chars")
+        print(f"Length: {len(draft.get('content', ''))} chars")
         gaps = draft.get("gaps_remaining", [])
         if gaps:
             print(f"Remaining Gaps: {len(gaps)}")
@@ -156,11 +227,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     if final_report:
         print(f"\n--- Final Report ---")
         print(f"Length: {len(final_report)} chars ({len(final_report.split())} words)")
-        # Show first 1000 chars
-        preview = final_report[:1000]
-        if len(final_report) > 1000:
-            preview += "\n\n... [truncated] ..."
-        print(preview)
+        print(safe_preview(final_report, 1000))
 
     # Citations
     citations = result.get("citations", [])
@@ -198,161 +265,10 @@ def print_result_summary(result: dict, topic: str) -> None:
     if translated_report:
         print(f"\n--- Translated Report ---")
         print(f"Length: {len(translated_report)} chars ({len(translated_report.split())} words)")
-        preview = translated_report[:800]
-        if len(translated_report) > 800:
-            preview += "\n\n... [truncated] ..."
-        print(preview)
+        print(safe_preview(translated_report, 800))
 
     # Errors
-    errors = result.get("errors", [])
-    if errors:
-        print(f"\n--- Errors ({len(errors)}) ---")
-        for err in errors:
-            node = err.get("node", "unknown")
-            error = err.get("error", "unknown")
-            print(f"  [{node}]: {error}")
-
-    print("\n" + "=" * 80)
-
-
-def analyze_quality(result: dict) -> dict:
-    """Analyze research quality and return metrics for improvement."""
-    analysis = {
-        "metrics": {},
-        "issues": [],
-        "suggestions": [],
-    }
-
-    # Basic completion metrics
-    status = result.get("current_status", "")
-    analysis["metrics"]["completed"] = status == "completed"
-
-    # Report quality
-    final_report = result.get("final_report", "")
-    if final_report:
-        word_count = len(final_report.split())
-        analysis["metrics"]["report_word_count"] = word_count
-        analysis["metrics"]["report_char_count"] = len(final_report)
-
-        if word_count < 500:
-            analysis["issues"].append("Report is short (< 500 words)")
-        elif word_count > 5000:
-            analysis["issues"].append("Report may be too long (> 5000 words)")
-    else:
-        analysis["issues"].append("No final report generated")
-
-    # Source coverage
-    findings = result.get("research_findings", [])
-    analysis["metrics"]["total_findings"] = len(findings)
-
-    total_sources = 0
-    confidence_scores = []
-    all_gaps = []
-    for finding in findings:
-        sources = finding.get("sources", [])
-        total_sources += len(sources)
-        conf = finding.get("confidence", 0)
-        confidence_scores.append(conf)
-        gaps = finding.get("gaps", [])
-        all_gaps.extend(gaps)
-
-    analysis["metrics"]["total_sources"] = total_sources
-    analysis["metrics"]["avg_confidence"] = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
-    analysis["metrics"]["unique_gaps"] = len(set(all_gaps))
-
-    if total_sources < 5:
-        analysis["issues"].append("Low source count (< 5 sources)")
-
-    if analysis["metrics"]["avg_confidence"] < 0.6:
-        analysis["issues"].append(f"Low average confidence ({analysis['metrics']['avg_confidence']:.0%})")
-
-    # Diffusion metrics
-    diffusion = result.get("diffusion", {})
-    if diffusion:
-        completeness = diffusion.get("completeness_score", 0)
-        iterations = diffusion.get("iteration", 0)
-        max_iters = diffusion.get("max_iterations", 0)
-
-        analysis["metrics"]["completeness_score"] = completeness
-        analysis["metrics"]["iterations_used"] = iterations
-        analysis["metrics"]["max_iterations"] = max_iters
-        analysis["metrics"]["iteration_efficiency"] = iterations / max_iters if max_iters else 0
-
-        if completeness < 0.7:
-            analysis["issues"].append(f"Low completeness score ({completeness:.0%})")
-
-        areas_explored = diffusion.get("areas_explored", [])
-        areas_to_explore = diffusion.get("areas_to_explore", [])
-        analysis["metrics"]["areas_explored"] = len(areas_explored)
-        analysis["metrics"]["areas_remaining"] = len(areas_to_explore)
-
-        if areas_to_explore:
-            analysis["issues"].append(f"Unexplored areas: {', '.join(areas_to_explore[:3])}")
-
-    # Citations
-    citations = result.get("citations", [])
-    analysis["metrics"]["citation_count"] = len(citations)
-
-    if len(citations) < 3:
-        analysis["issues"].append("Insufficient citations (< 3)")
-
-    # Errors
-    errors = result.get("errors", [])
-    analysis["metrics"]["error_count"] = len(errors)
-    if errors:
-        analysis["issues"].append(f"{len(errors)} errors encountered during research")
-
-    # Translation metrics
-    if result.get("translated_report"):
-        analysis["metrics"]["translation_generated"] = True
-        analysis["metrics"]["translation_length"] = len(result["translated_report"])
-
-    # Generate suggestions
-    if not analysis["issues"]:
-        analysis["suggestions"].append("Research appears comprehensive - no major issues detected")
-    else:
-        if "Low source count" in str(analysis["issues"]):
-            analysis["suggestions"].append("Consider increasing max_sources or adding more search sources")
-        if "Low average confidence" in str(analysis["issues"]):
-            analysis["suggestions"].append("Improve source quality filtering or add domain-specific sources")
-        if "Low completeness" in str(analysis["issues"]):
-            analysis["suggestions"].append("Consider increasing max_iterations for more thorough research")
-        if "Unexplored areas" in str(analysis["issues"]):
-            analysis["suggestions"].append("Diffusion algorithm may need tuning for better coverage")
-
-    return analysis
-
-
-def print_quality_analysis(analysis: dict) -> None:
-    """Print quality analysis summary."""
-    print("\n" + "=" * 80)
-    print("QUALITY ANALYSIS")
-    print("=" * 80)
-
-    # Metrics
-    print("\n--- Metrics ---")
-    metrics = analysis.get("metrics", {})
-    for key, value in metrics.items():
-        if isinstance(value, float):
-            print(f"  {key}: {value:.2f}")
-        else:
-            print(f"  {key}: {value}")
-
-    # Issues
-    issues = analysis.get("issues", [])
-    if issues:
-        print(f"\n--- Issues Found ({len(issues)}) ---")
-        for issue in issues:
-            print(f"  - {issue}")
-    else:
-        print("\n--- No Issues Found ---")
-
-    # Suggestions
-    suggestions = analysis.get("suggestions", [])
-    if suggestions:
-        print(f"\n--- Suggestions ---")
-        for suggestion in suggestions:
-            print(f"  - {suggestion}")
+    print_errors(result.get("errors", []))
 
     print("\n" + "=" * 80)
 
@@ -375,7 +291,7 @@ async def run_research(
         preserve_quotes: Keep direct quotes in original language when translating
         researcher_allocation: Number of parallel web researchers ("1"-"3")
     """
-    from workflows.research import deep_research
+    from workflows.web_research import deep_research
 
     logger.info(f"Starting research on: {topic}")
     logger.info(f"Depth: {depth}")
@@ -403,10 +319,11 @@ async def run_research(
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
+    parser = create_test_parser(
         description="Run research workflow with optional language support",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        default_topic="What are the current best practices for building reliable AI agents, particularly around tool use, error handling, and human-in-the-loop patterns?",
+        topic_help="Research topic or question",
+        epilog_examples="""
 Examples:
   %(prog)s "AI agents"                          # Standard English research
   %(prog)s "AI agents" quick                    # Quick research
@@ -415,46 +332,9 @@ Examples:
         """
     )
 
-    parser.add_argument(
-        "topic",
-        nargs="?",
-        default="What are the current best practices for building reliable AI agents, particularly around tool use, error handling, and human-in-the-loop patterns?",
-        help="Research topic or question"
-    )
-    parser.add_argument(
-        "depth",
-        nargs="?",
-        default=DEFAULT_DEPTH,
-        choices=VALID_DEPTHS,
-        help=f"Research depth (default: {DEFAULT_DEPTH})"
-    )
-
-    # Language options
-    lang_group = parser.add_argument_group("Language Options")
-    lang_group.add_argument(
-        "--language", "-l",
-        type=str,
-        default=None,
-        help="Research in this language (ISO 639-1 code, e.g., 'es', 'zh', 'ja')"
-    )
-    lang_group.add_argument(
-        "--translate-to", "-t",
-        type=str,
-        default=None,
-        help="Translate final report to this language (ISO 639-1 code)"
-    )
-    lang_group.add_argument(
-        "--preserve-quotes",
-        action="store_true",
-        default=True,
-        help="Preserve direct quotes in original language when translating (default: True)"
-    )
-    lang_group.add_argument(
-        "--no-preserve-quotes",
-        action="store_false",
-        dest="preserve_quotes",
-        help="Translate quotes along with the report"
-    )
+    add_quality_argument(parser, choices=VALID_DEPTHS, default=DEFAULT_DEPTH)
+    add_language_argument(parser)
+    add_translation_arguments(parser)
 
     # Researcher allocation options
     alloc_group = parser.add_argument_group("Researcher Allocation")
@@ -476,11 +356,9 @@ async def main():
     args = parse_args()
 
     topic = args.topic
-    depth = args.depth
+    depth = args.quality  # Note: quality arg is used as depth here
 
-    print(f"\n{'=' * 80}")
-    print("RESEARCH WORKFLOW TEST")
-    print(f"{'=' * 80}")
+    print_section_header("RESEARCH WORKFLOW TEST")
     print(f"\nTopic: {topic}")
     print(f"Depth: {depth}")
     if args.language:
@@ -509,35 +387,27 @@ async def main():
         print_result_summary(result, topic)
 
         # Analyze quality
-        analysis = analyze_quality(result)
-        print_quality_analysis(analysis)
+        analyzer = ResearchQualityAnalyzer(result)
+        metrics = analyzer.analyze()
+        print_quality_analysis(metrics)
 
         # Save results
-        OUTPUT_DIR.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        # Save full result
-        result_file = OUTPUT_DIR / f"research_result_{timestamp}.json"
-        with open(result_file, "w") as f:
-            json.dump(result, f, indent=2, default=str)
+        result_file = save_json_result(result, "research_result")
         logger.info(f"Full result saved to: {result_file}")
 
-        # Save analysis
-        analysis_file = OUTPUT_DIR / f"research_analysis_{timestamp}.json"
-        with open(analysis_file, "w") as f:
-            json.dump(analysis, f, indent=2)
+        analysis_file = save_json_result(metrics.to_dict(), "research_analysis")
         logger.info(f"Analysis saved to: {analysis_file}")
 
         # Save final report as markdown
         if result.get("final_report"):
-            report_file = OUTPUT_DIR / f"research_report_{timestamp}.md"
-            with open(report_file, "w") as f:
-                f.write(f"# {topic}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(result["final_report"])
+            report_file = save_markdown_report(
+                result["final_report"],
+                "research_report",
+                title=topic,
+            )
             logger.info(f"Report saved to: {report_file}")
 
-        return result, analysis
+        return result, metrics.to_dict()
 
     except Exception as e:
         logger.error(f"Research failed: {e}", exc_info=True)
@@ -545,7 +415,7 @@ async def main():
 
     finally:
         # Clean up resources
-        from workflows.research import cleanup_research_resources
+        from workflows.web_research import cleanup_research_resources
         try:
             logger.info("Cleaning up research resources...")
             await cleanup_research_resources()

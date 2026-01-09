@@ -13,54 +13,38 @@ Usage:
 """
 
 import asyncio
-import json
-import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+from testing.utils import (
+    setup_logging,
+    get_output_dir,
+    save_json_result,
+    print_section_header,
+    safe_preview,
+    print_timing,
+    print_errors,
 )
-logger = logging.getLogger(__name__)
+
+# Setup logging
+logger = setup_logging("document_processing")
 
 # Test data paths
-TEST_DATA_DIR = Path(__file__).parent / "test_data"
+TEST_DATA_DIR = get_output_dir()
 MARKDOWN_FILE = TEST_DATA_DIR / "paul_graham_great_work.md"
 PDF_FILE = TEST_DATA_DIR / "war_of_the_worlds.pdf"
 
 
 def print_result_summary(result: dict, test_name: str) -> None:
     """Print a summary of the workflow result."""
-    print("\n" + "=" * 60)
-    print(f"TEST RESULT: {test_name}")
-    print("=" * 60)
+    print_section_header(f"TEST RESULT: {test_name}", width=60)
 
     # Status
     status = result.get("current_status", "unknown")
     print(f"\nStatus: {status}")
 
     # Timing
-    started = result.get("started_at")
-    completed = result.get("completed_at")
-    if started and completed:
-        try:
-            # Handle various datetime formats
-            if isinstance(started, str):
-                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            if isinstance(completed, str):
-                completed = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-            # Make both naive for comparison
-            if hasattr(started, 'replace') and started.tzinfo is not None:
-                started = started.replace(tzinfo=None)
-            if hasattr(completed, 'replace') and completed.tzinfo is not None:
-                completed = completed.replace(tzinfo=None)
-            duration = (completed - started).total_seconds()
-            print(f"Duration: {duration:.1f}s")
-        except Exception as e:
-            print(f"Duration: (error calculating: {e})")
+    print_timing(result.get("started_at"), result.get("completed_at"))
 
     # Zotero
     zotero_key = result.get("zotero_key")
@@ -81,22 +65,19 @@ def print_result_summary(result: dict, test_name: str) -> None:
     short_summary = result.get("short_summary")
     if short_summary:
         print(f"\nShort Summary ({len(short_summary)} chars):")
-        # Show first 300 chars
-        preview = short_summary[:300] + "..." if len(short_summary) > 300 else short_summary
-        print(f"  {preview}")
+        print(f"  {safe_preview(short_summary, 300, suffix='...')}")
 
     # Tenth summary (for large docs)
     tenth_summary = result.get("tenth_summary")
     if tenth_summary:
         print(f"\n10:1 Summary ({len(tenth_summary)} chars):")
-        preview = tenth_summary[:300] + "..." if len(tenth_summary) > 300 else tenth_summary
-        print(f"  {preview}")
+        print(f"  {safe_preview(tenth_summary, 300, suffix='...')}")
 
     # Chapters
     chapters = result.get("chapters", [])
     if chapters:
         print(f"\nChapters detected: {len(chapters)}")
-        for ch in chapters[:5]:  # Show first 5
+        for ch in chapters[:5]:
             print(f"  - {ch.get('title', 'Untitled')}")
         if len(chapters) > 5:
             print(f"  ... and {len(chapters) - 5} more")
@@ -111,15 +92,11 @@ def print_result_summary(result: dict, test_name: str) -> None:
     if metadata:
         print(f"\nExtracted Metadata:")
         for key, value in metadata.items():
-            if value and key not in ("abstractNote",):  # Skip long fields
+            if value and key not in ("abstractNote",):
                 print(f"  - {key}: {value}")
 
     # Errors
-    errors = result.get("errors", [])
-    if errors:
-        print(f"\nErrors ({len(errors)}):")
-        for err in errors:
-            print(f"  - [{err.get('node', 'unknown')}]: {err.get('error', 'unknown')}")
+    print_errors(result.get("errors", []))
 
     # Store records
     store_records = result.get("store_records", [])
@@ -210,9 +187,7 @@ async def main():
         sys.exit(1)
 
     # Save results to file
-    output_file = TEST_DATA_DIR / f"test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(output_file, "w") as f:
-        json.dump(results, f, indent=2, default=str)
+    output_file = save_json_result(results, "doc_processing_results")
     logger.info(f"Results saved to: {output_file}")
 
     return results

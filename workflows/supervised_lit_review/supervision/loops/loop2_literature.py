@@ -295,6 +295,7 @@ async def run_loop2_standalone(
     input_data: LitReviewInput,
     quality_settings: QualitySettings,
     max_iterations: int = 3,
+    config: dict | None = None,
 ) -> dict:
     """Run Loop 2 as standalone operation for testing.
 
@@ -306,6 +307,7 @@ async def run_loop2_standalone(
         input_data: LitReviewInput with topic and research questions
         quality_settings: Quality tier settings
         max_iterations: Maximum expansion iterations (default: 3)
+        config: Optional LangGraph config with run_id and run_name for tracing
 
     Returns:
         Dict with:
@@ -331,7 +333,10 @@ async def run_loop2_standalone(
         decision=None,
     )
 
-    result = await loop2_graph.ainvoke(initial_state)
+    if config:
+        result = await loop2_graph.ainvoke(initial_state, config=config)
+    else:
+        result = await loop2_graph.ainvoke(initial_state)
 
     return {
         "current_review": result.get("current_review", review),

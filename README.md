@@ -34,28 +34,26 @@ For a decade I've run this as a done-for-you service: acting as a "second brain"
 
 ```
 thala/
-├── docker-compose.yml        # Orchestrates all services
-├── services/
-│   ├── marker/
-│   ├── zotero/
-│   ├── elasticsearch/
-│   └── chroma/
-├── mcp_server/               # MCP server exposing store APIs
-├── langchain_tools/          # LangChain tools (search_memory, expand_context)
-├── mcps/
-│   ├── zotero/
-│   ├── firecrawl/
-│   ├── search/
-│   └── deep-research/
-├── core/
-│   ├── embedding.py          # Embedding service (OpenAI/Ollama)
-│   ├── ingest/               # Sources → Zotero → stores pipeline
-│   ├── executive/            # Conscious: user-initiated tasks
-│   ├── subconscious/         # Background: coherence, patterns, goals
-│   ├── stores/               # Abstractions over ES/Chroma + Zotero refs
-│   └── outputs/              # Writing, contact stack
-└── tests/
+├── core/                     # Foundation: stores, embedding, scraping
+├── workflows/                # LangGraph research workflows
+├── langchain_tools/          # LangChain tool interfaces
+├── services/                 # Docker services
+├── mcp_server/               # MCP server for store APIs
+└── testing/                  # Test scripts and utilities
 ```
+
+See component READMEs for details:
+- [core/README.md](core/README.md) - Stores, embedding, scraping
+- [workflows/README.md](workflows/README.md) - Research workflows
+- [langchain_tools/README.md](langchain_tools/README.md) - LangChain tools
+- [services/README.md](services/README.md) - Docker services
+
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) - System architecture and data flow
+- [docs/patterns.md](docs/patterns.md) - Common code patterns
+- [docs/stack.md](docs/stack.md) - Technology versions
+- [testing/testing.md](testing/testing.md) - Test scripts and workflow
 
 ## Stores & Backends
 

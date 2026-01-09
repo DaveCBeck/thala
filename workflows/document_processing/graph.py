@@ -15,6 +15,7 @@ configure_langsmith()
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -164,8 +165,17 @@ async def process_document(
         "started_at": datetime.utcnow(),
     }
 
-    logger.info(f"Starting document processing for: {source}")
-    result = await graph.ainvoke(initial_state)
+    run_id = uuid.uuid4()
+    desc = title or (source[:30] if isinstance(source, str) else "document")
+    logger.info(f"Starting document processing for: {title or source[:100]}")
+    logger.info(f"LangSmith run ID: {run_id}")
+    result = await graph.ainvoke(
+        initial_state,
+        config={
+            "run_id": run_id,
+            "run_name": f"doc:{desc[:30]}",
+        },
+    )
     logger.info(f"Document processing complete. Status: {result.get('current_status')}")
 
     return result

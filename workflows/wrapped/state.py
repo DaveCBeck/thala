@@ -10,32 +10,31 @@ from operator import add
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
+from workflows.shared.wrappers.quality import QualityTier
+
 
 # =============================================================================
 # Quality Configuration
 # =============================================================================
 
 
-QualityTier = Literal["quick", "standard", "comprehensive"]
+# Import shared quality mapping but provide backwards-compatible names
+# The shared mapping uses workflow keys, we alias to legacy names for this workflow
+def _build_legacy_quality_mapping() -> dict[str, dict[str, str]]:
+    """Build legacy quality mapping from shared infrastructure."""
+    from workflows.shared.wrappers.quality import QUALITY_MAPPING as SHARED_MAPPING
 
-# Maps unified quality tier to each workflow's specific settings
-QUALITY_MAPPING: dict[str, dict[str, str]] = {
-    "quick": {
-        "web_depth": "quick",
-        "academic_quality": "quick",
-        "book_quality": "quick",
-    },
-    "standard": {
-        "web_depth": "standard",
-        "academic_quality": "standard",
-        "book_quality": "standard",
-    },
-    "comprehensive": {
-        "web_depth": "comprehensive",
-        "academic_quality": "high_quality",  # Academic uses high_quality for most thorough
-        "book_quality": "comprehensive",
-    },
-}
+    legacy_mapping = {}
+    for tier, workflow_qualities in SHARED_MAPPING.items():
+        legacy_mapping[tier] = {
+            "web_depth": workflow_qualities.get("web_research", tier),
+            "academic_quality": workflow_qualities.get("academic_lit_review", tier),
+            "book_quality": workflow_qualities.get("book_finding", tier),
+        }
+    return legacy_mapping
+
+
+QUALITY_MAPPING: dict[str, dict[str, str]] = _build_legacy_quality_mapping()
 
 
 # =============================================================================

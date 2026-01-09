@@ -15,7 +15,7 @@ from ..types import (
     StructuredOutputStrategy,
     StructuredRequest,
 )
-from .base import StrategyExecutor
+from .base import StrategyExecutor, coerce_to_schema
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -31,7 +31,7 @@ class BatchToolCallExecutor(StrategyExecutor[T]):
         config: StructuredOutputConfig,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> dict[str, StructuredOutputResult[T]]:
-        from ...batch_processor import BatchProcessor
+        from workflows.shared.batch_processor import BatchProcessor
 
         processor = BatchProcessor(poll_interval=30)
 
@@ -68,7 +68,8 @@ class BatchToolCallExecutor(StrategyExecutor[T]):
             if batch_result and batch_result.success:
                 try:
                     parsed = json.loads(batch_result.content)
-                    validated = output_schema.model_validate(parsed)
+                    coerced = coerce_to_schema(parsed, output_schema)
+                    validated = output_schema.model_validate(coerced)
                     results[req.id] = StructuredOutputResult.ok(
                         value=validated,
                         strategy=StructuredOutputStrategy.BATCH_TOOL_CALL,

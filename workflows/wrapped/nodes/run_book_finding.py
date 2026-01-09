@@ -40,10 +40,10 @@ async def run_book_finding(state: WrappedResearchState) -> dict[str, Any]:
 
         book_result = WorkflowResult(
             workflow_type="books",
-            final_output=result.get("final_markdown"),
+            final_output=result.get("final_report"),  # Use standardized field
             started_at=started_at,
             completed_at=datetime.utcnow(),
-            status="completed",
+            status=result.get("status", "completed"),
             error=None,
             top_of_mind_id=None,
         )

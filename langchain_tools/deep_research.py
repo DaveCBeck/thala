@@ -71,7 +71,7 @@ async def deep_research(
         )
     """
     try:
-        from workflows.research import deep_research as run_research
+        from workflows.web_research import deep_research as run_research
     except ImportError as e:
         logger.error(f"Failed to import research workflow: {e}")
         return DeepResearchOutput(

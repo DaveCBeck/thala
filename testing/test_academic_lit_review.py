@@ -19,104 +19,134 @@ Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
 """
 
-import argparse
 import asyncio
-import json
-import logging
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
-# Setup logging - both console and file
-LOG_DIR = Path(__file__).parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-# Create a unique log file for each run
-_log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-LOG_FILE = LOG_DIR / f"lit_review_{_log_timestamp}.log"
-
-# Configure root logger for both console and file
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),  # Console output
-        logging.FileHandler(LOG_FILE, mode='w'),  # File output
-    ]
+from testing.utils import (
+    setup_logging,
+    get_output_dir,
+    save_json_result,
+    save_markdown_report,
+    save_checkpoint,
+    load_checkpoint,
+    print_section_header,
+    safe_preview,
+    print_timing,
+    print_list_preview,
+    print_errors,
+    print_quality_analysis,
+    BaseQualityAnalyzer,
+    QualityMetrics,
+    create_test_parser,
+    add_quality_argument,
+    add_language_argument,
+    add_date_range_arguments,
+    add_checkpoint_arguments,
+    add_research_questions_argument,
 )
-logger = logging.getLogger(__name__)
-logger.info(f"Logging to file: {LOG_FILE}")
+
+# Setup logging
+logger = setup_logging("lit_review")
 
 # Output directory for results
-OUTPUT_DIR = Path(__file__).parent / "test_data"
-CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
+OUTPUT_DIR = get_output_dir()
 
 VALID_QUALITIES = ["test", "quick", "standard", "comprehensive", "high_quality"]
 DEFAULT_QUALITY = "quick"
 
 
-# =============================================================================
-# Checkpoint Utilities
-# =============================================================================
+class AcademicLitReviewQualityAnalyzer(BaseQualityAnalyzer):
+    """Quality analyzer for academic literature review results."""
 
+    output_field = "final_review"
+    min_word_count = 1000
+    min_source_count = 5
 
-def save_checkpoint(state: dict, name: str) -> Path:
-    """Save workflow state to a checkpoint file for later resumption."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    checkpoint_file = CHECKPOINT_DIR / f"{name}.json"
-    with open(checkpoint_file, "w") as f:
-        json.dump(state, f, indent=2, default=str)
-    logger.info(f"Checkpoint saved: {checkpoint_file}")
-    return checkpoint_file
+    def _count_sources(self, metrics: QualityMetrics) -> None:
+        """Count sources from paper corpus and references."""
+        paper_corpus = self.result.get("paper_corpus", {})
+        references = self.result.get("references", [])
+        metrics.source_count = max(len(paper_corpus), len(references))
 
+    def _analyze_workflow_specific(self, metrics: QualityMetrics) -> None:
+        """Analyze academic lit review specific metrics."""
+        # Paper metrics
+        paper_corpus = self.result.get("paper_corpus", {})
+        paper_summaries = self.result.get("paper_summaries", {})
 
-def load_checkpoint(name: str) -> dict | None:
-    """Load workflow state from a checkpoint file."""
-    checkpoint_file = CHECKPOINT_DIR / f"{name}.json"
-    if not checkpoint_file.exists():
-        logger.error(f"Checkpoint not found: {checkpoint_file}")
-        return None
-    with open(checkpoint_file, "r") as f:
-        state = json.load(f)
-    logger.info(f"Checkpoint loaded: {checkpoint_file}")
-    return state
+        metrics.workflow_specific["papers_discovered"] = len(paper_corpus)
+        metrics.workflow_specific["papers_processed"] = len(paper_summaries)
+
+        if paper_corpus:
+            metrics.workflow_specific["processing_rate"] = len(paper_summaries) / len(paper_corpus)
+
+        # Clustering metrics
+        clusters = self.result.get("clusters", [])
+        metrics.workflow_specific["cluster_count"] = len(clusters)
+
+        if clusters:
+            papers_clustered = sum(len(c.get("paper_dois", [])) for c in clusters)
+            metrics.workflow_specific["papers_clustered"] = papers_clustered
+            metrics.workflow_specific["gaps_identified"] = sum(len(c.get("gaps", [])) for c in clusters)
+            metrics.workflow_specific["conflicts_identified"] = sum(len(c.get("conflicts", [])) for c in clusters)
+
+        # Diffusion metrics
+        diffusion = self.result.get("diffusion", {})
+        if diffusion:
+            metrics.workflow_specific["diffusion_stages"] = diffusion.get("current_stage", 0)
+            metrics.workflow_specific["saturation_reached"] = diffusion.get("is_saturated", False)
+
+        # References
+        references = self.result.get("references", [])
+        metrics.workflow_specific["reference_count"] = len(references)
+
+    def _identify_issues(self, metrics: QualityMetrics) -> None:
+        """Identify academic-specific issues."""
+        super()._identify_issues(metrics)
+
+        papers = metrics.workflow_specific.get("papers_discovered", 0)
+        if papers < 10:
+            metrics.issues.append(f"Low paper count ({papers} papers)")
+
+        processing_rate = metrics.workflow_specific.get("processing_rate", 1)
+        if processing_rate < 0.5:
+            metrics.issues.append(f"Low processing rate ({processing_rate:.0%})")
+
+        clusters = metrics.workflow_specific.get("cluster_count", 0)
+        if clusters < 3:
+            metrics.issues.append(f"Few clusters identified ({clusters})")
+
+        refs = metrics.workflow_specific.get("reference_count", 0)
+        if refs < 5:
+            metrics.issues.append(f"Few references ({refs})")
+
+    def _generate_suggestions(self, metrics: QualityMetrics) -> None:
+        """Generate academic-specific suggestions."""
+        if not metrics.issues:
+            metrics.suggestions.append("Literature review appears comprehensive")
+            return
+
+        if "paper count" in str(metrics.issues).lower():
+            metrics.suggestions.append("Consider broadening search terms or using higher quality setting")
+        if "clusters" in str(metrics.issues).lower():
+            metrics.suggestions.append("More papers needed for meaningful clustering")
+        if "short" in str(metrics.issues).lower():
+            metrics.suggestions.append("Use higher quality setting for longer reviews")
 
 
 def print_result_summary(result: dict, topic: str) -> None:
     """Print a detailed summary of the literature review result."""
-    print("\n" + "=" * 80)
-    print("ACADEMIC LITERATURE REVIEW RESULT")
-    print("=" * 80)
+    print_section_header("ACADEMIC LITERATURE REVIEW RESULT")
 
     # Topic
     print(f"\nTopic: {topic}")
 
     # Timing
-    started = result.get("started_at")
-    completed = result.get("completed_at")
-    if started and completed:
-        try:
-            if isinstance(started, str):
-                started = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            if isinstance(completed, str):
-                completed = datetime.fromisoformat(completed.replace("Z", "+00:00"))
-            if hasattr(started, 'replace') and started.tzinfo is not None:
-                started = started.replace(tzinfo=None)
-            if hasattr(completed, 'replace') and completed.tzinfo is not None:
-                completed = completed.replace(tzinfo=None)
-            duration = (completed - started).total_seconds()
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            print(f"Duration: {minutes}m {seconds}s ({duration:.1f}s total)")
-        except Exception as e:
-            print(f"Duration: (error calculating: {e})")
+    print_timing(result.get("started_at"), result.get("completed_at"))
 
     # Paper Corpus
     paper_corpus = result.get("paper_corpus", {})
@@ -124,7 +154,6 @@ def print_result_summary(result: dict, topic: str) -> None:
     print(f"Total papers discovered: {len(paper_corpus)}")
 
     if paper_corpus:
-        # Sample papers
         sample_papers = list(paper_corpus.items())[:5]
         print("Sample papers:")
         for doi, paper in sample_papers:
@@ -174,11 +203,7 @@ def print_result_summary(result: dict, topic: str) -> None:
         print(f"\n--- Final Review ---")
         word_count = len(final_review.split())
         print(f"Length: {len(final_review)} chars ({word_count} words)")
-        # Show first 1500 chars
-        preview = final_review[:1500]
-        if len(final_review) > 1500:
-            preview += "\n\n... [truncated] ..."
-        print(preview)
+        print(safe_preview(final_review, 1500))
 
     # References
     references = result.get("references", [])
@@ -194,9 +219,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     prisma = result.get("prisma_documentation", "")
     if prisma:
         print(f"\n--- PRISMA Documentation ---")
-        print(prisma[:500])
-        if len(prisma) > 500:
-            print("... [truncated]")
+        print(safe_preview(prisma, 500))
 
     # Storage and Tracing
     zotero_keys = result.get("zotero_keys", {})
@@ -212,134 +235,7 @@ def print_result_summary(result: dict, topic: str) -> None:
         print(f"LangSmith Run ID: {langsmith_run_id}")
 
     # Errors
-    errors = result.get("errors", [])
-    if errors:
-        print(f"\n--- Errors ({len(errors)}) ---")
-        for err in errors:
-            phase = err.get("phase", "unknown")
-            error = err.get("error", "unknown")
-            print(f"  [{phase}]: {error}")
-
-    print("\n" + "=" * 80)
-
-
-def analyze_quality(result: dict) -> dict:
-    """Analyze literature review quality and return metrics."""
-    analysis = {
-        "metrics": {},
-        "issues": [],
-        "suggestions": [],
-    }
-
-    # Basic completion metrics
-    final_review = result.get("final_review", "")
-    if final_review and not final_review.startswith("Literature review generation failed"):
-        word_count = len(final_review.split())
-        analysis["metrics"]["review_word_count"] = word_count
-        analysis["metrics"]["review_char_count"] = len(final_review)
-        analysis["metrics"]["completed"] = True
-
-        if word_count < 1000:
-            analysis["issues"].append(f"Review is short ({word_count} words)")
-    else:
-        analysis["metrics"]["completed"] = False
-        analysis["issues"].append("Review generation failed or incomplete")
-
-    # Paper coverage
-    paper_corpus = result.get("paper_corpus", {})
-    paper_summaries = result.get("paper_summaries", {})
-    analysis["metrics"]["papers_discovered"] = len(paper_corpus)
-    analysis["metrics"]["papers_processed"] = len(paper_summaries)
-
-    processing_rate = len(paper_summaries) / len(paper_corpus) if paper_corpus else 0
-    analysis["metrics"]["processing_rate"] = processing_rate
-
-    if len(paper_corpus) < 10:
-        analysis["issues"].append(f"Low paper count ({len(paper_corpus)} papers)")
-
-    if processing_rate < 0.5:
-        analysis["issues"].append(f"Low processing rate ({processing_rate:.0%})")
-
-    # Clustering metrics
-    clusters = result.get("clusters", [])
-    analysis["metrics"]["cluster_count"] = len(clusters)
-
-    if clusters:
-        papers_clustered = sum(len(c.get("paper_dois", [])) for c in clusters)
-        analysis["metrics"]["papers_clustered"] = papers_clustered
-
-        # Check for cluster quality
-        gaps_found = sum(len(c.get("gaps", [])) for c in clusters)
-        conflicts_found = sum(len(c.get("conflicts", [])) for c in clusters)
-        analysis["metrics"]["gaps_identified"] = gaps_found
-        analysis["metrics"]["conflicts_identified"] = conflicts_found
-
-    if len(clusters) < 3:
-        analysis["issues"].append(f"Few clusters identified ({len(clusters)})")
-
-    # Diffusion metrics
-    diffusion = result.get("diffusion", {})
-    if diffusion:
-        analysis["metrics"]["diffusion_stages"] = diffusion.get("current_stage", 0)
-        analysis["metrics"]["saturation_reached"] = diffusion.get("is_saturated", False)
-
-    # References
-    references = result.get("references", [])
-    analysis["metrics"]["reference_count"] = len(references)
-
-    if len(references) < 5:
-        analysis["issues"].append(f"Few references ({len(references)})")
-
-    # Errors
-    errors = result.get("errors", [])
-    analysis["metrics"]["error_count"] = len(errors)
-    if errors:
-        analysis["issues"].append(f"{len(errors)} errors encountered")
-
-    # Generate suggestions
-    if not analysis["issues"]:
-        analysis["suggestions"].append("Literature review appears comprehensive")
-    else:
-        if "Low paper count" in str(analysis["issues"]):
-            analysis["suggestions"].append("Consider broadening search terms or using higher quality setting")
-        if "Few clusters" in str(analysis["issues"]):
-            analysis["suggestions"].append("More papers needed for meaningful clustering")
-        if "short" in str(analysis["issues"]).lower():
-            analysis["suggestions"].append("Use higher quality setting for longer reviews")
-
-    return analysis
-
-
-def print_quality_analysis(analysis: dict) -> None:
-    """Print quality analysis summary."""
-    print("\n" + "=" * 80)
-    print("QUALITY ANALYSIS")
-    print("=" * 80)
-
-    # Metrics
-    print("\n--- Metrics ---")
-    metrics = analysis.get("metrics", {})
-    for key, value in metrics.items():
-        if isinstance(value, float):
-            print(f"  {key}: {value:.2f}")
-        else:
-            print(f"  {key}: {value}")
-
-    # Issues
-    issues = analysis.get("issues", [])
-    if issues:
-        print(f"\n--- Issues Found ({len(issues)}) ---")
-        for issue in issues:
-            print(f"  - {issue}")
-    else:
-        print("\n--- No Issues Found ---")
-
-    # Suggestions
-    suggestions = analysis.get("suggestions", [])
-    if suggestions:
-        print(f"\n--- Suggestions ---")
-        for suggestion in suggestions:
-            print(f"  - {suggestion}")
+    print_errors(result.get("errors", []))
 
     print("\n" + "=" * 80)
 
@@ -581,10 +477,11 @@ async def run_from_processing_checkpoint(checkpoint_prefix: str) -> dict:
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
+    parser = create_test_parser(
         description="Run academic literature review workflow",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        default_topic="The impact of large language models on software engineering practices",
+        topic_help="Research topic for literature review",
+        epilog_examples="""
 Examples:
   %(prog)s "transformer architectures"              # Quick review with checkpoints
   %(prog)s "transformer architectures" standard     # Standard review with checkpoints
@@ -598,62 +495,11 @@ Checkpoint examples:
         """
     )
 
-    parser.add_argument(
-        "topic",
-        nargs="?",
-        default="The impact of large language models on software engineering practices",
-        help="Research topic for literature review"
-    )
-    parser.add_argument(
-        "quality",
-        nargs="?",
-        default=DEFAULT_QUALITY,
-        choices=VALID_QUALITIES,
-        help=f"Quality level (default: {DEFAULT_QUALITY})"
-    )
-    parser.add_argument(
-        "--questions", "-q",
-        type=str,
-        nargs="+",
-        default=None,
-        help="Research questions (if not provided, will be auto-generated)"
-    )
-    parser.add_argument(
-        "--from-year",
-        type=int,
-        default=None,
-        help="Start year for date filter"
-    )
-    parser.add_argument(
-        "--to-year",
-        type=int,
-        default=None,
-        help="End year for date filter"
-    )
-    parser.add_argument(
-        "--resume-from",
-        type=str,
-        choices=["diffusion", "processing"],
-        default=None,
-        help="Resume from a checkpoint (skips earlier phases)"
-    )
-    parser.add_argument(
-        "--checkpoint-prefix",
-        type=str,
-        default="latest",
-        help="Prefix for checkpoint files (default: 'latest')"
-    )
-    parser.add_argument(
-        "--no-checkpoint",
-        action="store_true",
-        help="Disable automatic checkpointing (use original workflow)"
-    )
-    parser.add_argument(
-        "--language", "-l",
-        type=str,
-        default="en",
-        help="Language code for the review (default: en). Supported: en, es, zh, ja, de, fr, pt, ko, ru, ar, it, nl, pl, tr, vi, th, id, hi, bn, sv, no, da, fi, cs, el, he, uk, ro, hu"
-    )
+    add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
+    add_research_questions_argument(parser)
+    add_date_range_arguments(parser)
+    add_checkpoint_arguments(parser)
+    add_language_argument(parser)
 
     return parser.parse_args()
 
@@ -692,9 +538,7 @@ async def main():
     else:
         mode = "with checkpoints"
 
-    print(f"\n{'=' * 80}")
-    print("ACADEMIC LITERATURE REVIEW TEST")
-    print(f"{'=' * 80}")
+    print_section_header("ACADEMIC LITERATURE REVIEW TEST")
     print(f"\nTopic: {topic}")
     print(f"Quality: {quality}")
     print(f"Language: {language}")
@@ -715,11 +559,9 @@ async def main():
         # Choose run function based on mode
         if args.resume_from == "diffusion":
             result = await run_from_diffusion_checkpoint(checkpoint_prefix)
-            # Extract topic from checkpoint for display
             topic = result.get("input", {}).get("topic", topic)
         elif args.resume_from == "processing":
             result = await run_from_processing_checkpoint(checkpoint_prefix)
-            # Extract topic from checkpoint for display
             topic = result.get("input", {}).get("topic", topic)
         elif args.no_checkpoint:
             result = await run_literature_review(
@@ -743,55 +585,46 @@ async def main():
         print_result_summary(result, topic)
 
         # Analyze quality
-        analysis = analyze_quality(result)
-        print_quality_analysis(analysis)
+        analyzer = AcademicLitReviewQualityAnalyzer(result)
+        metrics = analyzer.analyze()
+        print_quality_analysis(metrics)
 
         # Save results
-        OUTPUT_DIR.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        # Save full result
-        result_file = OUTPUT_DIR / f"lit_review_result_{timestamp}.json"
-        with open(result_file, "w") as f:
-            json.dump(result, f, indent=2, default=str)
+        result_file = save_json_result(result, "lit_review_result")
         logger.info(f"Full result saved to: {result_file}")
 
-        # Save analysis
-        analysis_file = OUTPUT_DIR / f"lit_review_analysis_{timestamp}.json"
-        with open(analysis_file, "w") as f:
-            json.dump(analysis, f, indent=2)
+        analysis_file = save_json_result(metrics.to_dict(), "lit_review_analysis")
         logger.info(f"Analysis saved to: {analysis_file}")
 
-        # Save final review (v1, before supervision) as markdown
+        # Save final review as markdown
         if result.get("final_review"):
-            report_file = OUTPUT_DIR / f"lit_review_{timestamp}.md"
-            with open(report_file, "w") as f:
-                f.write(f"# Literature Review: {topic}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality} | Language: {language}*\n\n")
-                f.write("---\n\n")
-                f.write(result["final_review"])
+            report_file = save_markdown_report(
+                result["final_review"],
+                "lit_review",
+                title=f"Literature Review: {topic}",
+                metadata={"quality": quality, "language": language},
+            )
             logger.info(f"Review (v1) saved to: {report_file}")
 
-        # Save supervised review (v2, after supervision loop) as markdown
+        # Save supervised review (v2) if present
         if result.get("final_review_v2"):
-            report_v2_file = OUTPUT_DIR / f"lit_review_v2_{timestamp}.md"
-            with open(report_v2_file, "w") as f:
-                f.write(f"# Literature Review (Supervised): {topic}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write(f"*Quality: {quality} | Language: {language}*\n\n")
-                f.write("---\n\n")
-                f.write(result["final_review_v2"])
-            logger.info(f"Review (v2) saved to: {report_file}")
+            report_v2_file = save_markdown_report(
+                result["final_review_v2"],
+                "lit_review_v2",
+                title=f"Literature Review (Supervised): {topic}",
+                metadata={"quality": quality, "language": language},
+            )
+            logger.info(f"Review (v2) saved to: {report_v2_file}")
 
         # Save PRISMA documentation
         if result.get("prisma_documentation"):
-            prisma_file = OUTPUT_DIR / f"lit_review_prisma_{timestamp}.md"
-            with open(prisma_file, "w") as f:
-                f.write(result["prisma_documentation"])
+            prisma_file = save_markdown_report(
+                result["prisma_documentation"],
+                "lit_review_prisma",
+            )
             logger.info(f"PRISMA docs saved to: {prisma_file}")
 
-        return result, analysis
+        return result, metrics.to_dict()
 
     except Exception as e:
         logger.error(f"Literature review failed: {e}", exc_info=True)

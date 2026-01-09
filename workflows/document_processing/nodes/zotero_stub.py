@@ -50,6 +50,12 @@ async def create_zotero_stub(state: dict) -> dict:
 
     # Create placeholder store record
     record_id = uuid4()
+
+    # Use resolved_path for source reference (avoids storing full markdown content)
+    # For markdown_text, resolved_path is the file it was written to
+    # For local_file/url, it's the copied/downloaded path
+    source_ref = state.get("resolved_path") or input_data["source"][:200]
+
     store_record = StoreRecord(
         id=record_id,
         source_type=SourceType.EXTERNAL,
@@ -59,7 +65,7 @@ async def create_zotero_stub(state: dict) -> dict:
         metadata={
             "title": title,
             "processing_status": "pending",
-            "source": input_data["source"],
+            "source": source_ref,
             "doi": input_data.get("extra_metadata", {}).get("DOI"),
         },
     )

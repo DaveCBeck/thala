@@ -24,6 +24,7 @@ import httpx
 
 from core.stores.retrieve_academic import RetrieveAcademicClient
 from langchain_tools.firecrawl import scrape_url
+from workflows.shared import download_url, ContentTypeError
 from workflows.academic_lit_review.state import PaperMetadata
 
 from .cache import check_document_exists_by_doi
@@ -72,29 +73,27 @@ async def _download_pdf_from_url(
         (local_path_str, False) on success, (None, False) on failure
     """
     try:
-        async with httpx.AsyncClient(timeout=OA_DOWNLOAD_TIMEOUT) as client:
-            response = await client.get(pdf_url, follow_redirects=True)
-            response.raise_for_status()
+        content = await download_url(
+            pdf_url,
+            timeout=OA_DOWNLOAD_TIMEOUT,
+            expected_content_type="pdf",
+            validate_pdf=True,
+        )
 
-            # Verify it's actually a PDF
-            content_type = response.headers.get("content-type", "").lower()
-            if "pdf" not in content_type and response.content[:4] != b"%PDF":
-                logger.warning(
-                    f"[OA] Extracted PDF URL returned non-PDF for {doi}: {content_type}"
-                )
-                return None, False
+        # Save to local path
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(content)
 
-            # Save to local path
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(local_path, "wb") as f:
-                f.write(response.content)
+        logger.info(
+            f"[OA] Downloaded PDF from abstract page for {doi}: "
+            f"{len(content) / 1024:.1f} KB"
+        )
+        return str(local_path), False
 
-            logger.info(
-                f"[OA] Downloaded PDF from abstract page for {doi}: "
-                f"{len(response.content) / 1024:.1f} KB"
-            )
-            return str(local_path), False
-
+    except ContentTypeError as e:
+        logger.warning(f"[OA] Extracted PDF URL returned non-PDF for {doi}: {e}")
+        return None, False
     except httpx.HTTPStatusError as e:
         logger.warning(f"[OA] HTTP error downloading PDF for {doi}: {e.response.status_code}")
         return None, False
@@ -135,23 +134,25 @@ async def try_oa_download(
         if _is_pdf_url(oa_url):
             # Direct PDF download
             logger.info(f"[OA] Downloading PDF for {doi}: {oa_url}")
-            async with httpx.AsyncClient(timeout=OA_DOWNLOAD_TIMEOUT) as client:
-                response = await client.get(oa_url, follow_redirects=True)
-                response.raise_for_status()
-
-                # Verify it's actually a PDF
-                content_type = response.headers.get("content-type", "").lower()
-                if "pdf" not in content_type and response.content[:4] != b"%PDF":
-                    logger.warning(f"[OA] URL returned non-PDF content for {doi}: {content_type}")
-                    return None, False
+            try:
+                content = await download_url(
+                    oa_url,
+                    timeout=OA_DOWNLOAD_TIMEOUT,
+                    expected_content_type="pdf",
+                    validate_pdf=True,
+                )
 
                 # Save to local path
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(local_path, "wb") as f:
-                    f.write(response.content)
+                    f.write(content)
 
-                logger.info(f"[OA] Downloaded PDF for {doi}: {len(response.content) / 1024:.1f} KB")
+                logger.info(f"[OA] Downloaded PDF for {doi}: {len(content) / 1024:.1f} KB")
                 return str(local_path), False
+
+            except ContentTypeError:
+                logger.warning(f"[OA] URL returned non-PDF content for {doi}")
+                return None, False
 
         else:
             # HTML page - scrape with firecrawl (include links for classification)

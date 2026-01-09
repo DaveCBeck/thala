@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from workflows.research.graph.api import deep_research
+from workflows.web_research.graph.api import deep_research
 from workflows.academic_lit_review import academic_lit_review
 from workflows.wrapped.state import WrappedResearchState, WorkflowResult, QUALITY_MAPPING
 
@@ -34,10 +34,10 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
             )
             return WorkflowResult(
                 workflow_type="web",
-                final_output=result.get("final_report"),
+                final_output=result.get("final_report"),  # Use standardized field
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
-                status="completed",
+                status=result.get("status", "completed"),
                 error=None,
                 top_of_mind_id=None,
             )
@@ -73,10 +73,10 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
             )
             return WorkflowResult(
                 workflow_type="academic",
-                final_output=result.get("final_review"),
+                final_output=result.get("final_report"),  # Use standardized field
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
-                status="completed",
+                status=result.get("status", "completed"),
                 error=None,
                 top_of_mind_id=None,
             )

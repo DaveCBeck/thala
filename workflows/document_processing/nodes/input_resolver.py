@@ -10,9 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
-
-from workflows.shared.text_utils import count_words
+from workflows.shared import download_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,16 +60,14 @@ async def resolve_input(state: dict) -> dict:
 
         logger.info(f"Downloading URL to: {resolved_path}")
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.get(source)
-            response.raise_for_status()
-
-            with open(resolved_path, "wb") as f:
-                f.write(response.content)
+        content = await download_url(source, timeout=120.0)
+        with open(resolved_path, "wb") as f:
+            f.write(content)
 
         resolved_path = str(resolved_path)
 
-    elif Path(source).exists():
+    elif len(source) < 4096 and Path(source).exists():
+        # Length check avoids OSError for very long markdown content
         source_type = "local_file"
         source_path = Path(source)
 
