@@ -313,17 +313,20 @@ class ScraperService:
 _scraper_service: ScraperService | None = None
 
 
-def get_scraper_service() -> ScraperService:
-    """Get the global scraper service instance."""
-    global _scraper_service
-    if _scraper_service is None:
-        _scraper_service = ScraperService()
-    return _scraper_service
-
-
 async def close_scraper_service() -> None:
     """Close the global scraper service and release resources."""
     global _scraper_service
     if _scraper_service is not None:
         await _scraper_service.close()
         _scraper_service = None
+
+
+def get_scraper_service() -> ScraperService:
+    """Get the global scraper service instance."""
+    global _scraper_service
+    if _scraper_service is None:
+        from core.utils.async_http_client import register_cleanup
+
+        _scraper_service = ScraperService()
+        register_cleanup("Scraper", close_scraper_service)
+    return _scraper_service

@@ -102,9 +102,14 @@ def print_result_summary(result: dict, topic: str) -> None:
     if human_review:
         print(f"\n--- Human Review Items ({len(human_review)}) ---")
         for i, item in enumerate(human_review[:5], 1):
-            item_type = item.get("type", "unknown")
-            description = item.get("description", "No description")[:80]
-            print(f"  [{i}] ({item_type}) {description}...")
+            # Handle both dict items and string items
+            if isinstance(item, dict):
+                item_type = item.get("type", "unknown")
+                description = item.get("description", "No description")[:80]
+                print(f"  [{i}] ({item_type}) {description}...")
+            else:
+                # Item is a string
+                print(f"  [{i}] {str(item)[:80]}...")
         if len(human_review) > 5:
             print(f"  ... and {len(human_review) - 5} more items")
 
@@ -163,6 +168,21 @@ def print_result_summary(result: dict, topic: str) -> None:
         print(f"\n--- Original Review (v1) ---")
         word_count = len(final_review.split())
         print(f"Length: {len(final_review)} chars ({word_count} words)")
+
+    # Intermediate Loop Reviews
+    loop_names = {
+        1: "Theoretical Depth",
+        2: "Literature Expansion",
+        3: "Structural Editing",
+        4: "Section Editing",
+    }
+    for loop_num in [1, 2, 3, 4]:
+        key = f"review_loop{loop_num}"
+        review_text = result.get(key, "")
+        if review_text:
+            word_count = len(review_text.split())
+            print(f"\n--- Review after Loop {loop_num} ({loop_names[loop_num]}) ---")
+            print(f"Length: {len(review_text)} chars ({word_count} words)")
 
     # Supervised Review (v2)
     final_review_v2 = result.get("final_review_v2", "")
@@ -493,6 +513,30 @@ async def main():
             )
             logger.info(f"Original review (v1) saved to: {report_file}")
 
+        # Save intermediate loop reviews as markdown
+        loop_descriptions = {
+            1: "theoretical_depth",
+            2: "literature_expansion",
+            3: "structural_editing",
+            4: "section_editing",
+        }
+        for loop_num, loop_desc in loop_descriptions.items():
+            key = f"review_loop{loop_num}"
+            if result.get(key):
+                loop_file = save_markdown_report(
+                    result[key],
+                    f"supervised_lit_review_loop{loop_num}",
+                    title=f"Literature Review (After Loop {loop_num}: {loop_desc.replace('_', ' ').title()}): {topic}",
+                    metadata={
+                        "quality": quality,
+                        "language": language,
+                        "supervision": supervision_loops,
+                        "loop": loop_num,
+                        "loop_name": loop_desc,
+                    },
+                )
+                logger.info(f"Loop {loop_num} review saved to: {loop_file}")
+
         # Save supervised review (v2, after supervision loops) as markdown
         if result.get("final_review_v2"):
             supervision_info = result.get("supervision", {})
@@ -530,6 +574,11 @@ async def main():
     except Exception as e:
         logger.error(f"Supervised literature review failed: {e}", exc_info=True)
         return {"error": str(e)}, {"error": str(e)}
+
+    finally:
+        # Clean up HTTP clients to avoid "Unclosed client session" warnings
+        from core.utils.async_http_client import cleanup_all_clients
+        await cleanup_all_clients()
 
 
 if __name__ == "__main__":

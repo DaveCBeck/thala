@@ -18,12 +18,27 @@ from workflows.academic_lit_review.state import (
 )
 
 
+class ZoteroKeyMetadata(TypedDict, total=False):
+    """Metadata about a Zotero citation key's origin and verification status."""
+
+    key: str
+    source: str  # CITATION_SOURCE_* constant
+    verified: bool  # True if programmatically verified against Zotero
+    doi: Optional[str]
+
+
 class OrchestrationState(TypedDict, total=False):
     """State for multi-loop supervision orchestration."""
 
     # Review content
     current_review: str
     final_review: Optional[str]
+
+    # Intermediate review snapshots (after each loop)
+    review_loop1: Optional[str]
+    review_loop2: Optional[str]
+    review_loop3: Optional[str]
+    review_loop4: Optional[str]
 
     # Context from main workflow
     input: LitReviewInput
@@ -33,9 +48,12 @@ class OrchestrationState(TypedDict, total=False):
     quality_settings: QualitySettings
     zotero_keys: dict[str, str]
 
+    # Citation key source tracking (key -> ZoteroKeyMetadata)
+    zotero_key_sources: dict[str, ZoteroKeyMetadata]
+
     # Multi-loop tracking
     loop_progress: MultiLoopProgress
-    loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max = max_iterations_per_loop)
+    loop3_repeat_count: int
 
     # Outputs from each loop
     loop1_result: Optional[dict]
@@ -49,3 +67,6 @@ class OrchestrationState(TypedDict, total=False):
     human_review_items: list[str]
     completion_reason: str
     is_complete: bool
+
+    # Zotero verification settings
+    verify_zotero: bool

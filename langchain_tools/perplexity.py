@@ -31,11 +31,20 @@ CACHE_TTL_DAYS = 7
 _perplexity_client = None
 
 
+async def close_perplexity() -> None:
+    """Close the global Perplexity client and release resources."""
+    global _perplexity_client
+    if _perplexity_client is not None:
+        await _perplexity_client.aclose()
+        _perplexity_client = None
+
+
 def _get_perplexity():
     """Get Perplexity httpx client (lazy init)."""
     global _perplexity_client
     if _perplexity_client is None:
         import httpx
+        from core.utils.async_http_client import register_cleanup
 
         api_key = os.environ.get("PERPLEXITY_API_KEY")
         if not api_key:
@@ -51,6 +60,7 @@ def _get_perplexity():
             },
             timeout=30.0,
         )
+        register_cleanup("Perplexity", close_perplexity)
     return _perplexity_client
 
 

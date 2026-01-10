@@ -18,7 +18,17 @@ from .revision_history import document_revision
 from .citation_validation import (
     extract_citation_keys_from_text,
     validate_edit_citations,
+    validate_edit_citations_with_zotero,
+    verify_zotero_citation,
+    verify_zotero_citations_batch,
+    validate_citations_against_zotero,
+    strip_invalid_citations,
     check_section_growth,
+    CITATION_SOURCE_INITIAL,
+    CITATION_SOURCE_LOOP1,
+    CITATION_SOURCE_LOOP2,
+    CITATION_SOURCE_LOOP4,
+    CITATION_SOURCE_LOOP5,
 )
 
 __all__ = [
@@ -39,5 +49,15 @@ __all__ = [
     "document_revision",
     "extract_citation_keys_from_text",
     "validate_edit_citations",
+    "validate_edit_citations_with_zotero",
+    "verify_zotero_citation",
+    "verify_zotero_citations_batch",
+    "validate_citations_against_zotero",
+    "strip_invalid_citations",
     "check_section_growth",
+    "CITATION_SOURCE_INITIAL",
+    "CITATION_SOURCE_LOOP1",
+    "CITATION_SOURCE_LOOP2",
+    "CITATION_SOURCE_LOOP4",
+    "CITATION_SOURCE_LOOP5",
 ]

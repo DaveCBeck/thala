@@ -28,24 +28,6 @@ FIRECRAWL_TIMEOUT = int(os.environ.get("FIRECRAWL_TIMEOUT", "45"))
 _firecrawl_client = None
 
 
-def _get_firecrawl():
-    """Get AsyncFirecrawl client (lazy init)."""
-    global _firecrawl_client
-    if _firecrawl_client is None:
-        from firecrawl import AsyncFirecrawl
-
-        api_key = os.environ.get("FIRECRAWL_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "FIRECRAWL_API_KEY environment variable is required. "
-                "Get one at https://firecrawl.dev"
-            )
-        # NOTE: firecrawl-py SDK does not support timeout parameter directly.
-        # Timeout must be handled at the HTTP client level or via asyncio.wait_for
-        _firecrawl_client = AsyncFirecrawl(api_key=api_key)
-    return _firecrawl_client
-
-
 async def close_firecrawl() -> None:
     """Close the global Firecrawl client and release resources."""
     global _firecrawl_client
@@ -56,6 +38,26 @@ async def close_firecrawl() -> None:
         elif hasattr(_firecrawl_client, "_session") and _firecrawl_client._session:
             await _firecrawl_client._session.close()
         _firecrawl_client = None
+
+
+def _get_firecrawl():
+    """Get AsyncFirecrawl client (lazy init)."""
+    global _firecrawl_client
+    if _firecrawl_client is None:
+        from firecrawl import AsyncFirecrawl
+        from core.utils.async_http_client import register_cleanup
+
+        api_key = os.environ.get("FIRECRAWL_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "FIRECRAWL_API_KEY environment variable is required. "
+                "Get one at https://firecrawl.dev"
+            )
+        # NOTE: firecrawl-py SDK does not support timeout parameter directly.
+        # Timeout must be handled at the HTTP client level or via asyncio.wait_for
+        _firecrawl_client = AsyncFirecrawl(api_key=api_key)
+        register_cleanup("Firecrawl", close_firecrawl)
+    return _firecrawl_client
 
 
 # ---------------------------------------------------------------------------

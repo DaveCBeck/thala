@@ -1,6 +1,7 @@
 # Coding infrastructure
 .claude/
 .context/
+.lit-review-state/
 dev.md
 claude.md
 todo.md

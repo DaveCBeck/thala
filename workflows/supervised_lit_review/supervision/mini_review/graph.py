@@ -89,6 +89,7 @@ async def run_mini_review(
         return {
             "mini_review_text": "",
             "paper_summaries": {},
+            "paper_corpus": {},
             "zotero_keys": {},
             "clusters": [],
             "references": [],
@@ -124,6 +125,7 @@ async def run_mini_review(
         return {
             "mini_review_text": "",
             "paper_summaries": {},
+            "paper_corpus": {},
             "zotero_keys": {},
             "clusters": [],
             "references": [],
@@ -146,6 +148,7 @@ async def run_mini_review(
         return {
             "mini_review_text": "",
             "paper_summaries": {},
+            "paper_corpus": {},
             "zotero_keys": {},
             "clusters": [],
             "references": [],
@@ -185,6 +188,7 @@ async def run_mini_review(
     return {
         "mini_review_text": mini_review_text,
         "paper_summaries": paper_summaries,
+        "paper_corpus": final_corpus,  # Full PaperMetadata for corpus merging
         "zotero_keys": zotero_keys,
         "clusters": clusters,
         "references": references,

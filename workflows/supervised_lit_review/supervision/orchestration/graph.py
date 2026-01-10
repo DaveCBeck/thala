@@ -14,6 +14,14 @@ from ..loops.loop4_editing import run_loop4_standalone
 from ..loops.loop4_5_cohesion import check_cohesion
 from ..loops.loop5_factcheck import run_loop5_standalone
 from ..utils import document_revision
+from ..utils.citation_validation import (
+    validate_corpus_zotero_keys,
+    CITATION_SOURCE_INITIAL,
+    CITATION_SOURCE_LOOP1,
+    CITATION_SOURCE_LOOP2,
+    CITATION_SOURCE_LOOP4,
+    CITATION_SOURCE_LOOP5,
+)
 from workflows.academic_lit_review.state import (
     MultiLoopProgress,
     LoopCheckpoint,
@@ -78,14 +86,28 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
     )
     loop_progress["checkpoints"].append(checkpoint)
 
+    # Track citation key sources for any new papers added
+    zotero_key_sources = state.get("zotero_key_sources", {})
+    added_keys = result.get("added_zotero_keys", {})
+    for doi, key in added_keys.items():
+        if key not in zotero_key_sources:
+            zotero_key_sources[key] = {
+                "key": key,
+                "source": CITATION_SOURCE_LOOP1,
+                "verified": True,  # Added through workflow, assumed valid
+                "doi": doi,
+            }
+
     logger.info(f"Loop 1 complete: {iterations_used} iterations used")
 
     return {
         "current_review": after_text,
+        "review_loop1": after_text,
         "loop1_result": result,
         "loop_progress": loop_progress,
         "paper_corpus": result.get("added_papers", {}),
         "paper_summaries": result.get("added_summaries", {}),
+        "zotero_key_sources": zotero_key_sources,
     }
 
 
@@ -139,15 +161,29 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
     )
     loop_progress["checkpoints"].append(checkpoint)
 
+    # Track citation key sources for any new papers added
+    zotero_key_sources = state.get("zotero_key_sources", {})
+    new_zotero_keys = result.get("zotero_keys", {})
+    for doi, key in new_zotero_keys.items():
+        if key not in zotero_key_sources:
+            zotero_key_sources[key] = {
+                "key": key,
+                "source": CITATION_SOURCE_LOOP2,
+                "verified": True,
+                "doi": doi,
+            }
+
     logger.info(f"Loop 2 complete: {iterations_used} iterations used")
 
     return {
         "current_review": after_text,
+        "review_loop2": after_text,
         "loop2_result": result,
         "loop_progress": loop_progress,
         "paper_corpus": result.get("paper_corpus", state["paper_corpus"]),
         "paper_summaries": result.get("paper_summaries", state["paper_summaries"]),
         "zotero_keys": result.get("zotero_keys", state["zotero_keys"]),
+        "zotero_key_sources": zotero_key_sources,
     }
 
 
@@ -201,13 +237,16 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
 
     return {
         "current_review": after_text,
+        "review_loop3": after_text,
         "loop3_result": result,
         "loop_progress": loop_progress,
+        "paper_summaries": state["paper_summaries"],
+        "zotero_keys": state["zotero_keys"],
     }
 
 
 async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
-    """Run Loop 4: Section-level deep editing."""
+    """Run Loop 4: Section-level deep editing with optional Zotero verification."""
     logger.info("Running Loop 4: Section-level deep editing")
 
     before_text = state["current_review"]
@@ -215,6 +254,9 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
     max_iterations = loop_progress["max_iterations_per_loop"]
     topic = state["input"].get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
+
+    # Check if Zotero verification is enabled
+    verify_zotero = state.get("verify_zotero", False)
 
     result = await run_loop4_standalone(
         review=state["current_review"],
@@ -226,6 +268,7 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
             "run_id": loop_run_id,
             "run_name": f"loop4_editing:{topic}",
         },
+        verify_zotero=verify_zotero,
     )
 
     after_text = result.get("edited_review", state["current_review"])
@@ -233,7 +276,7 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
 
     # Update loop progress
     loop_progress["loop_iterations"]["loop_4"] = iterations_used
-    loop_progress["current_loop"] = 4.5  # Move to Loop 4.5
+    loop_progress["current_loop"] = 4.5
 
     # Document revision
     if before_text != after_text:
@@ -254,12 +297,28 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
     )
     loop_progress["checkpoints"].append(checkpoint)
 
+    # Track verified citation keys
+    zotero_key_sources = state.get("zotero_key_sources", {})
+    verified_keys = result.get("verified_citation_keys", set())
+    for key in verified_keys:
+        if key not in zotero_key_sources:
+            zotero_key_sources[key] = {
+                "key": key,
+                "source": CITATION_SOURCE_LOOP4,
+                "verified": True,
+                "doi": None,
+            }
+
     logger.info(f"Loop 4 complete: {iterations_used} iterations used")
 
     return {
         "current_review": after_text,
+        "review_loop4": after_text,
         "loop4_result": result,
         "loop_progress": loop_progress,
+        "paper_summaries": state["paper_summaries"],
+        "zotero_keys": state["zotero_keys"],
+        "zotero_key_sources": zotero_key_sources,
     }
 
 
@@ -278,33 +337,40 @@ async def run_loop4_5_node(state: OrchestrationState) -> dict[str, Any]:
             "needs_restructuring": result.needs_restructuring,
             "reasoning": result.reasoning,
         },
+        "paper_summaries": state["paper_summaries"],
+        "zotero_keys": state["zotero_keys"],
     }
 
 
 async def run_loop5_node(state: OrchestrationState) -> dict[str, Any]:
-    """Run Loop 5: Fact and reference checking."""
+    """Run Loop 5: Fact and reference checking with optional Zotero verification."""
     logger.info("Running Loop 5: Fact and reference checking")
 
     before_text = state["current_review"]
     topic = state["input"].get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
 
+    # Check if Zotero verification is enabled
+    verify_zotero = state.get("verify_zotero", False)
+
     result = await run_loop5_standalone(
         review=state["current_review"],
         paper_summaries=state["paper_summaries"],
         zotero_keys=state["zotero_keys"],
-        max_iterations=1,  # Loop 5 typically runs once
+        max_iterations=1,
         config={
             "run_id": loop_run_id,
             "run_name": f"loop5_factcheck:{topic}",
         },
+        topic=topic,
+        verify_zotero=verify_zotero,
     )
 
     after_text = result.get("current_review", state["current_review"])
 
     loop_progress = state["loop_progress"]
     loop_progress["loop_iterations"]["loop_5"] = 1
-    loop_progress["current_loop"] = 6  # Complete
+    loop_progress["current_loop"] = 6
 
     # Document revision
     if before_text != after_text:
@@ -328,6 +394,18 @@ async def run_loop5_node(state: OrchestrationState) -> dict[str, Any]:
     # Collect human review items
     human_review_items = result.get("human_review_items", [])
 
+    # Track verified citation keys
+    zotero_key_sources = state.get("zotero_key_sources", {})
+    verified_keys = result.get("verified_citation_keys", set())
+    for key in verified_keys:
+        if key not in zotero_key_sources:
+            zotero_key_sources[key] = {
+                "key": key,
+                "source": CITATION_SOURCE_LOOP5,
+                "verified": True,
+                "doi": None,
+            }
+
     logger.info(
         f"Loop 5 complete: {len(human_review_items)} items flagged for human review"
     )
@@ -337,6 +415,7 @@ async def run_loop5_node(state: OrchestrationState) -> dict[str, Any]:
         "loop5_result": result,
         "loop_progress": loop_progress,
         "human_review_items": human_review_items,
+        "zotero_key_sources": zotero_key_sources,
     }
 
 
@@ -372,11 +451,7 @@ def increment_loop3_repeat_node(state: OrchestrationState) -> dict[str, Any]:
 
 
 def route_after_loop4_5(state: OrchestrationState) -> str:
-    """Route after Loop 4.5 cohesion check.
-
-    If needs_restructuring AND loop3_repeat_count < max_iterations_per_loop: return to Loop 3
-    Otherwise: proceed to Loop 5
-    """
+    """Route after Loop 4.5 cohesion check."""
     loop4_5_result = state.get("loop4_5_result", {})
     needs_restructuring = loop4_5_result.get("needs_restructuring", False)
     repeat_count = state.get("loop3_repeat_count", 0)
@@ -402,16 +477,9 @@ def route_after_loop4_5(state: OrchestrationState) -> str:
 
 
 def create_orchestration_graph() -> StateGraph:
-    """Create the multi-loop orchestration graph.
-
-    Flow:
-        START → loop1 → loop2 → loop3 → loop4 → loop4_5 → route
-            → (needs_restructuring AND repeat_count < max_iterations) → increment_and_loop3 → loop3
-            → (approved OR max_repeat) → loop5 → finalize → END
-    """
+    """Create the multi-loop orchestration graph."""
     builder = StateGraph(OrchestrationState)
 
-    # Add nodes
     builder.add_node("loop1", run_loop1_node)
     builder.add_node("loop2", run_loop2_node)
     builder.add_node("loop3", run_loop3_node)
@@ -421,24 +489,21 @@ def create_orchestration_graph() -> StateGraph:
     builder.add_node("loop5", run_loop5_node)
     builder.add_node("finalize", finalize_node)
 
-    # Build flow
     builder.add_edge(START, "loop1")
     builder.add_edge("loop1", "loop2")
     builder.add_edge("loop2", "loop3")
     builder.add_edge("loop3", "loop4")
     builder.add_edge("loop4", "loop4_5")
 
-    # Route after Loop 4.5
     builder.add_conditional_edges(
         "loop4_5",
         route_after_loop4_5,
         {
-            "increment_and_loop3": "increment_and_loop3",  # Increment counter first
-            "loop5": "loop5",  # Proceed to fact check
+            "increment_and_loop3": "increment_and_loop3",
+            "loop5": "loop5",
         },
     )
 
-    # After incrementing, return to loop3
     builder.add_edge("increment_and_loop3", "loop3")
 
     builder.add_edge("loop5", "finalize")
@@ -461,6 +526,7 @@ async def run_supervision_orchestration(
     input_data: dict,
     quality_settings: dict,
     max_iterations_per_loop: int = 3,
+    verify_zotero: bool = False,
 ) -> dict:
     """Run full supervision orchestration through all loops.
 
@@ -472,15 +538,12 @@ async def run_supervision_orchestration(
         clusters: Thematic clusters from main workflow
         input_data: LitReviewInput with topic and research questions
         quality_settings: Quality tier settings
-        max_iterations_per_loop: Max iterations each loop can use (independent budgets)
+        max_iterations_per_loop: Max iterations each loop can use
+        verify_zotero: If True, verify new citations against Zotero programmatically
 
     Returns:
-        Dictionary containing:
-            - final_review: Final review after all loops
-            - loop_progress: Multi-loop progress tracking
-            - human_review_items: Items flagged for human review
-            - completion_reason: Why orchestration completed
-            - loop1_result through loop5_result: Individual loop outputs
+        Dictionary containing final_review, loop_progress, human_review_items,
+        completion_reason, and individual loop results
     """
     # Initialize loop progress
     loop_progress = MultiLoopProgress(
@@ -498,6 +561,16 @@ async def run_supervision_orchestration(
         loop3_repeat_count=0,
     )
 
+    # Initialize citation key source tracking
+    zotero_key_sources = {}
+    for doi, key in zotero_keys.items():
+        zotero_key_sources[key] = {
+            "key": key,
+            "source": CITATION_SOURCE_INITIAL,
+            "verified": True,
+            "doi": doi,
+        }
+
     initial_state = OrchestrationState(
         current_review=review,
         final_review=None,
@@ -507,6 +580,7 @@ async def run_supervision_orchestration(
         clusters=clusters,
         quality_settings=quality_settings,
         zotero_keys=zotero_keys,
+        zotero_key_sources=zotero_key_sources,
         loop_progress=loop_progress,
         loop3_repeat_count=0,
         loop1_result=None,
@@ -518,6 +592,7 @@ async def run_supervision_orchestration(
         human_review_items=[],
         completion_reason="",
         is_complete=False,
+        verify_zotero=verify_zotero,
     )
 
     graph = create_orchestration_graph()
@@ -538,9 +613,14 @@ async def run_supervision_orchestration(
 
     return {
         "final_review": final_state.get("final_review", review),
+        "review_loop1": final_state.get("review_loop1"),
+        "review_loop2": final_state.get("review_loop2"),
+        "review_loop3": final_state.get("review_loop3"),
+        "review_loop4": final_state.get("review_loop4"),
         "loop_progress": final_state.get("loop_progress", loop_progress),
         "human_review_items": final_state.get("human_review_items", []),
         "completion_reason": final_state.get("completion_reason", ""),
+        "zotero_key_sources": final_state.get("zotero_key_sources", {}),
         "loop1_result": final_state.get("loop1_result"),
         "loop2_result": final_state.get("loop2_result"),
         "loop3_result": final_state.get("loop3_result"),
@@ -552,13 +632,13 @@ async def run_supervision_orchestration(
 
 # Valid supervision_loops config values
 SUPERVISION_LOOP_CONFIGS = {
-    "none": 0,   # Skip supervision entirely
-    "one": 1,    # Loop 1 only (theoretical depth)
-    "two": 2,    # Loops 1-2 (depth + literature bases)
-    "three": 3,  # Loops 1-3 (depth + literature + structure)
-    "four": 4,   # Loops 1-4 (depth + literature + structure + editing)
-    "all": 5,    # All loops including fact-checking
-    "five": 5,   # Alias for "all"
+    "none": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "all": 5,
+    "five": 5,
 }
 
 
@@ -572,6 +652,7 @@ async def run_supervision_configurable(
     quality_settings: dict,
     max_iterations_per_loop: int = 3,
     loops: str = "all",
+    verify_zotero: bool = False,
 ) -> dict:
     """Run configurable supervision with specified number of loops.
 
@@ -583,16 +664,13 @@ async def run_supervision_configurable(
         clusters: Thematic clusters from main workflow
         input_data: LitReviewInput with topic and research questions
         quality_settings: Quality tier settings
-        max_iterations_per_loop: Max iterations each loop can use (independent budgets)
+        max_iterations_per_loop: Max iterations each loop can use
         loops: Which loops to run - "none", "one", "two", "three", "four", "all"
+        verify_zotero: If True, verify new citations against Zotero programmatically
 
     Returns:
-        Dictionary containing:
-            - final_review: Final review after supervision
-            - loop_progress: Multi-loop progress tracking
-            - human_review_items: Items flagged for human review
-            - completion_reason: Why supervision completed
-            - loops_run: Which loops were executed
+        Dictionary containing final_review, loop_progress, human_review_items,
+        completion_reason, and loops_run
     """
     loop_count = SUPERVISION_LOOP_CONFIGS.get(loops.lower(), 5)
 
@@ -618,6 +696,7 @@ async def run_supervision_configurable(
             input_data=input_data,
             quality_settings=quality_settings,
             max_iterations_per_loop=max_iterations_per_loop,
+            verify_zotero=verify_zotero,
         )
         result["loops_run"] = ["loop1", "loop2", "loop3", "loop4", "loop4_5", "loop5"]
         return result
@@ -634,7 +713,12 @@ async def run_supervision_configurable(
     human_review_items = []
     topic = input_data.get("topic", "")[:20]
 
-    # Loop 1: Theoretical Depth (always runs if loop_count >= 1)
+    review_loop1 = None
+    review_loop2 = None
+    review_loop3 = None
+    review_loop4 = None
+
+    # Loop 1: Theoretical Depth
     if loop_count >= 1:
         logger.info("Running Loop 1: Theoretical depth expansion")
         loops_run.append("loop1")
@@ -655,9 +739,9 @@ async def run_supervision_configurable(
         )
 
         current_review = loop1_result.get("final_review_v2", current_review)
+        review_loop1 = current_review
         all_results["loop1_result"] = loop1_result
 
-        # Merge any added papers
         added_papers = loop1_result.get("added_papers", {})
         added_summaries = loop1_result.get("added_summaries", {})
         current_corpus.update(added_papers)
@@ -684,6 +768,7 @@ async def run_supervision_configurable(
         )
 
         current_review = loop2_result.get("current_review", current_review)
+        review_loop2 = current_review
         current_corpus = loop2_result.get("paper_corpus", current_corpus)
         current_summaries = loop2_result.get("paper_summaries", current_summaries)
         current_zotero = loop2_result.get("zotero_keys", current_zotero)
@@ -706,6 +791,7 @@ async def run_supervision_configurable(
         )
 
         current_review = loop3_result.get("current_review", current_review)
+        review_loop3 = current_review
         all_results["loop3_result"] = loop3_result
 
     # Loop 4 + 4.5: Section Editing + Cohesion Check
@@ -724,9 +810,11 @@ async def run_supervision_configurable(
                 "run_id": loop4_run_id,
                 "run_name": f"loop4_editing:{topic}",
             },
+            verify_zotero=verify_zotero,
         )
 
         current_review = loop4_result.get("edited_review", current_review)
+        review_loop4 = current_review
         all_results["loop4_result"] = loop4_result
 
         # Run Loop 4.5 cohesion check
@@ -739,27 +827,31 @@ async def run_supervision_configurable(
             "reasoning": cohesion_result.reasoning,
         }
 
-        # If needs restructuring, run Loop 3 again (once)
         if cohesion_result.needs_restructuring:
             logger.info("Cohesion check flagged issues - running Loop 3 again")
             loop3_repeat_run_id = uuid.uuid4()
             loop3_repeat = await run_loop3_standalone(
                 review=current_review,
                 input_data=input_data,
-                max_iterations=2,  # Limited iterations for repeat
+                max_iterations=2,
                 config={
                     "run_id": loop3_repeat_run_id,
                     "run_name": f"loop3_repeat:{topic}",
                 },
             )
             current_review = loop3_repeat.get("current_review", current_review)
+            review_loop3 = current_review
 
     completion_reason = f"Completed {loop_count} supervision loop(s)"
     logger.info(f"Partial supervision complete: {completion_reason}")
 
     return {
         "final_review": current_review,
-        "loop_progress": None,  # Simplified tracking for partial runs
+        "review_loop1": review_loop1,
+        "review_loop2": review_loop2,
+        "review_loop3": review_loop3,
+        "review_loop4": review_loop4,
+        "loop_progress": None,
         "human_review_items": human_review_items,
         "completion_reason": completion_reason,
         "loops_run": loops_run,

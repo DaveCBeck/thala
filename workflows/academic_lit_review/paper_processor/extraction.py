@@ -58,17 +58,22 @@ async def _fetch_content_for_extraction(store_manager, es_record_id: str, doi: s
     - L2 fits comfortably in LLM context windows
 
     Falls back to L0 if L2 is not available (e.g., short papers that skip 10:1 summarization).
+
+    Note: es_record_id is the L0 UUID. For L2, we use get_by_source_id() which
+    searches by source_ids field (L1/L2 records store L0 UUID in source_ids).
     """
     record_uuid = UUID(es_record_id)
+    store = store_manager.es_stores.store
 
     # Try L2 first (10:1 summary) - better for long documents
-    record = await store_manager.es_stores.store.get(record_uuid, compression_level=2)
+    # Use get_by_source_id since es_record_id is the L0 UUID
+    record = await store.get_by_source_id(record_uuid, compression_level=2)
     if record and record.content:
         logger.debug(f"Using L2 (10:1 summary) for {doi}")
         return record.content
 
     # Fall back to L0 (original) for papers without L2
-    record = await store_manager.es_stores.store.get(record_uuid, compression_level=0)
+    record = await store.get(record_uuid, compression_level=0)
     if record and record.content:
         logger.debug(f"Using L0 (original) for {doi}")
         return record.content

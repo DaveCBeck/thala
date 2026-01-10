@@ -11,12 +11,15 @@ from workflows.academic_lit_review.state import LitReviewInput
 from workflows.supervised_lit_review.supervision.types import (
     EditManifest,
     StructuralEdit,
+    ArchitectureVerificationResult,
 )
 from workflows.supervised_lit_review.supervision.prompts import (
     LOOP3_ANALYST_SYSTEM,
     LOOP3_ANALYST_USER,
     LOOP3_EDITOR_SYSTEM,
     LOOP3_EDITOR_USER,
+    LOOP3_VERIFIER_SYSTEM,
+    LOOP3_VERIFIER_USER,
 )
 from workflows.supervised_lit_review.supervision.utils import (
     number_paragraphs,
@@ -43,9 +46,15 @@ class Loop3State(TypedDict):
 
     valid_edits: list[dict]
     invalid_edits: list[dict]
+    needs_retry_edits: list[dict]  # Edits missing replacement_text
     validation_errors: dict[int, str]
     applied_edits: list[str]
     fallback_used: bool
+    retry_attempted: bool  # Whether we already retried for missing replacement_text
+
+    # Architecture verification
+    architecture_verification: Optional[dict]
+    needs_another_iteration: bool
 
 
 def number_paragraphs_node(state: Loop3State) -> dict[str, Any]:
@@ -128,17 +137,29 @@ async def analyze_structure_node(state: Loop3State) -> dict[str, Any]:
 
 
 def route_after_analysis(state: Loop3State) -> str:
-    """Route based on whether restructuring is needed."""
+    """Route based on whether restructuring is needed AND edits exist.
+
+    Only routes to restructure if both:
+    1. needs_restructuring is True
+    2. At least one edit or todo_marker is provided
+
+    This handles the case where the LLM sets needs_restructuring=True
+    but fails to provide concrete edits.
+    """
     manifest = state.get("edit_manifest")
 
     if not manifest:
         return "pass_through"
 
     needs_restructuring = manifest.get("needs_restructuring", False)
+    has_edits = bool(manifest.get("edits")) or bool(manifest.get("todo_markers"))
 
-    if needs_restructuring:
-        logger.info("Routing to validate_edits (restructuring needed)")
+    if needs_restructuring and has_edits:
+        logger.info("Routing to validate_edits (restructuring needed with edits)")
         return "restructure_needed"
+    elif needs_restructuring and not has_edits:
+        logger.warning("needs_restructuring=True but no edits provided, treating as pass-through")
+        return "pass_through"
     else:
         logger.info("Routing to finalize (pass-through)")
         return "pass_through"
@@ -154,6 +175,7 @@ def validate_edits_node(state: Loop3State) -> dict[str, Any]:
         return {
             "valid_edits": [],
             "invalid_edits": [],
+            "needs_retry_edits": [],
             "validation_errors": {},
         }
 
@@ -163,16 +185,22 @@ def validate_edits_node(state: Loop3State) -> dict[str, Any]:
 
     logger.info(
         f"Edit validation: {len(result['valid_edits'])} valid, "
-        f"{len(result['invalid_edits'])} invalid"
+        f"{len(result['invalid_edits'])} invalid, "
+        f"{len(result['needs_retry_edits'])} need retry"
     )
 
     if result["invalid_edits"]:
         for idx, error in result["errors"].items():
             logger.warning(f"Invalid edit {idx}: {error}")
 
+    if result["needs_retry_edits"]:
+        for edit in result["needs_retry_edits"]:
+            logger.info(f"Edit needs retry (missing replacement_text): P{edit.source_paragraph}")
+
     return {
         "valid_edits": [e.model_dump() for e in result["valid_edits"]],
         "invalid_edits": [e.model_dump() for e in result["invalid_edits"]],
+        "needs_retry_edits": [e.model_dump() for e in result["needs_retry_edits"]],
         "validation_errors": result["errors"],
     }
 
@@ -181,18 +209,27 @@ def route_after_validation(state: Loop3State) -> str:
     """Route based on validation results."""
     valid_edits = state.get("valid_edits", [])
     invalid_edits = state.get("invalid_edits", [])
+    needs_retry_edits = state.get("needs_retry_edits", [])
+    retry_attempted = state.get("retry_attempted", False)
     manifest = state.get("edit_manifest")
 
     if not manifest or not manifest.get("needs_restructuring"):
         return "no_edits"
 
+    # If we have edits that need retry (missing replacement_text) and haven't tried yet,
+    # route to retry. If we already retried, treat them as valid with fallback.
+    if needs_retry_edits and not retry_attempted:
+        logger.info(f"{len(needs_retry_edits)} edits need retry for missing replacement_text")
+        return "needs_retry"
+
     if valid_edits:
         logger.info(f"Routing to programmatic application ({len(valid_edits)} valid edits)")
         return "has_valid_edits"
 
-    if invalid_edits:
+    if invalid_edits or (needs_retry_edits and retry_attempted):
+        # If we retried but still missing replacement_text, use fallback mode
         logger.warning(
-            f"All {len(invalid_edits)} edits invalid, falling back to LLM execution"
+            f"Edits invalid or missing replacement_text after retry, falling back to LLM"
         )
         return "llm_fallback"
 
@@ -244,6 +281,130 @@ def verify_application_node(state: Loop3State) -> dict[str, Any]:
         logger.info(f"All {len(verifications)} edits verified as applied")
 
     return {}
+
+
+async def retry_analyze_node(state: Loop3State) -> dict[str, Any]:
+    """Retry analysis specifically for edits missing replacement_text.
+
+    Re-prompts the LLM with explicit instructions to provide replacement_text
+    for trim_redundancy and split_section edits.
+    """
+    needs_retry_edits = state.get("needs_retry_edits", [])
+    numbered_doc = state["numbered_document"]
+    input_data = state["input"]
+    topic = input_data.get("topic", "")
+
+    # Build specific retry prompt
+    retry_prompt = f"""The previous analysis identified edits that require replacement_text but it was missing.
+
+Please provide the replacement_text for these specific edits:
+
+"""
+    for edit in needs_retry_edits:
+        edit_type = edit.get("edit_type")
+        source = edit.get("source_paragraph")
+        notes = edit.get("notes", "")
+        retry_prompt += f"""
+- {edit_type} for P{source}: {notes}
+  Please provide the replacement_text (the trimmed/split content).
+"""
+
+    retry_prompt += f"""
+## Numbered Document
+{numbered_doc}
+
+## Research Topic
+{topic}
+
+Provide an EditManifest with the SAME edits but include replacement_text for each."""
+
+    try:
+        manifest = await get_structured_output(
+            output_schema=EditManifest,
+            user_prompt=retry_prompt,
+            system_prompt=LOOP3_ANALYST_SYSTEM,
+            tier=ModelTier.OPUS,
+            thinking_budget=4000,
+            max_tokens=8096,
+            use_json_schema_method=True,
+            max_retries=1,
+        )
+
+        logger.info(f"Retry analysis: {len(manifest.edits)} edits returned")
+
+        return {
+            "edit_manifest": manifest.model_dump(),
+            "retry_attempted": True,
+        }
+
+    except Exception as e:
+        logger.error(f"Retry analysis failed: {e}")
+        return {"retry_attempted": True}
+
+
+async def verify_architecture_node(state: Loop3State) -> dict[str, Any]:
+    """Verify that structural issues were resolved and document is coherent.
+
+    This node runs after edits are applied to confirm:
+    1. Original issues are resolved
+    2. No regressions introduced
+    3. Document has coherent flow
+    """
+    current_review = state["current_review"]
+    edit_manifest = state.get("edit_manifest", {})
+    applied_edits = state.get("applied_edits", [])
+    iteration = state["iteration"]
+    max_iterations = state["max_iterations"]
+
+    # Format original issues from manifest
+    original_issues = edit_manifest.get("overall_assessment", "No assessment available") if edit_manifest else "No manifest"
+    architecture = edit_manifest.get("architecture_assessment", {}) if edit_manifest else {}
+    if architecture:
+        issues_list = (
+            architecture.get("content_placement_issues", []) +
+            architecture.get("logical_flow_issues", []) +
+            architecture.get("anti_patterns_detected", [])
+        )
+        if issues_list:
+            original_issues += "\n- " + "\n- ".join(issues_list)
+
+    user_prompt = LOOP3_VERIFIER_USER.format(
+        original_issues=original_issues,
+        applied_edits="\n".join(f"- {e}" for e in applied_edits) if applied_edits else "None",
+        current_document=current_review[:15000],  # Limit size
+        iteration=iteration + 1,
+        max_iterations=max_iterations,
+    )
+
+    try:
+        result = await get_structured_output(
+            output_schema=ArchitectureVerificationResult,
+            user_prompt=user_prompt,
+            system_prompt=LOOP3_VERIFIER_SYSTEM,
+            tier=ModelTier.SONNET,  # Sonnet is sufficient for verification
+            thinking_budget=4000,
+            max_tokens=4096,
+            use_json_schema_method=True,
+            max_retries=2,
+        )
+
+        logger.info(
+            f"Architecture verification: coherence={result.coherence_score:.2f}, "
+            f"resolved={len(result.issues_resolved)}, remaining={len(result.issues_remaining)}, "
+            f"regressions={len(result.regressions_introduced)}"
+        )
+
+        return {
+            "architecture_verification": result.model_dump(),
+            "needs_another_iteration": result.needs_another_iteration,
+        }
+
+    except Exception as e:
+        logger.error(f"Architecture verification failed: {e}")
+        return {
+            "architecture_verification": None,
+            "needs_another_iteration": False,
+        }
 
 
 async def execute_manifest_node(state: Loop3State) -> dict[str, Any]:
@@ -326,7 +487,10 @@ def validate_result_node(state: Loop3State) -> dict[str, Any]:
 
 
 def check_continue(state: Loop3State) -> str:
-    """Check if we should continue or complete the loop."""
+    """Check if we should continue or complete the loop.
+
+    Now uses architecture verification results to inform decision.
+    """
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
 
@@ -334,6 +498,20 @@ def check_continue(state: Loop3State) -> str:
         logger.info(f"Max iterations reached ({max_iterations})")
         return "complete"
 
+    # Check architecture verification result
+    arch_verification = state.get("architecture_verification")
+    if arch_verification:
+        needs_another = arch_verification.get("needs_another_iteration", False)
+        coherence = arch_verification.get("coherence_score", 1.0)
+
+        if not needs_another and coherence >= 0.8:
+            logger.info(f"Architecture verified (coherence={coherence:.2f}), completing")
+            return "complete"
+        elif needs_another:
+            logger.info(f"Architecture verification requests another iteration (coherence={coherence:.2f})")
+            return "continue"
+
+    # Fallback to original logic
     manifest = state.get("edit_manifest")
     if manifest:
         edits_count = len(manifest.get("edits", []))
@@ -404,10 +582,12 @@ def create_loop3_graph():
     Graph flow:
     - analyze_structure -> validate_edits (if restructuring needed)
     - validate_edits -> apply_edits_programmatic (if valid edits)
+                    -> retry_analyze (if missing replacement_text, first time)
                     -> execute_manifest_llm (if all invalid, fallback)
                     -> finalize (if no edits)
-    - apply_edits_programmatic -> verify_application -> validate_result
-    - execute_manifest_llm -> validate_result
+    - retry_analyze -> validate_edits (re-validate after retry)
+    - apply_edits_programmatic -> verify_application -> verify_architecture -> validate_result
+    - execute_manifest_llm -> verify_architecture -> validate_result
     - validate_result -> continue loop or finalize
 
     Returns a compiled graph ready for execution.
@@ -417,8 +597,10 @@ def create_loop3_graph():
     graph.add_node("number_paragraphs", number_paragraphs_node)
     graph.add_node("analyze_structure", analyze_structure_node)
     graph.add_node("validate_edits", validate_edits_node)
+    graph.add_node("retry_analyze", retry_analyze_node)
     graph.add_node("apply_edits_programmatic", apply_edits_programmatically_node)
     graph.add_node("verify_application", verify_application_node)
+    graph.add_node("verify_architecture", verify_architecture_node)
     graph.add_node("execute_manifest_llm", execute_manifest_node)
     graph.add_node("validate_result", validate_result_node)
     graph.add_node("increment_iteration", increment_iteration)
@@ -441,15 +623,22 @@ def create_loop3_graph():
         route_after_validation,
         {
             "has_valid_edits": "apply_edits_programmatic",
+            "needs_retry": "retry_analyze",
             "llm_fallback": "execute_manifest_llm",
             "no_edits": "finalize",
         },
     )
 
-    graph.add_edge("apply_edits_programmatic", "verify_application")
-    graph.add_edge("verify_application", "validate_result")
+    # Retry goes back to validate_edits
+    graph.add_edge("retry_analyze", "validate_edits")
 
-    graph.add_edge("execute_manifest_llm", "validate_result")
+    # Programmatic path: apply -> verify_application -> verify_architecture -> validate_result
+    graph.add_edge("apply_edits_programmatic", "verify_application")
+    graph.add_edge("verify_application", "verify_architecture")
+    graph.add_edge("verify_architecture", "validate_result")
+
+    # LLM fallback also goes through verify_architecture
+    graph.add_edge("execute_manifest_llm", "verify_architecture")
 
     graph.add_conditional_edges(
         "validate_result",
@@ -506,9 +695,13 @@ async def run_loop3_standalone(
         "is_complete": False,
         "valid_edits": [],
         "invalid_edits": [],
+        "needs_retry_edits": [],
         "validation_errors": {},
         "applied_edits": [],
         "fallback_used": False,
+        "retry_attempted": False,
+        "architecture_verification": None,
+        "needs_another_iteration": False,
     }
 
     logger.info(f"Running Loop 3 standalone with max_iterations={max_iterations}")

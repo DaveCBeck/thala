@@ -196,6 +196,11 @@ async def supervised_lit_review(
             "status": status,  # Standardized status
             "paper_corpus": merged_corpus,
             "paper_summaries": merged_summaries,
+            # Intermediate review snapshots
+            "review_loop1": supervision_result.get("review_loop1"),
+            "review_loop2": supervision_result.get("review_loop2"),
+            "review_loop3": supervision_result.get("review_loop3"),
+            "review_loop4": supervision_result.get("review_loop4"),
             "supervision": {
                 "loops_run": loops_run,
                 "completion_reason": completion_reason,

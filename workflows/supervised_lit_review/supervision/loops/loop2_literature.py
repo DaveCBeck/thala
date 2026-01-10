@@ -126,6 +126,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
     )
 
     new_paper_summaries = mini_review_result.get("paper_summaries", {})
+    new_paper_corpus = mini_review_result.get("paper_corpus", {})
     new_zotero_keys = mini_review_result.get("zotero_keys", {})
 
     logger.info(
@@ -138,6 +139,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
             **decision,
             "mini_review_text": mini_review_result.get("mini_review_text", ""),
             "new_paper_summaries": new_paper_summaries,
+            "new_paper_corpus": new_paper_corpus,  # Full PaperMetadata for merging
             "new_zotero_keys": new_zotero_keys,
             "clusters": mini_review_result.get("clusters", []),
             "references": mini_review_result.get("references", []),
@@ -156,6 +158,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
 
     mini_review_text = decision.get("mini_review_text", "")
     new_paper_summaries = decision.get("new_paper_summaries", {})
+    new_paper_corpus = decision.get("new_paper_corpus", {})
     new_zotero_keys = decision.get("new_zotero_keys", {})
 
     if not mini_review_text:
@@ -187,16 +190,19 @@ async def integrate_findings_node(state: Loop2State) -> dict:
     merged_summaries = {**state["paper_summaries"], **new_paper_summaries}
     merged_zotero = {**state["zotero_keys"], **new_zotero_keys}
 
+    # Merge paper corpus with full PaperMetadata from mini-review
     merged_corpus = state["paper_corpus"].copy()
-    for doi in new_paper_summaries.keys():
+    new_papers_added = 0
+    for doi, paper_metadata in new_paper_corpus.items():
         if doi not in merged_corpus:
-            merged_corpus[doi] = {"doi": doi}
+            merged_corpus[doi] = paper_metadata
+            new_papers_added += 1
 
     explored_bases = state.get("explored_bases", []) + [literature_base.name]
 
     logger.info(
         f"Integration complete: review length {len(updated_review)}, "
-        f"total papers {len(merged_summaries)}"
+        f"total papers {len(merged_summaries)}, new papers added: {new_papers_added}"
     )
 
     return {

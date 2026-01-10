@@ -1,11 +1,34 @@
 """Base async HTTP client with lazy initialization and context manager support."""
 
+import logging
 import os
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 import httpx
 
 from .async_context import AsyncContextManager
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Global Cleanup Registry
+# ---------------------------------------------------------------------------
+
+_cleanup_registry: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+
+
+def register_cleanup(name: str, closer: Callable[[], Awaitable[None]]) -> None:
+    """Register a cleanup function to be called on shutdown."""
+    _cleanup_registry.append((name, closer))
+
+
+async def cleanup_all_clients() -> None:
+    """Close all registered HTTP clients (idempotent)."""
+    for name, closer in _cleanup_registry:
+        try:
+            await closer()
+        except Exception as e:
+            logger.warning(f"Error closing {name} client: {e}")
 
 
 class BaseAsyncHttpClient(AsyncContextManager):

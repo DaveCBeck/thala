@@ -55,17 +55,27 @@ class BookSearchOutput(BaseModel):
     results: list[Book] = Field(default_factory=list)
 
 
+async def close_book_search() -> None:
+    """Close the global book search client and release resources."""
+    global _book_search_client
+    if _book_search_client is not None:
+        await _book_search_client.aclose()
+        _book_search_client = None
+
+
 def _get_client():
     """Get httpx AsyncClient for retrieve-academic service (lazy init)."""
     global _book_search_client
     if _book_search_client is None:
         import httpx
+        from core.utils.async_http_client import register_cleanup
 
         service_url = os.environ.get("BOOK_SEARCH_SERVICE_URL", DEFAULT_SERVICE_URL)
         _book_search_client = httpx.AsyncClient(
             base_url=service_url,
             timeout=30.0,
         )
+        register_cleanup("BookSearch", close_book_search)
     return _book_search_client
 
 

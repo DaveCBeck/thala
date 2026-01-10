@@ -70,6 +70,43 @@ class MainStore(BaseElasticsearchStore):
                 return result
         return None
 
+    async def get_by_source_id(
+        self,
+        source_id: UUID,
+        compression_level: int,
+    ) -> Optional[StoreRecord]:
+        """
+        Get a compressed record by its source (L0) UUID.
+
+        L1 and L2 records store the L0 UUID in their source_ids field.
+        This method finds the compressed record derived from a given L0 record.
+
+        Args:
+            source_id: UUID of the source L0 record
+            compression_level: Which compression level to search (1 or 2)
+
+        Returns:
+            StoreRecord if found, None otherwise
+        """
+        if compression_level == 0:
+            # For L0, use direct lookup
+            return await self.get(source_id, compression_level=0)
+
+        index = self._index_for_level(compression_level)
+        query = {
+            "bool": {
+                "must": [
+                    {"term": {"source_ids": str(source_id)}},
+                    {"term": {"compression_level": compression_level}},
+                ]
+            }
+        }
+
+        results = await super().search(query, size=1, index=index)
+        if results:
+            return results[0]
+        return None
+
     async def update(self, record_id: UUID, updates: dict[str, Any], compression_level: int = 0) -> bool:
         """
         Partially update a record.

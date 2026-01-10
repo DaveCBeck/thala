@@ -35,6 +35,9 @@ class SupervisionStoreQuery:
     - L1: Short summary (~100 words)
     - L2: 10:1 compressed summary (medium)
 
+    Note: es_record_id in paper_summaries is always the L0 UUID. For L1/L2,
+    we use get_by_source_id() which searches by source_ids field.
+
     Usage:
         store_query = SupervisionStoreQuery(paper_summaries)
         content = await store_query.get_paper_content(doi, compression_level=2)
@@ -84,6 +87,10 @@ class SupervisionStoreQuery:
     ) -> Optional[str]:
         """Fetch paper content from store at specified compression level.
 
+        The es_record_id stored in paper_summaries is the L0 (original) UUID.
+        For L1/L2 lookups, we use get_by_source_id() which finds compressed
+        records by their source_ids field (which contains the L0 UUID).
+
         Args:
             doi: Paper DOI
             compression_level: 0=full, 1=short summary, 2=10:1 summary
@@ -98,22 +105,87 @@ class SupervisionStoreQuery:
 
         es_record_id = summary.get("es_record_id")
         if not es_record_id:
-            logger.debug(f"No es_record_id for DOI: {doi}")
-            return None
+            logger.debug(f"No es_record_id for DOI: {doi}, using summary content")
+            return self._get_fallback_content(summary)
 
         try:
             record_uuid = UUID(es_record_id)
-            record = await self.store_manager.es_stores.store.get(
-                record_uuid,
-                compression_level=compression_level,
-            )
+            store = self.store_manager.es_stores.store
+
+            # For L0, use direct ID lookup
+            # For L1/L2, use source_id lookup since es_record_id is the L0 UUID
+            if compression_level == 0:
+                record = await store.get(record_uuid, compression_level=0)
+            else:
+                record = await store.get_by_source_id(
+                    record_uuid,
+                    compression_level=compression_level,
+                )
+
             if record:
                 return record.content
-            logger.debug(f"No record found at L{compression_level} for DOI: {doi}")
-            return None
+
+            # Not found at specified level - try alternative
+            logger.debug(
+                f"No record at L{compression_level} for DOI: {doi} "
+                f"(L0 id: {es_record_id}), trying fallback"
+            )
+
+            alt_level = 1 if compression_level == 2 else 2
+            if alt_level != 0:
+                record = await store.get_by_source_id(record_uuid, alt_level)
+            else:
+                record = await store.get(record_uuid, compression_level=0)
+
+            if record:
+                logger.info(f"Found record at L{alt_level} instead of L{compression_level}")
+                return record.content
+
+            return self._get_fallback_content(summary)
+
         except Exception as e:
-            logger.warning(f"Error fetching content for {doi}: {e}")
+            logger.warning(f"Error fetching content for {doi} (id: {es_record_id}): {e}")
+            return self._get_fallback_content(summary)
+
+    def _get_fallback_content(self, summary: dict) -> Optional[str]:
+        """Get fallback content from summary when ES lookup fails.
+
+        Constructs content from available summary fields.
+
+        Args:
+            summary: Paper summary dict
+
+        Returns:
+            Formatted content string or None
+        """
+        parts = []
+
+        title = summary.get("title", "")
+        if title:
+            parts.append(f"# {title}")
+
+        short_summary = summary.get("short_summary", "")
+        if short_summary:
+            parts.append(f"\n## Summary\n{short_summary}")
+
+        methodology = summary.get("methodology", "")
+        if methodology:
+            parts.append(f"\n## Methodology\n{methodology}")
+
+        key_findings = summary.get("key_findings", [])
+        if key_findings:
+            findings_text = "\n".join(f"- {f}" for f in key_findings)
+            parts.append(f"\n## Key Findings\n{findings_text}")
+
+        claims = summary.get("claims", [])
+        if claims:
+            claims_text = "\n".join(f"- {c}" for c in claims)
+            parts.append(f"\n## Claims\n{claims_text}")
+
+        if not parts:
             return None
+
+        return "\n".join(parts)
 
     async def get_papers_for_section(
         self,

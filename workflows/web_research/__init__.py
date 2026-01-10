@@ -29,17 +29,10 @@ __all__ = [
 
 
 async def cleanup_research_resources() -> None:
-    """Clean up all research workflow resources (idempotent)."""
-    from core.scraping.service import close_scraper_service
-    from langchain_tools.firecrawl import close_firecrawl
+    """Clean up all research workflow resources (idempotent).
 
-    # Close both global singletons
-    try:
-        await close_firecrawl()
-    except Exception as e:
-        logger.warning(f"Error closing Firecrawl client: {e}")
-
-    try:
-        await close_scraper_service()
-    except Exception as e:
-        logger.warning(f"Error closing scraper service: {e}")
+    Calls the central cleanup registry which closes all HTTP clients
+    that were lazily initialized during the workflow.
+    """
+    from core.utils.async_http_client import cleanup_all_clients
+    await cleanup_all_clients()
