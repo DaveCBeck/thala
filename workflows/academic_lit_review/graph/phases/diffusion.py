@@ -49,12 +49,16 @@ async def diffusion_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
             "current_status": "Diffusion skipped (no seeds)",
         }
 
+    # Get language config for non-English paper overhead
+    language_config = state.get("language_config")
+
     diffusion_result = await run_diffusion(
         discovery_seeds=discovery_seeds,
         paper_corpus=paper_corpus,
         topic=topic,
         research_questions=research_questions,
         quality_settings=quality_settings,
+        language_config=language_config,
     )
 
     final_corpus = diffusion_result.get("paper_corpus", paper_corpus)

@@ -39,16 +39,11 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from ..models import ModelTier
-from .batch_executor import execute_batch_concurrent
-from .executors import executors
-from .executors.batch import BatchToolCallExecutor
-from .retry import with_retries
+from .execution import execute_batch, execute_single
 from .strategy_selection import select_strategy
 from .types import (
     BatchResult,
     StructuredOutputConfig,
-    StructuredOutputError,
-    StructuredOutputResult,
     StructuredOutputStrategy,
     StructuredRequest,
 )
@@ -75,6 +70,7 @@ async def get_structured_output(
     enable_prompt_cache: Optional[bool] = None,
     tools: Optional[list[BaseTool]] = None,
     max_tool_calls: Optional[int] = None,
+    max_tool_result_chars: Optional[int] = None,
 ) -> T: ...
 
 
@@ -101,14 +97,10 @@ async def get_structured_output(
 async def get_structured_output(
     output_schema: Type[T],
     *,
-    # Single request params
     user_prompt: Optional[str] = None,
-    # Batch request params
     requests: Optional[list[StructuredRequest]] = None,
-    # Common params
     system_prompt: Optional[str] = None,
     config: Optional[StructuredOutputConfig] = None,
-    # Config overrides (convenience)
     tier: Optional[ModelTier] = None,
     max_tokens: Optional[int] = None,
     thinking_budget: Optional[int] = None,
@@ -120,6 +112,7 @@ async def get_structured_output(
     enable_prompt_cache: Optional[bool] = None,
     tools: Optional[list[BaseTool]] = None,
     max_tool_calls: Optional[int] = None,
+    max_tool_result_chars: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> Union[T, BatchResult[T]]:
     """Get structured output from LLM, automatically selecting the best strategy.
@@ -164,6 +157,7 @@ async def get_structured_output(
         enable_prompt_cache: Enable prompt caching
         tools: LangChain tools (triggers TOOL_AGENT strategy)
         max_tool_calls: Max tool calls for agent
+        max_tool_result_chars: Max chars from tool results for agent
         progress_callback: Callback(completed, total) for batch progress
 
     Returns:
@@ -205,13 +199,11 @@ async def get_structured_output(
             tools=[search_tool, fetch_tool],
         )
     """
-    # Validate input
     if user_prompt is None and requests is None:
         raise ValueError("Must provide either user_prompt (single) or requests (batch)")
     if user_prompt is not None and requests is not None:
         raise ValueError("Cannot provide both user_prompt and requests")
 
-    # Build effective config
     effective_config = config or StructuredOutputConfig()
     if tier is not None:
         effective_config.tier = tier
@@ -235,18 +227,17 @@ async def get_structured_output(
         effective_config.tools = tools
     if max_tool_calls is not None:
         effective_config.max_tool_calls = max_tool_calls
+    if max_tool_result_chars is not None:
+        effective_config.max_tool_result_chars = max_tool_result_chars
 
-    # Determine if batch
     is_batch = requests is not None
     batch_size = len(requests) if requests else 0
 
-    # Select strategy
     selected_strategy = select_strategy(effective_config, is_batch, batch_size)
     logger.debug(f"Selected strategy: {selected_strategy.name}")
 
-    # Execute
     if is_batch:
-        return await _execute_batch(
+        return await execute_batch(
             output_schema=output_schema,
             requests=requests,
             system_prompt=system_prompt,
@@ -255,105 +246,13 @@ async def get_structured_output(
             progress_callback=progress_callback,
         )
     else:
-        return await _execute_single(
+        return await execute_single(
             output_schema=output_schema,
             user_prompt=user_prompt,
             system_prompt=system_prompt,
             config=effective_config,
             selected_strategy=selected_strategy,
         )
-
-
-async def _execute_single(
-    output_schema: Type[T],
-    user_prompt: str,
-    system_prompt: Optional[str],
-    config: StructuredOutputConfig,
-    selected_strategy: StructuredOutputStrategy,
-) -> T:
-    """Execute single request.
-
-    When selected_strategy is BATCH_TOOL_CALL (e.g., prefer_batch_api=True),
-    wraps the single request as a batch for 50% cost savings.
-    """
-    # For BATCH_TOOL_CALL strategy, wrap single request as batch
-    if selected_strategy == StructuredOutputStrategy.BATCH_TOOL_CALL:
-        executor = BatchToolCallExecutor()
-
-        async def _invoke() -> StructuredOutputResult[T]:
-            results = await executor.execute_batch(
-                output_schema=output_schema,
-                requests=[StructuredRequest(id="_single", user_prompt=user_prompt)],
-                default_system=system_prompt,
-                config=config,
-            )
-            return results["_single"]
-
-    else:
-        executor = executors[selected_strategy]
-
-        async def _invoke() -> StructuredOutputResult[T]:
-            return await executor.execute(
-                output_schema=output_schema,
-                user_prompt=user_prompt,
-                system_prompt=system_prompt,
-                config=config,
-            )
-
-    result = await with_retries(_invoke, config, output_schema, selected_strategy)
-
-    if not result.success:
-        raise StructuredOutputError(
-            message=result.error or "Unknown error",
-            schema=output_schema,
-            strategy=selected_strategy,
-            attempts=config.max_retries,
-        )
-
-    return result.value
-
-
-async def _execute_batch(
-    output_schema: Type[T],
-    requests: list[StructuredRequest],
-    system_prompt: Optional[str],
-    config: StructuredOutputConfig,
-    selected_strategy: StructuredOutputStrategy,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
-) -> BatchResult[T]:
-    """Execute batch request."""
-    # For batch, we can use BATCH_TOOL_CALL or fall back to concurrent single requests
-    if selected_strategy == StructuredOutputStrategy.BATCH_TOOL_CALL:
-        executor = BatchToolCallExecutor()
-        results = await executor.execute_batch(
-            output_schema=output_schema,
-            requests=requests,
-            default_system=system_prompt,
-            config=config,
-            progress_callback=progress_callback,
-        )
-    else:
-        # Fallback: concurrent single requests
-        results = await execute_batch_concurrent(
-            output_schema=output_schema,
-            requests=requests,
-            system_prompt=system_prompt,
-            config=config,
-            selected_strategy=selected_strategy,
-            progress_callback=progress_callback,
-        )
-
-    # Build BatchResult
-    successful = sum(1 for r in results.values() if r.success)
-    failed = len(results) - successful
-
-    return BatchResult(
-        results=results,
-        total_items=len(requests),
-        successful_items=successful,
-        failed_items=failed,
-        strategy_used=selected_strategy,
-    )
 
 
 __all__ = [

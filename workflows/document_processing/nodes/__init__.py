@@ -5,6 +5,7 @@ Core processing nodes for document processing workflow.
 from .chapter_detector import detect_chapters
 from .finalizer import finalize
 from .input_resolver import resolve_input
+from .language_detector import detect_document_language
 from .markdown_chunker import smart_chunker
 from .marker_processor import process_marker
 from .metadata_agent import check_metadata
@@ -21,6 +22,7 @@ __all__ = [
     "process_marker",
     "smart_chunker",
     "update_store",
+    "detect_document_language",
     "generate_summary",
     "check_metadata",
     "save_short_summary",

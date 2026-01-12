@@ -1,8 +1,13 @@
 """Section splitting utilities for Loop 4 parallel editing."""
 
 import re
+from typing import Literal
 from typing_extensions import TypedDict
 import tiktoken
+
+
+# Section type classification for type-aware editing
+SectionType = Literal["abstract", "introduction", "methodology", "conclusion", "content"]
 
 
 class SectionInfo(TypedDict):
@@ -13,6 +18,53 @@ class SectionInfo(TypedDict):
     heading_level: int
     start_line: int
     end_line: int
+    section_type: SectionType
+
+
+def detect_section_type(section_id: str, heading_level: int) -> SectionType:
+    """Detect section type from section_id string.
+
+    Uses hierarchical matching:
+    1. Exact matches for standard academic sections
+    2. Partial matches for variants
+    3. Defaults to "content" for body sections
+
+    Args:
+        section_id: Normalized section identifier (e.g., "abstract", "1_introduction")
+        heading_level: Heading level (1-6), used to distinguish top-level structure
+
+    Returns:
+        SectionType literal indicating the section classification
+    """
+    sid_lower = section_id.lower()
+
+    # Abstract detection - strict matching
+    if sid_lower in ("abstract", "summary", "executive_summary"):
+        return "abstract"
+    if "abstract" in sid_lower and heading_level <= 2:
+        return "abstract"
+
+    # Introduction detection
+    if sid_lower in ("introduction", "intro", "background"):
+        return "introduction"
+    if "introduction" in sid_lower or "background" in sid_lower:
+        return "introduction"
+
+    # Methodology detection
+    if sid_lower in ("methods", "methodology", "method", "materials_and_methods"):
+        return "methodology"
+    if "method" in sid_lower or "approach" in sid_lower:
+        return "methodology"
+
+    # Conclusion detection
+    if sid_lower in ("conclusion", "conclusions", "summary_and_conclusions",
+                     "discussion_and_conclusion"):
+        return "conclusion"
+    if "conclusion" in sid_lower:
+        return "conclusion"
+
+    # Default to content section
+    return "content"
 
 
 def split_into_sections(doc: str, max_tokens: int = 5000) -> list[SectionInfo]:
@@ -52,6 +104,7 @@ def split_into_sections(doc: str, max_tokens: int = 5000) -> list[SectionInfo]:
                 heading_level=0,
                 start_line=0,
                 end_line=len(lines) - 1,
+                section_type="content",
             )
         ]
 
@@ -89,6 +142,7 @@ def split_into_sections(doc: str, max_tokens: int = 5000) -> list[SectionInfo]:
                     heading_level=level,
                     start_line=line_num,
                     end_line=end_line,
+                    section_type=detect_section_type(section_id, level),
                 )
             )
 
@@ -124,6 +178,7 @@ def _split_large_section(
                 heading_level=parent_level,
                 start_line=base_line_num,
                 end_line=base_line_num + len(section_lines) - 1,
+                section_type=detect_section_type(parent_id, parent_level),
             )
         ]
 
@@ -143,6 +198,7 @@ def _split_large_section(
                 heading_level=level,
                 start_line=base_line_num + line_offset,
                 end_line=base_line_num + end_offset,
+                section_type=detect_section_type(section_id, level),
             )
         )
 

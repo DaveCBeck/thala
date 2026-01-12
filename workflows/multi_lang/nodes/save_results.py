@@ -106,12 +106,9 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                 embedding_model=store_manager.embedding.model,
             )
 
-            # Save to ES store
-            await store_manager.es_stores.store.add(
-                record=record,
-                embedding=embedding,
-                document=content,
-            )
+            # Attach embedding to record and save to ES store
+            record.embedding = embedding
+            await store_manager.es_stores.store.add(record)
 
             per_language_record_ids[lang_code] = str(record_id)
             logger.info(f"Saved per-language record for {lang_code}: {record_id}")
@@ -151,11 +148,8 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                 embedding_model=store_manager.embedding.model,
             )
 
-            await store_manager.es_stores.store.add(
-                record=record,
-                embedding=embedding,
-                document=content,
-            )
+            record.embedding = embedding
+            await store_manager.es_stores.store.add(record)
 
             comparative_record_id = str(record_id)
             logger.info(f"Saved comparative document: {record_id}")
@@ -199,11 +193,8 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                 embedding_model=store_manager.embedding.model,
             )
 
-            await store_manager.es_stores.store.add(
-                record=record,
-                embedding=embedding,
-                document=final_synthesis,
-            )
+            record.embedding = embedding
+            await store_manager.es_stores.store.add(record)
 
             synthesis_record_id = str(record_id)
             logger.info(f"Saved synthesis document: {record_id}")

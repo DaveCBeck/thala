@@ -97,8 +97,8 @@ class StructuredOutputConfig:
 
     # Tool agent specific
     tools: list[BaseTool] = field(default_factory=list)
-    max_tool_calls: int = 10
-    max_tool_result_chars: int = 50000
+    max_tool_calls: int = 12
+    max_tool_result_chars: int = 100000
 
 
 @dataclass

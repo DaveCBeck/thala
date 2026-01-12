@@ -3,17 +3,38 @@
 import logging
 from typing import Any
 
-from .types import DiffusionEngineState
+from .types import DiffusionEngineState, NON_ENGLISH_PAPER_OVERHEAD
 
 logger = logging.getLogger(__name__)
+
+
+def _get_effective_max_papers(state: DiffusionEngineState) -> int:
+    """Get effective max_papers, accounting for non-English language overhead.
+
+    For non-English languages, we request more papers because some will be
+    filtered out by language verification. The final max_papers limit is
+    applied after verification in the paper processor.
+    """
+    quality_settings = state["quality_settings"]
+    max_papers = quality_settings.get("max_papers", 100)
+
+    language_config = state.get("language_config")
+    if language_config and language_config.get("code") != "en":
+        effective_max = int(max_papers * NON_ENGLISH_PAPER_OVERHEAD)
+        logger.debug(
+            f"Non-English mode: effective max_papers={effective_max} "
+            f"(base={max_papers}, overhead={NON_ENGLISH_PAPER_OVERHEAD})"
+        )
+        return effective_max
+
+    return max_papers
 
 
 async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
     """Check if diffusion should stop based on saturation conditions."""
     diffusion = state["diffusion"]
-    quality_settings = state["quality_settings"]
     paper_corpus = state.get("paper_corpus", {})
-    max_papers = quality_settings.get("max_papers", 100)
+    max_papers = _get_effective_max_papers(state)
 
     # Check stopping conditions
     saturation_reason = None
@@ -52,10 +73,9 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
 async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     """Finalize diffusion and filter to top papers by relevance."""
     paper_corpus = state.get("paper_corpus", {})
-    quality_settings = state["quality_settings"]
     diffusion = state["diffusion"]
     saturation_reason = state.get("saturation_reason", "Unknown")
-    max_papers = quality_settings.get("max_papers", 100)
+    max_papers = _get_effective_max_papers(state)
 
     # Filter to top N papers by relevance score if we exceeded max_papers
     if len(paper_corpus) > max_papers:

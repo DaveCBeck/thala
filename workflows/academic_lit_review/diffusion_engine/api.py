@@ -1,7 +1,7 @@
 """Public API for running diffusion engine."""
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from workflows.academic_lit_review.state import (
     LitReviewDiffusionState,
@@ -10,6 +10,7 @@ from workflows.academic_lit_review.state import (
     QualitySettings,
 )
 from workflows.academic_lit_review.citation_graph import CitationGraph
+from workflows.shared.language import LanguageConfig
 from .types import DiffusionEngineState
 from .graph import diffusion_engine_subgraph
 
@@ -22,6 +23,7 @@ async def run_diffusion(
     topic: str,
     research_questions: list[str],
     quality_settings: QualitySettings,
+    language_config: Optional[LanguageConfig] = None,
 ) -> dict[str, Any]:
     """Run diffusion engine as a standalone operation.
 
@@ -31,6 +33,9 @@ async def run_diffusion(
         topic: Research topic
         research_questions: List of research questions
         quality_settings: Quality tier settings
+        language_config: Optional language configuration. When non-English,
+            the engine will collect more papers to account for language
+            verification overhead (some papers will be filtered later).
 
     Returns:
         Dict with final_corpus_dois, paper_corpus, citation_graph, diffusion state
@@ -65,6 +70,7 @@ async def run_diffusion(
         input=input_data,
         quality_settings=quality_settings,
         discovery_seeds=discovery_seeds,
+        language_config=language_config,
         citation_graph=citation_graph,
         paper_corpus=paper_corpus,
         diffusion=LitReviewDiffusionState(

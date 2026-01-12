@@ -43,11 +43,12 @@ class ProcessingResult(TypedDict):
     ocr_method: str
 
 
-class StoreRecordRef(TypedDict):
+class StoreRecordRef(TypedDict, total=False):
     """Reference to created store record."""
     id: str
     compression_level: int
     content_preview: str
+    language_code: Optional[str]  # ISO 639-1 code for this record
 
 
 class DocumentProcessingState(TypedDict):
@@ -69,8 +70,14 @@ class DocumentProcessingState(TypedDict):
     # Processing
     processing_result: Optional[ProcessingResult]
 
+    # Language detection
+    original_language: Optional[str]  # ISO 639-1 code detected from L0 content
+    original_language_confidence: Optional[float]  # Detection confidence 0.0-1.0
+
     # Summary agent output
-    short_summary: Optional[str]
+    short_summary: Optional[str]  # Kept for backward compatibility
+    short_summary_original: Optional[str]  # Summary in original language
+    short_summary_english: Optional[str]  # English translation (if non-English)
 
     # Metadata agent output (parallel writes)
     metadata_updates: Annotated[dict, merge_metadata]
@@ -80,7 +87,9 @@ class DocumentProcessingState(TypedDict):
     needs_tenth_summary: bool
 
     # 10:1 summary
-    tenth_summary: Optional[str]
+    tenth_summary: Optional[str]  # Kept for backward compatibility
+    tenth_summary_original: Optional[str]  # 10:1 summary in original language
+    tenth_summary_english: Optional[str]  # English translation (if non-English)
     chapter_summaries: Annotated[list[dict], add]
 
     # Error tracking

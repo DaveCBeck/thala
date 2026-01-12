@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-class Loop2State(TypedDict):
+class Loop2State(TypedDict, total=False):
     """State for Loop 2 literature base expansion."""
 
     current_review: str
@@ -47,6 +47,12 @@ class Loop2State(TypedDict):
     explored_bases: list[str]
     is_complete: bool
     decision: Optional[dict]
+    # Error tracking fields
+    errors: list[dict]
+    iterations_failed: int
+    consecutive_failures: int
+    integration_failed: bool
+    mini_review_failed: bool
 
 
 # =============================================================================
@@ -96,21 +102,56 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
 
     except Exception as e:
         logger.error(f"Loop 2 analysis failed: {e}")
+        errors = state.get("errors", [])
         return {
             "decision": {
-                "action": "pass_through",
+                "action": "error",
                 "literature_base": None,
                 "reasoning": f"Analysis failed: {e}",
-            }
+            },
+            "errors": errors + [{
+                "loop_number": 2,
+                "iteration": iteration,
+                "node_name": "analyze_for_bases",
+                "error_type": "analysis_error",
+                "error_message": str(e),
+                "recoverable": True,
+            }],
         }
 
 
 async def run_mini_review_node(state: Loop2State) -> dict:
     """Execute mini-review on identified literature base."""
-    decision = state["decision"]
-    if not decision or decision["action"] != "expand_base":
-        logger.warning("run_mini_review_node called without expand_base decision")
-        return {}
+    decision = state.get("decision")
+    errors = state.get("errors", [])
+
+    if not decision:
+        logger.warning("run_mini_review_node called without decision")
+        return {
+            "mini_review_failed": True,
+            "errors": errors + [{
+                "loop_number": 2,
+                "iteration": state.get("iteration", 0),
+                "node_name": "run_mini_review",
+                "error_type": "validation_error",
+                "error_message": "No decision provided",
+                "recoverable": False,
+            }],
+        }
+
+    if decision["action"] != "expand_base":
+        logger.warning(f"run_mini_review_node called with action: {decision['action']}")
+        return {
+            "mini_review_failed": True,
+            "errors": errors + [{
+                "loop_number": 2,
+                "iteration": state.get("iteration", 0),
+                "node_name": "run_mini_review",
+                "error_type": "validation_error",
+                "error_message": f"Expected expand_base action, got: {decision['action']}",
+                "recoverable": False,
+            }],
+        }
 
     literature_base = LiteratureBase(**decision["literature_base"])
     logger.info(f"Running mini-review for: {literature_base.name}")
@@ -151,68 +192,119 @@ async def integrate_findings_node(state: Loop2State) -> dict:
     """Integrate mini-review findings into main review."""
     from workflows.shared.llm_utils import get_llm
 
-    decision = state["decision"]
-    literature_base = LiteratureBase(**decision["literature_base"])
+    iteration = state.get("iteration", 0)
+    errors = state.get("errors", [])
+    iterations_failed = state.get("iterations_failed", 0)
 
-    logger.info(f"Integrating findings for: {literature_base.name}")
+    try:
+        decision = state.get("decision")
+        if not decision or not decision.get("literature_base"):
+            logger.error("integrate_findings_node called without valid decision")
+            return {
+                "errors": errors + [{
+                    "loop_number": 2,
+                    "iteration": iteration,
+                    "node_name": "integrate_findings",
+                    "error_type": "validation_error",
+                    "error_message": "No valid decision with literature_base",
+                    "recoverable": False,
+                }],
+                "iterations_failed": iterations_failed + 1,
+                "integration_failed": True,
+            }
 
-    mini_review_text = decision.get("mini_review_text", "")
-    new_paper_summaries = decision.get("new_paper_summaries", {})
-    new_paper_corpus = decision.get("new_paper_corpus", {})
-    new_zotero_keys = decision.get("new_zotero_keys", {})
+        literature_base = LiteratureBase(**decision["literature_base"])
 
-    if not mini_review_text:
-        logger.warning("No mini-review text to integrate")
-        return {"iteration": state["iteration"] + 1}
+        logger.info(f"Integrating findings for: {literature_base.name}")
 
-    citation_keys = "\n".join(
-        f"[@{key}] - {new_paper_summaries[doi]['title']}"
-        for doi, key in new_zotero_keys.items()
-        if doi in new_paper_summaries
-    )
+        mini_review_text = decision.get("mini_review_text", "")
+        new_paper_summaries = decision.get("new_paper_summaries", {})
+        new_paper_corpus = decision.get("new_paper_corpus", {})
+        new_zotero_keys = decision.get("new_zotero_keys", {})
 
-    user_prompt = LOOP2_INTEGRATOR_USER.format(
-        current_review=state["current_review"],
-        literature_base_name=literature_base.name,
-        mini_review=mini_review_text,
-        integration_strategy=literature_base.integration_strategy,
-        new_citation_keys=citation_keys or "None",
-    )
+        # Validate mini-review before consuming iteration
+        if not mini_review_text or len(mini_review_text.strip()) < 100:
+            logger.error(
+                f"Mini-review too short for base: {literature_base.name} "
+                f"({len(mini_review_text.strip()) if mini_review_text else 0} chars)"
+            )
+            return {
+                # DON'T increment iteration on failure
+                "errors": errors + [{
+                    "loop_number": 2,
+                    "iteration": iteration,
+                    "node_name": "integrate_findings",
+                    "error_type": "validation_error",
+                    "error_message": f"Mini-review failed or too short ({len(mini_review_text.strip()) if mini_review_text else 0} chars)",
+                    "recoverable": True,
+                }],
+                "iterations_failed": iterations_failed + 1,
+                "integration_failed": True,
+            }
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=16384)
-    response = await llm.ainvoke([
-        {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},
-        {"role": "user", "content": user_prompt},
-    ])
+        citation_keys = "\n".join(
+            f"[@{key}] - {new_paper_summaries[doi]['title']}"
+            for doi, key in new_zotero_keys.items()
+            if doi in new_paper_summaries
+        )
 
-    updated_review = response.content
+        user_prompt = LOOP2_INTEGRATOR_USER.format(
+            current_review=state["current_review"],
+            literature_base_name=literature_base.name,
+            mini_review=mini_review_text,
+            integration_strategy=literature_base.integration_strategy,
+            new_citation_keys=citation_keys or "None",
+        )
 
-    merged_summaries = {**state["paper_summaries"], **new_paper_summaries}
-    merged_zotero = {**state["zotero_keys"], **new_zotero_keys}
+        llm = get_llm(ModelTier.OPUS, max_tokens=16384)
+        response = await llm.ainvoke([
+            {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},
+            {"role": "user", "content": user_prompt},
+        ])
 
-    # Merge paper corpus with full PaperMetadata from mini-review
-    merged_corpus = state["paper_corpus"].copy()
-    new_papers_added = 0
-    for doi, paper_metadata in new_paper_corpus.items():
-        if doi not in merged_corpus:
-            merged_corpus[doi] = paper_metadata
-            new_papers_added += 1
+        updated_review = response.content
 
-    explored_bases = state.get("explored_bases", []) + [literature_base.name]
+        merged_summaries = {**state["paper_summaries"], **new_paper_summaries}
+        merged_zotero = {**state["zotero_keys"], **new_zotero_keys}
 
-    logger.info(
-        f"Integration complete: review length {len(updated_review)}, "
-        f"total papers {len(merged_summaries)}, new papers added: {new_papers_added}"
-    )
+        # Merge paper corpus with full PaperMetadata from mini-review
+        merged_corpus = state["paper_corpus"].copy()
+        new_papers_added = 0
+        for doi, paper_metadata in new_paper_corpus.items():
+            if doi not in merged_corpus:
+                merged_corpus[doi] = paper_metadata
+                new_papers_added += 1
 
-    return {
-        "current_review": updated_review,
-        "paper_summaries": merged_summaries,
-        "zotero_keys": merged_zotero,
-        "paper_corpus": merged_corpus,
-        "explored_bases": explored_bases,
-        "iteration": state["iteration"] + 1,
-    }
+        explored_bases = state.get("explored_bases", []) + [literature_base.name]
+
+        logger.info(
+            f"Integration complete: review length {len(updated_review)}, "
+            f"total papers {len(merged_summaries)}, new papers added: {new_papers_added}"
+        )
+
+        return {
+            "current_review": updated_review,
+            "paper_summaries": merged_summaries,
+            "zotero_keys": merged_zotero,
+            "paper_corpus": merged_corpus,
+            "explored_bases": explored_bases,
+            "iteration": iteration + 1,  # Only increment on success
+        }
+
+    except Exception as e:
+        logger.error(f"Integration failed: {e}")
+        return {
+            "errors": errors + [{
+                "loop_number": 2,
+                "iteration": iteration,
+                "node_name": "integrate_findings",
+                "error_type": "integration_error",
+                "error_message": str(e),
+                "recoverable": True,
+            }],
+            "iterations_failed": iterations_failed + 1,
+            "integration_failed": True,
+        }
 
 
 async def finalize_node(state: Loop2State) -> dict:
@@ -232,6 +324,10 @@ def route_after_analyze(state: Loop2State) -> str:
     if not decision:
         return "finalize"
 
+    # Handle error action
+    if decision["action"] == "error":
+        return "finalize"  # Will trigger check_continue for potential retry
+
     if decision["action"] == "expand_base":
         return "run_mini_review"
     return "finalize"
@@ -239,8 +335,21 @@ def route_after_analyze(state: Loop2State) -> str:
 
 def check_continue(state: Loop2State) -> str:
     """Check if should continue iterating or complete."""
-    iteration = state["iteration"]
-    max_iterations = state["max_iterations"]
+    iteration = state.get("iteration", 0)
+    max_iterations = state.get("max_iterations", 3)
+
+    # Check for failures that didn't increment iteration
+    integration_failed = state.get("integration_failed", False)
+    mini_review_failed = state.get("mini_review_failed", False)
+    consecutive_failures = state.get("consecutive_failures", 0)
+
+    if integration_failed or mini_review_failed:
+        if consecutive_failures >= 2:
+            logger.warning("Too many consecutive failures, completing Loop 2")
+            return "finalize"
+        # Allow retry
+        return "analyze_for_bases"
+
     if iteration >= max_iterations:
         logger.info(f"Max iterations ({max_iterations}) reached")
         return "finalize"
@@ -337,6 +446,12 @@ async def run_loop2_standalone(
         explored_bases=[],
         is_complete=False,
         decision=None,
+        # Error tracking fields
+        errors=[],
+        iterations_failed=0,
+        consecutive_failures=0,
+        integration_failed=False,
+        mini_review_failed=False,
     )
 
     if config:
@@ -352,4 +467,7 @@ async def run_loop2_standalone(
         "explored_bases": result.get("explored_bases", []),
         "iteration": result.get("iteration", 1),
         "is_complete": result.get("is_complete", False),
+        # Error tracking fields
+        "errors": result.get("errors", []),
+        "iterations_failed": result.get("iterations_failed", 0),
     }

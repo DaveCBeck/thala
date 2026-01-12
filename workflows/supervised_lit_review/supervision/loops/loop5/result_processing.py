@@ -1,0 +1,251 @@
+"""Result processing and aggregation for Loop 5."""
+
+import logging
+from typing import Any
+
+from core.stores.zotero import ZoteroStore
+from ...types import Edit
+from ...utils import (
+    split_into_sections,
+    validate_edits,
+    apply_edits,
+    EditValidationResult,
+    extract_citation_keys_from_text,
+    validate_citations_against_zotero,
+    strip_invalid_citations,
+)
+from ..todo_verification import verify_todos
+
+logger = logging.getLogger(__name__)
+
+
+def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Split document into sections for sequential checking."""
+    sections = split_into_sections(state["current_review"])
+    logger.info(f"Loop 5: Split document into {len(sections)} sections for checking")
+    return {"sections": sections}
+
+
+def validate_edits_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Validate that all edit find strings exist and are unambiguous."""
+    validation_result: EditValidationResult = validate_edits(
+        state["current_review"], state["all_edits"]
+    )
+
+    human_items = []
+    for idx, edit in enumerate(validation_result["invalid_edits"]):
+        error_type = validation_result["errors"].get(str(idx), "unknown")
+        human_items.append(
+            f"Invalid edit ({error_type}): '{edit.find[:50]}...' -> '{edit.replace[:50]}...'"
+        )
+
+    logger.info(
+        f"Loop 5: Validated edits - {len(validation_result['valid_edits'])} valid, "
+        f"{len(validation_result['invalid_edits'])} invalid"
+    )
+
+    return {
+        "valid_edits": validation_result["valid_edits"],
+        "invalid_edits": validation_result["invalid_edits"],
+        "human_review_items": human_items,
+    }
+
+
+async def apply_edits_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Apply validated edits to the document with optional Zotero verification."""
+    allowed_types = {"fact_correction", "citation_fix", "clarity"}
+    filtered_edits = [
+        edit for edit in state["valid_edits"] if edit.edit_type in allowed_types
+    ]
+
+    verify_zotero = state.get("verify_zotero", True)
+    verified_keys = state.get("verified_citation_keys", set())
+    zotero_keys = state.get("zotero_keys", {})
+    corpus_keys = set(zotero_keys.values())
+
+    updated_review = apply_edits(state["current_review"], filtered_edits)
+
+    newly_verified: set[str] = set()
+    if verify_zotero:
+        zotero_client = ZoteroStore()
+        try:
+            valid_keys, invalid_keys = await validate_citations_against_zotero(
+                text=updated_review,
+                zotero_client=zotero_client,
+                known_valid_keys=corpus_keys | verified_keys,
+            )
+
+            newly_verified = valid_keys - corpus_keys - verified_keys
+
+            if invalid_keys:
+                logger.warning(
+                    f"Loop 5: Found {len(invalid_keys)} unverified citations, adding TODOs"
+                )
+                updated_review = strip_invalid_citations(
+                    updated_review, invalid_keys, add_todo=True
+                )
+            else:
+                logger.info("Loop 5: All citations verified in Zotero")
+
+            if newly_verified:
+                logger.info(f"Loop 5: Verified {len(newly_verified)} new citation keys")
+
+        finally:
+            await zotero_client.close()
+
+    logger.info(f"Loop 5: Applied {len(filtered_edits)} edits to document")
+
+    return {
+        "current_review": updated_review,
+        "verified_citation_keys": verified_keys | newly_verified,
+    }
+
+
+def filter_ambiguous_claims(
+    claims: list[str],
+    verified_keys: set[str],
+    zotero_keys: dict[str, str],
+    false_positive_patterns: list[str],
+) -> tuple[list[str], list[str]]:
+    """Filter out corpus-gap and low-value ambiguous claims."""
+    filtered = []
+    discarded = []
+    corpus_keys = set(zotero_keys.values())
+    all_valid_keys = verified_keys | corpus_keys
+
+    methodological_indicators = [
+        "we used", "we employed", "we selected", "we chose",
+        "this study used", "the approach", "methodology",
+        "research design", "data collection", "sample size",
+        "we analyzed", "we examined", "we investigated",
+        "the authors", "researchers typically", "standard practice",
+    ]
+
+    for claim in claims:
+        claim_lower = claim.lower()
+
+        is_corpus_gap = any(pattern in claim_lower for pattern in false_positive_patterns)
+        if is_corpus_gap:
+            discarded.append(f"Pre-filtered (corpus gap): {claim}")
+            logger.debug(f"Filtered corpus-gap claim: {claim[:80]}...")
+            continue
+
+        cited_in_claim = extract_citation_keys_from_text(claim)
+        if cited_in_claim:
+            all_cited_valid = all(k in all_valid_keys for k in cited_in_claim)
+            if all_cited_valid:
+                discarded.append(f"Pre-filtered (valid Zotero citations): {claim}")
+                logger.debug(f"Filtered claim with valid Zotero citations: {claim[:80]}...")
+                continue
+
+        is_methodological = any(ind in claim_lower for ind in methodological_indicators)
+        if is_methodological:
+            discarded.append(f"Pre-filtered (methodological): {claim}")
+            logger.debug(f"Filtered methodological claim: {claim[:80]}...")
+            continue
+
+        filtered.append(claim)
+
+    if claims and len(claims) != len(filtered):
+        logger.info(
+            f"Ambiguous claim filtering: {len(claims)} -> {len(filtered)} "
+            f"({len(claims) - len(filtered)} filtered)"
+        )
+
+    return filtered, discarded
+
+
+async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Collect ambiguous claims and unaddressed TODOs for human review."""
+    human_items = state.get("human_review_items", []).copy()
+    discarded_todos: list[str] = []
+
+    FALSE_POSITIVE_PATTERNS = [
+        "unable to verify",
+        "cannot verify",
+        "could not verify",
+        "no information found",
+        "paper content is not available",
+        "source documents unavailable",
+        "cannot be verified against",
+        "provided paper summaries",
+        "not in provided papers",
+        "provided summaries do not contain",
+        "corpus does not contain",
+        "not found in provided papers",
+        "not in the reviewed literature",
+        "not in our corpus",
+        "sources unavailable",
+        "retrieval system",
+        "no papers in corpus",
+        "paper not in corpus",
+        "not in paper summaries",
+        "not available in provided",
+        "insufficient detail in",
+        "limited information",
+        "specific section numbers cannot be verified",
+        "exact values depend on",
+        "exact wording not verified",
+        "precise statistics unavailable",
+        "specific numbers not confirmed",
+        "detailed data not in summaries",
+    ]
+
+    ambiguous_claims = state.get("ambiguous_claims", [])
+    unaddressed_todos = state.get("unaddressed_todos", [])
+    verified_keys = state.get("verified_citation_keys", set())
+    zotero_keys = state.get("zotero_keys", {})
+
+    logger.info(
+        f"Loop 5: Collecting {len(ambiguous_claims)} ambiguous claims, "
+        f"{len(unaddressed_todos)} unaddressed TODOs"
+    )
+
+    filtered_claims, claim_discards = filter_ambiguous_claims(
+        claims=ambiguous_claims,
+        verified_keys=verified_keys,
+        zotero_keys=zotero_keys,
+        false_positive_patterns=FALSE_POSITIVE_PATTERNS,
+    )
+    discarded_todos.extend(claim_discards)
+
+    for claim in filtered_claims:
+        human_items.append(f"Ambiguous claim: {claim}")
+
+    for todo in unaddressed_todos:
+        todo_lower = todo.lower()
+        is_corpus_gap = any(pattern in todo_lower for pattern in FALSE_POSITIVE_PATTERNS)
+        if is_corpus_gap:
+            discarded_todos.append(f"Pre-filtered TODO (corpus gap): {todo}")
+            logger.debug(f"Filtered corpus-gap TODO: {todo[:80]}...")
+        else:
+            human_items.append(f"Unaddressed TODO: {todo}")
+
+    if state.get("verify_todos_enabled", True) and human_items:
+        logger.info(f"Loop 5: Running TODO verification on {len(human_items)} items")
+        try:
+            verification_result = await verify_todos(
+                todos=human_items,
+                document=state["current_review"],
+                topic=state.get("topic", ""),
+                batch_size=30,
+            )
+            human_items = verification_result.keep
+            discarded_todos = verification_result.discard
+            logger.info(
+                f"Loop 5: TODO verification kept {len(human_items)}, "
+                f"discarded {len(discarded_todos)}"
+            )
+        except Exception as e:
+            logger.error(f"Loop 5: TODO verification failed: {e}")
+
+    return {
+        "human_review_items": human_items,
+        "discarded_todos": discarded_todos,
+    }
+
+
+def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Mark loop as complete."""
+    logger.info("Loop 5: Fact and reference checking complete")
+    return {"is_complete": True}

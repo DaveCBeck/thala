@@ -76,6 +76,11 @@ def validate_structural_edits(
             elif "---SPLIT---" not in edit.replacement_text:
                 error = f"split_section replacement_text must contain ---SPLIT--- delimiter"
 
+        elif edit.edit_type == "add_structural_content":
+            if not edit.replacement_text:
+                needs_retry = True
+                error = f"add_structural_content requires replacement_text with the structural content to add"
+
         if error:
             if needs_retry:
                 needs_retry_edits.append(edit)
@@ -110,6 +115,8 @@ def apply_structural_edits(
     - reorder_sections: Move paragraph from source to target position
     - merge_sections: Concatenate source into target, remove source
     - add_transition: Insert transition marker between paragraphs
+    - add_structural_content: Insert new introduction, conclusion, discussion,
+        or framing paragraph after source_paragraph
 
     Args:
         paragraph_mapping: {paragraph_num: paragraph_text} from number_paragraphs()
@@ -130,14 +137,16 @@ def apply_structural_edits(
     # Group edits by type for proper ordering:
     # 1. trim_redundancy first (modifies in place)
     # 2. split_section (expands paragraphs)
-    # 3. add_transition (inserts but doesn't remove)
-    # 4. move_content (relocates content)
-    # 5. delete_paragraph (removes paragraphs)
-    # 6. merge_sections (changes structure)
-    # 7. reorder_sections (changes structure)
+    # 3. add_structural_content (inserts new content)
+    # 4. add_transition (inserts but doesn't remove)
+    # 5. move_content (relocates content)
+    # 6. delete_paragraph (removes paragraphs)
+    # 7. merge_sections (changes structure)
+    # 8. reorder_sections (changes structure)
 
     trim_edits = [e for e in edits if e.edit_type == "trim_redundancy"]
     split_edits = [e for e in edits if e.edit_type == "split_section"]
+    structural_edits = [e for e in edits if e.edit_type == "add_structural_content"]
     transition_edits = [e for e in edits if e.edit_type == "add_transition"]
     move_edits = [e for e in edits if e.edit_type == "move_content"]
     delete_edits = [e for e in edits if e.edit_type == "delete_paragraph"]
@@ -169,6 +178,24 @@ def apply_structural_edits(
             if split_parts:
                 paragraphs = paragraphs[:src_idx] + split_parts + paragraphs[src_idx + 1:]
                 applied.append(f"Split P{edit.source_paragraph} into {len(split_parts)} parts")
+
+    # Apply add_structural_content (inserts new structural content)
+    # This adds introductions, conclusions, discussions, or framing paragraphs
+    # Content is inserted AFTER the source_paragraph, unless "before" is in notes
+    # Process in reverse order to maintain indices
+    structural_edits_sorted = sorted(structural_edits, key=lambda e: e.source_paragraph, reverse=True)
+    for edit in structural_edits_sorted:
+        src_idx = edit.source_paragraph - 1
+        if edit.replacement_text and src_idx < len(paragraphs):
+            # Check if we should insert BEFORE the source (for introductions)
+            if src_idx == 0 and "before" in edit.notes.lower():
+                # Insert at the very beginning of the document
+                paragraphs.insert(0, edit.replacement_text)
+                applied.append(f"Added structural content before P1: {edit.notes[:50]}...")
+            else:
+                # Insert the new structural content after the source paragraph
+                paragraphs.insert(src_idx + 1, edit.replacement_text)
+                applied.append(f"Added structural content after P{edit.source_paragraph}: {edit.notes[:50]}...")
 
     # Apply add_transition (inserts marker, adjusts indices)
     # Sort by position, process in reverse to maintain indices
@@ -318,5 +345,14 @@ def verify_edits_applied(
             # Check that ---SPLIT--- delimiter is not in output (was processed)
             # and content exists
             verifications[key] = "---SPLIT---" not in new_text
+
+        elif edit.edit_type == "add_structural_content":
+            # Check that replacement_text content is present in the new document
+            if edit.replacement_text:
+                # Check for a meaningful fragment (first 100 chars)
+                content_fragment = edit.replacement_text[:100].strip()
+                verifications[key] = content_fragment in new_text
+            else:
+                verifications[key] = False
 
     return verifications

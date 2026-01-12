@@ -41,6 +41,21 @@ from .llm_utils.response_parsing import (
 from .checkpointing import CheckpointManager
 from .url_utils import download_url, DownloadError, ContentTypeError
 from .ttl_cache import get_ttl_cache, clear_ttl_cache, get_ttl_cache_stats
+from .token_utils import (
+    estimate_tokens_fast,
+    count_tokens_accurate,
+    estimate_tokens,
+    estimate_request_tokens,
+    check_token_budget,
+    select_model_for_context,
+    get_safe_limit_for_model,
+    TokenBudgetExceeded,
+    HAIKU_SAFE_LIMIT,
+    SONNET_SAFE_LIMIT,
+    SONNET_1M_SAFE_LIMIT,
+    CHARS_PER_TOKEN,
+    DEFAULT_RESPONSE_BUFFER,
+)
 
 __all__ = [
     # Marker client
@@ -90,4 +105,18 @@ __all__ = [
     "get_ttl_cache",
     "clear_ttl_cache",
     "get_ttl_cache_stats",
+    # Token utilities
+    "estimate_tokens_fast",
+    "count_tokens_accurate",
+    "estimate_tokens",
+    "estimate_request_tokens",
+    "check_token_budget",
+    "select_model_for_context",
+    "get_safe_limit_for_model",
+    "TokenBudgetExceeded",
+    "HAIKU_SAFE_LIMIT",
+    "SONNET_SAFE_LIMIT",
+    "SONNET_1M_SAFE_LIMIT",
+    "CHARS_PER_TOKEN",
+    "DEFAULT_RESPONSE_BUFFER",
 ]

@@ -39,39 +39,26 @@ Example - With tools (multi-turn agent):
     )
 """
 
-# Core types
-from .types import (
-    StructuredOutputStrategy,
-    StructuredOutputConfig,
-    StructuredRequest,
-    StructuredOutputResult,
-    BatchResult,
-    StructuredOutputError,
-)
-
-# Main interface
+from .convenience import classify_content, extract_from_text, get_structured_output_with_result
 from .interface import get_structured_output
-
-# Convenience functions
-from .convenience import (
-    get_structured_output_with_result,
-    extract_from_text,
-    classify_content,
+from .types import (
+    BatchResult,
+    StructuredOutputConfig,
+    StructuredOutputError,
+    StructuredOutputResult,
+    StructuredOutputStrategy,
+    StructuredRequest,
 )
-
 
 __all__ = [
-    # Core types
     "StructuredOutputStrategy",
     "StructuredOutputConfig",
     "StructuredRequest",
     "StructuredOutputResult",
     "BatchResult",
     "StructuredOutputError",
-    # Main interface
     "get_structured_output",
     "get_structured_output_with_result",
-    # Convenience functions
     "extract_from_text",
     "classify_content",
 ]

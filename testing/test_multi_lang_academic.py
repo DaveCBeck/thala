@@ -53,7 +53,7 @@ OUTPUT_DIR = get_output_dir()
 # Major 10 languages for comprehensive coverage
 MAJOR_10_LANGUAGES = ["en", "zh", "es", "de", "fr", "ja", "pt", "ru", "ar", "ko"]
 
-VALID_QUALITIES = ["quick", "standard", "comprehensive"]
+VALID_QUALITIES = ["test", "quick", "standard", "comprehensive"]
 DEFAULT_QUALITY = "quick"
 DEFAULT_LANGUAGES = ["en", "es"]
 

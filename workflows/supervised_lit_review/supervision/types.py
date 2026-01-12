@@ -10,6 +10,7 @@ import re
 from typing import Literal, Optional, Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import TypedDict
 
 # Re-export TypedDict types from main state module
 from workflows.academic_lit_review.state import (
@@ -25,15 +26,20 @@ __all__ = [
     "MAX_SUPERVISION_DEPTH",
     "LiteratureBase",
     "LiteratureBaseDecision",
+    "StructuralIssue",
+    "StructuralIssueAnalysis",
     "ArchitecturalAssessment",
     "StructuralEdit",
     "EditManifest",
     "ArchitectureVerificationResult",
     "SectionEditResult",
     "HolisticReviewResult",
+    "HolisticReviewScoreOnly",
     "CohesionCheckResult",
     "Edit",
     "DocumentEdits",
+    "LoopErrorRecord",
+    "LoopResultWithErrors",
 ]
 
 
@@ -77,8 +83,8 @@ class IdentifiedIssue(BaseModel):
 class SupervisorDecision(BaseModel):
     """Decision output from the supervisor analysis."""
 
-    action: Literal["research_needed", "pass_through"] = Field(
-        description="Whether additional research is needed or the review is theoretically sound"
+    action: Literal["research_needed", "pass_through", "error"] = Field(
+        description="Whether additional research is needed, the review is theoretically sound, or an error occurred"
     )
     issue: Optional[IdentifiedIssue] = Field(
         default=None,
@@ -105,8 +111,8 @@ class LiteratureBase(BaseModel):
 
 class LiteratureBaseDecision(BaseModel):
     """Decision from Loop 2 analyzer."""
-    action: Literal["expand_base", "pass_through"] = Field(
-        description="Whether to expand a new literature base or pass through"
+    action: Literal["expand_base", "pass_through", "error"] = Field(
+        description="Whether to expand a new literature base, pass through, or an error occurred"
     )
     literature_base: Optional[LiteratureBase] = Field(
         default=None, description="The literature base to expand (only if action is expand_base)"
@@ -116,6 +122,75 @@ class LiteratureBaseDecision(BaseModel):
 # =============================================================================
 # Loop 3: Structure and Cohesion
 # =============================================================================
+
+
+class StructuralIssue(BaseModel):
+    """A single structural issue identified by Phase A analyst.
+
+    Phase A focuses on diagnosis - identifying problems without generating fixes.
+    Each issue includes a suggested resolution type to guide Phase B.
+    """
+    issue_id: int = Field(ge=1, description="Unique ID for this issue (1, 2, 3...)")
+    issue_type: Literal[
+        "content_sprawl",        # Same topic scattered across 3+ sections
+        "premature_detail",      # Deep technical content before foundational concepts
+        "orphaned_content",      # Paragraph not connected to surrounding material
+        "redundant_framing",     # Multiple introductions or summaries
+        "misplaced_content",     # Content belongs in a different section
+        "logical_gap",           # Argument jumps without connecting tissue
+        "redundant_paragraphs",  # Two paragraphs with >60% content overlap
+        "missing_structure",     # Missing introduction, conclusion, or discussion section
+    ] = Field(description="Category of structural issue")
+    affected_paragraphs: list[int] = Field(
+        min_length=1,
+        description="Paragraph numbers affected by this issue"
+    )
+    severity: Literal["minor", "moderate", "major"] = Field(
+        description="How much this hurts document coherence"
+    )
+    description: str = Field(
+        min_length=10,
+        description="Specific description of the issue"
+    )
+    suggested_resolution: Literal[
+        "delete", "trim", "move", "merge", "split",
+        "add_transition", "reorder", "add_structural_content"
+    ] = Field(
+        description="Recommended edit type to resolve this issue"
+    )
+
+
+class StructuralIssueAnalysis(BaseModel):
+    """Phase A output: Issues identified with recommendations.
+
+    Phase A identifies structural problems but does NOT generate edits.
+    The issues feed into Phase B which generates concrete EditManifest.
+    """
+    architecture_assessment: Optional["ArchitecturalAssessment"] = Field(
+        default=None,
+        description="Overall architecture assessment"
+    )
+    issues: list[StructuralIssue] = Field(
+        default_factory=list,
+        description="Structural issues identified"
+    )
+    overall_assessment: str = Field(
+        min_length=10,
+        description="Summary of document structure quality"
+    )
+    needs_restructuring: bool = Field(
+        description="Whether any issues require fixes"
+    )
+
+    @model_validator(mode='after')
+    def validate_consistency(self) -> 'StructuralIssueAnalysis':
+        """If needs_restructuring is True, must have identified issues."""
+        if self.needs_restructuring and len(self.issues) == 0:
+            raise ValueError(
+                "CONSTRAINT VIOLATION: needs_restructuring=True but no issues identified. "
+                "Set needs_restructuring=False if no concrete issues found."
+            )
+        return self
 
 
 class ArchitecturalAssessment(BaseModel):
@@ -141,13 +216,14 @@ class ArchitecturalAssessment(BaseModel):
 class StructuralEdit(BaseModel):
     """A single structural edit in the manifest."""
     edit_type: Literal[
-        "reorder_sections",   # Move paragraph to new position
-        "merge_sections",     # Combine two paragraphs
-        "add_transition",     # Insert transitional text
-        "move_content",       # Relocate content from source to target section
-        "delete_paragraph",   # Remove truly redundant paragraph
-        "trim_redundancy",    # Remove redundant portion while keeping essential content
-        "split_section",      # Split one section into multiple
+        "reorder_sections",        # Move paragraph to new position
+        "merge_sections",          # Combine two paragraphs
+        "add_transition",          # Insert transitional text between paragraphs
+        "move_content",            # Relocate content from source to target section
+        "delete_paragraph",        # Remove truly redundant paragraph
+        "trim_redundancy",         # Remove redundant portion while keeping essential content
+        "split_section",           # Split one section into multiple
+        "add_structural_content",  # Add introduction, conclusion, discussion, or framing paragraph
     ] = Field(description="Type of structural edit")
     source_paragraph: int = Field(ge=1, description="Paragraph number to act on (must be >= 1)")
     target_paragraph: Optional[int] = Field(default=None, ge=1, description="Target paragraph for reorder/merge/add_transition/move_content")
@@ -157,18 +233,29 @@ class StructuralEdit(BaseModel):
     )
     replacement_text: Optional[str] = Field(
         default=None,
-        description="For trim_redundancy: replacement text. For split_section: text with ---SPLIT--- delimiter"
+        description="For trim_redundancy: replacement text. For split_section: text with ---SPLIT--- delimiter. "
+        "For add_structural_content: the new structural content to insert."
     )
     notes: str = Field(min_length=1, description="Explanation of why this edit improves the document")
 
     @model_validator(mode='after')
-    def validate_target_required(self) -> 'StructuralEdit':
-        """Ensure target_paragraph is provided for edit types that require it."""
+    def validate_edit_requirements(self) -> 'StructuralEdit':
+        """Validate required fields based on edit type."""
+        # Edit types that require target_paragraph
         if self.edit_type in ("reorder_sections", "merge_sections", "add_transition", "move_content"):
             if self.target_paragraph is None:
                 raise ValueError(f"{self.edit_type} requires target_paragraph to be specified")
             if self.source_paragraph == self.target_paragraph:
                 raise ValueError(f"source_paragraph and target_paragraph cannot be the same ({self.source_paragraph})")
+
+        # Edit types that require replacement_text
+        if self.edit_type in ("trim_redundancy", "split_section", "add_structural_content"):
+            if not self.replacement_text:
+                raise ValueError(
+                    f"{self.edit_type} requires replacement_text. "
+                    f"Provide the {'new structural content' if self.edit_type == 'add_structural_content' else 'replacement text'}."
+                )
+
         return self
 
 class EditManifest(BaseModel):
@@ -282,6 +369,65 @@ class HolisticReviewResult(BaseModel):
     flagged_reasons: dict[str, str] = Field(default_factory=dict, description="Reasons for flagging each section")
     overall_coherence_score: float = Field(ge=0.0, le=1.0, description="Overall document coherence score")
 
+    @field_validator("sections_approved", "sections_flagged", mode="before")
+    @classmethod
+    def parse_section_ids(cls, v: Any) -> list[str]:
+        """Handle LLM returning strings instead of lists.
+
+        Common failure modes handled:
+        - Empty string -> empty list
+        - JSON string array -> parsed list
+        - Comma-separated string -> split list
+        - Newline-separated string -> split list
+        """
+        if isinstance(v, str):
+            if not v.strip():
+                return []
+            # Try parsing as JSON array first
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if item]
+            except json.JSONDecodeError:
+                pass
+            # Fallback: split by comma or newline
+            items = re.split(r'[,\n]+', v)
+            return [item.strip() for item in items if item.strip()]
+        return v if v is not None else []
+
+    @model_validator(mode='after')
+    def validate_sections_populated(self) -> 'HolisticReviewResult':
+        """Ensure at least one list is populated to maintain feedback loop.
+
+        The holistic review must categorize sections - returning empty lists breaks
+        the iteration mechanism and provides no actionable feedback.
+        """
+        if not self.sections_approved and not self.sections_flagged:
+            raise ValueError(
+                "CONSTRAINT VIOLATION: At least one of sections_approved or sections_flagged "
+                "must contain section IDs. If you find no issues, add all section IDs to sections_approved. "
+                "Returning both lists empty breaks the feedback loop."
+            )
+        return self
+
+
+class HolisticReviewScoreOnly(BaseModel):
+    """Fallback schema when full HolisticReviewResult validation fails.
+
+    Used when LLM struggles with section ID mapping. Captures the coherence
+    assessment without requiring valid section IDs, allowing the caller to
+    make intelligent decisions based on coherence score alone.
+    """
+    overall_coherence_score: float = Field(
+        ge=0.0, le=1.0,
+        description="Overall document coherence score"
+    )
+    assessment_notes: str = Field(
+        default="",
+        description="Brief notes on document coherence issues observed"
+    )
+
+
 # =============================================================================
 # Loop 4.5: Cohesion Check
 # =============================================================================
@@ -326,6 +472,39 @@ class DocumentEdits(BaseModel):
             # If not valid JSON list, return as single-item list
             return [v] if v.strip() else []
         return v if v is not None else []
+
+
+# =============================================================================
+# Error Tracking Types
+# =============================================================================
+
+
+class LoopErrorRecord(TypedDict):
+    """Record of a failure during loop execution.
+
+    Used to track errors that occur during supervision loops 1 and 2,
+    allowing errors to be surfaced instead of silently swallowed.
+    """
+
+    loop_number: int  # 1 or 2
+    iteration: int  # Which iteration failed
+    node_name: str  # Which node failed: "analyze_review", "expand_topic", etc.
+    error_type: str  # "analysis_error", "expansion_error", "integration_error", "validation_error"
+    error_message: str
+    recoverable: bool  # Whether the loop can continue after this error
+
+
+class LoopResultWithErrors(TypedDict, total=False):
+    """Standard loop result with error tracking.
+
+    Can be used as a mixin pattern for loop result types that need
+    to track iteration failures and errors.
+    """
+
+    success: bool
+    iterations_used: int
+    iterations_failed: int
+    errors: list[LoopErrorRecord]
 
 
 # =============================================================================

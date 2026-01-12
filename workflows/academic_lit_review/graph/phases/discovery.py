@@ -21,6 +21,7 @@ async def discovery_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
     """
     input_data = state["input"]
     quality_settings = state["quality_settings"]
+    language_config = state.get("language_config")
 
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
@@ -36,6 +37,7 @@ async def discovery_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
         quality_settings=quality_settings,
         date_range=date_range,
         focus_areas=focus_areas,
+        language_config=language_config,
     )
 
     keyword_papers = keyword_result.get("discovered_papers", [])
@@ -58,6 +60,7 @@ async def discovery_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
             research_questions=research_questions,
             quality_settings=quality_settings,
             existing_dois=set(paper_corpus.keys()),
+            language_config=language_config,
         )
 
         citation_papers = citation_result.get("discovered_papers", [])

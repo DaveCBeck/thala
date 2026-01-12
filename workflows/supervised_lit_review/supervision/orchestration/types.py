@@ -68,5 +68,8 @@ class OrchestrationState(TypedDict, total=False):
     completion_reason: str
     is_complete: bool
 
+    # Error tracking across loops
+    loop_errors: list[dict]
+
     # Zotero verification settings
     verify_zotero: bool

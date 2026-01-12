@@ -47,8 +47,20 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
     if not current_review:
         logger.warning("No review content to analyze")
         return {
-            "decision": {"action": "pass_through", "reasoning": "No content to analyze"},
-            "is_complete": True,
+            "decision": {
+                "action": "error",
+                "issue": None,
+                "reasoning": "No review content to analyze",
+            },
+            "is_complete": False,
+            "loop_error": {
+                "loop_number": 1,
+                "iteration": iteration,
+                "node_name": "analyze_review",
+                "error_type": "validation_error",
+                "error_message": "No review content to analyze",
+                "recoverable": False,
+            },
         }
 
     cluster_summary = _format_cluster_summary(clusters)
@@ -103,11 +115,19 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.error(f"Supervisor analysis failed: {e}")
         return {
             "decision": {
-                "action": "pass_through",
+                "action": "error",
                 "issue": None,
                 "reasoning": f"Analysis failed: {e}",
             },
-            "is_complete": True,
+            "is_complete": False,
+            "loop_error": {
+                "loop_number": 1,
+                "iteration": iteration,
+                "node_name": "analyze_review",
+                "error_type": "analysis_error",
+                "error_message": str(e),
+                "recoverable": True,
+            },
         }
 
 

@@ -14,8 +14,6 @@ from workflows.academic_lit_review.citation_graph import (
 from workflows.academic_lit_review.state import (
     # Input types
     LitReviewInput,
-    QualitySettings,
-    QUALITY_PRESETS,
     # Paper types
     PaperAuthor,
     PaperMetadata,
@@ -39,7 +37,12 @@ from workflows.academic_lit_review.state import (
     SupervisionExpansion,
     # Main state
     AcademicLitReviewState,
-    # Reducers
+)
+from workflows.academic_lit_review.quality_presets import (
+    QualitySettings,
+    QUALITY_PRESETS,
+)
+from workflows.academic_lit_review.reducers import (
     merge_dicts,
     merge_paper_summaries,
 )

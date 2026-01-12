@@ -123,9 +123,9 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Integration failed: {e}")
-        # On error, keep current review and increment iteration
+        # On error, keep current review but DON'T increment iteration
         return {
-            "iteration": iteration + 1,
+            "integration_failed": True,
             "supervision_expansions": [{
                 "iteration": iteration,
                 "topic": topic,
@@ -133,7 +133,16 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
                 "research_query": issue.get("research_query", ""),
                 "papers_added": [],
                 "integration_summary": f"Integration failed: {e}",
+                "failed": True,
             }],
+            "loop_error": {
+                "loop_number": 1,
+                "iteration": iteration,
+                "node_name": "integrate_content",
+                "error_type": "integration_error",
+                "error_message": str(e),
+                "recoverable": True,
+            },
         }
 
 

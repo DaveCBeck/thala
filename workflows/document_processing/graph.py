@@ -25,6 +25,7 @@ from langgraph.types import RetryPolicy, Send
 from workflows.document_processing.nodes import (
     check_metadata,
     create_zotero_stub,
+    detect_document_language,
     generate_summary,
     process_marker,
     resolve_input,
@@ -81,6 +82,7 @@ def create_document_processing_graph():
     )
     builder.add_node("smart_chunker", smart_chunker)
     builder.add_node("update_store", update_store)
+    builder.add_node("detect_language", detect_document_language)
     builder.add_node("generate_summary", generate_summary)
     builder.add_node("check_metadata", check_metadata)
     builder.add_node("save_short_summary", save_short_summary)
@@ -105,8 +107,11 @@ def create_document_processing_graph():
     builder.add_edge("smart_chunker", "update_store")
     builder.add_edge("process_marker", "update_store")
 
+    # Language detection before summary generation
+    builder.add_edge("update_store", "detect_language")
+
     builder.add_conditional_edges(
-        "update_store",
+        "detect_language",
         fan_out_to_agents,
         ["generate_summary", "check_metadata"],
     )

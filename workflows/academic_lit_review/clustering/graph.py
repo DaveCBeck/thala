@@ -7,7 +7,8 @@ from typing_extensions import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from workflows.academic_lit_review.state import LitReviewInput, QualitySettings
+from workflows.academic_lit_review.state import LitReviewInput
+from workflows.academic_lit_review.quality_presets import QualitySettings
 
 from .analysis import ClusterAnalysis, per_cluster_analysis_node
 from .bertopic_clustering import run_bertopic_clustering_node

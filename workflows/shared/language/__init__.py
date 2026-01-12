@@ -55,6 +55,12 @@ from .query_translator import (
     clear_query_cache,
     get_query_cache_stats,
 )
+from .detection import (
+    detect_language,
+    verify_language_match,
+    extract_detection_sample,
+    DEFAULT_CONFIDENCE_THRESHOLD,
+)
 
 __all__ = [
     # Types
@@ -79,4 +85,9 @@ __all__ = [
     "translate_queries",
     "clear_query_cache",
     "get_query_cache_stats",
+    # Language detection
+    "detect_language",
+    "verify_language_match",
+    "extract_detection_sample",
+    "DEFAULT_CONFIDENCE_THRESHOLD",
 ]

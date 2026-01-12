@@ -9,7 +9,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from workflows.shared.llm_utils import ModelTier, get_structured_output, invoke_with_cache
-from workflows.shared.language import LanguageConfig, get_translated_prompt, translate_queries
+from workflows.shared.language import LanguageConfig, get_translated_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +104,10 @@ async def generate_search_queries(
         if not queries:
             queries = [topic]
 
-        # Translate queries if needed (keep OpenAlex queries in target language)
-        if language_config and language_config["code"] != "en":
-            queries = await translate_queries(
-                queries,
-                target_language_code=language_config["code"],
-                target_language_name=language_config["name"],
-            )
+        # NOTE: Do NOT translate queries for OpenAlex. OpenAlex indexes metadata
+        # primarily in English and uses English-based stemming. Use English search
+        # terms + the language filter (applied in keyword_search.py:118) for best
+        # results. See: research/openalex-language-search.md
 
         logger.info(f"Generated {len(queries)} search queries for topic: {topic[:50]}...")
         return queries

@@ -89,6 +89,7 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Focused expansion failed: {e}")
+        iteration = state.get("iteration", 0)
         return {
             "expansion_result": {
                 "topic": topic,
@@ -97,10 +98,20 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
                 "paper_summaries": {},
                 "zotero_keys": {},
                 "processed_dois": [],
+                "failed": True,
             },
             # Return empty dicts for consistency with success case
             # These will merge with nothing, preserving existing state
             "paper_corpus": {},
             "paper_summaries": {},
             "zotero_keys": {},
+            "expansion_failed": True,
+            "loop_error": {
+                "loop_number": 1,
+                "iteration": iteration,
+                "node_name": "expand_topic",
+                "error_type": "expansion_error",
+                "error_message": str(e),
+                "recoverable": True,
+            },
         }

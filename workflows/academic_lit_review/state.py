@@ -11,25 +11,8 @@ from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
 from workflows.shared.language import LanguageConfig
-
-
-# =============================================================================
-# Reducer Functions
-# =============================================================================
-
-
-def merge_dicts(existing: dict, new: dict) -> dict:
-    """Merge two dicts, with new values overwriting existing."""
-    return {**existing, **new}
-
-
-def merge_paper_summaries(existing: dict, new: dict) -> dict:
-    """Merge paper summary dicts, preferring existing summaries if present."""
-    merged = existing.copy()
-    for doi, summary in new.items():
-        if doi not in merged:
-            merged[doi] = summary
-    return merged
+from workflows.academic_lit_review.reducers import merge_dicts, merge_paper_summaries
+from workflows.academic_lit_review.quality_presets import QualitySettings
 
 
 # =============================================================================
@@ -49,68 +32,6 @@ class LitReviewInput(TypedDict):
     exclude_terms: Optional[list[str]]  # Terms to filter out
     max_papers: Optional[int]  # Override default for quality level
     language_code: Optional[str]  # ISO 639-1 code, default "en"
-
-
-class QualitySettings(TypedDict):
-    """Configuration for a quality tier."""
-
-    max_stages: int  # Maximum diffusion stages
-    max_papers: int  # Maximum papers to process
-    target_word_count: int  # Target length of final review
-    min_citations_filter: int  # Minimum citations for discovery
-    saturation_threshold: float  # Coverage delta threshold
-    use_batch_api: bool  # Use Anthropic Batch API
-    supervision_loops: str  # Which supervision loops to run: "none", "one", "two", "three", "four", "all"
-
-
-# Quality presets mapping quality levels to settings
-QUALITY_PRESETS: dict[str, QualitySettings] = {
-    "test": QualitySettings(
-        max_stages=1,
-        max_papers=5,
-        target_word_count=500,
-        min_citations_filter=0,
-        saturation_threshold=0.5,
-        use_batch_api=True,
-        supervision_loops="all",  # All loops with minimal iterations
-    ),
-    "quick": QualitySettings(
-        max_stages=2,
-        max_papers=50,
-        target_word_count=3000,
-        min_citations_filter=5,
-        saturation_threshold=0.15,
-        use_batch_api=True,
-        supervision_loops="all",  # All loops with minimal iterations
-    ),
-    "standard": QualitySettings(
-        max_stages=3,
-        max_papers=100,
-        target_word_count=6000,
-        min_citations_filter=10,
-        saturation_threshold=0.12,
-        use_batch_api=True,
-        supervision_loops="all",  # Full multi-loop supervision
-    ),
-    "comprehensive": QualitySettings(
-        max_stages=4,
-        max_papers=200,
-        target_word_count=10000,
-        min_citations_filter=10,
-        saturation_threshold=0.10,
-        use_batch_api=True,
-        supervision_loops="all",  # Full multi-loop supervision
-    ),
-    "high_quality": QualitySettings(
-        max_stages=5,
-        max_papers=300,
-        target_word_count=12500,
-        min_citations_filter=10,
-        saturation_threshold=0.10,
-        use_batch_api=True,
-        supervision_loops="all",  # Full multi-loop supervision
-    ),
-}
 
 
 # =============================================================================

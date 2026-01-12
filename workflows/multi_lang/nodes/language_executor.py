@@ -148,8 +148,15 @@ async def execute_next_language(state: MultiLangState) -> dict:
 
     # Run workflows from registry
     for workflow_key, config in WORKFLOW_REGISTRY.items():
-        # Check if this workflow is enabled (use registry default if not specified)
-        if not workflows.get(workflow_key, config["default_enabled"]):
+        # Determine if this workflow should run
+        if workflows:
+            # User provided explicit selection - only run what's explicitly True
+            enabled = workflows.get(workflow_key, False)
+        else:
+            # No selection provided - use registry defaults
+            enabled = config["default_enabled"]
+
+        if not enabled:
             continue
 
         logger.info(f"Running {config['name']} for {language_name}")
@@ -177,7 +184,8 @@ async def execute_next_language(state: MultiLangState) -> dict:
         all_errors.extend(result.get("errors", []))
 
     # Check if any workflow succeeded
-    has_results = any(r["status"] == "completed" for r in workflow_results)
+    # WorkflowResult uses "success"/"partial"/"failed", WrapperResult uses "completed"/"failed"
+    has_results = any(r["status"] in ("success", "partial", "completed") for r in workflow_results)
 
     if not has_results:
         # All workflows failed
@@ -194,6 +202,23 @@ async def execute_next_language(state: MultiLangState) -> dict:
                     "error": f"All workflows failed for {language_name}",
                 }
             ] + all_errors,
+        }
+
+    # Check for zero results - workflows succeeded but found no papers
+    # This is different from failure - it means the search worked but there
+    # are no papers in this language for this topic
+    if total_sources == 0:
+        logger.info(
+            f"No papers found for {language_name} - workflows succeeded but no results. "
+            "This may indicate limited academic coverage in this language for this topic."
+        )
+        # Don't count as failure - just no content for this language
+        # Still record as completed so we don't retry
+        return {
+            "languages_completed": [language_code],
+            "current_language_index": idx + 1,
+            "current_phase": f"completed_{language_code}",
+            "current_status": f"Completed {language_name} (no papers found)",
         }
 
     # Compress findings

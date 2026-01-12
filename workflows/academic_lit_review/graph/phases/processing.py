@@ -41,10 +41,14 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
             "current_status": "Processing skipped (no papers)",
         }
 
+    # Get language config for verification (non-English papers)
+    language_config = state.get("language_config")
+
     processing_result = await run_paper_processing(
         papers=papers_to_process,
         quality_settings=quality_settings,
         topic=topic,
+        language_config=language_config,
     )
 
     paper_summaries = processing_result.get("paper_summaries", {})

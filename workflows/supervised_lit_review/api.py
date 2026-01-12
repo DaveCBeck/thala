@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Literal, Optional
 
 from workflows.academic_lit_review.graph.api import academic_lit_review
-from workflows.academic_lit_review.state import QUALITY_PRESETS
+from workflows.academic_lit_review.quality_presets import QUALITY_PRESETS
 from workflows.supervised_lit_review.supervision.orchestration import (
     run_supervision_configurable,
 )

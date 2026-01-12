@@ -80,6 +80,7 @@ async def process_single_document(
             "es_record_id": es_record_id,
             "zotero_key": result.get("zotero_key"),
             "short_summary": result.get("short_summary", ""),
+            "original_language": result.get("original_language", "en"),
             "errors": errors,
         }
 

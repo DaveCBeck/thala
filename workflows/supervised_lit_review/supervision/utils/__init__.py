@@ -3,7 +3,7 @@
 from .paragraph_numbering import number_paragraphs, strip_paragraph_numbers
 from .section_splitting import split_into_sections, SectionInfo
 from .edit_application import validate_edits, apply_edits, EditValidationResult
-from .structural_edit_application import (
+from .structural_edit import (
     validate_structural_edits,
     apply_structural_edits,
     verify_edits_applied,

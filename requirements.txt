@@ -12,3 +12,4 @@ playwright>=1.40.0
 html2text>=2024.2.26
 python-dotenv>=1.0.0
 langsmith>=0.1.0
+langdetect>=1.0.9

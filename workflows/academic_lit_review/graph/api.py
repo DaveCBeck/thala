@@ -4,10 +4,8 @@ import logging
 import uuid
 from typing import Any, Literal, Optional
 
-from workflows.academic_lit_review.state import (
-    LitReviewInput,
-    QUALITY_PRESETS,
-)
+from workflows.academic_lit_review.state import LitReviewInput
+from workflows.academic_lit_review.quality_presets import QUALITY_PRESETS
 from .state_init import build_initial_state
 from .construction import academic_lit_review_graph
 
