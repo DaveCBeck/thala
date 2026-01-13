@@ -64,19 +64,29 @@ def finalize_node(state: dict) -> dict[str, Any]:
 
     Correctly counts iterations when work was done, fixing the
     "0 iterations used" bug when we actually did analysis and editing.
+
+    Works with both new rewrite-based flow and legacy edit-based flow.
     """
     iteration = state.get("iteration", 0)
-    edit_manifest = state.get("edit_manifest")
     phase_a_complete = state.get("phase_a_complete", False)
 
-    did_work = (
-        phase_a_complete or
-        (edit_manifest is not None and (
-            len(edit_manifest.get("edits", [])) > 0 or
-            len(edit_manifest.get("todo_markers", [])) > 0
-        ))
+    # Check for work done in new rewrite-based flow
+    rewrite_manifest = state.get("rewrite_manifest")
+    did_rewrites = (
+        rewrite_manifest is not None and
+        len(rewrite_manifest.get("rewrites", [])) > 0
     )
 
+    # Check for work done in legacy edit-based flow
+    edit_manifest = state.get("edit_manifest")
+    did_edits = (
+        edit_manifest is not None and (
+            len(edit_manifest.get("edits", [])) > 0 or
+            len(edit_manifest.get("todo_markers", [])) > 0
+        )
+    )
+
+    did_work = phase_a_complete or did_rewrites or did_edits
     actual_iterations = max(iteration, 1) if did_work else iteration
 
     logger.info(f"Loop 3 complete: {actual_iterations} iterations used")

@@ -25,6 +25,11 @@ from .loop3_structure import (
     LOOP3_RETRY_SYSTEM,
     LOOP3_VERIFIER_SYSTEM,
     LOOP3_VERIFIER_USER,
+    # New section-rewrite prompts
+    SECTION_REWRITE_SYSTEM,
+    SECTION_REWRITE_USER,
+    SECTION_REWRITE_SUMMARY_SYSTEM,
+    SECTION_REWRITE_SUMMARY_USER,
 )
 from .loop4_editing import (
     LOOP4_ABSTRACT_EDITOR_SYSTEM,
@@ -35,6 +40,8 @@ from .loop4_editing import (
     LOOP4_SECTION_EDITOR_SYSTEM,
     LOOP4_SECTION_EDITOR_USER,
     get_loop4_editor_prompts,
+    TODO_RESOLUTION_SYSTEM,
+    TODO_RESOLUTION_USER,
 )
 from .loop4_5_cohesion import LOOP4_5_COHESION_PROMPT
 from .loop5_factcheck import (
@@ -68,6 +75,11 @@ __all__ = [
     "LOOP3_RETRY_SYSTEM",
     "LOOP3_VERIFIER_SYSTEM",
     "LOOP3_VERIFIER_USER",
+    # Loop 3: Section rewrite (new approach)
+    "SECTION_REWRITE_SYSTEM",
+    "SECTION_REWRITE_USER",
+    "SECTION_REWRITE_SUMMARY_SYSTEM",
+    "SECTION_REWRITE_SUMMARY_USER",
     # Loop 4: Editing
     "LOOP4_SECTION_EDITOR_SYSTEM",
     "LOOP4_SECTION_EDITOR_USER",
@@ -77,6 +89,8 @@ __all__ = [
     "LOOP4_ABSTRACT_EDITOR_USER",
     "LOOP4_FRAMING_EDITOR_SYSTEM",
     "get_loop4_editor_prompts",
+    "TODO_RESOLUTION_SYSTEM",
+    "TODO_RESOLUTION_USER",
     # Loop 4.5: Cohesion
     "LOOP4_5_COHESION_PROMPT",
     # Loop 5: Fact-checking

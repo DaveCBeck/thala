@@ -74,4 +74,5 @@ def _parse_work(work: dict) -> OpenAlexWork:
         source_name=source_name,
         is_oa=is_oa,
         oa_status=oa_status,
+        language=work.get("language"),
     )

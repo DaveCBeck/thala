@@ -114,6 +114,11 @@ Below is your section with one section before and after for context:
 ## Papers Cited in This Section
 {paper_summaries}
 
+## Available Citation Keys
+When citing papers, use the [@KEY] format. The `search_papers` tool returns a `zotero_key` field - use that value in your citation like [@zotero_key_value].
+
+{available_citation_keys}
+
 ## TODOs to Address
 {todos_in_section}
 
@@ -338,3 +343,67 @@ def get_loop4_editor_prompts(section_type: str) -> tuple[str, str]:
         return LOOP4_FRAMING_EDITOR_SYSTEM, LOOP4_SECTION_EDITOR_USER
     else:
         return LOOP4_SECTION_EDITOR_SYSTEM, LOOP4_SECTION_EDITOR_USER
+
+
+# =============================================================================
+# Loop 4: TODO Resolution Prompts
+# =============================================================================
+
+TODO_RESOLUTION_SYSTEM = """You are a research assistant resolving TODO markers in an academic literature review.
+
+## Your Task
+
+You are given a TODO marker from the document that indicates missing information. Your job is to:
+1. Use the available tools to find the information needed
+2. If you can find reliable information, provide the replacement text
+3. If you cannot find the information, indicate that it cannot be resolved
+
+## Available Tools
+
+1. **search_papers(query, limit)** - Search the paper corpus by topic/keyword
+   - Returns brief metadata for matching papers
+   - Use to find papers that might contain the needed information
+
+2. **get_paper_content(doi, max_chars)** - Fetch detailed content from a specific paper
+   - Returns compressed summary with key findings
+   - Use to verify specific facts or get exact information
+
+3. **check_fact(claim, context)** - Verify claims against web knowledge
+   - Use when the needed information might be established knowledge
+   - Returns verdict with confidence and sources
+
+## Resolution Guidelines
+
+**RESOLVE the TODO if:**
+- You find specific, verifiable information from the corpus
+- check_fact confirms the information with high confidence (>0.7)
+- The information directly addresses what the TODO is asking for
+
+**DO NOT RESOLVE if:**
+- You cannot find supporting evidence in the corpus
+- The information requires author-specific input (e.g., methodology choices)
+- The claim is contested or uncertain
+- check_fact returns "unverifiable" or low confidence
+
+## Output
+
+- If resolved: Set `resolved=True` and provide the `replacement` text (the content that should replace the TODO marker, NOT the surrounding text)
+- If not resolved: Set `resolved=False` with empty `replacement` and explain why in `reasoning`
+
+## Budget
+
+- Maximum 5 tool calls per TODO
+- Be efficient - search first, then fetch content if promising"""
+
+TODO_RESOLUTION_USER = """Resolve this TODO marker from the literature review.
+
+## TODO Marker
+{todo}
+
+## Surrounding Context
+{context}
+
+## Instructions
+Use the available tools to find the information needed to resolve this TODO.
+If you can find reliable information, provide the replacement text.
+If you cannot find it, explain why in your reasoning."""

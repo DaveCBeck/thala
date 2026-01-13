@@ -233,12 +233,12 @@ async def _batch_score_relevance_batched(
     relevant = []
     rejected = []
 
-    for custom_id, chunk_papers in chunk_index.items():
+    for custom_id, papers_in_chunk in chunk_index.items():
         result = results.get(custom_id)
         if not result or not result.success:
             error_msg = result.error if result else "No result returned"
             logger.warning(f"Relevance scoring failed for chunk {custom_id}: {error_msg}")
-            for paper in chunk_papers:
+            for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
                 rejected.append(paper)
             continue
@@ -259,7 +259,7 @@ async def _batch_score_relevance_batched(
                 score = max(0.0, min(1.0, score))
                 doi_scores[doi] = (score, reasoning)
 
-            for paper in chunk_papers:
+            for paper in papers_in_chunk:
                 paper_doi = paper.get("doi", "")
                 if paper_doi in doi_scores:
                     score, reasoning = doi_scores[paper_doi]
@@ -283,7 +283,7 @@ async def _batch_score_relevance_batched(
 
         except Exception as e:
             logger.warning(f"Failed to parse relevance result for chunk {custom_id}: {e}")
-            for paper in chunk_papers:
+            for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
                 rejected.append(paper)
 

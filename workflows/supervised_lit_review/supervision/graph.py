@@ -246,9 +246,17 @@ async def run_supervision(
         if doi not in paper_summaries
     }
 
+    # Calculate added zotero keys (new in this supervision run)
+    final_zotero_keys = final_state.get("zotero_keys", {})
+    added_zotero_keys = {
+        doi: key for doi, key in final_zotero_keys.items()
+        if doi not in zotero_keys
+    }
+
     logger.info(
         f"Supervision complete: {iterations} iterations, "
-        f"{len(expansions)} expansions, {len(added_papers)} new papers"
+        f"{len(expansions)} expansions, {len(added_papers)} new papers, "
+        f"{len(added_zotero_keys)} new citation keys"
     )
 
     return {
@@ -265,5 +273,6 @@ async def run_supervision(
         "iterations": iterations,
         "added_papers": added_papers,
         "added_summaries": added_summaries,
+        "added_zotero_keys": added_zotero_keys,
         "completion_reason": final_state.get("completion_reason", ""),
     }

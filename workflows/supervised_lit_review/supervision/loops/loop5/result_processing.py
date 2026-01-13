@@ -246,6 +246,49 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Mark loop as complete."""
+    """Mark loop as complete and strip remaining TODO markers with WARNING logs."""
+    import re
+
+    current_review = state["current_review"]
+
+    # Find all remaining TODO markers
+    todo_pattern = r'<!-- TODO:.*?-->'
+    todos = re.findall(todo_pattern, current_review, re.DOTALL)
+
+    todos_stripped = 0
+    if todos:
+        logger.warning(f"Loop 5: Stripping {len(todos)} unresolved TODO markers")
+
+        for todo in todos:
+            # Get paragraph context (100 chars before and after)
+            idx = current_review.find(todo)
+            if idx == -1:
+                continue
+
+            start = max(0, idx - 100)
+            end = min(len(current_review), idx + len(todo) + 100)
+            context = current_review[start:end]
+
+            # Log with context
+            logger.warning(
+                f"[finalize] Stripping TODO:\n"
+                f"  TODO: {todo[:80]}{'...' if len(todo) > 80 else ''}\n"
+                f"  Context: ...{context.replace(todo, '[TODO]')}..."
+            )
+
+            todos_stripped += 1
+
+        # Strip all TODOs
+        current_review = re.sub(todo_pattern, '', current_review, flags=re.DOTALL)
+
+        # Clean up extra whitespace from removal
+        current_review = re.sub(r'\n{3,}', '\n\n', current_review)
+
+        logger.info(f"Loop 5: Stripped {todos_stripped} TODO markers from final document")
+
     logger.info("Loop 5: Fact and reference checking complete")
-    return {"is_complete": True}
+    return {
+        "current_review": current_review,
+        "is_complete": True,
+        "todos_stripped": todos_stripped,
+    }

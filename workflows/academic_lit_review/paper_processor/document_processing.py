@@ -41,6 +41,7 @@ async def process_single_document(
                 return {
                     "doi": doi,
                     "success": False,
+                    "zotero_key": None,
                     "errors": [{"node": "process_document", "error": f"File not found: {source}"}],
                 }
 
@@ -89,6 +90,7 @@ async def process_single_document(
         return {
             "doi": doi,
             "success": False,
+            "zotero_key": None,
             "errors": [{"node": "process_document", "error": f"Timeout: {e}"}],
         }
     except Exception as e:
@@ -96,5 +98,6 @@ async def process_single_document(
         return {
             "doi": doi,
             "success": False,
+            "zotero_key": None,
             "errors": [{"node": "process_document", "error": f"{type(e).__name__}: {e}"}],
         }

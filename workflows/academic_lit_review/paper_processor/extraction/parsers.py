@@ -32,10 +32,8 @@ async def _generate_l2_from_l0(
     Returns:
         L2 content if successfully generated, None otherwise
     """
-    from workflows.document_processing.nodes.chapter_detector import (
-        detect_chapters,
-        _create_fallback_chunks,
-    )
+    from workflows.document_processing.state import ChapterInfo
+    from workflows.shared.chunking_utils import create_fallback_chunks
     from workflows.document_processing.subgraphs.chapter_summarization.chunking import (
         chunk_large_content,
     )
@@ -57,7 +55,7 @@ async def _generate_l2_from_l0(
 
         # Create fallback chunks (simpler than full chapter detection for papers)
         # Papers typically don't have chapter structure, so use size-based chunking
-        chunks = _create_fallback_chunks(l0_content, word_count)
+        chunks = create_fallback_chunks(l0_content, word_count, ChapterInfo)
 
         if not chunks:
             logger.warning("No chunks created, cannot generate L2")
@@ -66,8 +64,9 @@ async def _generate_l2_from_l0(
         # Summarize each chunk
         chunk_summaries = []
         for i, chunk in enumerate(chunks):
-            chunk_content = l0_content[chunk.start_position:chunk.end_position]
-            target_words = max(50, chunk.word_count // 10)  # 10:1 compression
+            # ChapterInfo is a TypedDict, so use dict access
+            chunk_content = l0_content[chunk["start_position"]:chunk["end_position"]]
+            target_words = max(50, chunk["word_count"] // 10)  # 10:1 compression
 
             # Handle very large chunks by sub-chunking
             sub_chunks = chunk_large_content(chunk_content)

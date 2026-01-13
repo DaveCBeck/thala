@@ -32,10 +32,14 @@ __all__ = [
     "StructuralEdit",
     "EditManifest",
     "ArchitectureVerificationResult",
+    # New section-rewrite types (replacing EditManifest flow)
+    "SectionRewriteResult",
+    "Loop3RewriteManifest",
     "SectionEditResult",
     "HolisticReviewResult",
     "HolisticReviewScoreOnly",
     "CohesionCheckResult",
+    "TodoResolution",
     "Edit",
     "DocumentEdits",
     "LoopErrorRecord",
@@ -154,7 +158,8 @@ class StructuralIssue(BaseModel):
     )
     suggested_resolution: Literal[
         "delete", "trim", "move", "merge", "split",
-        "add_transition", "reorder", "add_structural_content"
+        "add_transition", "reorder", "add_structural_content",
+        "consolidate"  # Gather scattered content from 3+ locations into single place
     ] = Field(
         description="Recommended edit type to resolve this issue"
     )
@@ -299,6 +304,69 @@ class EditManifest(BaseModel):
         return self
 
 
+# =============================================================================
+# Loop 3: Section-Level Rewrite Types (New approach replacing EditManifest)
+# =============================================================================
+
+
+class SectionRewriteResult(BaseModel):
+    """Result of rewriting a section to fix an issue.
+
+    This replaces the StructuralEdit approach. Instead of specifying edit
+    operations, we simply rewrite the affected section directly.
+    """
+    issue_id: int = Field(ge=1, description="ID of the issue this rewrite addresses")
+    original_paragraphs: list[int] = Field(
+        min_length=1,
+        description="Paragraph numbers that were rewritten (1-indexed)"
+    )
+    rewritten_content: str = Field(
+        min_length=1,
+        description="The rewritten section content"
+    )
+    changes_summary: str = Field(
+        min_length=10,
+        description="Brief summary of what was changed (for audit trail)"
+    )
+    confidence: float = Field(
+        ge=0.0, le=1.0,
+        description="Confidence that this rewrite correctly fixes the issue"
+    )
+
+
+class Loop3RewriteManifest(BaseModel):
+    """Complete manifest of section rewrites for Loop 3.
+
+    This replaces EditManifest. Instead of structured edit operations,
+    we track which sections were rewritten to fix which issues.
+    """
+    rewrites: list[SectionRewriteResult] = Field(
+        default_factory=list,
+        description="List of section rewrites performed"
+    )
+    issues_addressed: list[int] = Field(
+        default_factory=list,
+        description="Issue IDs that were successfully addressed"
+    )
+    issues_skipped: list[int] = Field(
+        default_factory=list,
+        description="Issue IDs that were skipped (e.g., too complex, move operations)"
+    )
+    skip_reasons: dict[int, str] = Field(
+        default_factory=dict,
+        description="Mapping of issue_id -> skip reason for debugging"
+    )
+    overall_assessment: str = Field(
+        min_length=10,
+        description="Summary of rewriting performed"
+    )
+
+    @property
+    def needs_restructuring(self) -> bool:
+        """For compatibility - true if any rewrites were performed."""
+        return len(self.rewrites) > 0
+
+
 class ArchitectureVerificationResult(BaseModel):
     """Result from post-edit architecture verification."""
     issues_resolved: list[str] = Field(
@@ -437,14 +505,30 @@ class CohesionCheckResult(BaseModel):
     needs_restructuring: bool = Field(description="Whether document needs to return to Loop 3")
     reasoning: str = Field(description="Explanation of the assessment")
 
+
+class TodoResolution(BaseModel):
+    """Result from attempting to resolve a TODO marker."""
+    resolved: bool = Field(description="Whether the TODO was successfully resolved with concrete content")
+    replacement: str = Field(
+        default="",
+        description="Text to replace the TODO marker with. Empty if not resolved."
+    )
+    reasoning: str = Field(description="Why this resolution was chosen or why it couldn't be resolved")
+
 # =============================================================================
 # Loop 5: Fact and Reference Checking
 # =============================================================================
 
 class Edit(BaseModel):
     """A single fact/reference edit."""
-    find: str = Field(description="Exact text to find (must be unique in document)")
+    find: str = Field(
+        description="Exact text to find. Use 50-150 chars to ensure uniqueness. Include surrounding context."
+    )
     replace: str = Field(description="Replacement text")
+    position_hint: str = Field(
+        default="",
+        description="Position context for disambiguation: 'after section: X' or 'in paragraph starting with: Y'"
+    )
     edit_type: Literal["fact_correction", "citation_fix", "clarity"] = Field(
         description="Type of edit being made"
     )

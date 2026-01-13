@@ -18,6 +18,7 @@ from workflows.supervised_lit_review.supervision.types import (
     SectionEditResult,
     HolisticReviewResult,
     HolisticReviewScoreOnly,
+    TodoResolution,
 )
 from workflows.supervised_lit_review.supervision.prompts import (
     LOOP4_SECTION_EDITOR_SYSTEM,
@@ -25,7 +26,10 @@ from workflows.supervised_lit_review.supervision.prompts import (
     LOOP4_HOLISTIC_SYSTEM,
     LOOP4_HOLISTIC_USER,
     get_loop4_editor_prompts,
+    TODO_RESOLUTION_SYSTEM,
+    TODO_RESOLUTION_USER,
 )
+from langchain_tools.perplexity import check_fact
 from workflows.supervised_lit_review.supervision.utils import (
     split_into_sections,
     SectionInfo,
@@ -68,6 +72,7 @@ class Loop4State(TypedDict):
 
     holistic_result: Optional[HolisticReviewResult]
     flagged_sections: list[str]
+    flagged_reasons: dict[str, str]  # section_id -> reason from holistic reviewer
 
     iteration: int
     max_iterations: int
@@ -108,6 +113,38 @@ def get_cited_papers_only(
     cited_dois = {key_to_doi.get(key) for key in cited_keys if key in key_to_doi}
 
     return {doi: paper_summaries[doi] for doi in cited_dois if doi in paper_summaries}
+
+
+def format_available_citation_keys(
+    zotero_keys: dict[str, str],
+    paper_summaries: dict[str, PaperSummary],
+    max_keys: int = 50,
+) -> str:
+    """Format available citation keys for the section editor.
+
+    Shows a sample of available keys with their paper titles so the LLM
+    knows what citations are valid and how to use them.
+    """
+    if not zotero_keys:
+        return "No citation keys available. Use search_papers to find papers."
+
+    lines = ["Here are some available citation keys (use search_papers for more):"]
+    lines.append("")
+
+    count = 0
+    for doi, key in zotero_keys.items():
+        if count >= max_keys:
+            lines.append(f"... and {len(zotero_keys) - max_keys} more (use search_papers to find specific topics)")
+            break
+
+        summary = paper_summaries.get(doi, {})
+        title = summary.get("title", "Unknown title")[:60]
+        year = summary.get("year", "n.d.")
+
+        lines.append(f"- [@{key}] {title} ({year})")
+        count += 1
+
+    return "\n".join(lines)
 
 
 def _log_section_info(stage: str, sections: list[SectionInfo]) -> None:
@@ -280,11 +317,17 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
 
                 paper_tools = create_paper_tools(paper_summaries, store_query)
 
+                # Format available citation keys so LLM knows what's valid
+                available_keys_text = format_available_citation_keys(
+                    zotero_keys, paper_summaries, max_keys=30
+                )
+
                 user_prompt = user_prompt_template.format(
                     context_window=context_window,
                     section_id=section_id,
                     section_content=section_content,
                     paper_summaries=f"{manifest_note}\n\n{summary_text}",
+                    available_citation_keys=available_keys_text,
                     todos_in_section="\n".join(todos) if todos else "None"
                 )
 
@@ -309,12 +352,14 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
             )
 
             # Citation validation - with optional Zotero verification
+            # Use verify_all=True to make Zotero the source of truth
             if verify_zotero and zotero_client:
                 is_valid, invalid_cites, new_verified = await validate_edit_citations_with_zotero(
                     original_section=section_content,
                     edited_section=response.edited_content,
                     corpus_keys=corpus_keys | verified_keys,
                     zotero_client=zotero_client,
+                    verify_all=True,
                 )
                 newly_verified = new_verified - corpus_keys - verified_keys
 
@@ -472,13 +517,14 @@ If you cannot improve meaningfully within limits, return the original section un
                         max_tokens=16384,
                     )
 
-                    # Validate retry citations
+                    # Validate retry citations (verify_all=True for Zotero as source of truth)
                     if verify_zotero and zotero_client:
                         is_valid_retry, retry_invalid, retry_verified = await validate_edit_citations_with_zotero(
                             original_section=section_content,
                             edited_section=retry_response.edited_content,
                             corpus_keys=corpus_keys | verified_keys | newly_verified,
                             zotero_client=zotero_client,
+                            verify_all=True,
                         )
                         newly_verified |= retry_verified - corpus_keys - verified_keys
                     else:
@@ -590,6 +636,151 @@ If you cannot improve meaningfully within limits, return the original section un
     }
 
 
+def extract_todo_markers(content: str) -> list[str]:
+    """Extract all TODO markers from content."""
+    import re
+    pattern = r'<!-- TODO:.*?-->'
+    return re.findall(pattern, content, re.DOTALL)
+
+
+async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Phase A.5: Resolve TODOs from parallel section edits using tools.
+
+    For each TODO marker found in edited sections:
+    1. Attempt to resolve using paper tools and Perplexity
+    2. If resolved, replace with the resolution content
+    3. If not resolved, remove the TODO and log a WARNING
+    """
+    section_results = state.get("section_results", {})
+    paper_summaries = state.get("paper_summaries", {})
+
+    if not section_results:
+        return {"section_results": section_results}
+
+    # Count total TODOs across all sections
+    total_todos = sum(
+        len(extract_todo_markers(result.edited_content))
+        for result in section_results.values()
+    )
+
+    if total_todos == 0:
+        logger.info("[resolve_todos] No TODO markers found in edited sections")
+        return {"section_results": section_results}
+
+    logger.info(f"[resolve_todos] Found {total_todos} TODO markers to resolve")
+
+    # Setup tools
+    store_query = SupervisionStoreQuery(paper_summaries)
+    paper_tools = create_paper_tools(paper_summaries, store_query)
+    all_tools = paper_tools + [check_fact]
+
+    updated_results = {}
+    resolved_count = 0
+    unresolved_count = 0
+
+    for section_id, result in section_results.items():
+        edited_content = result.edited_content
+        todos = extract_todo_markers(edited_content)
+
+        if not todos:
+            updated_results[section_id] = result
+            continue
+
+        resolved_content = edited_content
+
+        for todo in todos:
+            # Get context around the TODO (up to 1000 chars before and after)
+            todo_idx = resolved_content.find(todo)
+            if todo_idx == -1:
+                continue
+
+            context_start = max(0, todo_idx - 500)
+            context_end = min(len(resolved_content), todo_idx + len(todo) + 500)
+            context = resolved_content[context_start:context_end]
+
+            try:
+                resolution = await get_structured_output(
+                    output_schema=TodoResolution,
+                    user_prompt=TODO_RESOLUTION_USER.format(todo=todo, context=context),
+                    system_prompt=TODO_RESOLUTION_SYSTEM,
+                    tools=all_tools,
+                    tier=ModelTier.SONNET,
+                    max_tokens=4096,
+                    max_tool_calls=5,
+                    max_tool_result_chars=50000,
+                )
+
+                if resolution.resolved and resolution.replacement:
+                    resolved_content = resolved_content.replace(todo, resolution.replacement)
+                    resolved_count += 1
+                    logger.info(
+                        f"[resolve_todos] Resolved TODO in '{section_id}': {todo[:60]}..."
+                    )
+                else:
+                    # Remove unresolved TODO with WARNING
+                    resolved_content = resolved_content.replace(todo, "")
+                    unresolved_count += 1
+                    logger.warning(
+                        f"[resolve_todos] Unresolved TODO removed from '{section_id}': "
+                        f"{todo[:100]}... Reason: {resolution.reasoning[:100]}"
+                    )
+
+            except Exception as e:
+                # On error, remove the TODO with warning
+                resolved_content = resolved_content.replace(todo, "")
+                unresolved_count += 1
+                logger.warning(
+                    f"[resolve_todos] Error resolving TODO in '{section_id}', removing: {e}"
+                )
+
+        # Clean up any extra whitespace from removed TODOs
+        import re
+        resolved_content = re.sub(r'\n{3,}', '\n\n', resolved_content)
+
+        updated_results[section_id] = SectionEditResult(
+            section_id=section_id,
+            edited_content=resolved_content,
+            notes=result.notes,
+            new_paper_todos=[],  # Cleared after resolution attempt
+            confidence=result.confidence,
+        )
+
+    logger.info(
+        f"[resolve_todos] Completed: {resolved_count} resolved, {unresolved_count} removed"
+    )
+
+    return {"section_results": updated_results}
+
+
+def detect_duplicate_abstracts(document: str) -> list[tuple[int, int, float]]:
+    """Detect near-duplicate abstract/introduction paragraphs.
+
+    Checks first 3 paragraphs of each major section for similarity.
+    Returns list of (section_idx1, section_idx2, similarity_ratio) for duplicates.
+    """
+    from difflib import SequenceMatcher
+
+    # Split by major headers (# or ##)
+    sections = re.split(r'^#{1,2}\s+', document, flags=re.MULTILINE)
+    abstracts = []
+
+    for i, section in enumerate(sections[:5]):  # Check first 5 sections
+        paragraphs = section.strip().split('\n\n')[:3]  # First 3 paragraphs
+        if paragraphs:
+            combined = ' '.join(paragraphs)[:1000]
+            if len(combined) > 100:  # Only check substantial content
+                abstracts.append((i, combined))
+
+    duplicates = []
+    for i, (idx1, text1) in enumerate(abstracts):
+        for idx2, text2 in abstracts[i + 1:]:
+            ratio = SequenceMatcher(None, text1, text2).ratio()
+            if ratio > 0.75:  # 75% similarity threshold
+                duplicates.append((idx1, idx2, ratio))
+
+    return duplicates
+
+
 def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
     """Reassemble document from edited sections."""
     current_review = state.get("current_review", "")
@@ -639,10 +830,31 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
 
         updated_review = "\n".join(lines)
 
+    # Enhanced duplicate detection after reassembly
+    duplicate_headers = detect_duplicate_headers(updated_review)
+    if duplicate_headers:
+        for line1, line2, header_text in duplicate_headers:
+            logger.warning(
+                f"[reassemble] Duplicate header detected: '{header_text}' at lines {line1 + 1}, {line2 + 1}"
+            )
+
+    duplicate_abstracts = detect_duplicate_abstracts(updated_review)
+    if duplicate_abstracts:
+        for idx1, idx2, similarity in duplicate_abstracts:
+            logger.warning(
+                f"[reassemble] Duplicate abstract content in sections {idx1}, {idx2} "
+                f"(similarity: {similarity:.2f})"
+            )
+
+    has_duplicates = bool(duplicate_headers or duplicate_abstracts)
+
     logger.debug(f"[reassemble_output] Document length: {len(updated_review)} chars")
     logger.info(f"Reassembled document: {len(updated_review)} chars")
 
-    return {"current_review": updated_review}
+    return {
+        "current_review": updated_review,
+        "has_duplicates": has_duplicates,
+    }
 
 
 async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -825,9 +1037,15 @@ Do not paraphrase, abbreviate, or modify them in any way.
         f"{len(result.sections_flagged)} flagged (coherence: {result.overall_coherence_score:.2f})"
     )
 
+    # Log flagged reasons for debugging and targeted re-editing
+    if result.flagged_reasons:
+        for section_id, reason in result.flagged_reasons.items():
+            logger.warning(f"[holistic_review] Flagged '{section_id}': {reason}")
+
     return {
         "holistic_result": result,
         "flagged_sections": result.sections_flagged,
+        "flagged_reasons": result.flagged_reasons,  # Forward for targeted re-editing
         "iteration": iteration + 1,
     }
 
@@ -890,6 +1108,7 @@ def create_loop4_graph() -> StateGraph:
 
     builder.add_node("split_sections", split_sections_node)
     builder.add_node("parallel_edit_sections", parallel_edit_sections_node)
+    builder.add_node("resolve_todos", resolve_todos_node)
     builder.add_node("reassemble_document", reassemble_document_node)
     builder.add_node("holistic_review", holistic_review_node)
     builder.add_node("finalize", finalize_node)
@@ -897,7 +1116,8 @@ def create_loop4_graph() -> StateGraph:
     builder.add_edge(START, "split_sections")
 
     builder.add_edge("split_sections", "parallel_edit_sections")
-    builder.add_edge("parallel_edit_sections", "reassemble_document")
+    builder.add_edge("parallel_edit_sections", "resolve_todos")
+    builder.add_edge("resolve_todos", "reassemble_document")
     builder.add_edge("reassemble_document", "holistic_review")
 
     builder.add_conditional_edges(
@@ -962,6 +1182,7 @@ async def run_loop4_standalone(
         "editor_notes": [],
         "holistic_result": None,
         "flagged_sections": [],
+        "flagged_reasons": {},
         "iteration": 0,
         "max_iterations": max_iterations,
         "is_complete": False,

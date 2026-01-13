@@ -37,11 +37,22 @@ async def run_synthesis(
     Returns:
         Dict with final_review, references, quality_metrics, prisma_documentation
     """
+    # Validate that all papers have real Zotero keys - no synthetic fallback allowed
     if zotero_keys is None:
-        zotero_keys = {}
-        for doi in paper_summaries.keys():
-            key = doi.replace("/", "_").replace(".", "").replace("-", "")[:20].upper()
-            zotero_keys[doi] = key
+        raise ValueError(
+            "zotero_keys cannot be None - all papers must have Zotero keys from document_processing"
+        )
+
+    missing_keys = [
+        doi for doi in paper_summaries.keys()
+        if doi not in zotero_keys or not zotero_keys[doi]
+    ]
+    if missing_keys:
+        raise ValueError(
+            f"Papers missing Zotero keys: {missing_keys[:5]}"
+            f"{'...' if len(missing_keys) > 5 else ''}. "
+            f"Document processing may have failed for these papers."
+        )
 
     input_data = LitReviewInput(
         topic=topic,

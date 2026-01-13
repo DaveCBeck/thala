@@ -41,6 +41,32 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
             "new_edges": citation_edges,
         }
 
+    # Filter by language early (before expensive relevance scoring)
+    # For non-English workflows, only keep papers in the target language
+    language_config = state.get("language_config")
+    if language_config and language_config.get("code") != "en":
+        target_lang = language_config["code"]
+        pre_filter_count = len(all_results)
+        all_results = [
+            r for r in all_results
+            if r.get("language") == target_lang
+        ]
+        filtered_count = pre_filter_count - len(all_results)
+        if filtered_count > 0:
+            logger.info(
+                f"Language filter ({target_lang}): kept {len(all_results)}/{pre_filter_count} "
+                f"citations (filtered {filtered_count} non-{target_lang} papers)"
+            )
+
+        if not all_results:
+            logger.warning(f"No citations in target language ({target_lang})")
+            return {
+                "discovered_papers": [],
+                "rejected_papers": [],
+                "discovered_dois": [],
+                "new_edges": citation_edges,
+            }
+
     papers = []
     for result in all_results:
         discovery_method = "citation"
@@ -66,7 +92,9 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
 
     logger.info(f"Merged {len(all_results)} raw results to {len(papers)} unique new papers")
 
-    language_config = state.get("language_config")
+    # language_config already fetched above for early filtering
+    if language_config is None:
+        language_config = state.get("language_config")
     relevant, rejected = await batch_score_relevance(
         papers=papers,
         topic=topic,

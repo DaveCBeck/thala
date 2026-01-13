@@ -155,7 +155,8 @@ Also insert any TODO markers specified in the manifest using the format: <!-- TO
 
 IMPORTANT:
 - Do NOT add new content beyond transitions
-- Preserve all citations and academic formatting
+- Preserve all [@KEY] citations exactly as they appear (e.g., [@Smith2020], [@ABC12345])
+- Do NOT convert citations to other formats like (Author, Year) or numbered [1]
 - Maintain consistent voice and style"""
 
 LOOP3_EDITOR_USER = """Execute the following edit manifest on this document.
@@ -208,6 +209,7 @@ For each issue you identify:
    - add_transition: Insert connective tissue
    - reorder: Fix logical ordering
    - add_structural_content: Add introduction, conclusion, discussion, or framing
+   - consolidate: Gather content scattered across 3+ locations into single section
 
 ## What Constitutes "missing_structure"
 
@@ -377,7 +379,36 @@ Before submitting:
 - [ ] All paragraph numbers exist in the document
 - [ ] trim_redundancy, split_section, add_structural_content have replacement_text
 - [ ] move/merge/reorder/transition have target_paragraph
-- [ ] notes explain WHY this edit resolves the issue and reference issue_id"""
+- [ ] notes explain WHY this edit resolves the issue and reference issue_id
+
+## The needs_restructuring Constraint
+
+CRITICAL: The `needs_restructuring` field has a strict validation constraint:
+
+- If `needs_restructuring=True`: You MUST provide at least ONE edit OR at least ONE todo_marker
+- If you cannot generate concrete edits: Either add todo_markers OR set `needs_restructuring=False`
+
+When to use todo_markers:
+- Issue requires content that doesn't exist (e.g., missing conclusion, placeholder text)
+- Issue is too complex to resolve with structural moves alone
+- You cannot determine the exact replacement text
+
+Format: `<!-- TODO: [action needed] for issue [issue_id] -->`
+
+Example when edits aren't possible:
+```json
+{
+  "edits": [],
+  "todo_markers": [
+    "<!-- TODO: Add conclusion synthesizing findings for issue missing_structure_1 -->",
+    "<!-- TODO: Replace placeholder in P67 with weathering analysis for issue placeholder_1 -->"
+  ],
+  "needs_restructuring": true,
+  "overall_assessment": "Found 4 issues requiring content addition..."
+}
+```
+
+DO NOT set `needs_restructuring=True` with empty edits AND empty todo_markers - this will fail validation."""
 
 LOOP3_PHASE_B_USER = """Generate edits to resolve these identified structural issues.
 
@@ -498,3 +529,105 @@ LOOP3_VERIFIER_USER = """Verify that the structural edits were applied correctly
 
 Verify the edits resolved the issues and the document is structurally coherent.
 Return an ArchitectureVerificationResult with issues_resolved, issues_remaining, regressions_introduced, coherence_score, needs_another_iteration, and reasoning."""
+
+
+# =============================================================================
+# Loop 3: Section-Level Rewrite Prompts (NEW - replaces Phase B edit generation)
+# =============================================================================
+
+SECTION_REWRITE_SYSTEM = """You are an expert academic editor fixing a specific structural issue in a document.
+
+## Your Task
+
+You will receive:
+1. A SPECIFIC structural issue to fix (with type, description, and affected paragraphs)
+2. The SECTION of the document affected by this issue
+3. CONTEXT paragraphs before and after (to understand the document flow)
+
+Your job is to REWRITE the affected section to fix the issue. Return ONLY the rewritten section content.
+
+## Critical Rules
+
+1. **FIX the specific issue described** - nothing more, nothing less
+2. **PRESERVE all citations in their exact [@KEY] format** - never remove, alter, or reformat citations
+   - Citations look like: [@Smith2020], [@ABC12345], [@jones_2019_climate]
+   - Keep all [@KEY] citations exactly as they appear
+   - Do NOT convert to other formats like (Author, Year) or numbered [1]
+3. **MAINTAIN the document's voice and style** - match the existing academic tone
+4. **DO NOT add new factual claims** - only restructure, consolidate, or clarify existing content
+5. **DO NOT rewrite context paragraphs** - only rewrite the marked section
+6. **KEEP similar length** - the rewrite should be within ±30% of original length unless the issue explicitly requires expansion/reduction
+
+## Issue Types and How to Fix Them
+
+| Issue Type | What to Do |
+|------------|------------|
+| **redundant_paragraphs** | Merge content, keeping unique information from each. Eliminate repetition while preserving all distinct points. |
+| **content_sprawl** | Consolidate scattered content into a coherent, unified section. Organize logically. |
+| **premature_detail** | Reorder content so foundational concepts come before technical details. |
+| **orphaned_content** | Add transitional phrases to connect the content to surrounding material. |
+| **redundant_framing** | Remove duplicate introductions/summaries. Keep the more informative version. |
+| **logical_gap** | Add transitional sentences to bridge the argument. Make the logical connection explicit. |
+| **missing_structure** | Add the missing structural element (intro/conclusion/framing). Keep it concise. |
+| **misplaced_content** | Note: Pure relocations are handled separately. For hybrid issues, focus on the content problems. |
+
+## Output Format
+
+Return ONLY the rewritten section content. Do not include:
+- Explanations of what you changed
+- The context paragraphs
+- Markdown headers or formatting changes
+- Meta-commentary
+
+Just output the clean, rewritten text that should replace the original section."""
+
+SECTION_REWRITE_USER = """Fix this structural issue by rewriting the affected section.
+
+## Issue to Fix
+- **ID**: {issue_id}
+- **Type**: {issue_type}
+- **Severity**: {severity}
+- **Description**: {description}
+- **Suggested Resolution**: {suggested_resolution}
+- **Affected Paragraphs**: {affected_paragraphs}
+
+## Context Before (DO NOT MODIFY - for understanding the flow)
+{context_before}
+
+---SECTION TO REWRITE STARTS HERE---
+
+## Section to Rewrite
+{section_content}
+
+---SECTION TO REWRITE ENDS HERE---
+
+## Context After (DO NOT MODIFY - for understanding the flow)
+{context_after}
+
+## Instructions
+1. Read the context to understand where this section fits in the document
+2. Rewrite the section to fix the described issue
+3. Return ONLY the rewritten section content (no explanations, no context)
+4. **Preserve all [@KEY] citations exactly as they appear** (e.g., [@Smith2020], [@ABC12345])
+5. Match the document's academic voice"""
+
+SECTION_REWRITE_SUMMARY_SYSTEM = """You are a change auditor reviewing a document edit.
+
+Given the original section and the rewritten section, produce a brief summary of what changed.
+Be specific and factual. This summary is for audit purposes.
+
+Format your response as a single paragraph, 2-4 sentences maximum.
+Focus on: what was removed, what was added, what was reorganized."""
+
+SECTION_REWRITE_SUMMARY_USER = """Summarize the changes made to this section.
+
+## Original Section
+{original_content}
+
+## Rewritten Section
+{rewritten_content}
+
+## Issue Being Fixed
+{issue_description}
+
+Provide a brief (2-4 sentence) summary of what changed."""

@@ -156,9 +156,11 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
     )
     loop_progress["checkpoints"].append(checkpoint)
 
+    # Track newly added zotero keys (mirrors Loop 1 pattern)
     zotero_key_sources = state.get("zotero_key_sources", {})
-    new_zotero_keys = result.get("zotero_keys", {})
-    for doi, key in new_zotero_keys.items():
+    updated_zotero_keys = dict(state["zotero_keys"])
+    added_keys = result.get("added_zotero_keys", {})
+    for doi, key in added_keys.items():
         if key not in zotero_key_sources:
             zotero_key_sources[key] = {
                 "key": key,
@@ -166,8 +168,10 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
                 "verified": True,
                 "doi": doi,
             }
+        if doi not in updated_zotero_keys:
+            updated_zotero_keys[doi] = key
 
-    logger.info(f"Loop 2 complete: {iterations_used} iterations used")
+    logger.info(f"Loop 2 complete: {iterations_used} iterations used, {len(added_keys)} new citation keys")
 
     loop_errors = state.get("loop_errors", [])
     if result.get("errors"):
@@ -184,7 +188,7 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
         "loop_progress": loop_progress,
         "paper_corpus": result.get("paper_corpus", state["paper_corpus"]),
         "paper_summaries": result.get("paper_summaries", state["paper_summaries"]),
-        "zotero_keys": result.get("zotero_keys", state["zotero_keys"]),
+        "zotero_keys": updated_zotero_keys,
         "zotero_key_sources": zotero_key_sources,
         "loop_errors": loop_errors,
     }
@@ -208,6 +212,8 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
             "run_id": loop_run_id,
             "run_name": f"loop3_structure:{topic}",
         },
+        zotero_keys=state.get("zotero_keys", {}),
+        zotero_key_sources=state.get("zotero_key_sources", {}),
     )
 
     after_text = result.get("current_review", state["current_review"])
@@ -242,6 +248,7 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
         "loop_progress": loop_progress,
         "paper_summaries": state["paper_summaries"],
         "zotero_keys": state["zotero_keys"],
+        "zotero_key_sources": state.get("zotero_key_sources", {}),
     }
 
 
@@ -337,6 +344,7 @@ async def run_loop4_5_node(state: OrchestrationState) -> dict[str, Any]:
         },
         "paper_summaries": state["paper_summaries"],
         "zotero_keys": state["zotero_keys"],
+        "zotero_key_sources": state.get("zotero_key_sources", {}),
     }
 
 
@@ -443,4 +451,6 @@ def finalize_node(state: OrchestrationState) -> dict[str, Any]:
         "is_complete": True,
         "completion_reason": completion_reason,
         "loop_errors": loop_errors,
+        "zotero_keys": state.get("zotero_keys", {}),
+        "zotero_key_sources": state.get("zotero_key_sources", {}),
     }

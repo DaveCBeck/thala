@@ -62,10 +62,18 @@ async def run_loop2_standalone(
     else:
         result = await loop2_graph.ainvoke(initial_state)
 
+    # Calculate newly added zotero keys (not in original input)
+    final_zotero_keys = result.get("zotero_keys", zotero_keys)
+    added_zotero_keys = {
+        doi: key for doi, key in final_zotero_keys.items()
+        if doi not in zotero_keys
+    }
+
     return {
         "current_review": result.get("current_review", review),
         "paper_summaries": result.get("paper_summaries", paper_summaries),
         "zotero_keys": result.get("zotero_keys", zotero_keys),
+        "added_zotero_keys": added_zotero_keys,
         "paper_corpus": result.get("paper_corpus", paper_corpus),
         "explored_bases": result.get("explored_bases", []),
         "iteration": result.get("iteration", 1),

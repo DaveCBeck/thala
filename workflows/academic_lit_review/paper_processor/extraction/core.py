@@ -247,7 +247,11 @@ async def extract_all_summaries(
         """Returns (doi, summary, es_record_id, zotero_key, failure_reason)."""
         nonlocal completed_count
         async with semaphore:
-            paper = papers_by_doi[doi]
+            # Skip papers that were removed (e.g., by language verification)
+            paper = papers_by_doi.get(doi)
+            if paper is None:
+                logger.debug(f"Skipping {doi}: not in papers_by_doi (likely filtered out)")
+                return doi, None, None, None, "filtered_out"
             es_record_id = result.get("es_record_id")
             zotero_key = result.get("zotero_key")
             short_summary = result.get("short_summary", "")
@@ -316,7 +320,11 @@ async def _extract_all_summaries_batched(
     failed_dois = set()
 
     for doi, result in processing_results.items():
-        paper = papers_by_doi[doi]
+        # Skip papers that were removed (e.g., by language verification)
+        paper = papers_by_doi.get(doi)
+        if paper is None:
+            logger.debug(f"Skipping {doi}: not in papers_by_doi (likely filtered out)")
+            continue
         es_record_id = result.get("es_record_id")
         zotero_key = result.get("zotero_key")
         short_summary = result.get("short_summary", "")

@@ -38,35 +38,81 @@ def prune_message_history(
     max_history: int = MAX_MESSAGE_HISTORY,
     preserve_system_user: bool = True,
 ) -> list:
-    """Prune message history to prevent unbounded growth.
+    """Prune message history while preserving tool_use/tool_result pairs.
 
-    Strategy: Keep system + original user message, plus most recent interactions.
-    This preserves context while bounding memory usage.
+    Anthropic API requires every tool_result to have a corresponding tool_use
+    in the immediately preceding assistant message. This function ensures
+    pruning never breaks these pairs.
+
+    Strategy: Group messages into tool exchanges (AIMessage + ToolMessages),
+    then prune at exchange boundaries.
 
     Args:
         messages: Full message list
-        max_history: Maximum messages to keep (excluding system/user if preserved)
+        max_history: Maximum messages to keep
         preserve_system_user: Keep first system and user messages
 
     Returns:
-        Pruned message list
+        Pruned message list with tool pairs intact
     """
     if len(messages) <= max_history:
         return messages
 
+    # Separate preserved prefix (system + user)
     if preserve_system_user and len(messages) > SYSTEM_USER_MESSAGE_COUNT:
-        # Keep system + user, then most recent
         preserved = messages[:SYSTEM_USER_MESSAGE_COUNT]
-        recent_count = max(MIN_RECENT_MESSAGES, max_history - SYSTEM_USER_MESSAGE_COUNT)
-        recent = messages[-recent_count:]
-
-        pruned_count = len(messages) - len(preserved) - len(recent)
-        if pruned_count > 0:
-            logger.debug(f"Pruned {pruned_count} messages from history")
-
-        return preserved + recent
+        remaining = messages[SYSTEM_USER_MESSAGE_COUNT:]
     else:
-        return messages[-max_history:]
+        preserved = []
+        remaining = messages
+
+    # Group remaining messages into tool exchanges
+    # An exchange = AIMessage with tool_calls + all its ToolMessage responses
+    exchanges = []
+    current_exchange = []
+
+    for msg in remaining:
+        if isinstance(msg, AIMessage):
+            # Start of new exchange - save previous if exists
+            if current_exchange:
+                exchanges.append(current_exchange)
+            current_exchange = [msg]
+        elif isinstance(msg, ToolMessage):
+            # Part of current exchange
+            current_exchange.append(msg)
+        else:
+            # HumanMessage or other - treat as single-message exchange
+            if current_exchange:
+                exchanges.append(current_exchange)
+                current_exchange = []
+            exchanges.append([msg])
+
+    # Don't forget last exchange
+    if current_exchange:
+        exchanges.append(current_exchange)
+
+    # Calculate how many messages we can keep from exchanges
+    target_messages = max_history - len(preserved)
+
+    # Take most recent exchanges that fit within budget
+    kept_exchanges = []
+    message_count = 0
+
+    for exchange in reversed(exchanges):
+        if message_count + len(exchange) <= target_messages or not kept_exchanges:
+            kept_exchanges.insert(0, exchange)
+            message_count += len(exchange)
+        else:
+            break
+
+    # Flatten exchanges back to message list
+    recent = [msg for exchange in kept_exchanges for msg in exchange]
+
+    pruned_count = len(messages) - len(preserved) - len(recent)
+    if pruned_count > 0:
+        logger.debug(f"Pruned {pruned_count} messages from history (kept {len(kept_exchanges)} exchanges)")
+
+    return preserved + recent
 
 
 def preflight_token_check(

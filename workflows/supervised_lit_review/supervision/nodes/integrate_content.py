@@ -67,10 +67,10 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
             }],
         }
 
-    # Format paper summaries for the integrator
-    summaries_text = _format_paper_summaries(paper_summaries)
+    # Format paper summaries for the integrator (with zotero keys inline)
+    summaries_text = _format_paper_summaries(paper_summaries, zotero_keys)
 
-    # Format citation keys
+    # Format citation keys as quick reference (also inline in summaries above)
     citation_keys_text = _format_citation_keys(zotero_keys)
 
     # Build the user prompt
@@ -146,8 +146,14 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
 
-def _format_paper_summaries(paper_summaries: dict[str, dict]) -> str:
-    """Format paper summaries for the integrator prompt."""
+def _format_paper_summaries(
+    paper_summaries: dict[str, dict],
+    zotero_keys: dict[str, str],
+) -> str:
+    """Format paper summaries for the integrator prompt.
+
+    Each paper header includes its [@ZOTERO_KEY] for easy citation.
+    """
     if not paper_summaries:
         return "No paper summaries available"
 
@@ -162,9 +168,19 @@ def _format_paper_summaries(paper_summaries: dict[str, dict]) -> str:
         short_summary = summary.get("short_summary", "")
         key_findings = summary.get("key_findings", [])
 
-        lines.append(f"### {title}")
-        lines.append(f"**Authors:** {author_str} ({year})")
+        # Get zotero key - from dict or from summary field
+        zotero_key = zotero_keys.get(doi) or summary.get("zotero_key", "")
+
+        # Header with citation key prominently displayed
+        if zotero_key:
+            lines.append(f"### [@{zotero_key}] {title} ({year})")
+        else:
+            lines.append(f"### {title} ({year})")
+
+        lines.append(f"**Authors:** {author_str}")
         lines.append(f"**DOI:** {doi}")
+        if zotero_key:
+            lines.append(f"**Cite as:** [@{zotero_key}]")
         if short_summary:
             lines.append(f"**Summary:** {short_summary}")
         if key_findings:

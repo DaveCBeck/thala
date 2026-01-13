@@ -9,6 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from core.stores.zotero import ZoteroItemCreate, ZoteroTag
+from langchain_tools.base import get_store_manager
 from workflows.academic_lit_review.state import PaperMetadata, PaperSummary
 from workflows.shared.llm_utils import ModelTier
 from workflows.shared.llm_utils.structured import (
@@ -127,44 +129,32 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
             existing_short_summaries[doi] = short_summary
 
     if papers_needing_fallback:
+        # Fallback to metadata-only extraction with real Zotero records
+        # This ensures papers can still be cited even if full-text processing failed
+        failed_dois = [p.get("doi", "unknown") for p in papers_needing_fallback]
         logger.warning(
-            f"Document processing failed for {len(papers_needing_fallback)} papers - "
-            f"falling back to metadata-only extraction. "
-            f"Full-text processing is preferred for higher quality summaries."
+            f"Document processing failed for {len(papers_needing_fallback)} papers. "
+            f"Using metadata-only extraction with Zotero stubs. "
+            f"DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}"
         )
 
-        # Use batch API for 5+ papers when enabled
-        if use_batch_api and len(papers_needing_fallback) >= 5:
-            fallback_summaries = await _extract_metadata_summaries_batched(
-                papers_needing_fallback, existing_short_summaries
-            )
-            for doi, summary in fallback_summaries.items():
-                summaries[doi] = summary
-                zotero_keys[doi] = doi.replace("/", "_").replace(".", "")[:20].upper()
-        else:
-            # Fall back to concurrent calls for small batches
-            semaphore = asyncio.Semaphore(10)
+        # Create real Zotero records for metadata-only papers
+        paper_zotero_keys = await _create_zotero_stubs_for_papers(papers_needing_fallback)
 
-            async def extract_with_limit(paper: PaperMetadata) -> tuple[str, Any]:
-                async with semaphore:
-                    doi = paper.get("doi")
-                    existing_summary = existing_short_summaries.get(doi) if doi else None
-                    summary = await extract_summary_from_metadata(paper, existing_summary)
-                    return (doi, summary)
+        # Extract metadata summaries using the real Zotero keys
+        metadata_summaries = await _extract_metadata_summaries_batched(
+            papers=papers_needing_fallback,
+            existing_short_summaries=existing_short_summaries,
+            zotero_keys=paper_zotero_keys,
+        )
 
-            tasks = [extract_with_limit(p) for p in papers_needing_fallback]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        summaries.update(metadata_summaries)
+        zotero_keys.update(paper_zotero_keys)
 
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Metadata extraction failed: {result}")
-                    continue
-                doi, summary = result
-                if doi:
-                    summaries[doi] = summary
-                    zotero_keys[doi] = doi.replace("/", "_").replace(".", "")[:20].upper()
-
-        logger.info(f"Metadata fallback extracted {len(summaries) - len(processing_results)} additional summaries")
+        logger.info(
+            f"Metadata-only fallback complete: {len(metadata_summaries)} summaries, "
+            f"{len(paper_zotero_keys)} Zotero records created"
+        )
 
     if not summaries:
         logger.warning("No summaries extracted (no processing results and metadata fallback failed)")
@@ -176,9 +166,86 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
     }
 
 
+async def _create_zotero_stubs_for_papers(
+    papers: list[PaperMetadata],
+) -> dict[str, str]:
+    """Create Zotero records for papers that failed full document processing.
+
+    This ensures metadata-only papers have real Zotero keys that can be verified
+    by Loop 4's citation validation.
+
+    Args:
+        papers: List of paper metadata to create Zotero records for
+
+    Returns:
+        Dict mapping DOI -> Zotero key for created records
+    """
+    store_manager = get_store_manager()
+    zotero_keys = {}
+
+    for paper in papers:
+        doi = paper.get("doi")
+        if not doi:
+            continue
+
+        title = paper.get("title", "Unknown Title")
+        authors = paper.get("authors", [])
+        year = paper.get("year")
+        venue = paper.get("venue")
+        abstract = paper.get("abstract", "")
+
+        # Build author string for Zotero
+        author_names = [a.get("name", "") for a in authors[:10]]
+
+        # Create Zotero item with paper metadata
+        tags = [
+            ZoteroTag(tag="metadata-only", type=1),  # Auto-tag indicating source
+            ZoteroTag(tag="academic-lit-review", type=1),
+        ]
+
+        fields = {
+            "title": title,
+            "DOI": doi,
+        }
+        if abstract:
+            fields["abstractNote"] = abstract[:2000]  # Zotero limit
+        if year:
+            fields["date"] = str(year)
+        if venue:
+            fields["publicationTitle"] = venue
+
+        try:
+            zotero_item = ZoteroItemCreate(
+                itemType="journalArticle",
+                fields=fields,
+                tags=tags,
+                creators=[
+                    {"creatorType": "author", "name": name}
+                    for name in author_names
+                    if name
+                ],
+            )
+
+            zotero_key = await store_manager.zotero.add(zotero_item)
+            zotero_keys[doi] = zotero_key
+            logger.debug(f"Created Zotero stub for {doi}: {zotero_key}")
+
+        except Exception as e:
+            # Fall back to generated key if Zotero creation fails
+            fallback_key = doi.replace("/", "_").replace(".", "")[:20].upper()
+            zotero_keys[doi] = fallback_key
+            logger.warning(
+                f"Failed to create Zotero record for {doi}, using fallback key: {e}"
+            )
+
+    logger.info(f"Created {len(zotero_keys)} Zotero stubs for metadata-only papers")
+    return zotero_keys
+
+
 async def _extract_metadata_summaries_batched(
     papers: list[PaperMetadata],
     existing_short_summaries: dict[str, str] | None = None,
+    zotero_keys: dict[str, str] | None = None,
 ) -> dict[str, PaperSummary]:
     """Extract metadata summaries using unified structured output interface.
 
@@ -186,8 +253,11 @@ async def _extract_metadata_summaries_batched(
         papers: List of paper metadata to process
         existing_short_summaries: Optional mapping of DOI -> short_summary from
             document processing (preferred over generating from abstract)
+        zotero_keys: Optional mapping of DOI -> Zotero key for papers
+            (if not provided, generates synthetic keys from DOI)
     """
     existing_short_summaries = existing_short_summaries or {}
+    zotero_keys = zotero_keys or {}
 
     requests = []
     paper_index = {}
@@ -245,8 +315,8 @@ Extract structured information based on this metadata."""
                 # otherwise fall back to abstract
                 short_summary = existing_short_summaries.get(doi) or (abstract[:500] if abstract else f"Study on {title}")
 
-                # Generate a Zotero key for fallback papers (consistent with sync path)
-                generated_zotero_key = doi.replace("/", "_").replace(".", "")[:20].upper()
+                # Use provided Zotero key if available, otherwise generate from DOI
+                paper_zotero_key = zotero_keys.get(doi) or doi.replace("/", "_").replace(".", "")[:20].upper()
 
                 summaries[doi] = PaperSummary(
                     doi=doi,
@@ -256,7 +326,7 @@ Extract structured information based on this metadata."""
                     venue=paper.get("venue"),
                     short_summary=short_summary,
                     es_record_id=None,
-                    zotero_key=generated_zotero_key,
+                    zotero_key=paper_zotero_key,
                     key_findings=extracted.key_findings,
                     methodology=extracted.methodology,
                     limitations=extracted.limitations,

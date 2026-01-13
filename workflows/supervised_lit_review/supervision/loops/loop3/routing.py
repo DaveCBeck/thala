@@ -9,7 +9,7 @@ def route_after_phase_a(state: dict) -> str:
     """Route based on Phase A results.
 
     Routes to:
-    - generate_edits: If issues were identified and restructuring is needed
+    - rewrite_sections: If issues were identified and restructuring is needed
     - pass_through: If no issues found or restructuring not needed
     """
     analysis = state.get("issue_analysis")
@@ -22,10 +22,16 @@ def route_after_phase_a(state: dict) -> str:
     has_issues = bool(analysis.get("issues"))
 
     if needs_restructuring and has_issues:
-        logger.info(f"Routing to Phase B ({len(analysis['issues'])} issues to resolve)")
-        return "generate_edits"
+        logger.info(f"Routing to section rewriting ({len(analysis['issues'])} issues to resolve)")
+        return "rewrite_sections"
+    elif has_issues and not needs_restructuring:
+        logger.info(
+            f"Phase A found {len(analysis['issues'])} issues but "
+            f"needs_restructuring=False - passing through"
+        )
+        return "pass_through"
     else:
-        logger.info("No issues identified or restructuring not needed, pass-through")
+        logger.info("Phase A found no structural issues - passing through")
         return "pass_through"
 
 
@@ -151,6 +157,87 @@ def check_continue(state: dict) -> str:
         edits_count = len(manifest.get("edits", []))
         if edits_count == 0:
             logger.info("No edits in manifest, completing")
+            return "complete"
+
+    logger.info(f"Continuing to iteration {iteration + 2}")
+    return "continue"
+
+
+def check_continue_rewrite(state: dict) -> str:
+    """Check if we should continue or complete the loop (for rewrite-based flow).
+
+    Uses architecture verification results with coherence enforcement.
+    Continues iteration if coherence < 0.8 AND issues remain.
+
+    This is the new routing function for the section-rewrite approach.
+    """
+    iteration = state["iteration"]
+    max_iterations = state["max_iterations"]
+
+    if iteration >= max_iterations - 1:
+        logger.info(f"Max iterations reached ({max_iterations})")
+        return "complete"
+
+    # Check architecture verification results
+    arch_verification = state.get("architecture_verification")
+    if arch_verification:
+        needs_another = arch_verification.get("needs_another_iteration", False)
+        coherence = arch_verification.get("coherence_score", 1.0)
+        issues_remaining = len(arch_verification.get("issues_remaining", []))
+        regressions = len(arch_verification.get("regressions_introduced", []))
+
+        # Complete if coherence is good and verifier doesn't need another iteration
+        if coherence >= 0.8 and not needs_another:
+            logger.info(f"Architecture verified (coherence={coherence:.2f}), completing")
+            return "complete"
+
+        # Continue if coherence is low with remaining issues or regressions
+        if coherence < 0.8:
+            if issues_remaining > 0 or regressions > 0:
+                logger.info(
+                    f"Coherence below threshold ({coherence:.2f}<0.8) with "
+                    f"{issues_remaining} remaining issues, {regressions} regressions. "
+                    "Continuing."
+                )
+                return "continue"
+            elif needs_another:
+                logger.info(f"Verifier requests another iteration (coherence={coherence:.2f})")
+                return "continue"
+
+        if needs_another:
+            logger.info(f"Verifier requests another iteration (coherence={coherence:.2f})")
+            return "continue"
+
+    # Check rewrite manifest
+    rewrite_manifest = state.get("rewrite_manifest")
+    issue_analysis = state.get("issue_analysis")
+
+    if issue_analysis and issue_analysis.get("needs_restructuring"):
+        issues_count = len(issue_analysis.get("issues", []))
+        rewrites_count = len(rewrite_manifest.get("rewrites", [])) if rewrite_manifest else 0
+        skipped_count = len(rewrite_manifest.get("issues_skipped", [])) if rewrite_manifest else 0
+
+        # If all issues were skipped (e.g., move operations), might need another approach
+        if issues_count > 0 and rewrites_count == 0 and skipped_count == issues_count:
+            logger.info(
+                f"All {issues_count} issues were skipped (likely move operations). "
+                f"Completing - these may need manual intervention."
+            )
+            return "complete"
+
+        # If we rewrote some sections but not all issues were addressed
+        if rewrites_count > 0 and skipped_count > 0:
+            logger.info(
+                f"Applied {rewrites_count} rewrites, skipped {skipped_count}. "
+                f"Continuing to address remaining issues."
+            )
+            return "continue"
+
+    # If no rewrites were performed, complete
+    if rewrite_manifest:
+        rewrites_count = len(rewrite_manifest.get("rewrites", []))
+        if rewrites_count == 0:
+            logger.info("No rewrites performed, completing")
             return "complete"
 
     logger.info(f"Continuing to iteration {iteration + 2}")

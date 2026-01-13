@@ -27,6 +27,7 @@ class OpenAlexWork(BaseModel):
     source_name: Optional[str] = None  # Journal/venue name
     is_oa: bool = False  # Whether work is open access
     oa_status: Optional[str] = None  # gold, green, hybrid, bronze, closed
+    language: Optional[str] = None  # ISO 639-1 code (en, de, fr, etc.)
 
 
 class OpenAlexSearchOutput(BaseModel):

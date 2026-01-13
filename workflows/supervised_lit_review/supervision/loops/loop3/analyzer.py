@@ -63,6 +63,15 @@ async def analyze_structure_phase_a_node(state: dict) -> dict[str, Any]:
             f"issues_found={len(analysis.issues)}"
         )
 
+        # Log each identified issue with full details
+        for issue in analysis.issues:
+            num_paragraphs = len(issue.affected_paragraphs)
+            log_fn = logger.warning if num_paragraphs > 25 else logger.info
+            log_fn(
+                f"  Issue {issue.issue_id} ({issue.issue_type}): "
+                f"{num_paragraphs} paragraphs affected - {issue.description}"
+            )
+
         return {
             "issue_analysis": analysis.model_dump(),
             "phase_a_complete": True,

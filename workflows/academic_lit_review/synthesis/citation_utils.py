@@ -11,7 +11,12 @@ def format_papers_with_keys(
     paper_summaries: dict[str, PaperSummary],
     zotero_keys: dict[str, str],
 ) -> str:
-    """Format papers with their Zotero citation keys for the prompt."""
+    """Format papers with their Zotero citation keys for the prompt.
+
+    Raises:
+        ValueError: If any paper is missing a Zotero key. All papers must have
+            real Zotero keys from document_processing.
+    """
     formatted = []
 
     for doi in dois:
@@ -19,7 +24,13 @@ def format_papers_with_keys(
         if not summary:
             continue
 
-        key = zotero_keys.get(doi, doi.replace("/", "_").replace(".", "_")[:20])
+        key = zotero_keys.get(doi)
+        if not key:
+            raise ValueError(
+                f"Paper {doi} ({summary.get('title', 'Unknown')}) has no Zotero key. "
+                f"Document processing may have failed for this paper. "
+                f"Check logs for processing errors."
+            )
 
         paper_text = f"""
 [@{key}] {summary.get('title', 'Unknown')} ({summary.get('year', 'n.d.')})

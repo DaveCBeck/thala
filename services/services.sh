@@ -9,6 +9,7 @@ MONITOR_PID_FILE="${SCRIPT_DIR}/monitor.pid"
 MONITOR_LOG_FILE="${SCRIPT_DIR}/monitor.log"
 LOGS_DIR="${SCRIPT_DIR}/logs"
 LOG_COLLECTOR_PID_FILE="${SCRIPT_DIR}/log_collector.pid"
+RUNNING_MARKER="${SCRIPT_DIR}/.running"
 
 # Load THALA_MODE from .env if not already set
 if [[ -z "$THALA_MODE" && -f "${PROJECT_DIR}/.env" ]]; then
@@ -79,16 +80,17 @@ check_vpn_config() {
 
 cmd_up() {
     log "Starting all services..."
+    # Use --force-recreate to avoid stale Docker networks after unclean WSL shutdown
     for svc in "${SERVICES[@]}"; do
         log "Starting $svc..."
-        docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
+        docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d --force-recreate
     done
 
     # Start GPU services if nvidia-container-toolkit is available
     if check_nvidia; then
         for svc in "${GPU_SERVICES[@]}"; do
             log "Starting GPU service: $svc..."
-            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
+            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d --force-recreate
         done
     else
         warn "Skipping GPU services (nvidia-container-toolkit not available)"
@@ -100,7 +102,7 @@ cmd_up() {
     for svc in "${VPN_SERVICES[@]}"; do
         if [[ -d "${SCRIPT_DIR}/${svc}" ]] && check_vpn_config "$svc"; then
             log "Starting VPN service: $svc..."
-            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d
+            docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d --force-recreate
             vpn_started=$((vpn_started + 1))
         fi
     done

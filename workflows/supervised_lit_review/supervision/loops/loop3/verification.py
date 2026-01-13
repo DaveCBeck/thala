@@ -18,31 +18,53 @@ logger = logging.getLogger(__name__)
 async def verify_architecture_node(state: dict) -> dict[str, Any]:
     """Verify that structural issues were resolved and document is coherent.
 
-    This node runs after edits are applied to confirm:
+    This node runs after edits/rewrites are applied to confirm:
     1. Original issues are resolved
     2. No regressions introduced
     3. Document has coherent flow
+
+    Works with both the new rewrite-based flow and legacy edit-based flow.
     """
     current_review = state["current_review"]
-    edit_manifest = state.get("edit_manifest", {})
-    applied_edits = state.get("applied_edits", [])
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
 
-    original_issues = edit_manifest.get("overall_assessment", "No assessment available") if edit_manifest else "No manifest"
-    architecture = edit_manifest.get("architecture_assessment", {}) if edit_manifest else {}
-    if architecture:
-        issues_list = (
-            architecture.get("content_placement_issues", []) +
-            architecture.get("logical_flow_issues", []) +
-            architecture.get("anti_patterns_detected", [])
-        )
-        if issues_list:
-            original_issues += "\n- " + "\n- ".join(issues_list)
+    # Get original issues from issue_analysis (Phase A output)
+    issue_analysis = state.get("issue_analysis", {})
+    original_issues_text = issue_analysis.get("overall_assessment", "No assessment available")
+
+    # Add specific issues from Phase A
+    issues = issue_analysis.get("issues", [])
+    if issues:
+        issue_descriptions = [
+            f"Issue {i.get('issue_id', '?')}: {i.get('issue_type', '?')} - {i.get('description', '')[:100]}"
+            for i in issues
+        ]
+        original_issues_text += "\n\nSpecific issues identified:\n- " + "\n- ".join(issue_descriptions)
+
+    # Get applied changes - try new rewrite format first, fall back to legacy
+    rewrite_manifest = state.get("rewrite_manifest", {})
+    changes_applied = state.get("changes_applied", [])
+
+    if rewrite_manifest and rewrite_manifest.get("rewrites"):
+        # New rewrite-based flow
+        rewrites = rewrite_manifest.get("rewrites", [])
+        applied_changes = [
+            f"Rewrite for issue {r.get('issue_id', '?')}: {r.get('changes_summary', 'No summary')}"
+            for r in rewrites
+        ]
+        applied_edits_text = "\n".join(f"- {c}" for c in applied_changes)
+    elif changes_applied:
+        # Also from new flow - changes_applied has summaries
+        applied_edits_text = "\n".join(f"- {c}" for c in changes_applied)
+    else:
+        # Legacy edit-based flow fallback
+        applied_edits = state.get("applied_edits", [])
+        applied_edits_text = "\n".join(f"- {e}" for e in applied_edits) if applied_edits else "None"
 
     user_prompt = LOOP3_VERIFIER_USER.format(
-        original_issues=original_issues,
-        applied_edits="\n".join(f"- {e}" for e in applied_edits) if applied_edits else "None",
+        original_issues=original_issues_text,
+        applied_edits=applied_edits_text,
         current_document=current_review[:15000],
         iteration=iteration + 1,
         max_iterations=max_iterations,

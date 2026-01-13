@@ -41,11 +41,23 @@ You have access to tools for verifying claims against source papers:
 - Claims that should have citations but don't
 
 ## For each edit:
-- find: Exact text to locate (must be unique)
-- replace: Corrected text
-- edit_type: "fact_correction" or "citation_fix" or "clarity"
-- confidence: Your confidence (0-1)
-- source_doi: DOI of paper supporting the correction (if applicable)
+
+1. **find**: Use 50-150 characters to ensure uniqueness. Include surrounding context.
+   - BAD: "5-8°C warming" (too short, may match multiple places)
+   - GOOD: "The PETM represents one of Earth's most dramatic warming events, with global temperatures increasing 5-8°C over"
+
+2. **replace**: Corrected text (same length/structure where possible)
+
+3. **position_hint**: Always include section context for disambiguation:
+   - "after section: Carbon Cycle Perturbations"
+   - "in paragraph starting with: The benthic foraminiferal"
+   - "in Abstract, second sentence"
+
+4. **edit_type**: "fact_correction" or "citation_fix" or "clarity"
+
+5. **confidence**: Your confidence (0-1)
+
+6. **source_doi**: DOI of paper supporting the correction (if applicable)
 
 ## CRITICAL: When to Add to ambiguous_claims
 
