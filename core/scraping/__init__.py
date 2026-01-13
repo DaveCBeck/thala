@@ -1,17 +1,28 @@
-"""Unified scraping service with Firecrawl + Playwright fallback.
+"""Unified URL content retrieval system.
 
-Fallback chain:
-1. Local Firecrawl (self-hosted) - fast, no rate limits
-2. Cloud Firecrawl stealth - for anti-bot bypass
-3. Playwright (local browser) - for blocklisted sites
+Primary interface:
+    from core.scraping import get_url, GetUrlResult, GetUrlOptions
 
-Usage:
+    # Simple usage - handles URLs, DOIs, PDFs automatically
+    result = await get_url("https://example.com")
+    result = await get_url("10.1038/nature12373")  # DOI
+    result = await get_url("https://arxiv.org/pdf/2301.00001.pdf")  # PDF
+
+    # With options
+    result = await get_url(url, GetUrlOptions(pdf_quality="quality"))
+
+Low-level scraping service (for direct control):
     from core.scraping import get_scraper_service
 
     service = get_scraper_service()
     result = await service.scrape("https://example.com")
-    print(result.markdown)
-    print(result.provider)  # "firecrawl-local", "firecrawl-stealth", or "playwright"
+
+Fallback chain:
+1. DOI resolution via OpenAlex (if DOI detected)
+2. PDF processing via Marker (if PDF URL)
+3. Web scraping: Local Firecrawl → Cloud Stealth → Playwright
+4. Content classification (academic detection)
+5. retrieve-academic fallback (for paywalled academic content)
 """
 
 from .config import FirecrawlConfig, get_firecrawl_config
@@ -30,8 +41,25 @@ from .service import (
     get_scraper_service,
 )
 
+# Unified URL retrieval system
+from .types import (
+    ContentClassification,
+    ContentSource,
+    DoiInfo,
+    GetUrlOptions,
+    GetUrlResult,
+)
+from .unified import get_url
+
 __all__ = [
-    # Main service
+    # Primary interface (unified URL retrieval)
+    "get_url",
+    "GetUrlResult",
+    "GetUrlOptions",
+    "ContentSource",
+    "ContentClassification",
+    "DoiInfo",
+    # Low-level scraping service
     "ScraperService",
     "ScrapeResult",
     "get_scraper_service",
