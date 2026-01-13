@@ -2,19 +2,21 @@
 Firecrawl web research tools for LangChain.
 
 Provides: web_search, scrape_url, map_website
+
+Uses local (self-hosted) Firecrawl when available, with cloud fallback.
 """
 
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from dotenv import load_dotenv
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
 from .utils import clamp_limit, output_dict
 
-load_dotenv()
+if TYPE_CHECKING:
+    from core.scraping.firecrawl_clients import FirecrawlClients
 
 logger = logging.getLogger(__name__)
 
@@ -22,42 +24,20 @@ FIRECRAWL_TIMEOUT = int(os.environ.get("FIRECRAWL_TIMEOUT", "45"))
 
 
 # ---------------------------------------------------------------------------
-# Client Management (lazy singleton)
+# Client Management (uses shared FirecrawlClients)
 # ---------------------------------------------------------------------------
 
-_firecrawl_client = None
+_firecrawl_clients: "FirecrawlClients | None" = None
 
 
-async def close_firecrawl() -> None:
-    """Close the global Firecrawl client and release resources."""
-    global _firecrawl_client
-    if _firecrawl_client is not None:
-        # AsyncFirecrawl uses aiohttp internally, close the session
-        if hasattr(_firecrawl_client, "close"):
-            await _firecrawl_client.close()
-        elif hasattr(_firecrawl_client, "_session") and _firecrawl_client._session:
-            await _firecrawl_client._session.close()
-        _firecrawl_client = None
+def _get_clients() -> "FirecrawlClients":
+    """Get FirecrawlClients singleton for tools."""
+    global _firecrawl_clients
+    if _firecrawl_clients is None:
+        from core.scraping.firecrawl_clients import get_firecrawl_clients
 
-
-def _get_firecrawl():
-    """Get AsyncFirecrawl client (lazy init)."""
-    global _firecrawl_client
-    if _firecrawl_client is None:
-        from firecrawl import AsyncFirecrawl
-        from core.utils.async_http_client import register_cleanup
-
-        api_key = os.environ.get("FIRECRAWL_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "FIRECRAWL_API_KEY environment variable is required. "
-                "Get one at https://firecrawl.dev"
-            )
-        # NOTE: firecrawl-py SDK does not support timeout parameter directly.
-        # Timeout must be handled at the HTTP client level or via asyncio.wait_for
-        _firecrawl_client = AsyncFirecrawl(api_key=api_key)
-        register_cleanup("Firecrawl", close_firecrawl)
-    return _firecrawl_client
+        _firecrawl_clients = get_firecrawl_clients()
+    return _firecrawl_clients
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +78,56 @@ class MapOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Response Parsing Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_search_response(response) -> list[WebSearchResult]:
+    """Parse search response from either local or cloud Firecrawl."""
+    results = []
+
+    # Handle SearchData object from firecrawl v2
+    if hasattr(response, "web") and response.web:
+        for item in response.web:
+            results.append(
+                WebSearchResult(
+                    title=getattr(item, "title", "") or "",
+                    url=getattr(item, "url", "") or "",
+                    description=getattr(item, "description", None),
+                )
+            )
+    # Fallback for dict response (older API)
+    elif isinstance(response, dict):
+        web_results = response.get("data", [])
+        for item in web_results:
+            results.append(
+                WebSearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    description=item.get("description"),
+                )
+            )
+
+    return results
+
+
+def _parse_map_response(response) -> list[str]:
+    """Parse map response from either local or cloud Firecrawl."""
+    urls = []
+
+    # Handle MapData object from firecrawl v2
+    if hasattr(response, "links") and response.links:
+        urls = [item.url for item in response.links if hasattr(item, "url")]
+    # Fallback for dict response (older API)
+    elif isinstance(response, dict):
+        urls = response.get("links", []) or response.get("urls", [])
+    elif isinstance(response, list):
+        urls = response
+
+    return urls
+
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 
@@ -114,6 +144,9 @@ async def web_search(
     Use this when you need current information from the internet that may not
     be in your training data or memory stores.
 
+    Uses local Firecrawl (with SearXNG backend) when available,
+    falls back to cloud Firecrawl if local fails.
+
     Args:
         query: What to search for on the web
         limit: Maximum number of results to return (default 5, max 20)
@@ -123,7 +156,7 @@ async def web_search(
     Returns:
         Search results with titles, URLs, and descriptions.
     """
-    client = _get_firecrawl()
+    clients = _get_clients()
     limit = clamp_limit(limit, min_val=1, max_val=20)
 
     # Build search params with locale hints
@@ -133,49 +166,47 @@ async def web_search(
     if preferred_domains:
         search_params["preferred_domains"] = preferred_domains
 
-    try:
-        response = await client.search(query, limit=limit, **search_params)
-
-        results = []
-        # Handle SearchData object from firecrawl v2
-        if hasattr(response, "web") and response.web:
-            for item in response.web:
-                results.append(
-                    WebSearchResult(
-                        title=getattr(item, "title", "") or "",
-                        url=getattr(item, "url", "") or "",
-                        description=getattr(item, "description", None),
+    # Try local first
+    if clients.local:
+        try:
+            response = await clients.local.search(query, limit=limit, **search_params)
+            results = _parse_search_response(response)
+            if results:  # Only return if we got results
+                logger.debug(
+                    f"web_search (local) returned {len(results)} results for: {query}"
+                )
+                return output_dict(
+                    WebSearchOutput(
+                        query=query,
+                        total_results=len(results),
+                        results=results,
                     )
                 )
-        # Fallback for dict response (older API)
-        elif isinstance(response, dict):
-            web_results = response.get("data", [])
-            for item in web_results:
-                results.append(
-                    WebSearchResult(
-                        title=item.get("title", ""),
-                        url=item.get("url", ""),
-                        description=item.get("description"),
-                    )
-                )
+            logger.debug("Local search returned no results, trying cloud")
+        except Exception as e:
+            logger.debug(f"Local search failed: {e}, trying cloud")
 
-        output = WebSearchOutput(
-            query=query,
-            total_results=len(results),
-            results=results,
-        )
-        logger.debug(f"web_search returned {len(results)} results for: {query}")
-        return output_dict(output)
-
-    except Exception as e:
-        logger.error(f"web_search failed: {e}")
-        return output_dict(
-            WebSearchOutput(
-                query=query,
-                total_results=0,
-                results=[],
+    # Fallback to cloud
+    if clients.cloud:
+        try:
+            response = await clients.cloud.search(query, limit=limit, **search_params)
+            results = _parse_search_response(response)
+            logger.debug(
+                f"web_search (cloud) returned {len(results)} results for: {query}"
             )
-        )
+            return output_dict(
+                WebSearchOutput(
+                    query=query,
+                    total_results=len(results),
+                    results=results,
+                )
+            )
+        except Exception as e:
+            logger.error(f"Cloud search failed: {e}")
+
+    # Both failed or not configured
+    logger.warning(f"web_search failed for query: {query}")
+    return output_dict(WebSearchOutput(query=query, total_results=0, results=[]))
 
 
 @tool
@@ -185,7 +216,7 @@ async def scrape_url(url: str, include_links: bool = False) -> dict:
     Use this to read the full content of a specific URL. Works on most websites
     including those with JavaScript-rendered content.
 
-    Uses automatic fallback: Firecrawl -> Firecrawl stealth -> Playwright browser.
+    Uses automatic fallback: Local Firecrawl -> Cloud Firecrawl stealth -> Playwright.
 
     Args:
         url: The URL to scrape
@@ -230,6 +261,8 @@ async def map_website(url: str, limit: int = 50) -> dict:
     Use this to explore a website's structure before deciding which specific
     pages to scrape. Returns a list of discovered URLs.
 
+    Uses local Firecrawl when available, falls back to cloud.
+
     Args:
         url: The website URL to map (e.g., "https://example.com")
         limit: Maximum number of URLs to discover (default 50, max 500)
@@ -237,36 +270,43 @@ async def map_website(url: str, limit: int = 50) -> dict:
     Returns:
         List of URLs found on the website.
     """
-    client = _get_firecrawl()
+    clients = _get_clients()
     limit = clamp_limit(limit, min_val=1, max_val=500)
 
-    try:
-        response = await client.map(url, limit=limit)
+    # Try local first
+    if clients.local:
+        try:
+            response = await clients.local.map(url, limit=limit)
+            urls = _parse_map_response(response)
+            if urls:  # Only return if we got URLs
+                logger.debug(f"map_website (local) found {len(urls)} URLs on: {url}")
+                return output_dict(
+                    MapOutput(
+                        url=url,
+                        total_urls=len(urls),
+                        urls=urls[:limit],
+                    )
+                )
+            logger.debug("Local map returned no URLs, trying cloud")
+        except Exception as e:
+            logger.debug(f"Local map failed: {e}, trying cloud")
 
-        urls = []
-        # Handle MapData object from firecrawl v2
-        if hasattr(response, "links") and response.links:
-            urls = [item.url for item in response.links if hasattr(item, "url")]
-        # Fallback for dict response (older API)
-        elif isinstance(response, dict):
-            urls = response.get("links", []) or response.get("urls", [])
-        elif isinstance(response, list):
-            urls = response
-
-        output = MapOutput(
-            url=url,
-            total_urls=len(urls),
-            urls=urls[:limit],
-        )
-        logger.debug(f"map_website found {len(urls)} URLs on: {url}")
-        return output_dict(output)
-
-    except Exception as e:
-        logger.error(f"map_website failed for {url}: {e}")
-        return output_dict(
-            MapOutput(
-                url=url,
-                total_urls=0,
-                urls=[],
+    # Fallback to cloud
+    if clients.cloud:
+        try:
+            response = await clients.cloud.map(url, limit=limit)
+            urls = _parse_map_response(response)
+            logger.debug(f"map_website (cloud) found {len(urls)} URLs on: {url}")
+            return output_dict(
+                MapOutput(
+                    url=url,
+                    total_urls=len(urls),
+                    urls=urls[:limit],
+                )
             )
-        )
+        except Exception as e:
+            logger.error(f"Cloud map failed: {e}")
+
+    # Both failed or not configured
+    logger.warning(f"map_website failed for URL: {url}")
+    return output_dict(MapOutput(url=url, total_urls=0, urls=[]))

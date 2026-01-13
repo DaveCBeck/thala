@@ -33,6 +33,7 @@ SERVICES=(
     "elasticsearch-forgotten"
     "chroma"
     "zotero"
+    "firecrawl"
 )
 
 # GPU services (require nvidia-container-toolkit)
@@ -160,7 +161,7 @@ cmd_status() {
     echo ""
     echo "Service Status:"
     echo "==============="
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero|marker|redis|flower|retrieve-academic)" || echo "No services running"
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "^(NAMES|chroma|es-|zotero|marker|redis|flower|retrieve-academic|firecrawl|playwright)" || echo "No services running"
     echo ""
 }
 

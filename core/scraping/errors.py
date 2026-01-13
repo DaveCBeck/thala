@@ -21,3 +21,9 @@ class ScrapingTimeoutError(ScrapingError):
     """Scraping operation timed out."""
 
     pass
+
+
+class LocalServiceUnavailableError(ScrapingError):
+    """Local Firecrawl service is unavailable (not running or unreachable)."""
+
+    pass

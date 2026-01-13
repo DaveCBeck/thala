@@ -10,6 +10,7 @@ This directory contains Docker-based services that support the thala workflow sy
 | elasticsearch-forgotten | 9200 | ES instance for historical/archived content |
 | chroma | 8000 | ChromaDB vector database for embeddings |
 | zotero | 3001 (GUI), 23119 (API) | Zotero reference manager with local-crud API |
+| firecrawl | 3002 | Self-hosted web scraping (local-first, cloud stealth fallback) |
 | marker | 8001 | GPU-accelerated PDF to Markdown processor |
 | translation-server | 1969 | Bibliographic metadata extraction from URLs |
 | retrieve-academic | 8002 | Academic document retrieval (VPN, submodule) |
@@ -34,6 +35,7 @@ This directory contains Docker-based services that support the thala workflow sy
 - **elasticsearch-forgotten**: Historical snapshots and archived content
 - **chroma**: Vector embeddings for semantic search
 - **zotero**: Citation and reference management
+- **firecrawl**: Self-hosted web scraping (tries local first, falls back to cloud stealth)
 
 ### GPU Services (require nvidia-container-toolkit)
 - **marker**: Document processing with OCR

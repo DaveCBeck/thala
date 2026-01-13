@@ -1,27 +1,23 @@
 """Unified scraping service with automatic fallback.
 
 Fallback chain:
-1. Firecrawl (basic) - fast, works for most sites
-2. Firecrawl (stealth) - for sites with anti-bot measures
+1. Local Firecrawl (self-hosted) - fast, no rate limits
+2. Cloud Firecrawl (stealth) - for sites needing anti-bot bypass
 3. Playwright (local browser) - for blocklisted/unreachable sites
 """
 
 import asyncio
 import logging
-import os
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from .errors import ScrapingError, SiteBlockedError
+from .errors import LocalServiceUnavailableError, ScrapingError, SiteBlockedError
 from .playwright_scraper import PlaywrightScraper
 
 if TYPE_CHECKING:
-    from firecrawl import AsyncFirecrawl
-
-load_dotenv()
+    from .firecrawl_clients import FirecrawlClients
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +74,20 @@ def _is_transient_error(error: Exception) -> bool:
     return False
 
 
+def _is_local_unavailable_error(error: Exception) -> bool:
+    """Check if error indicates local service is unavailable."""
+    error_str = str(error).lower()
+
+    unavailable_indicators = [
+        "connection refused",
+        "no route to host",
+        "name resolution",
+        "network is unreachable",
+        "cannot connect",
+    ]
+    return any(ind in error_str for ind in unavailable_indicators)
+
+
 async def _with_retry(func, *args, **kwargs):
     """Execute function with retry logic for transient failures."""
     last_error = None
@@ -111,6 +121,11 @@ async def _with_retry(func, *args, **kwargs):
 class ScraperService:
     """Unified scraping service with automatic fallback.
 
+    Fallback chain:
+    1. Local Firecrawl (if configured) - fast, free, no rate limits
+    2. Cloud Firecrawl stealth - for sites with anti-bot measures
+    3. Playwright (local browser) - for blocklisted/unreachable sites
+
     Usage:
         service = ScraperService()
         result = await service.scrape("https://example.com")
@@ -122,24 +137,18 @@ class ScraperService:
 
     def __init__(self):
         """Initialize the scraper service."""
-        self._firecrawl: "AsyncFirecrawl | None" = None
+        self._firecrawl_clients: "FirecrawlClients | None" = None
         self._playwright: PlaywrightScraper | None = None
         self._blocklist: set[str] = set()  # Domains that require Playwright
 
-    def _get_firecrawl(self) -> "AsyncFirecrawl":
-        """Get or create Firecrawl client (lazy initialization)."""
-        if self._firecrawl is None:
-            from firecrawl import AsyncFirecrawl
+    def _get_firecrawl_clients(self) -> "FirecrawlClients":
+        """Get Firecrawl client manager (lazy initialization)."""
+        if self._firecrawl_clients is None:
+            from .firecrawl_clients import get_firecrawl_clients
 
-            api_key = os.environ.get("FIRECRAWL_API_KEY")
-            if not api_key:
-                raise ValueError(
-                    "FIRECRAWL_API_KEY environment variable is required. "
-                    "Get one at https://firecrawl.dev"
-                )
-            self._firecrawl = AsyncFirecrawl(api_key=api_key)
-            logger.debug("Firecrawl client initialized")
-        return self._firecrawl
+            self._firecrawl_clients = get_firecrawl_clients()
+            logger.debug("Firecrawl clients manager initialized")
+        return self._firecrawl_clients
 
     def _get_playwright(self) -> PlaywrightScraper:
         """Get or create Playwright scraper (lazy initialization)."""
@@ -169,27 +178,33 @@ class ScraperService:
         markdown_lower = markdown.lower()
         return any(indicator in markdown_lower for indicator in blocking_indicators)
 
-    async def _scrape_firecrawl(
-        self, url: str, proxy: str | None = None, include_links: bool = False
+    async def _scrape_local(
+        self, url: str, include_links: bool = False
     ) -> ScrapeResult:
-        """Scrape using Firecrawl."""
-        from firecrawl.v2.utils.error_handler import WebsiteNotSupportedError
+        """Scrape using local (self-hosted) Firecrawl."""
+        clients = self._get_firecrawl_clients()
+        client = clients.local
 
-        client = self._get_firecrawl()
+        if client is None:
+            raise LocalServiceUnavailableError(
+                "Local Firecrawl not configured",
+                url=url,
+                provider="firecrawl-local",
+            )
+
         formats = ["markdown"]
         if include_links:
             formats.append("links")
 
         try:
-            if proxy:
-                result = await client.scrape(url, formats=formats, proxy=proxy)
-            else:
-                result = await client.scrape(url, formats=formats)
+            result = await client.scrape(url, formats=formats)
 
             # Check for blocked response
             if self._is_blocked_response(result):
                 raise SiteBlockedError(
-                    "Response appears to be blocked", url=url, provider="firecrawl"
+                    "Response appears to be blocked",
+                    url=url,
+                    provider="firecrawl-local",
                 )
 
             # Extract data from Document object
@@ -198,17 +213,66 @@ class ScraperService:
             if include_links and hasattr(result, "links"):
                 links = result.links or []
 
-            provider = f"firecrawl-{proxy}" if proxy else "firecrawl"
             return ScrapeResult(
                 url=url,
                 markdown=markdown or "",
                 links=links,
-                provider=provider,
+                provider="firecrawl-local",
+            )
+
+        except (ConnectionError, OSError, asyncio.TimeoutError) as e:
+            # Local service unavailable - wrap in our error type
+            if _is_local_unavailable_error(e):
+                raise LocalServiceUnavailableError(
+                    str(e), url=url, provider="firecrawl-local"
+                )
+            raise
+
+    async def _scrape_cloud_stealth(
+        self, url: str, include_links: bool = False
+    ) -> ScrapeResult:
+        """Scrape using cloud Firecrawl with stealth proxy."""
+        from firecrawl.v2.utils.error_handler import WebsiteNotSupportedError
+
+        clients = self._get_firecrawl_clients()
+        client = clients.cloud
+
+        if client is None:
+            raise ValueError(
+                "Cloud Firecrawl not configured (FIRECRAWL_API_KEY required)"
+            )
+
+        formats = ["markdown"]
+        if include_links:
+            formats.append("links")
+
+        try:
+            result = await client.scrape(url, formats=formats, proxy="stealth")
+
+            # Check for blocked response
+            if self._is_blocked_response(result):
+                raise SiteBlockedError(
+                    "Response appears to be blocked even with stealth",
+                    url=url,
+                    provider="firecrawl-stealth",
+                )
+
+            # Extract data from Document object
+            markdown = result.markdown if hasattr(result, "markdown") else ""
+            links = []
+            if include_links and hasattr(result, "links"):
+                links = result.links or []
+
+            return ScrapeResult(
+                url=url,
+                markdown=markdown or "",
+                links=links,
+                provider="firecrawl-stealth",
             )
 
         except WebsiteNotSupportedError as e:
             # Site is explicitly blocked by Firecrawl
-            raise SiteBlockedError(str(e), url=url, provider="firecrawl")
+            raise SiteBlockedError(str(e), url=url, provider="firecrawl-stealth")
 
     async def _scrape_playwright(
         self, url: str, include_links: bool = False
@@ -230,9 +294,9 @@ class ScraperService:
         """Scrape URL with automatic fallback chain.
 
         Fallback order:
-        1. Firecrawl basic (skip if domain in blocklist)
-        2. Firecrawl stealth (on failure or blocked response)
-        3. Playwright (on WebsiteNotSupportedError or stealth failure)
+        1. Local Firecrawl (skip if not configured or domain in blocklist)
+        2. Cloud Firecrawl stealth (on local failure or blocked response)
+        3. Playwright (on cloud stealth failure or site blocked)
 
         Args:
             url: The URL to scrape
@@ -242,47 +306,51 @@ class ScraperService:
             ScrapeResult with markdown content and metadata
         """
         domain = _extract_domain(url)
+        clients = self._get_firecrawl_clients()
 
         # Skip straight to Playwright for known-blocked domains
         if domain in self._blocklist:
             logger.debug(f"Domain {domain} in blocklist, using Playwright directly")
             return await self._scrape_playwright(url, include_links)
 
-        # Try Firecrawl basic with retry
-        try:
-            logger.debug(f"Trying Firecrawl basic for {url}")
-            return await _with_retry(
-                self._scrape_firecrawl, url, proxy=None, include_links=include_links
-            )
+        # === Tier 1: Local Firecrawl ===
+        if clients.config.local_available:
+            try:
+                logger.debug(f"Trying local Firecrawl for {url}")
+                return await _with_retry(
+                    self._scrape_local, url, include_links=include_links
+                )
 
-        except SiteBlockedError as e:
-            if "WebsiteNotSupportedError" in str(type(e).__mro__) or "not supported" in str(e).lower():
-                # Firecrawl explicitly blocks this site
-                logger.info(f"Site {domain} blocked by Firecrawl, adding to blocklist")
+            except LocalServiceUnavailableError as e:
+                # Local service down - proceed to cloud (don't add to blocklist)
+                logger.info(f"Local Firecrawl unavailable: {e}")
+
+            except SiteBlockedError:
+                # Site blocked locally - try cloud stealth
+                logger.debug(f"Local got blocked response for {url}, trying cloud stealth")
+
+            except Exception as e:
+                logger.debug(f"Local Firecrawl failed for {url}: {e}")
+
+        # === Tier 2: Cloud Firecrawl Stealth ===
+        if clients.config.cloud_available:
+            try:
+                logger.debug(f"Trying cloud Firecrawl stealth for {url}")
+                return await _with_retry(
+                    self._scrape_cloud_stealth, url, include_links=include_links
+                )
+
+            except SiteBlockedError:
+                # Site blocked even with stealth - add to blocklist
+                logger.info(
+                    f"Site {domain} blocked by cloud stealth, adding to blocklist"
+                )
                 self._blocklist.add(domain)
-                return await self._scrape_playwright(url, include_links)
-            # Response blocked but site not in Firecrawl blocklist - try stealth
-            logger.debug(f"Blocked response from {url}, trying stealth")
 
-        except Exception as e:
-            logger.debug(f"Firecrawl basic failed for {url}: {e}")
+            except Exception as e:
+                logger.debug(f"Cloud stealth failed for {url}: {e}")
 
-        # Try Firecrawl stealth with retry
-        try:
-            logger.debug(f"Trying Firecrawl stealth for {url}")
-            return await _with_retry(
-                self._scrape_firecrawl, url, proxy="stealth", include_links=include_links
-            )
-
-        except SiteBlockedError as e:
-            # Site blocked even with stealth - add to blocklist
-            logger.info(f"Site {domain} blocked by Firecrawl stealth, adding to blocklist")
-            self._blocklist.add(domain)
-
-        except Exception as e:
-            logger.debug(f"Firecrawl stealth failed for {url}: {e}")
-
-        # Playwright fallback with retry
+        # === Tier 3: Playwright Fallback ===
         logger.debug(f"Falling back to Playwright for {url}")
         try:
             return await _with_retry(self._scrape_playwright, url, include_links)

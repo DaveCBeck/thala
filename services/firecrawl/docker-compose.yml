@@ -1,0 +1,82 @@
+# Self-hosted Firecrawl for local web scraping
+# Based on https://github.com/firecrawl/firecrawl/blob/main/SELF_HOST.md
+#
+# This provides local scrape, map, and search functionality.
+# Note: stealth proxy is cloud-only (requires Fire-engine).
+#
+# The code automatically falls back to cloud stealth when local fails.
+
+services:
+  firecrawl-api:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - USE_DB_AUTHENTICATION=false
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      # Search backend (optional - uses Google by default)
+      # Uncomment to use SearXNG for fully local search
+      # - SEARXNG_ENDPOINT=http://searxng:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  firecrawl-worker:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - USE_DB_AUTHENTICATION=false
+      - REDIS_URL=redis://redis:6379
+      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+    depends_on:
+      redis:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
+    command: ["pnpm", "run", "workers"]
+    restart: unless-stopped
+
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    environment:
+      - PORT=3000
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - firecrawl-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Optional: SearXNG for fully local search
+  # Uncomment this block and the SEARXNG_ENDPOINT above to enable
+  # searxng:
+  #   image: searxng/searxng:latest
+  #   environment:
+  #     - SEARXNG_SECRET=change-this-secret
+  #   volumes:
+  #     - ./searxng:/etc/searxng
+  #   restart: unless-stopped
+
+volumes:
+  firecrawl-redis:
