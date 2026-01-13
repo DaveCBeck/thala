@@ -12,16 +12,12 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain.tools import tool
 from pydantic import BaseModel, Field
-from workflows.shared.persistent_cache import get_cached, set_cached
 
 from .utils import clamp_limit, output_dict
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-CACHE_TYPE = "perplexity"
-CACHE_TTL_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
@@ -120,13 +116,6 @@ async def perplexity_search(
     Returns:
         Search results with titles, URLs, and snippets.
     """
-    cache_key = f"search:{query}:{limit}:{domain_filter}"
-
-    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
-    if cached is not None:
-        logger.debug(f"Cache hit for perplexity search: {query[:50]}")
-        return cached
-
     client = _get_perplexity()
     limit = clamp_limit(limit, min_val=1, max_val=20)
 
@@ -160,9 +149,7 @@ async def perplexity_search(
         )
         logger.debug(f"Perplexity search returned {len(results)} results for '{query}'")
 
-        result = output_dict(output)
-        set_cached(CACHE_TYPE, cache_key, result)
-        return result
+        return output_dict(output)
 
     except Exception as e:
         logger.error(f"perplexity_search failed for '{query}': {e}")
@@ -192,13 +179,6 @@ async def check_fact(
     Returns:
         Verification result with verdict, confidence, and sources.
     """
-    cache_key = f"fact_check:{claim}:{context}"
-
-    cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
-    if cached is not None:
-        logger.debug(f"Cache hit for fact check: {claim[:50]}")
-        return cached
-
     client = _get_perplexity()
 
     try:
@@ -274,9 +254,7 @@ Respond with ONLY valid JSON (no markdown):
             f"Fact check for '{claim[:50]}': {output.verdict} (confidence: {output.confidence:.2f})"
         )
 
-        result = output_dict(output)
-        set_cached(CACHE_TYPE, cache_key, result)
-        return result
+        return output_dict(output)
 
     except Exception as e:
         logger.error(f"check_fact failed for '{claim}': {e}")

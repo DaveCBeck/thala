@@ -17,7 +17,6 @@ This caching system provides:
 |------|----------|-----|---------|
 | `openalex` | `.cache/openalex/` | 30 days | OpenAlex API metadata lookups |
 | `marker` | `.cache/marker/` | 30 days | PDF to Markdown conversion results |
-| `llm_results` | `.cache/llm_results/` | 7 days | Complete LLM response caching |
 
 ### OpenAlex API Cache
 
@@ -33,13 +32,6 @@ Caches PDF conversion results using content hash:
 - **Cache key**: `SHA256(file_content):quality:langs`
 - **Benefit**: Skip GPU processing for already-processed files
 - **Use case**: Re-running workflows, testing with same documents
-
-### LLM Results Cache
-
-Caches complete LLM responses for identical prompts:
-- **Cache key**: `SHA256(model||system_prompt||user_prompt)`
-- **Benefit**: 100% cost savings and instant results
-- **Use case**: Development, testing, re-running workflows with same inputs
 
 ## Usage
 
@@ -72,26 +64,6 @@ async with MarkerClient() as client:
         file_path="paper.pdf",
         absolute_path="/full/path/to/paper.pdf"
     )
-```
-
-### Optional LLM Result Caching
-
-```python
-from workflows.shared.llm_utils import invoke_with_result_cache, get_llm, create_cached_messages
-
-async def invoke_llm():
-    llm = get_llm(ModelTier.SONNET)
-    messages = create_cached_messages(system_prompt, user_prompt)
-    return await llm.ainvoke(messages)
-
-# Wraps existing LLM call with result caching
-response = await invoke_with_result_cache(
-    invoke_llm,
-    system_prompt=SYSTEM_INSTRUCTIONS,
-    user_prompt=document_text,
-    model_name="sonnet",
-    ttl_days=7,
-)
 ```
 
 ### Manual Cache Operations
@@ -159,7 +131,6 @@ Total: ~1.5s
 |-----------|--------|-------|---------|
 | OpenAlex DOI lookup | 200-500ms | <1ms | 200-500x |
 | Marker PDF processing | 5-30s | <100ms | 50-300x |
-| LLM identical query | $0.XX + latency | 0ms + $0 | Instant |
 
 ## Cache Invalidation
 
@@ -176,11 +147,8 @@ Automatic invalidation when:
 │   ├── a1b2c3d4e5f6.pkl  # work:10.1234/example
 │   ├── f7e8d9c0b1a2.pkl  # forward:10.1234/example:50:10:None
 │   └── ...
-├── marker/
-│   ├── 1a2b3c4d5e6f.pkl  # SHA256(pdf_content):fast:English
-│   └── ...
-└── llm_results/
-    ├── 9z8y7x6w5v4u.pkl  # SHA256(sonnet||system||user)
+└── marker/
+    ├── 1a2b3c4d5e6f.pkl  # SHA256(pdf_content):fast:English
     └── ...
 ```
 
