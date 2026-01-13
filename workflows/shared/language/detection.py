@@ -60,7 +60,7 @@ def detect_language(
         logger.debug(f"Language detection failed: {e}")
         return None, 0.0
     except Exception as e:
-        logger.warning(f"Unexpected error in language detection: {e}")
+        logger.debug(f"Unexpected error in language detection: {e}")
         return None, 0.0
 
 

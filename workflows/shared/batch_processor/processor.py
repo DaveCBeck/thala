@@ -115,7 +115,7 @@ class BatchProcessor:
 
         # Create the batch - use beta API if 1M context is needed
         if self._needs_1m_context:
-            logger.info("Using 1M context window beta for this batch")
+            logger.debug("Using 1M context window beta for this batch")
             batch = self.client.beta.messages.batches.create(
                 requests=batch_requests,
                 betas=[self.CONTEXT_1M_BETA],
@@ -179,7 +179,7 @@ class BatchProcessor:
 
         # Create the batch - use beta API if 1M context is needed
         if self._needs_1m_context:
-            logger.info("Using 1M context window beta for this batch")
+            logger.debug("Using 1M context window beta for this batch")
             batch = self.client.beta.messages.batches.create(
                 requests=batch_requests,
                 betas=[self.CONTEXT_1M_BETA],

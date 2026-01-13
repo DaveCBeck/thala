@@ -57,9 +57,8 @@ class DocumentProcessingState(TypedDict):
     input: DocumentInput
 
     # Source resolution
-    source_type: Literal["url", "local_file", "markdown_text"]
+    source_type: Literal["url", "markdown_text"]
     resolved_path: Optional[str]
-    is_already_markdown: bool
 
     # Zotero tracking
     zotero_key: Optional[str]

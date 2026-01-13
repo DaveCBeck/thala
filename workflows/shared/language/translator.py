@@ -70,7 +70,7 @@ async def translate_prompt(
             result = await _do_translation(english_prompt, target_language)
 
             _prompt_cache[cache_key] = result
-            logger.info(f"Translated and cached prompt: {cache_key} ({len(result)} chars)")
+            logger.debug(f"Translated and cached prompt: {cache_key} ({len(result)} chars)")
             return result
     else:
         return await _do_translation(english_prompt, target_language)
@@ -120,7 +120,7 @@ async def get_translated_prompt(
 def clear_translation_cache() -> None:
     """Clear the prompt translation cache."""
     _prompt_cache.clear()
-    logger.info("Prompt translation cache cleared")
+    logger.debug("Prompt translation cache cleared")
 
 
 def get_cache_stats() -> dict:

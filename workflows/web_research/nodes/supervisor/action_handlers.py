@@ -57,7 +57,7 @@ async def handle_conduct_research(
                 )
             )
 
-    logger.info(f"Supervisor: conduct_research with {len(questions)} questions")
+    logger.debug(f"Conducting research with {len(questions)} questions")
 
     # Calculate completeness based on current state
     new_completeness = calculate_completeness(
@@ -77,7 +77,7 @@ async def handle_conduct_research(
         web_count = llm_alloc["web_count"]
         if 1 <= web_count <= 3:
             current_allocation = llm_alloc
-            logger.info(f"Using LLM allocation: web={web_count}")
+            logger.debug(f"Using LLM allocation: {web_count} web researchers")
 
     result = {
         "pending_questions": questions,
@@ -125,9 +125,9 @@ async def handle_refine_draft(
         gaps_remaining=new_draft["gaps_remaining"],
     )
 
-    logger.info(
-        f"Supervisor: refine_draft, version {new_draft['version']}, "
-        f"gaps={len(new_draft['gaps_remaining'])}, completeness={new_completeness:.0%}"
+    logger.debug(
+        f"Refined draft to version {new_draft['version']}, "
+        f"{len(new_draft['gaps_remaining'])} gaps, completeness={new_completeness:.0%}"
     )
 
     return {
@@ -145,7 +145,7 @@ async def handle_check_fact(action_data: dict, diffusion: dict, brief: dict) -> 
     """Handle check_fact action."""
     claim = action_data.get("claim")
     if claim:
-        logger.info(f"Supervisor: check_fact for claim: '{claim[:50]}...'")
+        logger.debug(f"Fact-checking claim: '{claim[:50]}...'")
 
         try:
             fact_result = await check_fact.ainvoke({
@@ -183,7 +183,7 @@ async def handle_check_fact(action_data: dict, diffusion: dict, brief: dict) -> 
                 "current_status": "supervising",
             }
     else:
-        logger.warning("check_fact action without claim - continuing")
+        logger.warning("check_fact action without claim, continuing")
         return {
             "diffusion": {**diffusion, "last_decision": "check_fact_no_claim"},
             "current_status": "supervising",
@@ -192,7 +192,7 @@ async def handle_check_fact(action_data: dict, diffusion: dict, brief: dict) -> 
 
 async def handle_research_complete(diffusion: dict) -> dict:
     """Handle research_complete action."""
-    logger.info("Supervisor: research_complete")
+    logger.debug("Research marked complete by supervisor")
 
     return {
         "diffusion": {

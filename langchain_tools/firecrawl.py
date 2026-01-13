@@ -173,7 +173,7 @@ async def web_search(
             results = _parse_search_response(response)
             if results:  # Only return if we got results
                 logger.debug(
-                    f"web_search (local) returned {len(results)} results for: {query}"
+                    f"Web search (local) returned {len(results)} results for '{query}'"
                 )
                 return output_dict(
                     WebSearchOutput(
@@ -192,7 +192,7 @@ async def web_search(
             response = await clients.cloud.search(query, limit=limit, **search_params)
             results = _parse_search_response(response)
             logger.debug(
-                f"web_search (cloud) returned {len(results)} results for: {query}"
+                f"Web search (cloud) returned {len(results)} results for '{query}'"
             )
             return output_dict(
                 WebSearchOutput(
@@ -205,7 +205,7 @@ async def web_search(
             logger.error(f"Cloud search failed: {e}")
 
     # Both failed or not configured
-    logger.warning(f"web_search failed for query: {query}")
+    logger.error(f"web_search failed for '{query}'")
     return output_dict(WebSearchOutput(query=query, total_results=0, results=[]))
 
 
@@ -238,8 +238,7 @@ async def scrape_url(url: str, include_links: bool = False) -> dict:
             links=result.links,
         )
         logger.debug(
-            f"scrape_url got {len(result.markdown)} chars from {url} "
-            f"(provider: {result.provider})"
+            f"Scraped {len(result.markdown)} chars from {url} (provider: {result.provider})"
         )
         return output_dict(output)
 
@@ -279,7 +278,7 @@ async def map_website(url: str, limit: int = 50) -> dict:
             response = await clients.local.map(url, limit=limit)
             urls = _parse_map_response(response)
             if urls:  # Only return if we got URLs
-                logger.debug(f"map_website (local) found {len(urls)} URLs on: {url}")
+                logger.debug(f"Website map (local) found {len(urls)} URLs on {url}")
                 return output_dict(
                     MapOutput(
                         url=url,
@@ -296,7 +295,7 @@ async def map_website(url: str, limit: int = 50) -> dict:
         try:
             response = await clients.cloud.map(url, limit=limit)
             urls = _parse_map_response(response)
-            logger.debug(f"map_website (cloud) found {len(urls)} URLs on: {url}")
+            logger.debug(f"Website map (cloud) found {len(urls)} URLs on {url}")
             return output_dict(
                 MapOutput(
                     url=url,
@@ -308,5 +307,5 @@ async def map_website(url: str, limit: int = 50) -> dict:
             logger.error(f"Cloud map failed: {e}")
 
     # Both failed or not configured
-    logger.warning(f"map_website failed for URL: {url}")
+    logger.error(f"map_website failed for {url}")
     return output_dict(MapOutput(url=url, total_urls=0, urls=[]))

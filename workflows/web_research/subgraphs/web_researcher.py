@@ -119,8 +119,8 @@ async def execute_searches(state: ResearcherState) -> dict[str, Any]:
             seen_urls.add(url)
             unique_results.append(r)
 
-    logger.info(
-        f"Web researcher: Found {len(unique_results)} unique results from {len(queries)} queries "
+    logger.debug(
+        f"Web researcher: found {len(unique_results)} unique results from {len(queries)} queries "
         f"across Firecrawl/Perplexity"
     )
     return {"search_results": unique_results[:15]}
@@ -208,9 +208,9 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
             language_code=language_code,
         )
 
-        logger.info(
+        logger.debug(
             f"Web researcher compressed finding for {question['question_id']}: "
-            f"confidence={finding['confidence']:.2f}, gaps={len(finding['gaps'])}"
+            f"confidence={finding['confidence']:.2f}, {len(finding['gaps'])} gaps"
         )
 
         # Return as list for aggregation via add reducer in parent state

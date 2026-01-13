@@ -88,8 +88,7 @@ async def get_forward_citations(
         total_count = data.get("meta", {}).get("count", len(results))
 
         logger.debug(
-            f"get_forward_citations returned {len(results)} results for {work_id_clean} "
-            f"(total: {total_count})"
+            f"Forward citations: {len(results)} results for {work_id_clean} (total: {total_count})"
         )
 
         result = OpenAlexCitationResult(
@@ -187,7 +186,7 @@ async def get_backward_citations(
                     continue
 
             logger.debug(
-                f"get_backward_citations returned {len(results)} results for {work_id_clean}"
+                f"Backward citations: {len(results)} results for {work_id_clean}"
             )
 
             result = OpenAlexCitationResult(
@@ -282,7 +281,7 @@ async def get_author_works(
                 continue
 
         logger.debug(
-            f"get_author_works returned {len(results)} results for {author_id} ({author_name})"
+            f"Author works: {len(results)} results for {author_id} ({author_name})"
         )
 
         result = OpenAlexAuthorWorksResult(
@@ -343,7 +342,7 @@ async def resolve_doi_to_openalex_id(doi: str) -> Optional[str]:
             return None
 
     except Exception as e:
-        logger.error(f"resolve_doi_to_openalex_id failed for {doi_clean}: {e}")
+        logger.warning(f"resolve_doi_to_openalex_id failed for {doi_clean}: {e}")
         return None
 
 
@@ -376,13 +375,13 @@ async def get_work_by_doi(doi: str) -> Optional[OpenAlexWork]:
         work_data = response.json()
 
         parsed = _parse_work(work_data)
-        logger.debug(f"Fetched work by DOI {doi_clean}: {parsed.title[:50]}...")
+        logger.debug(f"Fetched work by DOI {doi_clean}: {parsed.title[:50]}")
 
         set_cached(CACHE_TYPE, cache_key, parsed.model_dump())
         return parsed
 
     except Exception as e:
-        logger.debug(f"get_work_by_doi failed for {doi_clean}: {e}")
+        logger.warning(f"get_work_by_doi failed for {doi_clean}: {e}")
         return None
 
 

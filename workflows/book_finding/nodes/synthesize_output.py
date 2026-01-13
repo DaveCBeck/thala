@@ -116,6 +116,8 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
     # Get processed books
     processed_books = state.get("processed_books", [])
 
+    logger.debug(f"Synthesizing output: {len(processed_books)} processed books, {len(analogous_recs)+len(inspiring_recs)+len(expressive_recs)} total recommendations")
+
     # Build a lookup of matched recommendation titles -> processed books
     processed_by_rec_title: dict[str, BookResult] = {}
     for book in processed_books:
@@ -210,8 +212,7 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
     final_markdown = "\n".join(sections)
 
     logger.info(
-        f"Synthesized markdown: {total_recs} recommendations, "
-        f"{total_processed} processed"
+        f"Synthesis complete: {total_recs} recommendations, {total_processed} processed"
     )
 
     return {

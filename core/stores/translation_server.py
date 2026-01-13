@@ -165,7 +165,7 @@ class TranslationServerClient(BaseAsyncHttpClient):
             elif response.status_code == 300:
                 # Multiple results - server returns selection dialog info
                 # We'll create a basic result with the URL
-                logger.info(f"Multiple translation matches for {url}, using basic result")
+                logger.debug(f"Multiple translation matches for {url}, using basic result")
                 result = TranslationResult(
                     item_type="webpage",
                     url=url,

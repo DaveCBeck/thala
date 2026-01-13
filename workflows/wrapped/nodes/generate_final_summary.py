@@ -77,7 +77,6 @@ async def generate_final_summary(state: WrappedResearchState) -> dict[str, Any]:
     if len(book_summary) > max_chars:
         book_summary = book_summary[:max_chars] + "\n\n[... truncated for brevity]"
 
-    # Use Opus for high-quality synthesis
     llm = get_llm(ModelTier.OPUS, max_tokens=4096)
 
     prompt = SYNTHESIS_PROMPT.format(
@@ -91,7 +90,7 @@ async def generate_final_summary(state: WrappedResearchState) -> dict[str, Any]:
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
         combined_summary = response.content if isinstance(response.content, str) else str(response.content)
 
-        logger.info(f"Generated final summary: {len(combined_summary)} chars")
+        logger.debug(f"Generated final summary: {len(combined_summary)} chars")
 
         return {
             "combined_summary": combined_summary,
@@ -99,7 +98,7 @@ async def generate_final_summary(state: WrappedResearchState) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Failed to generate final summary: {e}")
+        logger.error(f"Final summary generation failed: {e}")
         # Create a basic fallback summary
         fallback = f"""# Research Summary: {state['input']['query']}
 

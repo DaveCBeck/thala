@@ -21,7 +21,7 @@ async def reference_check_node(state: dict[str, Any]) -> dict[str, Any]:
     """Sequential reference checking across all sections with dynamic token budgeting."""
     sections = state["sections"]
     num_sections = len(sections)
-    logger.info(f"Loop 5: Starting reference checking across {num_sections} sections")
+    logger.info(f"Loop 5 reference checking: starting across {num_sections} sections")
 
     store_query = SupervisionStoreQuery(state["paper_summaries"])
     paper_tools = create_paper_tools(state["paper_summaries"], store_query)
@@ -101,7 +101,7 @@ async def reference_check_node(state: dict[str, Any]) -> dict[str, Any]:
         all_edits.extend(result.edits)
         all_todos.extend(result.unaddressed_todos)
 
-    logger.info(f"Loop 5: Reference check complete, total edits: {len(all_edits)}, unaddressed TODOs: {len(all_todos)}")
+    logger.info(f"Loop 5 reference checking complete: {len(all_edits)} total edits, {len(all_todos)} unaddressed TODOs")
     return {
         "all_edits": all_edits,
         "unaddressed_todos": all_todos,

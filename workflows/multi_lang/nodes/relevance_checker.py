@@ -40,15 +40,12 @@ async def _quick_web_search(query: str, language_config: dict) -> list[dict]:
     preferred_domains = language_config.get("preferred_domains")
 
     try:
-        # Use web_search tool with language hints
         search_result = await web_search(
             query=query, limit=5, locale=locale, preferred_domains=preferred_domains
         )
 
-        # Extract results
         results = search_result.get("results", [])
 
-        # Convert to simple dict format
         return [
             {
                 "title": r.get("title", ""),
@@ -71,6 +68,8 @@ async def _check_language_relevance(
 ) -> LanguageRelevanceCheck:
     """Check if meaningful discussion exists for topic in target language."""
     language_name = language_config["name"]
+
+    logger.debug(f"Checking relevance for {language_name}")
 
     # Translate query to target language
     translated_query = await translate_query(
@@ -120,7 +119,6 @@ async def _check_language_relevance(
 
     except Exception as e:
         logger.error(f"Relevance check failed for {language_code}: {e}")
-        # Default to skip on error
         return {
             "language_code": language_code,
             "has_meaningful_discussion": False,
@@ -151,6 +149,8 @@ async def check_relevance_batch(state: MultiLangState) -> dict:
     topic = state["input"]["topic"]
     research_questions = state["input"].get("research_questions") or []
 
+    logger.info(f"Checking relevance for {len(target_languages)} languages")
+
     relevance_checks = []
 
     for lang_code in target_languages:
@@ -170,27 +170,29 @@ async def check_relevance_batch(state: MultiLangState) -> dict:
                     "suggested_depth": "standard",
                 }
             )
-            logger.info("English: Baseline language (auto-pass)")
+            logger.debug("English: baseline language (auto-pass)")
             continue
 
         # Check relevance for other languages
-        logger.info(f"Checking relevance for {language_config['name']}...")
         check = await _check_language_relevance(
             topic, research_questions, lang_code, language_config
         )
         relevance_checks.append(check)
 
         decision_text = (
-            f"{'✓' if check['has_meaningful_discussion'] else '✗'} "
+            "has content" if check["has_meaningful_discussion"] else "skipped"
+        )
+        logger.debug(
+            f"{language_config['name']}: {decision_text} "
             f"(confidence: {check['confidence']:.2f}, depth: {check['suggested_depth']})"
         )
-        logger.info(f"{language_config['name']}: {decision_text}")
-        logger.debug(f"  Reasoning: {check['reasoning']}")
 
     # Count languages with content
     languages_with_content = sum(
         1 for check in relevance_checks if check["has_meaningful_discussion"]
     )
+
+    logger.info(f"Relevance check complete: {languages_with_content}/{len(relevance_checks)} languages have content")
 
     return {
         "relevance_checks": relevance_checks,
@@ -232,7 +234,6 @@ async def filter_relevant_languages(state: MultiLangState) -> dict:
 
             # Update quality settings based on suggested_depth
             if suggested_depth != "skip" and lang_code != "en":
-                # Map suggested_depth to quality_tier (skip "skip" option)
                 quality_tier = suggested_depth if suggested_depth != "skip" else "quick"
 
                 per_language_overrides[lang_code] = {
@@ -256,6 +257,8 @@ async def filter_relevant_languages(state: MultiLangState) -> dict:
     language_names = ", ".join(
         state["language_configs"][code]["name"] for code in languages_with_content
     )
+
+    logger.info(f"Filtered to {len(languages_with_content)} languages: {language_names}")
 
     return {
         "languages_with_content": languages_with_content,

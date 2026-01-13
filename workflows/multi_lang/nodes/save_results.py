@@ -74,12 +74,14 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
     # 1. Save per-language records
     language_results = state.get("language_results", [])
 
+    logger.debug(f"Saving {len(language_results)} per-language records")
+
     for result in language_results:
         lang_code = result["language_code"]
         content = result.get("findings_summary")
 
         if not content:
-            logger.warning(f"No findings_summary for {lang_code}, skipping")
+            logger.debug(f"No findings_summary for {lang_code}, skipping")
             continue
 
         try:
@@ -111,7 +113,7 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
             await store_manager.es_stores.store.add(record)
 
             per_language_record_ids[lang_code] = str(record_id)
-            logger.info(f"Saved per-language record for {lang_code}: {record_id}")
+            logger.debug(f"Saved per-language record for {lang_code}: {record_id}")
 
         except Exception as e:
             logger.error(f"Failed to save per-language record for {lang_code}: {e}")
@@ -123,6 +125,7 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
 
     if sonnet_analysis and sonnet_analysis.get("comparative_document"):
         try:
+            logger.debug("Saving comparative document")
             content = sonnet_analysis["comparative_document"]
             embed_text = content[:8000]
             embedding = await store_manager.embedding.embed(embed_text)
@@ -136,7 +139,7 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                 source_type=SourceType.INTERNAL,
                 content=content,
                 compression_level=0,
-                source_ids=[uuid4() for _ in per_language_record_ids.values()],  # Lineage to per-language records
+                source_ids=[uuid4() for _ in per_language_record_ids.values()],
                 metadata={
                     "type": "multi_lang_comparative",
                     "topic": topic,
@@ -152,13 +155,13 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
             await store_manager.es_stores.store.add(record)
 
             comparative_record_id = str(record_id)
-            logger.info(f"Saved comparative document: {record_id}")
+            logger.debug(f"Saved comparative document: {record_id}")
 
         except Exception as e:
             logger.error(f"Failed to save comparative document: {e}")
             errors.append({"phase": "save_comparative", "error": str(e)})
     else:
-        logger.warning("No comparative document available, skipping")
+        logger.debug("No comparative document available, skipping")
 
     # 3. Save synthesized document record
     synthesis_record_id: str | None = None
@@ -166,6 +169,7 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
 
     if final_synthesis:
         try:
+            logger.debug("Saving synthesis document")
             embed_text = final_synthesis[:8000]
             embedding = await store_manager.embedding.embed(embed_text)
 
@@ -181,7 +185,7 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                 source_type=SourceType.INTERNAL,
                 content=final_synthesis,
                 compression_level=0,
-                source_ids=[uuid4() for _ in per_language_record_ids.values()],  # Lineage to per-language records
+                source_ids=[uuid4() for _ in per_language_record_ids.values()],
                 metadata={
                     "type": "multi_lang_synthesis",
                     "topic": topic,
@@ -197,13 +201,13 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
             await store_manager.es_stores.store.add(record)
 
             synthesis_record_id = str(record_id)
-            logger.info(f"Saved synthesis document: {record_id}")
+            logger.debug(f"Saved synthesis document: {record_id}")
 
         except Exception as e:
             logger.error(f"Failed to save synthesis document: {e}")
             errors.append({"phase": "save_synthesis", "error": str(e)})
     else:
-        logger.warning("No final synthesis available, skipping")
+        logger.debug("No final synthesis available, skipping")
 
     result: dict[str, Any] = {
         "per_language_record_ids": per_language_record_ids,

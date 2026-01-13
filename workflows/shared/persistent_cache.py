@@ -74,7 +74,7 @@ def get_cached(
             with open(cache_path, "rb") as f:
                 return pickle.load(f)
     except Exception as e:
-        logger.warning(f"Failed to read cache {cache_path}: {e}")
+        logger.debug(f"Failed to read cache {cache_path}: {e}")
         return None
 
 
@@ -106,7 +106,7 @@ def set_cached(
                 pickle.dump(value, f)
         logger.debug(f"Cached to {cache_path}")
     except Exception as e:
-        logger.warning(f"Failed to write cache {cache_path}: {e}")
+        logger.debug(f"Failed to write cache {cache_path}: {e}")
 
 
 def cached(
@@ -190,7 +190,7 @@ def clear_cache(cache_type: Optional[str] = None) -> int:
                 cache_file.unlink()
                 count += 1
 
-    logger.info(f"Cleared {count} cached files")
+    logger.debug(f"Cleared {count} cached files")
     return count
 
 

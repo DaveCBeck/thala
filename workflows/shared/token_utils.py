@@ -247,7 +247,7 @@ def select_model_for_context(
     elif estimated_tokens <= SONNET_SAFE_LIMIT:
         return "sonnet"
     elif estimated_tokens <= SONNET_1M_SAFE_LIMIT:
-        logger.info(
+        logger.debug(
             f"Context size {estimated_tokens:,} tokens requires SONNET_1M "
             f"(exceeds {SONNET_SAFE_LIMIT:,} safe limit)"
         )

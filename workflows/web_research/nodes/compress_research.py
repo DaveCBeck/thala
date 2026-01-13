@@ -30,17 +30,17 @@ async def compress_research(state: DeepResearchState) -> dict[str, Any]:
     findings = state.get("research_findings", [])
 
     if not findings:
-        logger.info("No findings to compress")
+        logger.debug("No findings to compress")
         return {"current_status": "supervising"}
 
     # Check if findings need re-compression (e.g., low confidence)
     low_confidence_findings = [f for f in findings if f.get("confidence", 1.0) < 0.5]
 
     if not low_confidence_findings:
-        logger.info(f"All {len(findings)} findings have adequate confidence")
+        logger.debug(f"All {len(findings)} findings have adequate confidence")
         return {"current_status": "supervising"}
 
-    logger.info(f"Re-compressing {len(low_confidence_findings)} low-confidence findings")
+    logger.debug(f"Re-compressing {len(low_confidence_findings)} low-confidence findings")
 
     # For now, just pass through - re-compression logic can be added later
     return {"current_status": "supervising"}

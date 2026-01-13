@@ -6,8 +6,6 @@ from .chapter_detector import detect_chapters
 from .finalizer import finalize
 from .input_resolver import resolve_input
 from .language_detector import detect_document_language
-from .markdown_chunker import smart_chunker
-from .marker_processor import process_marker
 from .metadata_agent import check_metadata
 from .save_short_summary import save_short_summary
 from .save_tenth_summary import save_tenth_summary
@@ -19,8 +17,6 @@ from .zotero_stub import create_zotero_stub
 __all__ = [
     "resolve_input",
     "create_zotero_stub",
-    "process_marker",
-    "smart_chunker",
     "update_store",
     "detect_document_language",
     "generate_summary",

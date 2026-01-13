@@ -1,5 +1,6 @@
 """Sonnet-powered cross-language analysis producing comparative documents."""
 
+import logging
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -13,6 +14,8 @@ from workflows.multi_lang.state import (
     LanguageResult,
     SonnetCrossAnalysis,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CrossAnalysisOutput(BaseModel):
@@ -89,6 +92,7 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
         if not language_results or (
             len(language_results) == 1 and language_results[0]["language_code"] == "en"
         ):
+            logger.info("Only English sources available, skipping cross-language analysis")
             minimal_analysis: SonnetCrossAnalysis = {
                 "universal_themes": [],
                 "consensus_findings": [],
@@ -113,6 +117,8 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
         questions_formatted = "\n".join(f"- {q}" for q in research_questions)
 
         language_findings = _format_language_findings(language_results)
+
+        logger.debug(f"Running cross-language analysis for {len(language_results)} languages")
 
         user_prompt = CROSS_ANALYSIS_USER.format(
             topic=topic,
@@ -147,6 +153,8 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
             "comparative_document": result.comparative_document,
         }
 
+        logger.info("Cross-language analysis complete")
+
         return {
             "sonnet_analysis": analysis,
             "current_phase": "cross_language_analysis",
@@ -154,6 +162,7 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
         }
 
     except Exception as e:
+        logger.error(f"Cross-language analysis failed: {e}")
         error_dict = {
             "timestamp": datetime.now().isoformat(),
             "phase": "sonnet_analysis",

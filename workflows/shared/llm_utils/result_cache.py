@@ -71,7 +71,7 @@ async def invoke_with_result_cache(
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=ttl_days)
     if cached:
-        logger.debug(f"LLM result cache HIT for {model_name}")
+        logger.debug(f"LLM result cache hit for {model_name}")
         return cached
 
     response = await llm_invoke_fn()
@@ -91,6 +91,6 @@ async def invoke_with_result_cache(
         set_cached(CACHE_TYPE, cache_key, cached_response)
         logger.debug(f"LLM result cached for {model_name}")
     except Exception as e:
-        logger.warning(f"Failed to cache LLM result: {e}")
+        logger.debug(f"Failed to cache LLM result: {e}")
 
     return response

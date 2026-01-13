@@ -52,7 +52,7 @@ async def openalex_search(
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
     if cached:
-        logger.debug(f"Cache hit for search: {query}")
+        logger.debug(f"Cache hit for OpenAlex search: {query}")
         return cached
 
     client = _get_openalex()
@@ -98,7 +98,7 @@ async def openalex_search(
         )
 
         logger.debug(
-            f"openalex_search returned {len(results)} results for: {query} "
+            f"OpenAlex search returned {len(results)} results for '{query}' "
             f"(total in index: {output.total_results})"
         )
 
@@ -107,7 +107,7 @@ async def openalex_search(
         return result_dict
 
     except Exception as e:
-        logger.error(f"openalex_search failed: {e}")
+        logger.error(f"openalex_search failed for '{query}': {e}")
         return output_dict(
             OpenAlexSearchOutput(
                 query=query,

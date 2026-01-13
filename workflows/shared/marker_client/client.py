@@ -170,10 +170,10 @@ class MarkerClient:
 
                 cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
                 if cached:
-                    logger.info(f"Cache hit for Marker processing: {file_path}")
+                    logger.debug(f"Cache hit for Marker processing: {file_path}")
                     return MarkerJobResult(**cached)
             except Exception as e:
-                logger.warning(f"Cache lookup failed for {file_path}: {e}")
+                logger.debug(f"Cache lookup failed for {file_path}: {e}")
 
         job_id = await self.submit_job(file_path, quality, langs)
         result = await self.poll_until_complete(job_id)
@@ -185,7 +185,7 @@ class MarkerClient:
                 set_cached(CACHE_TYPE, cache_key, result.model_dump())
                 logger.debug(f"Cached Marker result for {file_path}")
             except Exception as e:
-                logger.warning(f"Failed to cache result for {file_path}: {e}")
+                logger.debug(f"Failed to cache result for {file_path}: {e}")
 
         return result
 

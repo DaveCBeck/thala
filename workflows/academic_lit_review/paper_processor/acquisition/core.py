@@ -95,7 +95,7 @@ async def acquire_full_text(
             authors=authors,
             timeout=ACQUISITION_TIMEOUT,
         )
-        logger.info(f"Acquired full text for {doi}: {saved_path}")
+        logger.debug(f"Acquired full text for {doi}: {saved_path}")
         return saved_path
 
     except Exception as e:
@@ -125,7 +125,7 @@ async def _check_cache_phase(
     for doi, cached in cache_results:
         if cached:
             cached_results[doi] = cached
-            logger.info(f"Cache hit: {doi}")
+            logger.debug(f"Cache hit: {doi}")
         else:
             papers_to_acquire.append(papers_by_doi[doi])
 
@@ -173,11 +173,11 @@ async def run_paper_pipeline(
         # ========================================
         # Phase 1: Check cache for all papers
         # ========================================
-        logger.info(f"Phase 1: Checking cache for {total_papers} papers...")
+        logger.debug(f"Phase 1: Checking cache for {total_papers} papers")
         cached_results, papers_to_acquire = await _check_cache_phase(papers)
 
         logger.info(
-            f"Phase 1 complete: {len(cached_results)} cached, "
+            f"Cache check complete: {len(cached_results)} cached, "
             f"{len(papers_to_acquire)} need acquisition"
         )
 
@@ -187,9 +187,9 @@ async def run_paper_pipeline(
         # ========================================
         # Phase 2+3: Streaming acquire → process
         # ========================================
-        logger.info(
-            f"Phase 2+3: Streaming acquisition and processing for "
-            f"{len(papers_to_acquire)} papers..."
+        logger.debug(
+            f"Phase 2+3: Starting streaming acquisition and processing for "
+            f"{len(papers_to_acquire)} papers"
         )
 
         # Shared state (thread-safe via single event loop)
@@ -277,7 +277,7 @@ async def run_paper_pipeline(
                             # OA success - push directly to processing queue
                             acquired_paths[doi] = source
                             acquired_count += 1
-                            logger.info(
+                            logger.debug(
                                 f"[{acquired_count}/{total_to_acquire}] Acquired via OA: {doi}"
                             )
                             await processing_queue.put((doi, source, papers_by_doi[doi], is_markdown))
@@ -303,9 +303,8 @@ async def run_paper_pipeline(
                         else:
                             acquired_paths[doi] = local_path
                             acquired_count += 1
-                            logger.info(
-                                f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}, "
-                                f"queuing for processing"
+                            logger.debug(
+                                f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}"
                             )
                             await processing_queue.put((doi, local_path, papers_by_doi[doi], False))
 
@@ -333,13 +332,13 @@ async def run_paper_pipeline(
 
                         if result.get("success"):
                             processing_results[doi] = result
-                            logger.info(
+                            logger.debug(
                                 f"[{processed_count}/{total_to_acquire}] Processed: {title}"
                             )
                         else:
                             processing_failed.append(doi)
                             logger.warning(
-                                f"[{processed_count}/{total_to_acquire}] Failed: {title}"
+                                f"[{processed_count}/{total_to_acquire}] Processing failed: {title}"
                             )
                     except Exception as e:
                         processing_failed.append(doi)
@@ -371,7 +370,7 @@ async def run_paper_pipeline(
         logger.info(
             f"Paper pipeline complete: {len(acquired_paths)} acquired "
             f"({len(cached_results)} from cache), "
-            f"{len(processing_results)} processed, "
+            f"{len(processing_results)} processed successfully, "
             f"{len(acquisition_failed)} acquisition failed, "
             f"{len(processing_failed)} processing failed"
         )

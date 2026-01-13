@@ -33,7 +33,6 @@ LangChain 1.x tools for integrating Thala stores, web search, and research workf
 | `openalex_search` | Academic literature (240M+ works) |
 | `book_search` | Book/textbook discovery |
 | `process_document` | Document extraction pipeline |
-| `deep_research` | Comprehensive research workflow |
 
 ## Usage
 
@@ -42,13 +41,12 @@ from langchain.agents import create_agent
 from langchain_tools import (
     search_memory,
     expand_context,
-    deep_research,
     openalex_search,
 )
 
 agent = create_agent(
     model="claude-sonnet-4-5-20250929",
-    tools=[search_memory, expand_context, deep_research, openalex_search],
+    tools=[search_memory, expand_context, openalex_search],
 )
 ```
 
@@ -87,7 +85,6 @@ Each tool returns a typed output:
 - `WebSearchOutput` - Web search results
 - `OpenAlexSearchOutput` - Academic results
 - `BookSearchOutput` - Book results
-- `DeepResearchOutput` - Research report with citations
 
 ## Environment Variables
 

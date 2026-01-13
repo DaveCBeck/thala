@@ -64,10 +64,7 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
     """Analyze review to identify missing literature base."""
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
-    logger.info(
-        f"Loop 2 iteration {iteration + 1}/{max_iterations}: "
-        "Analyzing for missing literature bases"
-    )
+    logger.info(f"Loop 2 iteration {iteration + 1}/{max_iterations}: Analyzing for missing literature bases")
 
     input_data = state["input"]
     explored_bases_text = "\n".join(
@@ -94,7 +91,7 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
             max_retries=2,
         )
 
-        logger.info(f"Analyzer decision: {response.action}")
+        logger.debug(f"Analyzer decision: {response.action}")
         if response.action == "expand_base":
             logger.info(f"Identified literature base: {response.literature_base.name}")
 
@@ -126,7 +123,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
     errors = state.get("errors", [])
 
     if not decision:
-        logger.warning("run_mini_review_node called without decision")
+        logger.warning("Mini-review node called without decision")
         return {
             "mini_review_failed": True,
             "errors": errors + [{
@@ -140,7 +137,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
         }
 
     if decision["action"] != "expand_base":
-        logger.warning(f"run_mini_review_node called with action: {decision['action']}")
+        logger.warning(f"Mini-review node called with invalid action: {decision['action']}")
         return {
             "mini_review_failed": True,
             "errors": errors + [{
@@ -154,7 +151,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
         }
 
     literature_base = LiteratureBase(**decision["literature_base"])
-    logger.info(f"Running mini-review for: {literature_base.name}")
+    logger.debug(f"Running mini-review for: {literature_base.name}")
 
     exclude_dois = set(state["paper_corpus"].keys())
     parent_topic = state["input"]["topic"]
@@ -171,7 +168,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
     new_zotero_keys = mini_review_result.get("zotero_keys", {})
 
     logger.info(
-        f"Mini-review complete: {len(new_paper_summaries)} new papers, "
+        f"Mini-review complete: {len(new_paper_summaries)} papers, "
         f"{len(mini_review_result.get('mini_review_text', ''))} chars"
     )
 
@@ -199,7 +196,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
     try:
         decision = state.get("decision")
         if not decision or not decision.get("literature_base"):
-            logger.error("integrate_findings_node called without valid decision")
+            logger.error("Integration node called without valid decision")
             return {
                 "errors": errors + [{
                     "loop_number": 2,
@@ -215,7 +212,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
 
         literature_base = LiteratureBase(**decision["literature_base"])
 
-        logger.info(f"Integrating findings for: {literature_base.name}")
+        logger.debug(f"Integrating findings for: {literature_base.name}")
 
         mini_review_text = decision.get("mini_review_text", "")
         new_paper_summaries = decision.get("new_paper_summaries", {})
@@ -224,10 +221,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
 
         # Validate mini-review before consuming iteration
         if not mini_review_text or len(mini_review_text.strip()) < 100:
-            logger.error(
-                f"Mini-review too short for base: {literature_base.name} "
-                f"({len(mini_review_text.strip()) if mini_review_text else 0} chars)"
-            )
+            logger.warning(f"Mini-review too short for base '{literature_base.name}' ({len(mini_review_text.strip())} chars)")
             return {
                 # DON'T increment iteration on failure
                 "errors": errors + [{
@@ -278,8 +272,8 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         explored_bases = state.get("explored_bases", []) + [literature_base.name]
 
         logger.info(
-            f"Integration complete: review length {len(updated_review)}, "
-            f"total papers {len(merged_summaries)}, new papers added: {new_papers_added}"
+            f"Integration complete: {len(updated_review)} chars, "
+            f"{len(merged_summaries)} total papers, {new_papers_added} new papers"
         )
 
         return {
@@ -309,7 +303,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
 
 async def finalize_node(state: Loop2State) -> dict:
     """Mark loop as complete and return final state."""
-    logger.info("Loop 2 finalized")
+    logger.debug("Loop 2 finalized")
     return {"is_complete": True}
 
 
@@ -351,7 +345,7 @@ def check_continue(state: Loop2State) -> str:
         return "analyze_for_bases"
 
     if iteration >= max_iterations:
-        logger.info(f"Max iterations ({max_iterations}) reached")
+        logger.debug(f"Max iterations ({max_iterations}) reached")
         return "finalize"
 
     return "analyze_for_bases"

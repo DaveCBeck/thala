@@ -83,7 +83,7 @@ async def classify_content(
     """
     # Fast path: heuristic detection for obvious cases
     if _quick_paywall_check(markdown):
-        logger.debug(f"Quick paywall detection for {url}")
+        logger.debug(f"Quick paywall detection")
         return ClassificationResult(
             classification="paywall",
             confidence=0.95,
@@ -92,7 +92,7 @@ async def classify_content(
         )
 
     if len(markdown) > 20000 and _has_article_structure(markdown):
-        logger.debug(f"Quick full_text detection for {url}: {len(markdown)} chars with structure")
+        logger.debug(f"Quick full_text detection: {len(markdown)} chars with structure")
         return ClassificationResult(
             classification="full_text",
             confidence=0.9,
@@ -101,7 +101,7 @@ async def classify_content(
         )
 
     # LLM classification for ambiguous cases
-    logger.info(f"Classifying content via Haiku: {url}")
+    logger.debug(f"Classifying content via Haiku")
 
     # Truncate content for classification
     content_preview = markdown[:15000] if len(markdown) > 15000 else markdown
@@ -170,14 +170,14 @@ async def classify_content(
         for block in response.content:
             if block.type == "tool_use" and block.name == "classify_content":
                 result = ClassificationResult(**block.input)
-                logger.info(
-                    f"Classification for {url}: {result.classification} "
+                logger.debug(
+                    f"Classification: {result.classification} "
                     f"(confidence={result.confidence:.2f}, pdf_url={result.pdf_url is not None})"
                 )
                 return result
 
         # Fallback if no tool call in response
-        logger.warning(f"No tool call in classification response for {url}")
+        logger.warning(f"No tool call in classification response")
         return ClassificationResult(
             classification="full_text",
             confidence=0.5,
@@ -186,7 +186,7 @@ async def classify_content(
         )
 
     except Exception as e:
-        logger.error(f"Classification failed for {url}: {type(e).__name__}: {e}")
+        logger.error(f"Classification failed: {type(e).__name__}: {e}")
         # Default to full_text on error to avoid losing content
         return ClassificationResult(
             classification="full_text",

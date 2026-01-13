@@ -86,7 +86,7 @@ def create_fallback_chunks(markdown: str, word_count: int, chunk_info_class):
         if overlap_start > 0 and i < num_chunks - 1:
             overlap_start = find_word_boundary(markdown, overlap_start, direction=1)
 
-    logger.info(
+    logger.debug(
         f"Created {len(chunks)} fallback chunks "
         f"(~{FALLBACK_CHUNK_SIZE} words each, {CHUNK_OVERLAP_SIZE} word overlap)"
     )
@@ -130,7 +130,7 @@ def create_heading_based_chapters(
     for level in sorted(headings_by_level.keys()):
         level_headings = headings_by_level[level]
         if len(level_headings) >= min_chapters:
-            logger.info(
+            logger.debug(
                 f"Using H{level} headings as chapter boundaries "
                 f"({len(level_headings)} headings)"
             )

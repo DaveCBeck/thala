@@ -46,7 +46,7 @@ class FirecrawlClients:
                 api_key="local",  # Placeholder - not validated by self-hosted
                 api_url=self._config.local_url,
             )
-            logger.debug(f"Local Firecrawl client initialized: {self._config.local_url}")
+            logger.debug(f"Initialized local Firecrawl client")
         return self._local
 
     def _get_cloud(self) -> "AsyncFirecrawl | None":
@@ -61,7 +61,7 @@ class FirecrawlClients:
                 api_key=self._config.cloud_api_key,
                 api_url=self._config.cloud_url,
             )
-            logger.debug("Cloud Firecrawl client initialized")
+            logger.debug("Initialized cloud Firecrawl client")
         return self._cloud
 
     @property

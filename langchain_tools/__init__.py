@@ -17,7 +17,6 @@ Tools provided:
 - openalex_search: Academic literature search (OpenAlex)
 - book_search: Book search for books, textbooks, and publications
 - process_document: Document extraction and summarization pipeline
-- deep_research: Comprehensive research with memory integration
 """
 
 from .base import StoreManager, get_store_manager
@@ -70,10 +69,6 @@ from .document_processing import (
     process_document,
     DocumentProcessingOutput,
 )
-from .deep_research import (
-    deep_research,
-    DeepResearchOutput,
-)
 
 __all__ = [
     # Store management
@@ -120,7 +115,4 @@ __all__ = [
     # document_processing tool
     "process_document",
     "DocumentProcessingOutput",
-    # deep_research tool
-    "deep_research",
-    "DeepResearchOutput",
 ]

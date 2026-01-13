@@ -68,14 +68,14 @@ async def _search_single_book(
                 if len(queries) > 1 and query == queries[0]:
                     break
             else:
-                logger.debug(f"No results for query: '{query}'")
+                logger.debug(f"No results for query '{query}'")
 
         except Exception as e:
-            logger.warning(f"Search failed for '{query}': {e}")
+            logger.warning(f"Search failed for query '{query}': {e}")
             continue
 
     if not all_results:
-        logger.info(f"No results found for: {recommendation_title}")
+        logger.warning(f"No results found for '{recommendation_title}'")
         return None
 
     # Deduplicate by MD5
@@ -91,7 +91,7 @@ async def _search_single_book(
     pdf_books = [b for b in unique_results if b.get("format", "").lower() == "pdf"]
     best_book = pdf_books[0] if pdf_books else unique_results[0]
 
-    logger.info(f"Found: {best_book.get('title', 'Unknown')} for '{recommendation_title}'")
+    logger.debug(f"Matched '{recommendation_title}' to '{best_book.get('title', 'Unknown')}'")
 
     return BookResult(
         title=best_book.get("title", ""),
@@ -126,6 +126,8 @@ async def search_books(state: dict) -> dict[str, Any]:
     # Extract language from state
     language_config = state.get("language_config")
     language = language_config.get("code") if language_config else None
+
+    logger.debug(f"Searching for {len(all_recommendations)} book recommendations (language: {language})")
 
     # Limit concurrency to avoid overwhelming the service
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
@@ -164,7 +166,7 @@ async def search_books(state: dict) -> dict[str, Any]:
             results.append(book)
 
     logger.info(
-        f"Found {len(results)} books from {len(all_recommendations)} recommendations"
+        f"Book search complete: found {len(results)}/{len(all_recommendations)} books"
     )
 
     return {"search_results": results}

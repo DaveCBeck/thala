@@ -1,6 +1,6 @@
 # Testing
 
-Test scripts for Thala workflows with LangSmith tracing and checkpointing support.
+Test scripts for Thala workflows with LangSmith tracing.
 
 ## Prerequisites
 
@@ -18,7 +18,6 @@ testing/
 ├── testing.md                  # This file
 ├── test_*.py                   # Test scripts
 ├── test_data/                  # Output files
-│   ├── checkpoints/            # Workflow state checkpoints
 │   └── *.md, *.json            # Results
 ├── logs/                       # Timestamped logs
 └── traces/                     # LangSmith trace exports
@@ -48,39 +47,18 @@ python -m testing.test_document_processing
 ```
 
 ### `test_academic_lit_review.py`
-Run an academic literature review workflow with checkpointing support.
+Run an academic literature review workflow.
 
 ```bash
-# Full run with automatic checkpoints
 python -m testing.test_academic_lit_review "transformer architectures" quick
 python -m testing.test_academic_lit_review "AI in drug discovery" standard
 
 # Multilingual support (29 languages)
 python -m testing.test_academic_lit_review "machine learning" standard --language es
-
-# Named checkpoints for iterative testing
-python -m testing.test_academic_lit_review "topic" quick --checkpoint-prefix mytest
 ```
 
 Quality options: `test`, `quick`, `standard`, `comprehensive`, `high_quality`
 Language: ISO 639-1 code (e.g., `en`, `es`, `zh`, `ja`, `de`, `fr`)
-
-**Checkpointing for fast iteration:**
-
-The workflow saves checkpoints after expensive phases (diffusion, processing). Resume from these to iterate on later phases without re-running discovery/processing:
-
-```bash
-# Resume from after-processing (fastest - only runs clustering + synthesis)
-python -m testing.test_academic_lit_review --resume-from processing --checkpoint-prefix mytest
-
-# Resume from after-diffusion (runs processing + clustering + synthesis)
-python -m testing.test_academic_lit_review --resume-from diffusion --checkpoint-prefix mytest
-
-# Original behavior without checkpoints
-python -m testing.test_academic_lit_review "topic" quick --no-checkpoint
-```
-
-Checkpoints are saved to `testing/test_data/checkpoints/`.
 
 ### `test_supervised_lit_review.py`
 Run academic literature review with multi-loop supervision for enhanced quality.
@@ -141,32 +119,11 @@ Language: ISO 639-1 code (e.g., `en`, `es`, `zh`, `ja`, `de`, `fr`)
 Run the wrapped research workflow that orchestrates web, academic, and book research.
 
 ```bash
-# Full run with automatic checkpoints
 python -m testing.test_wrapped_research "AI agents in creative work" quick
 python -m testing.test_wrapped_research "Impact of LLMs" standard
-
-# Named checkpoints for iterative testing
-python -m testing.test_wrapped_research "topic" quick --checkpoint-prefix mytest
 ```
 
 Quality options: `quick`, `standard`, `comprehensive`
-
-**Checkpointing for fast iteration:**
-
-The workflow saves checkpoints after expensive phases (parallel research, book finding). Resume from these to iterate on later phases:
-
-```bash
-# Resume from after-parallel (runs books + summary + save)
-python -m testing.test_wrapped_research --resume-from parallel --checkpoint-prefix mytest
-
-# Resume from after-books (runs summary + save only)
-python -m testing.test_wrapped_research --resume-from books --checkpoint-prefix mytest
-
-# Original behavior without manual checkpoints
-python -m testing.test_wrapped_research "topic" quick --no-checkpoint
-```
-
-Checkpoints are saved to `testing/test_data/checkpoints/wrapped/`.
 
 **Outputs:** Saves 4 markdown files (web, academic, books, combined) plus JSON result and analysis.
 
@@ -188,20 +145,6 @@ python -m scripts.traces.retrieve_langsmith_run <run_id> --json  # JSON output
 Or use the [LangSmith UI](https://smith.langchain.com/) directly.
 
 ## Test Utilities
-
-### Checkpointing
-
-Save/load workflow state for iterative testing:
-
-```python
-from workflows.shared.checkpointing import save_checkpoint, load_checkpoint
-
-# Save after expensive phases
-save_checkpoint(state, "after_processing", prefix="mytest")
-
-# Resume later
-state = load_checkpoint("after_processing", prefix="mytest")
-```
 
 ### Trace Analysis
 

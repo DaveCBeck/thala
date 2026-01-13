@@ -15,23 +15,23 @@ def route_after_phase_a(state: dict) -> str:
     analysis = state.get("issue_analysis")
 
     if not analysis:
-        logger.info("No issue analysis, pass-through")
+        logger.debug("No issue analysis, pass-through")
         return "pass_through"
 
     needs_restructuring = analysis.get("needs_restructuring", False)
     has_issues = bool(analysis.get("issues"))
 
     if needs_restructuring and has_issues:
-        logger.info(f"Routing to section rewriting ({len(analysis['issues'])} issues to resolve)")
+        logger.debug(f"Routing to section rewriting ({len(analysis['issues'])} issues to resolve)")
         return "rewrite_sections"
     elif has_issues and not needs_restructuring:
-        logger.info(
+        logger.debug(
             f"Phase A found {len(analysis['issues'])} issues but "
             f"needs_restructuring=False - passing through"
         )
         return "pass_through"
     else:
-        logger.info("Phase A found no structural issues - passing through")
+        logger.debug("Phase A found no structural issues - passing through")
         return "pass_through"
 
 
@@ -54,13 +54,13 @@ def route_after_analysis(state: dict) -> str:
     has_edits = bool(manifest.get("edits")) or bool(manifest.get("todo_markers"))
 
     if needs_restructuring and has_edits:
-        logger.info("Routing to validate_edits (restructuring needed with edits)")
+        logger.debug("Routing to validate_edits (restructuring needed with edits)")
         return "restructure_needed"
     elif needs_restructuring and not has_edits:
         logger.warning("needs_restructuring=True but no edits provided, treating as pass-through")
         return "pass_through"
     else:
-        logger.info("Routing to finalize (pass-through)")
+        logger.debug("Routing to finalize (pass-through)")
         return "pass_through"
 
 
@@ -76,11 +76,11 @@ def route_after_validation(state: dict) -> str:
         return "no_edits"
 
     if needs_retry_edits and not retry_attempted:
-        logger.info(f"{len(needs_retry_edits)} edits need retry for missing replacement_text")
+        logger.debug(f"{len(needs_retry_edits)} edits need retry for missing replacement_text")
         return "needs_retry"
 
     if valid_edits:
-        logger.info(f"Routing to programmatic application ({len(valid_edits)} valid edits)")
+        logger.debug(f"Routing to programmatic application ({len(valid_edits)} valid edits)")
         return "has_valid_edits"
 
     if invalid_edits or (needs_retry_edits and retry_attempted):
@@ -102,7 +102,7 @@ def check_continue(state: dict) -> str:
     max_iterations = state["max_iterations"]
 
     if iteration >= max_iterations - 1:
-        logger.info(f"Max iterations reached ({max_iterations})")
+        logger.debug(f"Max iterations reached ({max_iterations})")
         return "complete"
 
     arch_verification = state.get("architecture_verification")
@@ -113,23 +113,23 @@ def check_continue(state: dict) -> str:
         regressions = len(arch_verification.get("regressions_introduced", []))
 
         if coherence >= 0.8 and not needs_another:
-            logger.info(f"Architecture verified (coherence={coherence:.2f}), completing")
+            logger.debug(f"Architecture verified (coherence={coherence:.2f}), completing")
             return "complete"
 
         if coherence < 0.8:
             if issues_remaining > 0 or regressions > 0:
-                logger.info(
+                logger.debug(
                     f"Coherence below threshold ({coherence:.2f}<0.8) with "
                     f"{issues_remaining} remaining issues, {regressions} regressions. "
                     "Continuing."
                 )
                 return "continue"
             elif needs_another:
-                logger.info(f"Verifier requests another iteration (coherence={coherence:.2f})")
+                logger.debug(f"Verifier requests another iteration (coherence={coherence:.2f})")
                 return "continue"
 
         if needs_another:
-            logger.info(f"Verifier requests another iteration (coherence={coherence:.2f})")
+            logger.debug(f"Verifier requests another iteration (coherence={coherence:.2f})")
             return "continue"
 
     manifest = state.get("edit_manifest")
@@ -156,10 +156,10 @@ def check_continue(state: dict) -> str:
     if manifest:
         edits_count = len(manifest.get("edits", []))
         if edits_count == 0:
-            logger.info("No edits in manifest, completing")
+            logger.debug("No edits in manifest, completing")
             return "complete"
 
-    logger.info(f"Continuing to iteration {iteration + 2}")
+    logger.debug(f"Continuing to iteration {iteration + 2}")
     return "continue"
 
 
@@ -175,10 +175,9 @@ def check_continue_rewrite(state: dict) -> str:
     max_iterations = state["max_iterations"]
 
     if iteration >= max_iterations - 1:
-        logger.info(f"Max iterations reached ({max_iterations})")
+        logger.debug(f"Max iterations reached ({max_iterations})")
         return "complete"
 
-    # Check architecture verification results
     arch_verification = state.get("architecture_verification")
     if arch_verification:
         needs_another = arch_verification.get("needs_another_iteration", False)
@@ -186,29 +185,26 @@ def check_continue_rewrite(state: dict) -> str:
         issues_remaining = len(arch_verification.get("issues_remaining", []))
         regressions = len(arch_verification.get("regressions_introduced", []))
 
-        # Complete if coherence is good and verifier doesn't need another iteration
         if coherence >= 0.8 and not needs_another:
-            logger.info(f"Architecture verified (coherence={coherence:.2f}), completing")
+            logger.debug(f"Architecture verified (coherence={coherence:.2f}), completing")
             return "complete"
 
-        # Continue if coherence is low with remaining issues or regressions
         if coherence < 0.8:
             if issues_remaining > 0 or regressions > 0:
-                logger.info(
+                logger.debug(
                     f"Coherence below threshold ({coherence:.2f}<0.8) with "
                     f"{issues_remaining} remaining issues, {regressions} regressions. "
                     "Continuing."
                 )
                 return "continue"
             elif needs_another:
-                logger.info(f"Verifier requests another iteration (coherence={coherence:.2f})")
+                logger.debug(f"Verifier requests another iteration (coherence={coherence:.2f})")
                 return "continue"
 
         if needs_another:
-            logger.info(f"Verifier requests another iteration (coherence={coherence:.2f})")
+            logger.debug(f"Verifier requests another iteration (coherence={coherence:.2f})")
             return "continue"
 
-    # Check rewrite manifest
     rewrite_manifest = state.get("rewrite_manifest")
     issue_analysis = state.get("issue_analysis")
 
@@ -217,28 +213,25 @@ def check_continue_rewrite(state: dict) -> str:
         rewrites_count = len(rewrite_manifest.get("rewrites", [])) if rewrite_manifest else 0
         skipped_count = len(rewrite_manifest.get("issues_skipped", [])) if rewrite_manifest else 0
 
-        # If all issues were skipped (e.g., move operations), might need another approach
         if issues_count > 0 and rewrites_count == 0 and skipped_count == issues_count:
-            logger.info(
+            logger.debug(
                 f"All {issues_count} issues were skipped (likely move operations). "
                 f"Completing - these may need manual intervention."
             )
             return "complete"
 
-        # If we rewrote some sections but not all issues were addressed
         if rewrites_count > 0 and skipped_count > 0:
-            logger.info(
+            logger.debug(
                 f"Applied {rewrites_count} rewrites, skipped {skipped_count}. "
                 f"Continuing to address remaining issues."
             )
             return "continue"
 
-    # If no rewrites were performed, complete
     if rewrite_manifest:
         rewrites_count = len(rewrite_manifest.get("rewrites", []))
         if rewrites_count == 0:
-            logger.info("No rewrites performed, completing")
+            logger.debug("No rewrites performed, completing")
             return "complete"
 
-    logger.info(f"Continuing to iteration {iteration + 2}")
+    logger.debug(f"Continuing to iteration {iteration + 2}")
     return "continue"

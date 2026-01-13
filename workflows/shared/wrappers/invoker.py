@@ -88,7 +88,7 @@ async def invoke_workflow(
     # Add any additional kwargs
     invoke_kwargs.update(kwargs)
 
-    logger.info(
+    logger.debug(
         f"Invoking workflow: {workflow_key} "
         f"(quality: {quality} -> {workflow_quality}, language: {language})"
     )

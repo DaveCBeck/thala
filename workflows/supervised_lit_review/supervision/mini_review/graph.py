@@ -57,11 +57,10 @@ async def run_mini_review(
             - references: List of FormattedCitations
     """
     logger.info(
-        f"Starting mini-review for literature base: {literature_base.name} "
+        f"Mini-review starting: {literature_base.name} "
         f"(excluding {len(exclude_dois)} parent DOIs)"
     )
 
-    # Keyword search
     search_topic = f"{parent_topic} - {literature_base.name} perspective"
     keyword_result = await run_keyword_search(
         topic=search_topic,
@@ -74,12 +73,11 @@ async def run_mini_review(
 
     discovered_papers = keyword_result.get("discovered_papers", [])
 
-    # Filter out parent corpus DOIs
     filtered_papers = [
         p for p in discovered_papers
         if p.get("doi") and p["doi"] not in exclude_dois
     ]
-    logger.info(
+    logger.debug(
         f"Keyword search: {len(discovered_papers)} found, "
         f"{len(filtered_papers)} after filtering"
     )
@@ -95,13 +93,11 @@ async def run_mini_review(
             "references": [],
         }
 
-    # Convert to PaperMetadata dict
     initial_corpus: dict[str, PaperMetadata] = {
         p["doi"]: p for p in filtered_papers
     }
     seed_dois = list(initial_corpus.keys())
 
-    # Diffusion
     diffusion_result = await run_diffusion(
         discovery_seeds=seed_dois,
         paper_corpus=initial_corpus,
@@ -110,7 +106,6 @@ async def run_mini_review(
         quality_settings=quality_settings,
     )
 
-    # Use filtered corpus DOIs from diffusion (respects paper limits)
     final_corpus_dois = diffusion_result.get("final_corpus_dois", [])
     full_corpus = diffusion_result.get("paper_corpus", initial_corpus)
     final_corpus = {
@@ -118,7 +113,7 @@ async def run_mini_review(
         for doi in final_corpus_dois
         if doi in full_corpus and doi not in exclude_dois
     }
-    logger.info(f"Diffusion: {len(final_corpus)} papers after filtering")
+    logger.debug(f"Diffusion: {len(final_corpus)} papers after filtering")
 
     if not final_corpus:
         logger.warning("No papers after diffusion filtering")
@@ -131,7 +126,6 @@ async def run_mini_review(
             "references": [],
         }
 
-    # Paper processing
     papers_to_process = list(final_corpus.values())
     processing_result = await run_paper_processing(
         papers=papers_to_process,
@@ -141,7 +135,7 @@ async def run_mini_review(
 
     paper_summaries = processing_result.get("paper_summaries", {})
     zotero_keys = processing_result.get("zotero_keys", {})
-    logger.info(f"Processing: {len(paper_summaries)} papers processed")
+    logger.debug(f"Processing: {len(paper_summaries)} papers processed")
 
     if not paper_summaries:
         logger.warning("No papers successfully processed")
@@ -154,7 +148,6 @@ async def run_mini_review(
             "references": [],
         }
 
-    # Clustering
     clustering_result = await run_clustering(
         paper_summaries=paper_summaries,
         topic=search_topic,
@@ -164,9 +157,8 @@ async def run_mini_review(
 
     clusters = clustering_result.get("final_clusters", [])
     cluster_analyses = clustering_result.get("cluster_analyses", [])
-    logger.info(f"Clustering: {len(clusters)} clusters identified")
+    logger.debug(f"Clustering: {len(clusters)} clusters identified")
 
-    # Synthesis
     synthesis_result = await run_synthesis(
         paper_summaries=paper_summaries,
         clusters=clusters,
@@ -188,7 +180,7 @@ async def run_mini_review(
     return {
         "mini_review_text": mini_review_text,
         "paper_summaries": paper_summaries,
-        "paper_corpus": final_corpus,  # Full PaperMetadata for corpus merging
+        "paper_corpus": final_corpus,
         "zotero_keys": zotero_keys,
         "clusters": clusters,
         "references": references,

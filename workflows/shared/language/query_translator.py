@@ -164,7 +164,7 @@ async def _translate_queries_batched(
             system=QUERY_TRANSLATION_SYSTEM,
         )
 
-    logger.info(f"Submitting batch of {len(queries)} queries for translation to {target_language_name}")
+    logger.debug(f"Submitting batch of {len(queries)} queries for translation to {target_language_name}")
     results = await processor.execute_batch()
 
     translated = []
@@ -182,7 +182,7 @@ async def _translate_queries_batched(
 def clear_query_cache() -> None:
     """Clear the query translation cache."""
     _query_cache.clear()
-    logger.info("Query translation cache cleared")
+    logger.debug("Query translation cache cleared")
 
 
 def get_query_cache_stats() -> dict:

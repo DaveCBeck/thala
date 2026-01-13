@@ -82,7 +82,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     # Check if we should force complete due to max iterations
     if iteration >= max_iterations:
-        logger.info(f"Max iterations ({max_iterations}) reached - completing")
+        logger.info(f"Max iterations ({max_iterations}) reached, completing")
         return {
             "current_status": "research_complete",
             "diffusion": {**diffusion, "iteration": iteration, "last_decision": "max_iterations_reached"},
@@ -90,7 +90,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     # Check if completeness threshold reached
     if diffusion["completeness_score"] >= COMPLETENESS_THRESHOLD:
-        logger.info(f"Completeness threshold ({COMPLETENESS_THRESHOLD:.0%}) reached - completing")
+        logger.info(f"Completeness threshold ({COMPLETENESS_THRESHOLD:.0%}) reached, completing")
         return {
             "current_status": "research_complete",
             "diffusion": {**diffusion, "last_decision": "completeness_threshold_reached"},
@@ -144,7 +144,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
         action, action_data, decision = await _get_supervisor_decision_structured(
             llm, system_prompt_cached, user_prompt, brief
         )
-        logger.info(f"Supervisor using structured output: {action}")
+        logger.debug(f"Supervisor decision: {action}")
     except Exception as structured_error:
         logger.warning(f"Structured output failed, falling back to text parsing: {structured_error}")
         use_structured = False
@@ -225,7 +225,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                     action = "refine_draft"
                     action_data["updates"] = content
         except Exception as text_parse_error:
-            logger.error(f"Text parsing also failed: {text_parse_error}")
+            logger.error(f"Text parsing failed: {text_parse_error}")
             raise
 
     # Process action (runs for both structured output and text parsing)

@@ -75,6 +75,11 @@ async def acquire_and_process_papers_node(state: PaperProcessingState) -> dict[s
         use_batch_api=use_batch_api,
     )
 
+    logger.info(
+        f"Paper pipeline complete: {len(processing_results)} processed, "
+        f"{len(acquisition_failed) + len(processing_failed)} failed"
+    )
+
     return {
         "acquired_papers": acquired,
         "acquisition_failed": acquisition_failed,
@@ -112,16 +117,12 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
         es_ids.update(full_text_es_ids)
         zotero_keys.update(full_text_zotero_keys)
 
-    # Papers needing fallback: those not in summaries OR those that explicitly failed extraction
-    # This ensures papers that had processing_results but failed content fetch still get metadata fallback
     papers_needing_fallback = []
     for paper in papers:
         doi = paper.get("doi")
         if doi and (doi not in summaries or doi in extraction_failed_dois):
             papers_needing_fallback.append(paper)
 
-    # Build a mapping of existing short_summaries from processing_results
-    # These are generated from full-text and are preferable to abstract-based summaries
     existing_short_summaries = {}
     for doi, result in processing_results.items():
         short_summary = result.get("short_summary", "")
@@ -129,19 +130,15 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
             existing_short_summaries[doi] = short_summary
 
     if papers_needing_fallback:
-        # Fallback to metadata-only extraction with real Zotero records
-        # This ensures papers can still be cited even if full-text processing failed
         failed_dois = [p.get("doi", "unknown") for p in papers_needing_fallback]
         logger.warning(
-            f"Document processing failed for {len(papers_needing_fallback)} papers. "
-            f"Using metadata-only extraction with Zotero stubs. "
-            f"DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}"
+            f"Document processing failed for {len(papers_needing_fallback)} papers, "
+            f"using metadata-only extraction with Zotero stubs"
         )
+        logger.debug(f"Failed DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}")
 
-        # Create real Zotero records for metadata-only papers
         paper_zotero_keys = await _create_zotero_stubs_for_papers(papers_needing_fallback)
 
-        # Extract metadata summaries using the real Zotero keys
         metadata_summaries = await _extract_metadata_summaries_batched(
             papers=papers_needing_fallback,
             existing_short_summaries=existing_short_summaries,
@@ -157,7 +154,9 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
         )
 
     if not summaries:
-        logger.warning("No summaries extracted (no processing results and metadata fallback failed)")
+        logger.warning("No summaries extracted")
+
+    logger.info(f"Summary extraction complete: {len(summaries)} papers summarized")
 
     return {
         "paper_summaries": summaries,
@@ -194,12 +193,10 @@ async def _create_zotero_stubs_for_papers(
         venue = paper.get("venue")
         abstract = paper.get("abstract", "")
 
-        # Build author string for Zotero
         author_names = [a.get("name", "") for a in authors[:10]]
 
-        # Create Zotero item with paper metadata
         tags = [
-            ZoteroTag(tag="metadata-only", type=1),  # Auto-tag indicating source
+            ZoteroTag(tag="metadata-only", type=1),
             ZoteroTag(tag="academic-lit-review", type=1),
         ]
 
@@ -208,7 +205,7 @@ async def _create_zotero_stubs_for_papers(
             "DOI": doi,
         }
         if abstract:
-            fields["abstractNote"] = abstract[:2000]  # Zotero limit
+            fields["abstractNote"] = abstract[:2000]
         if year:
             fields["date"] = str(year)
         if venue:
@@ -231,14 +228,13 @@ async def _create_zotero_stubs_for_papers(
             logger.debug(f"Created Zotero stub for {doi}: {zotero_key}")
 
         except Exception as e:
-            # Fall back to generated key if Zotero creation fails
             fallback_key = doi.replace("/", "_").replace(".", "")[:20].upper()
             zotero_keys[doi] = fallback_key
             logger.warning(
                 f"Failed to create Zotero record for {doi}, using fallback key: {e}"
             )
 
-    logger.info(f"Created {len(zotero_keys)} Zotero stubs for metadata-only papers")
+    logger.debug(f"Created {len(zotero_keys)} Zotero stubs for metadata-only papers")
     return zotero_keys
 
 
@@ -289,7 +285,7 @@ Extract structured information based on this metadata."""
             user_prompt=user_prompt,
         ))
 
-    logger.info(f"Submitting batch of {len(papers)} papers for metadata extraction")
+    logger.debug(f"Submitting batch of {len(papers)} papers for metadata extraction")
 
     batch_results = await get_structured_output(
         output_schema=MetadataSummarySchema,
@@ -311,11 +307,8 @@ Extract structured information based on this metadata."""
             try:
                 extracted = result.value
 
-                # Use existing short_summary from document processing if available,
-                # otherwise fall back to abstract
                 short_summary = existing_short_summaries.get(doi) or (abstract[:500] if abstract else f"Study on {title}")
 
-                # Use provided Zotero key if available, otherwise generate from DOI
                 paper_zotero_key = zotero_keys.get(doi) or doi.replace("/", "_").replace(".", "")[:20].upper()
 
                 summaries[doi] = PaperSummary(
@@ -342,5 +335,5 @@ Extract structured information based on this metadata."""
             error_msg = result.error if result else "No result returned"
             logger.warning(f"Metadata extraction failed for {doi}: {error_msg}")
 
-    logger.info(f"Extracted {len(summaries)} metadata summaries (batch)")
+    logger.debug(f"Extracted {len(summaries)} metadata summaries")
     return summaries

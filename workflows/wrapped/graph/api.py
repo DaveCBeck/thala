@@ -13,10 +13,9 @@ from typing import Any, Optional
 from workflows.wrapped.state import (
     WrappedResearchState,
     WrappedResearchInput,
-    CheckpointPhase,
     QualityTier,
 )
-from workflows.wrapped.checkpointing import load_checkpoint, get_resume_phase, delete_checkpoint
+from workflows.shared.workflow_state_store import save_workflow_state
 from .construction import wrapped_research_graph
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,6 @@ async def wrapped_research(
     quality: QualityTier = "standard",
     research_questions: Optional[list[str]] = None,
     date_range: Optional[tuple[int, int]] = None,
-    resume_from: Optional[str] = None,
 ) -> dict[str, Any]:
     """Run comprehensive research across web, academic, and book sources.
 
@@ -49,87 +47,54 @@ async def wrapped_research(
         research_questions: Optional specific questions for academic review.
             If not provided, questions are auto-generated from the query.
         date_range: Optional (start_year, end_year) filter for academic papers
-        resume_from: Optional LangSmith run ID to resume from checkpoint.
-            Use this to continue a workflow that was interrupted.
 
     Returns:
-        Dict containing:
-        - web_result: Web research WorkflowResult
-        - academic_result: Academic literature review WorkflowResult
-        - book_result: Book recommendations WorkflowResult
-        - combined_summary: LLM synthesis of all three sources
-        - top_of_mind_ids: UUIDs of saved records {web, academic, books, combined}
+        Dict containing standardized fields:
+        - final_report: Combined synthesis of all three sources
+        - status: "success", "partial", or "failed"
+        - langsmith_run_id: Run ID for tracing and state retrieval
+        - errors: Any errors encountered during workflow
+        - source_count: Total sources across all three workflows
         - started_at: Workflow start timestamp
         - completed_at: Workflow completion timestamp
-        - langsmith_run_id: Run ID for tracing and resumption
-        - errors: Any errors encountered during workflow
+
+        For detailed results (web_result, academic_result, book_result, top_of_mind_ids),
+        use load_workflow_state("wrapped_research", langsmith_run_id).
 
     Example:
-        # Basic usage
         result = await wrapped_research(
             query="Impact of AI on creative work",
             quality="standard",
         )
         print(result["combined_summary"])
-
-        # Resume interrupted workflow
-        result = await wrapped_research(
-            query="Impact of AI on creative work",
-            resume_from="abc123-def456-...",
-        )
     """
     run_id = str(uuid.uuid4())
 
-    # Check for resume
-    initial_state: Optional[WrappedResearchState] = None
-
-    if resume_from:
-        checkpoint_state = load_checkpoint(resume_from)
-        if checkpoint_state:
-            resume_phase = get_resume_phase(checkpoint_state)
-            logger.info(f"Resuming from checkpoint: {resume_from}, phase: {resume_phase}")
-            # Use the loaded state directly
-            # Note: Full resume implementation would use conditional edges
-            # to skip completed phases. For now, we restart from the checkpoint
-            # but the checkpoint data is preserved.
-            initial_state = checkpoint_state
-            run_id = resume_from  # Keep the same run ID
-        else:
-            logger.warning(f"Checkpoint not found for run: {resume_from}, starting fresh")
-
-    if initial_state is None:
-        initial_state = WrappedResearchState(
-            input=WrappedResearchInput(
-                query=query,
-                quality=quality,
-                research_questions=research_questions,
-                date_range=date_range,
-            ),
-            web_result=None,
-            academic_result=None,
-            book_result=None,
-            book_theme=None,
-            book_brief=None,
-            combined_summary=None,
-            top_of_mind_ids={},
-            checkpoint_phase=CheckpointPhase(
-                parallel_research=False,
-                book_query_generated=False,
-                book_finding=False,
-                saved_to_top_of_mind=False,
-            ),
-            checkpoint_path=None,
-            started_at=datetime.utcnow(),
-            completed_at=None,
-            current_phase="starting",
-            langsmith_run_id=run_id,
-            errors=[],
-        )
+    initial_state = WrappedResearchState(
+        input=WrappedResearchInput(
+            query=query,
+            quality=quality,
+            research_questions=research_questions,
+            date_range=date_range,
+        ),
+        web_result=None,
+        academic_result=None,
+        book_result=None,
+        book_theme=None,
+        book_brief=None,
+        combined_summary=None,
+        top_of_mind_ids={},
+        started_at=datetime.utcnow(),
+        completed_at=None,
+        current_phase="starting",
+        langsmith_run_id=run_id,
+        errors=[],
+    )
 
     logger.info(
-        f"Starting wrapped research: query='{query[:50]}...', "
-        f"quality={quality}, run_id={run_id}"
+        f"Starting wrapped research for '{query[:50]}...' with quality={quality}"
     )
+    logger.debug(f"Run ID: {run_id}")
 
     try:
         result = await wrapped_research_graph.ainvoke(
@@ -140,34 +105,65 @@ async def wrapped_research(
             },
         )
 
-        # Workflow completed successfully - clean up checkpoint
-        delete_checkpoint(run_id)
-
         completed_at = datetime.utcnow()
+        combined_summary = result.get("combined_summary")
+        errors = result.get("errors", [])
+
+        # Determine standardized status
+        if combined_summary and not errors:
+            status = "success"
+        elif combined_summary and errors:
+            status = "partial"
+        else:
+            status = "failed"
+
+        # Save full state for downstream workflows (in dev/test mode)
+        save_workflow_state(
+            workflow_name="wrapped_research",
+            run_id=run_id,
+            state={
+                "input": dict(initial_state.get("input", {})),
+                "web_result": result.get("web_result"),
+                "academic_result": result.get("academic_result"),
+                "book_result": result.get("book_result"),
+                "book_theme": result.get("book_theme"),
+                "book_brief": result.get("book_brief"),
+                "combined_summary": combined_summary,
+                "top_of_mind_ids": result.get("top_of_mind_ids", {}),
+                "started_at": initial_state["started_at"],
+                "completed_at": completed_at,
+            },
+        )
+
+        # Count sources from all three workflows
+        source_count = 0
+        if result.get("web_result"):
+            source_count += result["web_result"].get("source_count", 0)
+        if result.get("academic_result"):
+            source_count += result["academic_result"].get("source_count", 0)
+        if result.get("book_result"):
+            source_count += result["book_result"].get("source_count", 0)
+
+        logger.info(f"Wrapped research complete: status={status}, sources={source_count}")
 
         return {
-            "web_result": result.get("web_result"),
-            "academic_result": result.get("academic_result"),
-            "book_result": result.get("book_result"),
-            "combined_summary": result.get("combined_summary"),
-            "top_of_mind_ids": result.get("top_of_mind_ids", {}),
+            "final_report": combined_summary,
+            "status": status,
+            "langsmith_run_id": run_id,
+            "errors": errors,
+            "source_count": source_count,
             "started_at": initial_state["started_at"],
             "completed_at": completed_at,
-            "langsmith_run_id": run_id,
-            "errors": result.get("errors", []),
         }
 
     except Exception as e:
         logger.error(f"Wrapped research failed: {e}")
-        # Don't delete checkpoint on failure - allow resume
         return {
-            "web_result": None,
-            "academic_result": None,
-            "book_result": None,
-            "combined_summary": None,
-            "top_of_mind_ids": {},
-            "started_at": initial_state["started_at"],
-            "completed_at": datetime.utcnow(),
+            "final_report": None,
+            "status": "failed",
             "langsmith_run_id": run_id,
             "errors": [{"phase": "orchestration", "error": str(e)}],
+            "source_count": 0,
+            "started_at": initial_state["started_at"],
+            "completed_at": datetime.utcnow(),
         }

@@ -92,9 +92,9 @@ async def generate_book_query(state: WrappedResearchState) -> dict[str, Any]:
         # Fallback if parsing fails
         if not theme:
             theme = state["input"]["query"]
-            logger.warning("Failed to parse theme, using original query")
+            logger.warning("Failed to parse theme from LLM response, using original query as fallback")
 
-        logger.info(f"Generated book theme: {theme[:100]}...")
+        logger.debug(f"Generated book theme: {theme[:100]}...")
 
         return {
             "book_theme": theme,
@@ -103,8 +103,7 @@ async def generate_book_query(state: WrappedResearchState) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Failed to generate book query: {e}")
-        # Fallback: use original query
+        logger.error(f"Book query generation failed: {e}")
         return {
             "book_theme": state["input"]["query"],
             "book_brief": None,

@@ -4,11 +4,8 @@ import asyncio
 import logging
 from typing import Any
 
-from langchain_tools.firecrawl import scrape_url
+from core.scraping import get_url, GetUrlOptions
 from workflows.web_research.state import ResearcherState, WebSearchResult
-
-from .cache import _scrape_cache
-from .pdf_processor import is_pdf_url, fetch_pdf_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +18,6 @@ async def scrape_single_url(
     """Scrape a single URL and return the result.
 
     This helper function enables parallel scraping via asyncio.gather().
-    Uses a TTL cache to avoid re-scraping the same URL across researchers or iterations.
 
     Args:
         result: WebSearchResult containing URL and metadata
@@ -38,38 +34,22 @@ async def scrape_single_url(
     updated_result = dict(result)
     updated_result["_index"] = index
 
-    # Check cache first
-    if url in _scrape_cache:
-        content = _scrape_cache[url]
-        logger.debug(f"Cache hit for: {url} ({len(content)} chars)")
-
-        # Format scraped content string
-        content_str = f"[{result['title']}]\nURL: {result['url']}\n\n{content}"
-        updated_result["content"] = content
-
-        return (index, content_str, updated_result)
-
     try:
-        # Route PDFs to Marker instead of Firecrawl
-        if is_pdf_url(url):
-            logger.info(f"Processing PDF via Marker: {url}")
-            content = await fetch_pdf_from_url(url)
-            if not content:
-                # Fallback to Firecrawl if Marker fails
-                logger.info(f"Marker failed, falling back to Firecrawl: {url}")
-                response = await scrape_url.ainvoke({"url": url})
-                content = response.get("markdown", "")
-        else:
-            response = await scrape_url.ainvoke({"url": url})
-            content = response.get("markdown", "")
+        # Use unified get_url() - handles PDFs, HTML, fallbacks automatically
+        url_result = await get_url(
+            url,
+            GetUrlOptions(
+                detect_academic=False,  # Web research doesn't need classification
+                allow_retrieve_academic=False,
+            ),
+        )
+        content = url_result.content
 
         # Truncate very long content
         if len(content) > max_content_length:
             content = content[:max_content_length] + "\n\n[Content truncated...]"
 
-        # Store in cache for future use
-        _scrape_cache[url] = content
-        logger.debug(f"Scraped and cached {len(content)} chars from: {url}")
+        logger.debug(f"Scraped {len(content)} chars from: {url}")
 
         # Format scraped content string
         content_str = f"[{result['title']}]\nURL: {result['url']}\n\n{content}"
@@ -90,9 +70,7 @@ async def scrape_pages(
 ) -> dict[str, Any]:
     """Scrape top results for full content in parallel.
 
-    Routes PDF URLs to local Marker service instead of Firecrawl to save API costs.
     Uses asyncio.gather() to scrape multiple URLs concurrently for improved performance.
-    Results are cached with 1-hour TTL to avoid redundant scrapes across researchers.
 
     Args:
         state: The researcher state containing search results
@@ -103,13 +81,8 @@ async def scrape_pages(
     if not results:
         return {"scraped_content": [], "search_results": []}
 
-    # Check how many URLs are already cached
     urls_to_scrape = [r["url"] for r in results[:max_scrapes]]
-    cached_count = sum(1 for url in urls_to_scrape if url in _scrape_cache)
-    logger.info(
-        f"Scraping {len(urls_to_scrape)} URLs ({cached_count} cached, "
-        f"{len(urls_to_scrape) - cached_count} new) - cache size: {len(_scrape_cache)}"
-    )
+    logger.debug(f"Scraping {len(urls_to_scrape)} URLs in parallel")
 
     # Create scraping tasks for parallel execution
     scraping_tasks = [
@@ -146,7 +119,7 @@ async def scrape_pages(
     # Keep remaining results without scraping
     updated_results.extend(results[max_scrapes:])
 
-    logger.info(f"Scraped {len(scraped)} URLs successfully in parallel")
+    logger.debug(f"Scraped {len(scraped)} URLs successfully")
 
     return {
         "scraped_content": scraped,

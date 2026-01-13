@@ -158,12 +158,12 @@ async def batch_score_relevance(
         if score >= threshold:
             relevant.append(paper)
             logger.debug(
-                f"RELEVANT ({score:.2f}): {paper.get('title', 'Unknown')[:50]} - {reasoning}"
+                f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
             )
         else:
             rejected.append(paper)
             logger.debug(
-                f"REJECTED ({score:.2f}): {paper.get('title', 'Unknown')[:50]} - {reasoning}"
+                f"Rejected ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
             )
 
     logger.info(
@@ -273,12 +273,12 @@ async def _batch_score_relevance_batched(
                 if score >= threshold:
                     relevant.append(paper)
                     logger.debug(
-                        f"RELEVANT ({score:.2f}): {paper.get('title', 'Unknown')[:50]} - {reasoning}"
+                        f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
                     )
                 else:
                     rejected.append(paper)
                     logger.debug(
-                        f"REJECTED ({score:.2f}): {paper.get('title', 'Unknown')[:50]} - {reasoning}"
+                        f"Rejected ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
                     )
 
         except Exception as e:

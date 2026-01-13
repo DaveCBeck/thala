@@ -108,7 +108,7 @@ async def _with_retry(func, *args, **kwargs):
 
             # Calculate exponential backoff delay
             delay = RETRY_INITIAL_DELAY * (2 ** (attempt - 1))
-            logger.info(
+            logger.debug(
                 f"Transient error on attempt {attempt}/{MAX_RETRY_ATTEMPTS}, "
                 f"retrying in {delay}s: {e}"
             )
@@ -310,52 +310,52 @@ class ScraperService:
 
         # Skip straight to Playwright for known-blocked domains
         if domain in self._blocklist:
-            logger.debug(f"Domain {domain} in blocklist, using Playwright directly")
+            logger.debug(f"Domain {domain} in blocklist, using Playwright")
             return await self._scrape_playwright(url, include_links)
 
         # === Tier 1: Local Firecrawl ===
         if clients.config.local_available:
             try:
-                logger.debug(f"Trying local Firecrawl for {url}")
+                logger.debug(f"Trying local Firecrawl")
                 return await _with_retry(
                     self._scrape_local, url, include_links=include_links
                 )
 
             except LocalServiceUnavailableError as e:
                 # Local service down - proceed to cloud (don't add to blocklist)
-                logger.info(f"Local Firecrawl unavailable: {e}")
+                logger.warning(f"Local Firecrawl unavailable: {e}")
 
             except SiteBlockedError:
                 # Site blocked locally - try cloud stealth
-                logger.debug(f"Local got blocked response for {url}, trying cloud stealth")
+                logger.debug(f"Local Firecrawl got blocked response, trying cloud stealth")
 
             except Exception as e:
-                logger.debug(f"Local Firecrawl failed for {url}: {e}")
+                logger.debug(f"Local Firecrawl failed: {e}")
 
         # === Tier 2: Cloud Firecrawl Stealth ===
         if clients.config.cloud_available:
             try:
-                logger.debug(f"Trying cloud Firecrawl stealth for {url}")
+                logger.debug(f"Trying cloud Firecrawl stealth")
                 return await _with_retry(
                     self._scrape_cloud_stealth, url, include_links=include_links
                 )
 
             except SiteBlockedError:
                 # Site blocked even with stealth - add to blocklist
-                logger.info(
+                logger.warning(
                     f"Site {domain} blocked by cloud stealth, adding to blocklist"
                 )
                 self._blocklist.add(domain)
 
             except Exception as e:
-                logger.debug(f"Cloud stealth failed for {url}: {e}")
+                logger.debug(f"Cloud stealth failed: {e}")
 
         # === Tier 3: Playwright Fallback ===
-        logger.debug(f"Falling back to Playwright for {url}")
+        logger.debug(f"Falling back to Playwright")
         try:
             return await _with_retry(self._scrape_playwright, url, include_links)
         except Exception as e:
-            logger.error(f"All scraping methods failed for {url}: {e}")
+            logger.error(f"All scraping methods failed: {e}")
             raise ScrapingError(
                 f"All scraping methods failed: {e}",
                 url=url,

@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional
 
 from workflows.academic_lit_review.state import LitReviewInput
 from workflows.academic_lit_review.quality_presets import QUALITY_PRESETS
+from workflows.shared.workflow_state_store import save_workflow_state
 from .state_init import build_initial_state
 from .construction import academic_lit_review_graph
 
@@ -96,10 +97,11 @@ async def academic_lit_review(
     # Initialize state
     initial_state = build_initial_state(input_data, quality_settings)
 
-    logger.info(f"Starting academic literature review: {topic}")
-    logger.info(f"Quality: {quality}, Max papers: {quality_settings['max_papers']}")
-    logger.info(f"Language: {language}")
-    logger.info(f"LangSmith run ID: {initial_state['langsmith_run_id']}")
+    logger.info(
+        f"Starting academic literature review: '{topic}' "
+        f"(quality={quality}, max_papers={quality_settings['max_papers']}, language={language})"
+    )
+    logger.debug(f"LangSmith run ID: {initial_state['langsmith_run_id']}")
 
     try:
         run_id = uuid.UUID(initial_state["langsmith_run_id"])
@@ -122,36 +124,44 @@ async def academic_lit_review(
         else:
             status = "failed"
 
+        # Save full state for downstream workflows (in dev/test mode)
+        save_workflow_state(
+            workflow_name="academic_lit_review",
+            run_id=initial_state["langsmith_run_id"],
+            state={
+                "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
+                "paper_corpus": result.get("paper_corpus", {}),
+                "paper_summaries": result.get("paper_summaries", {}),
+                "clusters": result.get("clusters", []),
+                "zotero_keys": result.get("zotero_keys", {}),
+                "elasticsearch_ids": result.get("elasticsearch_ids", {}),
+                "references": result.get("references", []),
+                "diffusion": result.get("diffusion", {}),
+                "final_review": final_review,
+                "quality_settings": quality_settings,
+                "started_at": initial_state["started_at"],
+                "completed_at": result.get("completed_at"),
+            },
+        )
+
         return {
-            "final_review": final_review,
-            "final_report": final_review,  # Standardized field name
-            "status": status,  # Standardized status
-            "paper_corpus": result.get("paper_corpus", {}),
-            "paper_summaries": result.get("paper_summaries", {}),
-            "clusters": result.get("clusters", []),
-            "references": result.get("references", []),
-            "citation_keys": list(result.get("zotero_keys", {}).values()),
-            "zotero_keys": result.get("zotero_keys", {}),
-            "elasticsearch_ids": result.get("elasticsearch_ids", {}),
-            "prisma_documentation": result.get("prisma_documentation", ""),
-            "diffusion": result.get("diffusion", {}),
-            "quality_metrics": result.get("section_drafts", {}).get("quality_metrics"),
-            "started_at": initial_state["started_at"],
-            "completed_at": result.get("completed_at"),
+            "final_report": final_review,
+            "status": status,
             "langsmith_run_id": initial_state["langsmith_run_id"],
             "errors": errors,
+            "source_count": len(result.get("paper_corpus", {})),
+            "started_at": initial_state["started_at"],
+            "completed_at": result.get("completed_at"),
         }
 
     except Exception as e:
         logger.error(f"Literature review failed: {e}")
         return {
-            "final_review": f"Literature review generation failed: {e}",
-            "final_report": f"Literature review generation failed: {e}",  # Standardized
-            "status": "failed",  # Standardized
-            "paper_corpus": {},
-            "paper_summaries": {},
-            "clusters": [],
-            "references": [],
+            "final_report": f"Literature review generation failed: {e}",
+            "status": "failed",
             "langsmith_run_id": initial_state["langsmith_run_id"],
             "errors": [{"phase": "unknown", "error": str(e)}],
+            "source_count": 0,
+            "started_at": initial_state["started_at"],
+            "completed_at": None,
         }

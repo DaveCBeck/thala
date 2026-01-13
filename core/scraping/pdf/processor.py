@@ -58,7 +58,7 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
 
             if not validate_pdf_bytes(content):
                 raise MarkerProcessingError(
-                    f"Downloaded content is not a valid PDF: {url}"
+                    f"Downloaded content is not a valid PDF"
                 )
 
             return content
@@ -68,7 +68,7 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
                 f"HTTP error downloading PDF: {e.response.status_code}"
             ) from e
         except httpx.TimeoutException as e:
-            raise MarkerProcessingError(f"Timeout downloading PDF: {url}") from e
+            raise MarkerProcessingError(f"Timeout downloading PDF") from e
         except MarkerProcessingError:
             raise
         except Exception as e:
@@ -82,7 +82,7 @@ async def _get_browser() -> "Browser":
     if _browser is None:
         from playwright.async_api import async_playwright
 
-        logger.info("Starting Playwright browser for PDF download...")
+        logger.debug("Initializing Playwright browser for PDF download")
         _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(
             headless=True,
@@ -92,7 +92,7 @@ async def _get_browser() -> "Browser":
                 "--no-sandbox",
             ],
         )
-        logger.info("Playwright browser started")
+        logger.info("Playwright browser started for PDF downloads")
     return _browser
 
 
@@ -137,17 +137,17 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
                     content = await response.body()
                     logger.debug(f"Captured PDF response: {len(content)} bytes")
                 except Exception as e:
-                    logger.warning(f"Failed to capture PDF body: {e}")
+                    logger.debug(f"Failed to capture PDF body: {e}")
 
         page.on("response", handle_response)
 
         # Navigate to the PDF URL
-        logger.info(f"Playwright navigating to PDF: {url}")
+        logger.debug(f"Playwright navigating to PDF URL")
         response = await page.goto(url, timeout=int(timeout * 1000), wait_until="networkidle")
 
         # Check if we captured the PDF via response interception
         if content and validate_pdf_bytes(content):
-            logger.info(f"Playwright captured PDF via response: {len(content) / 1024:.1f} KB")
+            logger.debug(f"Playwright captured PDF via response: {len(content) / 1024:.1f} KB")
             return content
 
         # If not captured via response, check if browser downloaded it
@@ -157,11 +157,11 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
             if "application/pdf" in content_type:
                 content = await response.body()
                 if validate_pdf_bytes(content):
-                    logger.info(f"Playwright got PDF from response: {len(content) / 1024:.1f} KB")
+                    logger.debug(f"Playwright got PDF from response: {len(content) / 1024:.1f} KB")
                     return content
 
         raise MarkerProcessingError(
-            f"Playwright could not download PDF (got non-PDF content): {url}"
+            f"Playwright could not download PDF (got non-PDF content)"
         )
 
     except MarkerProcessingError:
@@ -192,7 +192,7 @@ async def _download_pdf(url: str, timeout: float = 60.0) -> bytes:
     except MarkerProcessingError as e:
         if "not a valid PDF" in str(e):
             # Site likely returned HTML (login page) - try Playwright
-            logger.info(f"httpx got non-PDF response, trying Playwright: {url}")
+            logger.debug(f"httpx got non-PDF response, trying Playwright")
         else:
             raise
 
@@ -319,11 +319,11 @@ async def process_pdf_url(
     Raises:
         MarkerProcessingError: If download or processing fails
     """
-    logger.info(f"Processing PDF URL: {url}")
+    logger.debug(f"Processing PDF URL")
 
     # Download PDF
     content = await _download_pdf(url, timeout=min(timeout, 60.0))
-    logger.info(f"Downloaded PDF: {len(content) / 1024:.1f} KB")
+    logger.debug(f"Downloaded PDF: {len(content) / 1024:.1f} KB")
 
     # Process via Marker
     return await process_pdf_bytes(
@@ -364,11 +364,11 @@ async def process_pdf_bytes(
 
     # Submit job
     job_id = await _submit_marker_job(file_path, quality=quality, langs=langs)
-    logger.info(f"Submitted Marker job: {job_id}")
+    logger.debug(f"Submitted Marker job: {job_id}")
 
     # Poll for completion
     markdown = await _poll_marker_job(job_id, max_wait=timeout)
-    logger.info(f"Marker conversion complete: {len(markdown)} chars")
+    logger.debug(f"Marker conversion complete: {len(markdown)} chars")
 
     return markdown
 

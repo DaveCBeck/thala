@@ -27,14 +27,14 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
         """Run web research with error handling."""
         started_at = datetime.utcnow()
         try:
-            logger.info(f"Starting web research with depth={quality_config['web_depth']}")
+            logger.debug(f"Starting web research with depth={quality_config['web_depth']}")
             result = await deep_research(
                 query=input_data["query"],
                 depth=quality_config["web_depth"],
             )
             return WorkflowResult(
                 workflow_type="web",
-                final_output=result.get("final_report"),  # Use standardized field
+                final_output=result.get("final_report"),
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
                 status=result.get("status", "completed"),
@@ -64,7 +64,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
         ]
 
         try:
-            logger.info(f"Starting academic research with quality={quality_config['academic_quality']}")
+            logger.debug(f"Starting academic research with quality={quality_config['academic_quality']}")
             result = await academic_lit_review(
                 topic=input_data["query"],
                 research_questions=research_questions,
@@ -73,7 +73,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
             )
             return WorkflowResult(
                 workflow_type="academic",
-                final_output=result.get("final_report"),  # Use standardized field
+                final_output=result.get("final_report"),
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
                 status=result.get("status", "completed"),
@@ -93,8 +93,8 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
             )
 
     logger.info(
-        f"Starting parallel research for query: {input_data['query'][:50]}... "
-        f"(web: {quality_config['web_depth']}, academic: {quality_config['academic_quality']})"
+        f"Starting parallel web and academic research (web: {quality_config['web_depth']}, "
+        f"academic: {quality_config['academic_quality']})"
     )
     web_result, academic_result = await asyncio.gather(run_web(), run_academic())
 
@@ -114,7 +114,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
         updates["errors"] = errors
 
     logger.info(
-        f"Parallel research complete. Web: {web_result['status']}, Academic: {academic_result['status']}"
+        f"Parallel research complete (web: {web_result['status']}, academic: {academic_result['status']})"
     )
 
     return updates

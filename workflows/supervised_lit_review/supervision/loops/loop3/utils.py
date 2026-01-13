@@ -25,7 +25,7 @@ def number_paragraphs_node(state: dict) -> dict[str, Any]:
 
     numbered_doc, para_mapping = number_paragraphs(current_review)
 
-    logger.info(f"Numbered document into {len(para_mapping)} paragraphs")
+    logger.debug(f"Numbered document into {len(para_mapping)} paragraphs")
 
     return {
         "numbered_document": numbered_doc,
@@ -45,7 +45,7 @@ def validate_result_node(state: dict) -> dict[str, Any]:
         if original_numbered:
             cleaned_review = strip_paragraph_numbers(original_numbered)
 
-    logger.info(f"Validated result: {len(cleaned_review)} characters")
+    logger.debug(f"Validated result: {len(cleaned_review)} characters")
 
     return {
         "current_review": cleaned_review,
@@ -70,14 +70,12 @@ def finalize_node(state: dict) -> dict[str, Any]:
     iteration = state.get("iteration", 0)
     phase_a_complete = state.get("phase_a_complete", False)
 
-    # Check for work done in new rewrite-based flow
     rewrite_manifest = state.get("rewrite_manifest")
     did_rewrites = (
         rewrite_manifest is not None and
         len(rewrite_manifest.get("rewrites", [])) > 0
     )
 
-    # Check for work done in legacy edit-based flow
     edit_manifest = state.get("edit_manifest")
     did_edits = (
         edit_manifest is not None and (

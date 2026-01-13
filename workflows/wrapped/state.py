@@ -2,7 +2,7 @@
 State schemas for wrapped research workflow.
 
 Defines TypedDict states for orchestrating web research, academic lit review,
-and book finding with unified quality settings and checkpointing.
+and book finding with unified quality settings.
 """
 
 from datetime import datetime
@@ -69,20 +69,6 @@ class WorkflowResult(TypedDict):
 
 
 # =============================================================================
-# Checkpoint Types
-# =============================================================================
-
-
-class CheckpointPhase(TypedDict):
-    """Tracks which phases have completed for resumption."""
-
-    parallel_research: bool  # Web + academic both complete
-    book_query_generated: bool  # Thematic query ready
-    book_finding: bool  # Books complete
-    saved_to_top_of_mind: bool  # All 4 records saved
-
-
-# =============================================================================
 # Main State
 # =============================================================================
 
@@ -105,10 +91,6 @@ class WrappedResearchState(TypedDict):
     # Final outputs
     combined_summary: Optional[str]  # LLM-generated synthesis of all three
     top_of_mind_ids: dict[str, str]  # {workflow_type: uuid}
-
-    # Checkpointing
-    checkpoint_phase: CheckpointPhase
-    checkpoint_path: Optional[str]  # Path to checkpoint file
 
     # Workflow metadata
     started_at: Optional[datetime]

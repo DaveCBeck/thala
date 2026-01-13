@@ -33,12 +33,6 @@ def pytest_addoption(parser):
         default="en",
         help="Language code for workflow tests (default: en)",
     )
-    parser.addoption(
-        "--checkpoint-prefix",
-        action="store",
-        default="pytest",
-        help="Checkpoint prefix for workflow tests (default: pytest)",
-    )
 
 
 @pytest.fixture
@@ -51,12 +45,6 @@ def quality_level(request):
 def language(request):
     """Get the language code from pytest options."""
     return request.config.getoption("--language")
-
-
-@pytest.fixture
-def checkpoint_prefix(request):
-    """Get the checkpoint prefix from pytest options."""
-    return request.config.getoption("--checkpoint-prefix")
 
 
 @pytest.fixture

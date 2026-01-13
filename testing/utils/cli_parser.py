@@ -113,34 +113,6 @@ def add_date_range_arguments(parser: ArgumentParser) -> None:
     )
 
 
-def add_checkpoint_arguments(parser: ArgumentParser) -> None:
-    """Add checkpoint-related arguments to parser.
-
-    Adds --resume-from, --checkpoint-prefix, and --no-checkpoint arguments.
-
-    Args:
-        parser: ArgumentParser to modify
-    """
-    parser.add_argument(
-        "--resume-from",
-        type=str,
-        choices=["diffusion", "processing"],
-        default=None,
-        help="Resume from a checkpoint (skips earlier phases)",
-    )
-    parser.add_argument(
-        "--checkpoint-prefix",
-        type=str,
-        default="latest",
-        help="Prefix for checkpoint files (default: 'latest')",
-    )
-    parser.add_argument(
-        "--no-checkpoint",
-        action="store_true",
-        help="Disable automatic checkpointing",
-    )
-
-
 def add_research_questions_argument(parser: ArgumentParser) -> None:
     """Add research questions argument to parser.
 

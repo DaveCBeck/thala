@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     """Split document into sections for sequential checking."""
     sections = split_into_sections(state["current_review"])
-    logger.info(f"Loop 5: Split document into {len(sections)} sections for checking")
+    logger.debug(f"Split document into {len(sections)} sections for checking")
     return {"sections": sections}
 
 
@@ -40,7 +40,7 @@ def validate_edits_node(state: dict[str, Any]) -> dict[str, Any]:
         )
 
     logger.info(
-        f"Loop 5: Validated edits - {len(validation_result['valid_edits'])} valid, "
+        f"Edit validation complete: {len(validation_result['valid_edits'])} valid, "
         f"{len(validation_result['invalid_edits'])} invalid"
     )
 
@@ -79,21 +79,21 @@ async def apply_edits_node(state: dict[str, Any]) -> dict[str, Any]:
 
             if invalid_keys:
                 logger.warning(
-                    f"Loop 5: Found {len(invalid_keys)} unverified citations, adding TODOs"
+                    f"Found {len(invalid_keys)} unverified citations, adding TODOs"
                 )
                 updated_review = strip_invalid_citations(
                     updated_review, invalid_keys, add_todo=True
                 )
             else:
-                logger.info("Loop 5: All citations verified in Zotero")
+                logger.debug("All citations verified in Zotero")
 
             if newly_verified:
-                logger.info(f"Loop 5: Verified {len(newly_verified)} new citation keys")
+                logger.debug(f"Verified {len(newly_verified)} new citation keys")
 
         finally:
             await zotero_client.close()
 
-    logger.info(f"Loop 5: Applied {len(filtered_edits)} edits to document")
+    logger.info(f"Applied {len(filtered_edits)} edits to document")
 
     return {
         "current_review": updated_review,
@@ -147,7 +147,7 @@ def filter_ambiguous_claims(
         filtered.append(claim)
 
     if claims and len(claims) != len(filtered):
-        logger.info(
+        logger.debug(
             f"Ambiguous claim filtering: {len(claims)} -> {len(filtered)} "
             f"({len(claims) - len(filtered)} filtered)"
         )
@@ -196,8 +196,8 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
     verified_keys = state.get("verified_citation_keys", set())
     zotero_keys = state.get("zotero_keys", {})
 
-    logger.info(
-        f"Loop 5: Collecting {len(ambiguous_claims)} ambiguous claims, "
+    logger.debug(
+        f"Collecting {len(ambiguous_claims)} ambiguous claims, "
         f"{len(unaddressed_todos)} unaddressed TODOs"
     )
 
@@ -222,7 +222,7 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
             human_items.append(f"Unaddressed TODO: {todo}")
 
     if state.get("verify_todos_enabled", True) and human_items:
-        logger.info(f"Loop 5: Running TODO verification on {len(human_items)} items")
+        logger.debug(f"Running TODO verification on {len(human_items)} items")
         try:
             verification_result = await verify_todos(
                 todos=human_items,
@@ -232,12 +232,12 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
             )
             human_items = verification_result.keep
             discarded_todos = verification_result.discard
-            logger.info(
-                f"Loop 5: TODO verification kept {len(human_items)}, "
+            logger.debug(
+                f"TODO verification kept {len(human_items)}, "
                 f"discarded {len(discarded_todos)}"
             )
         except Exception as e:
-            logger.error(f"Loop 5: TODO verification failed: {e}")
+            logger.error(f"TODO verification failed: {e}", exc_info=True)
 
     return {
         "human_review_items": human_items,
@@ -251,16 +251,14 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
 
     current_review = state["current_review"]
 
-    # Find all remaining TODO markers
     todo_pattern = r'<!-- TODO:.*?-->'
     todos = re.findall(todo_pattern, current_review, re.DOTALL)
 
     todos_stripped = 0
     if todos:
-        logger.warning(f"Loop 5: Stripping {len(todos)} unresolved TODO markers")
+        logger.warning(f"Stripping {len(todos)} unresolved TODO markers")
 
         for todo in todos:
-            # Get paragraph context (100 chars before and after)
             idx = current_review.find(todo)
             if idx == -1:
                 continue
@@ -269,24 +267,20 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
             end = min(len(current_review), idx + len(todo) + 100)
             context = current_review[start:end]
 
-            # Log with context
             logger.warning(
-                f"[finalize] Stripping TODO:\n"
+                f"Stripping TODO:\n"
                 f"  TODO: {todo[:80]}{'...' if len(todo) > 80 else ''}\n"
                 f"  Context: ...{context.replace(todo, '[TODO]')}..."
             )
 
             todos_stripped += 1
 
-        # Strip all TODOs
         current_review = re.sub(todo_pattern, '', current_review, flags=re.DOTALL)
-
-        # Clean up extra whitespace from removal
         current_review = re.sub(r'\n{3,}', '\n\n', current_review)
 
-        logger.info(f"Loop 5: Stripped {todos_stripped} TODO markers from final document")
+        logger.debug(f"Stripped {todos_stripped} TODO markers from final document")
 
-    logger.info("Loop 5: Fact and reference checking complete")
+    logger.info("Loop 5 complete")
     return {
         "current_review": current_review,
         "is_complete": True,

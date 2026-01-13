@@ -42,14 +42,14 @@ async def _process_single_citation(
             # Check for existing Zotero item first
             existing_key = await _check_existing_zotero_item(url, store_manager)
             if existing_key:
-                logger.info(f"Found existing Zotero item {existing_key} for: {url[:50]}...")
+                logger.debug(f"Found existing Zotero item {existing_key} for: {url[:50]}...")
                 return (url, existing_key)
 
             # Check if we have OpenAlex metadata for this URL
             source_metadata = source_metadata_map.get(url)
             if source_metadata and source_metadata.get("source_type") == "openalex":
                 # Use OpenAlex metadata directly - skip Translation Server
-                logger.info(f"Using OpenAlex metadata for: {url[:50]}...")
+                logger.debug(f"Using OpenAlex metadata for: {url[:50]}...")
 
                 enhanced_metadata = {
                     "title": citation.get("title") or source_metadata.get("title"),
@@ -69,7 +69,7 @@ async def _process_single_citation(
                 zotero_key = await _create_zotero_item(zotero_url, enhanced_metadata, store_manager)
 
                 if zotero_key:
-                    logger.info(f"Created Zotero item {zotero_key} (OpenAlex) for: {url[:50]}...")
+                    logger.debug(f"Created Zotero item {zotero_key} (OpenAlex) for: {url[:50]}...")
                 else:
                     logger.warning(f"Failed to create Zotero item for: {url[:50]}...")
 
@@ -92,7 +92,7 @@ async def _process_single_citation(
             zotero_key = await _create_zotero_item(url, enhanced_metadata, store_manager)
 
             if zotero_key:
-                logger.info(f"Created Zotero item {zotero_key} for: {url[:50]}...")
+                logger.debug(f"Created Zotero item {zotero_key} for: {url[:50]}...")
             else:
                 logger.warning(f"Failed to create Zotero item for: {url[:50]}...")
 
@@ -124,7 +124,7 @@ async def process_citations(state: DeepResearchState) -> dict[str, Any]:
     findings = state.get("research_findings", [])
 
     if not report or not citations:
-        logger.info("No report or citations to process")
+        logger.debug("No report or citations to process")
         return {"current_status": "saving_findings"}
 
     logger.info(f"Processing {len(citations)} citations")

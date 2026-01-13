@@ -95,7 +95,7 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
         logger.info(f"Found {len(unique_results)} relevant memory records")
     else:
         memory_context = "No relevant prior knowledge found on this topic."
-        logger.info("No memory records passed relevance thresholds")
+        logger.debug("No memory records passed relevance thresholds")
 
     # Update the research brief with memory context
     updated_brief = dict(brief)

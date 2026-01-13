@@ -62,7 +62,7 @@ async def save_to_top_of_mind(state: WrappedResearchState) -> dict[str, Any]:
 
     for workflow_type, content in records_to_save:
         if not content:
-            logger.warning(f"No content for {workflow_type}, skipping")
+            logger.debug(f"No content for {workflow_type}, skipping save")
             continue
 
         try:
@@ -92,10 +92,10 @@ async def save_to_top_of_mind(state: WrappedResearchState) -> dict[str, Any]:
             )
 
             top_of_mind_ids[workflow_type] = str(record.id)
-            logger.info(f"Saved {workflow_type} to top_of_mind: {record.id}")
+            logger.debug(f"Saved {workflow_type} record: {record.id}")
 
         except Exception as e:
-            logger.error(f"Failed to save {workflow_type}: {e}")
+            logger.error(f"Failed to save {workflow_type} record: {e}")
             errors.append({"phase": f"save_{workflow_type}", "error": str(e)})
 
     result: dict[str, Any] = {
@@ -106,5 +106,5 @@ async def save_to_top_of_mind(state: WrappedResearchState) -> dict[str, Any]:
     if errors:
         result["errors"] = errors
 
-    logger.info(f"Saved {len(top_of_mind_ids)} records to top_of_mind")
+    logger.info(f"Saved {len(top_of_mind_ids)}/4 records to top_of_mind")
     return result

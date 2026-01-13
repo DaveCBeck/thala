@@ -29,11 +29,9 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
 
-    # Get original issues from issue_analysis (Phase A output)
     issue_analysis = state.get("issue_analysis", {})
     original_issues_text = issue_analysis.get("overall_assessment", "No assessment available")
 
-    # Add specific issues from Phase A
     issues = issue_analysis.get("issues", [])
     if issues:
         issue_descriptions = [
@@ -42,12 +40,10 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
         ]
         original_issues_text += "\n\nSpecific issues identified:\n- " + "\n- ".join(issue_descriptions)
 
-    # Get applied changes - try new rewrite format first, fall back to legacy
     rewrite_manifest = state.get("rewrite_manifest", {})
     changes_applied = state.get("changes_applied", [])
 
     if rewrite_manifest and rewrite_manifest.get("rewrites"):
-        # New rewrite-based flow
         rewrites = rewrite_manifest.get("rewrites", [])
         applied_changes = [
             f"Rewrite for issue {r.get('issue_id', '?')}: {r.get('changes_summary', 'No summary')}"
@@ -55,10 +51,8 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
         ]
         applied_edits_text = "\n".join(f"- {c}" for c in applied_changes)
     elif changes_applied:
-        # Also from new flow - changes_applied has summaries
         applied_edits_text = "\n".join(f"- {c}" for c in changes_applied)
     else:
-        # Legacy edit-based flow fallback
         applied_edits = state.get("applied_edits", [])
         applied_edits_text = "\n".join(f"- {e}" for e in applied_edits) if applied_edits else "None"
 
@@ -83,7 +77,7 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
         )
 
         logger.info(
-            f"Architecture verification: coherence={result.coherence_score:.2f}, "
+            f"Architecture verification complete: coherence={result.coherence_score:.2f}, "
             f"resolved={len(result.issues_resolved)}, remaining={len(result.issues_remaining)}, "
             f"regressions={len(result.regressions_introduced)}"
         )
@@ -94,7 +88,7 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Architecture verification failed: {e}")
+        logger.error(f"Architecture verification failed: {e}", exc_info=True)
         return {
             "architecture_verification": None,
             "needs_another_iteration": False,

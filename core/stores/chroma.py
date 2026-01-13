@@ -259,7 +259,7 @@ class ChromaStore:
             await asyncio.to_thread(self._client.heartbeat)
             return True
         except Exception as e:
-            logger.error(f"ChromaDB health check failed: {e}")
+            logger.warning(f"ChromaDB health check failed: {e}")
             return False
 
     @staticmethod

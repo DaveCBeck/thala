@@ -150,13 +150,12 @@ def format_available_citation_keys(
 def _log_section_info(stage: str, sections: list[SectionInfo]) -> None:
     """Log section headers and IDs for debugging duplicate issues."""
     section_ids = [s["section_id"] for s in sections]
-    logger.debug(f"[{stage}] Section count: {len(sections)}")
-    logger.debug(f"[{stage}] Section IDs: {section_ids}")
+    logger.debug(f"[{stage}] Section count: {len(sections)}, IDs: {section_ids}")
 
     seen_ids = set()
     for sid in section_ids:
         if sid in seen_ids:
-            logger.warning(f"[{stage}] Duplicate section_id detected: {sid}")
+            logger.warning(f"Duplicate section_id detected at {stage}: {sid}")
         seen_ids.add(sid)
 
 
@@ -209,7 +208,7 @@ def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     iteration = state.get("iteration", 0)
     flagged = state.get("flagged_sections", [])
 
-    logger.debug(f"[split_sections] Input document length: {len(current_review)} chars")
+    logger.debug(f"Splitting document ({len(current_review)} chars) into sections")
 
     if iteration == 0:
         sections = split_into_sections(current_review, max_tokens=5000)
@@ -217,7 +216,7 @@ def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     else:
         all_sections = split_into_sections(current_review, max_tokens=5000)
         sections = [s for s in all_sections if s["section_id"] in flagged]
-        logger.info(f"Re-editing {len(sections)} flagged sections")
+        logger.info(f"Re-editing {len(sections)} flagged sections (iteration {iteration + 1})")
 
     _log_section_info("split_sections", sections)
 
@@ -233,6 +232,7 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     verified_keys = state.get("verified_citation_keys", set())
 
     _log_section_info("parallel_edit_input", sections)
+    logger.info(f"Starting parallel editing of {len(sections)} sections")
 
     store_query = SupervisionStoreQuery(paper_summaries)
 
@@ -288,9 +288,9 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                     max_tokens=4096,  # Abstracts are short
                 )
 
-                logger.info(
-                    f"Edited abstract '{section_id}' (confidence: {response.confidence:.2f}, "
-                    f"original: {original_word_count} words)"
+                logger.debug(
+                    f"Edited abstract '{section_id}': confidence={response.confidence:.2f}, "
+                    f"original={original_word_count} words"
                 )
             else:
                 # Content sections: full flow with paper tools
@@ -347,8 +347,8 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
             zotero_key_sources = state.get("zotero_key_sources", {})
             corpus_keys = set(zotero_keys.values()) | set(zotero_key_sources.keys())
             logger.debug(
-                f"Section '{section_id}': corpus_keys = {len(set(zotero_keys.values()))} from zotero_keys + "
-                f"{len(zotero_key_sources)} from zotero_key_sources = {len(corpus_keys)} total"
+                f"Section '{section_id}': corpus has {len(corpus_keys)} valid citation keys "
+                f"({len(set(zotero_keys.values()))} from zotero_keys + {len(zotero_key_sources)} from sources)"
             )
 
             # Citation validation - with optional Zotero verification
@@ -387,7 +387,7 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
 
                 if not is_valid:
                     logger.warning(
-                        f"Section '{section_id}': Edit rejected - invalid citations: {invalid_cites}"
+                        f"Section '{section_id}': Invalid citations detected: {invalid_cites}"
                     )
                     response = SectionEditResult(
                         section_id=section_id,
@@ -405,7 +405,7 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
 
                 if not is_within_limit:
                     is_over = edited_word_count > max_words
-                    logger.warning(
+                    logger.debug(
                         f"Abstract '{section_id}': {edited_word_count} words outside "
                         f"[{min_words}, {max_words}] range, retrying"
                     )
@@ -438,15 +438,11 @@ Return a revised abstract within [{min_words}, {max_words}] words.
                     grace_max = int(max_words * 1.1)  # 10% grace (330 words)
 
                     if min_words <= retry_word_count <= max_words:
-                        logger.info(
-                            f"Abstract '{section_id}': Retry succeeded ({retry_word_count} words)"
-                        )
+                        logger.debug(f"Abstract '{section_id}': Retry succeeded ({retry_word_count} words)")
                         response = retry_response
                     elif retry_word_count <= grace_max:
                         # Accept within 10% grace
-                        logger.info(
-                            f"Abstract '{section_id}': Accepting at grace limit ({retry_word_count} words)"
-                        )
+                        logger.debug(f"Abstract '{section_id}': Accepting at grace limit ({retry_word_count} words)")
                         response = SectionEditResult(
                             section_id=section_id,
                             edited_content=retry_response.edited_content,
@@ -467,7 +463,7 @@ Return a revised abstract within [{min_words}, {max_words}] words.
                             confidence=0.0,
                         )
                 else:
-                    logger.info(
+                    logger.debug(
                         f"Abstract '{section_id}': {edited_word_count} words within [{min_words}, {max_words}]"
                     )
 
@@ -478,7 +474,7 @@ Return a revised abstract within [{min_words}, {max_words}] words.
                 )
 
                 if not is_within_limit:
-                    logger.warning(
+                    logger.debug(
                         f"Section '{section_id}' ({section_category}): word count {growth:+.1%} exceeds "
                         f"+/-{tolerance*100:.0f}%, retrying with compression"
                     )
@@ -536,7 +532,7 @@ If you cannot improve meaningfully within limits, return the original section un
 
                     if not is_valid_retry:
                         logger.warning(
-                            f"Section '{section_id}': Retry also has invalid citations: {retry_invalid}"
+                            f"Section '{section_id}': Retry has invalid citations: {retry_invalid}"
                         )
                         response = SectionEditResult(
                             section_id=section_id,
@@ -551,9 +547,7 @@ If you cannot improve meaningfully within limits, return the original section un
                         )
 
                         if is_retry_within_limit:
-                            logger.info(
-                                f"Section '{section_id}': Retry succeeded ({retry_growth:+.1%})"
-                            )
+                            logger.debug(f"Section '{section_id}': Retry succeeded ({retry_growth:+.1%})")
                             response = retry_response
                         else:
                             # Check if retry is "close enough" (within extended tolerance)
@@ -561,7 +555,7 @@ If you cannot improve meaningfully within limits, return the original section un
                             is_close_enough = abs(retry_growth) <= extended_tolerance
 
                             if is_close_enough:
-                                logger.info(
+                                logger.debug(
                                     f"Section '{section_id}': Accepting retry at {retry_growth:+.1%} "
                                     f"(within extended {extended_tolerance*100:.0f}% tolerance)"
                                 )
@@ -586,18 +580,18 @@ If you cannot improve meaningfully within limits, return the original section un
 
             elif response.confidence > 0 and tolerance is None and min_words is None:
                 # No word limit applied (very short sections)
-                logger.info(
+                logger.debug(
                     f"Section '{section_id}' ({section_category}, {original_word_count} words): "
                     f"no word limit applied"
                 )
 
             # Final logging - handle abstract case (no detailed_content variable)
             if section_type == "abstract":
-                logger.info(
+                logger.debug(
                     f"Completed editing abstract '{section_id}' (confidence: {response.confidence:.2f})"
                 )
             else:
-                logger.info(
+                logger.debug(
                     f"Edited section '{section_id}' (confidence: {response.confidence:.2f}, "
                     f"category: {section_category}, papers_with_detail: {len(detailed_content)})"
                 )
@@ -617,7 +611,7 @@ If you cannot improve meaningfully within limits, return the original section un
     for _, _, newly_verified in results:
         all_newly_verified |= newly_verified
 
-    logger.debug(f"[parallel_edit_output] Edited section IDs: {list(section_results.keys())}")
+    logger.debug(f"Edited section IDs: {list(section_results.keys())}")
 
     editor_notes = [
         f"[{section_id}] {result.notes}"
@@ -625,7 +619,7 @@ If you cannot improve meaningfully within limits, return the original section un
         if result.notes
     ]
 
-    logger.info(f"Completed parallel editing of {len(section_results)} sections")
+    logger.info(f"Parallel editing complete: {len(section_results)} sections processed")
     if all_newly_verified:
         logger.info(f"Verified {len(all_newly_verified)} new citation keys against Zotero")
 
@@ -664,10 +658,10 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     if total_todos == 0:
-        logger.info("[resolve_todos] No TODO markers found in edited sections")
+        logger.debug("No TODO markers found in edited sections")
         return {"section_results": section_results}
 
-    logger.info(f"[resolve_todos] Found {total_todos} TODO markers to resolve")
+    logger.info(f"Resolving {total_todos} TODO markers across {len(section_results)} sections")
 
     # Setup tools
     store_query = SupervisionStoreQuery(paper_summaries)
@@ -713,25 +707,21 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
                 if resolution.resolved and resolution.replacement:
                     resolved_content = resolved_content.replace(todo, resolution.replacement)
                     resolved_count += 1
-                    logger.info(
-                        f"[resolve_todos] Resolved TODO in '{section_id}': {todo[:60]}..."
-                    )
+                    logger.debug(f"Resolved TODO in '{section_id}': {todo[:60]}...")
                 else:
                     # Remove unresolved TODO with WARNING
                     resolved_content = resolved_content.replace(todo, "")
                     unresolved_count += 1
                     logger.warning(
-                        f"[resolve_todos] Unresolved TODO removed from '{section_id}': "
-                        f"{todo[:100]}... Reason: {resolution.reasoning[:100]}"
+                        f"Unresolved TODO removed from '{section_id}': {todo[:100]}... "
+                        f"Reason: {resolution.reasoning[:100]}"
                     )
 
             except Exception as e:
                 # On error, remove the TODO with warning
                 resolved_content = resolved_content.replace(todo, "")
                 unresolved_count += 1
-                logger.warning(
-                    f"[resolve_todos] Error resolving TODO in '{section_id}', removing: {e}"
-                )
+                logger.warning(f"Error resolving TODO in '{section_id}', removing: {e}")
 
         # Clean up any extra whitespace from removed TODOs
         import re
@@ -745,9 +735,7 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
             confidence=result.confidence,
         )
 
-    logger.info(
-        f"[resolve_todos] Completed: {resolved_count} resolved, {unresolved_count} removed"
-    )
+    logger.info(f"TODO resolution complete: {resolved_count} resolved, {unresolved_count} removed")
 
     return {"section_results": updated_results}
 
@@ -789,13 +777,13 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
     iteration = state.get("iteration", 0)
 
     _log_section_info("reassemble_input", sections)
-    logger.debug(f"[reassemble] Section results keys: {list(section_results.keys())}")
+    logger.debug(f"Section results available for: {list(section_results.keys())}")
 
     duplicates = detect_duplicate_sections(sections)
     if duplicates:
-        logger.info(f"Detected {len(duplicates)} duplicate section pair(s): {duplicates}")
+        logger.debug(f"Detected {len(duplicates)} duplicate section pairs: {duplicates}")
         section_results = merge_duplicate_edits(section_results, duplicates)
-        logger.debug(f"[reassemble] After merge, section results keys: {list(section_results.keys())}")
+        logger.debug(f"After merge, section results: {list(section_results.keys())}")
 
     if iteration == 0:
         edited_content = []
@@ -822,7 +810,7 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
             edited_lines = section_results[section_id].edited_content.split("\n")
 
             logger.debug(
-                f"[reassemble] Replacing section '{section_id}' at lines {start_line}-{end_line} "
+                f"Replacing section '{section_id}' at lines {start_line}-{end_line} "
                 f"with {len(edited_lines)} lines"
             )
 
@@ -834,22 +822,16 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
     duplicate_headers = detect_duplicate_headers(updated_review)
     if duplicate_headers:
         for line1, line2, header_text in duplicate_headers:
-            logger.warning(
-                f"[reassemble] Duplicate header detected: '{header_text}' at lines {line1 + 1}, {line2 + 1}"
-            )
+            logger.warning(f"Duplicate header detected: '{header_text}' at lines {line1 + 1}, {line2 + 1}")
 
     duplicate_abstracts = detect_duplicate_abstracts(updated_review)
     if duplicate_abstracts:
         for idx1, idx2, similarity in duplicate_abstracts:
-            logger.warning(
-                f"[reassemble] Duplicate abstract content in sections {idx1}, {idx2} "
-                f"(similarity: {similarity:.2f})"
-            )
+            logger.warning(f"Duplicate abstract content in sections {idx1}, {idx2} (similarity: {similarity:.2f})")
 
     has_duplicates = bool(duplicate_headers or duplicate_abstracts)
 
-    logger.debug(f"[reassemble_output] Document length: {len(updated_review)} chars")
-    logger.info(f"Reassembled document: {len(updated_review)} chars")
+    logger.info(f"Document reassembled: {len(updated_review)} chars")
 
     return {
         "current_review": updated_review,
@@ -880,8 +862,10 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
     valid_ids_json = json.dumps(section_ids, indent=2)
     valid_ids_set = set(section_ids)
 
-    logger.info(f"Holistic review: evaluating {len(section_ids)} sections")
-    logger.debug(f"[holistic_review] Section IDs passed to LLM: {section_ids}")
+    logger.info(
+        f"Holistic review (iteration {iteration + 1}/{max_iterations}): evaluating {len(section_ids)} sections"
+    )
+    logger.debug(f"Valid section IDs: {section_ids}")
 
     user_prompt = LOOP4_HOLISTIC_USER.format(
         document=document,
@@ -901,9 +885,9 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
         invalid_flagged = set(raw_result.sections_flagged) - valid_ids_set
 
         if invalid_approved:
-            logger.warning(f"[holistic_review] Invalid approved IDs filtered: {invalid_approved}")
+            logger.debug(f"Filtered invalid approved IDs: {invalid_approved}")
         if invalid_flagged:
-            logger.warning(f"[holistic_review] Invalid flagged IDs filtered: {invalid_flagged}")
+            logger.debug(f"Filtered invalid flagged IDs: {invalid_flagged}")
 
         if not approved_valid and not flagged_valid:
             return None  # Signal that we need retry
@@ -929,14 +913,14 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
             max_retries=2,
         )
         logger.debug(
-            f"[holistic_review] Tier 1 response: approved={raw_result.sections_approved}, "
-            f"flagged={raw_result.sections_flagged}, coherence={raw_result.overall_coherence_score}"
+            f"Tier 1 response: approved={len(raw_result.sections_approved)}, "
+            f"flagged={len(raw_result.sections_flagged)}, coherence={raw_result.overall_coherence_score:.2f}"
         )
         result = _filter_and_validate(raw_result)
         if result is None:
-            logger.warning("[holistic_review] Tier 1: All section IDs invalid after filtering")
+            logger.debug("Tier 1: All section IDs invalid after filtering")
     except Exception as e:
-        logger.warning(f"[holistic_review] Tier 1 failed: {e}")
+        logger.debug(f"Tier 1 failed: {e}")
 
     # --- TIER 2: Retry with explicit error feedback ---
     if result is None:
@@ -965,18 +949,18 @@ Do not paraphrase, abbreviate, or modify them in any way.
                 max_retries=1,
             )
             logger.debug(
-                f"[holistic_review] Tier 2 response: approved={raw_result.sections_approved}, "
-                f"flagged={raw_result.sections_flagged}"
+                f"Tier 2 response: approved={len(raw_result.sections_approved)}, "
+                f"flagged={len(raw_result.sections_flagged)}"
             )
             result = _filter_and_validate(raw_result)
             if result is None:
-                logger.warning("[holistic_review] Tier 2: Still got invalid section IDs")
+                logger.debug("Tier 2: Still got invalid section IDs")
         except Exception as e:
-            logger.warning(f"[holistic_review] Tier 2 failed: {e}")
+            logger.debug(f"Tier 2 failed: {e}")
 
     # --- TIER 3: Fallback to score-only schema ---
     if result is None:
-        logger.warning("[holistic_review] Full schema failed, falling back to score-only")
+        logger.warning("Full schema failed, falling back to score-only holistic review")
         try:
             score_result = await get_structured_output(
                 output_schema=HolisticReviewScoreOnly,
@@ -992,9 +976,8 @@ Do not paraphrase, abbreviate, or modify them in any way.
             coherence = score_result.overall_coherence_score
             if coherence < 0.7:
                 # Low coherence: flag all sections for re-editing (conservative)
-                logger.warning(
-                    f"[holistic_review] Score-only fallback with LOW coherence "
-                    f"({coherence:.2f}): flagging all {len(section_ids)} sections"
+                logger.info(
+                    f"Score-only fallback: LOW coherence ({coherence:.2f}), flagging all {len(section_ids)} sections"
                 )
                 result = HolisticReviewResult(
                     sections_approved=[],
@@ -1008,8 +991,7 @@ Do not paraphrase, abbreviate, or modify them in any way.
             else:
                 # High coherence: approve all sections
                 logger.info(
-                    f"[holistic_review] Score-only fallback with HIGH coherence "
-                    f"({coherence:.2f}): approving all {len(section_ids)} sections"
+                    f"Score-only fallback: HIGH coherence ({coherence:.2f}), approving all {len(section_ids)} sections"
                 )
                 result = HolisticReviewResult(
                     sections_approved=section_ids,
@@ -1019,7 +1001,7 @@ Do not paraphrase, abbreviate, or modify them in any way.
                 )
 
         except Exception as e:
-            logger.error(f"[holistic_review] Score-only fallback failed: {e}")
+            logger.error(f"Score-only fallback failed: {e}")
             # Final fallback: approve all with neutral score (matches previous behavior)
             result = HolisticReviewResult(
                 sections_approved=section_ids,
@@ -1027,20 +1009,17 @@ Do not paraphrase, abbreviate, or modify them in any way.
                 flagged_reasons={},
                 overall_coherence_score=0.5,
             )
-            logger.warning(
-                f"[holistic_review] All attempts failed, approving all {len(section_ids)} sections "
-                "(matches previous fallback behavior)"
-            )
+            logger.warning(f"All holistic review attempts failed, approving all {len(section_ids)} sections")
 
     logger.info(
-        f"Holistic review: {len(result.sections_approved)} approved, "
+        f"Holistic review complete: {len(result.sections_approved)} approved, "
         f"{len(result.sections_flagged)} flagged (coherence: {result.overall_coherence_score:.2f})"
     )
 
     # Log flagged reasons for debugging and targeted re-editing
     if result.flagged_reasons:
         for section_id, reason in result.flagged_reasons.items():
-            logger.warning(f"[holistic_review] Flagged '{section_id}': {reason}")
+            logger.debug(f"Flagged '{section_id}': {reason}")
 
     return {
         "holistic_result": result,
@@ -1064,18 +1043,17 @@ def route_after_holistic(state: dict[str, Any]) -> str:
 
     if not has_flagged and holistic.overall_coherence_score < 0.7:
         logger.warning(
-            f"Low coherence score ({holistic.overall_coherence_score:.2f}) but no sections flagged - "
-            "holistic review may need debugging"
+            f"Low coherence score ({holistic.overall_coherence_score:.2f}) but no sections flagged"
         )
 
     if has_flagged and can_continue:
-        logger.info(f"Continuing to re-edit {len(holistic.sections_flagged)} flagged sections")
+        logger.debug(f"Continuing to re-edit {len(holistic.sections_flagged)} flagged sections")
         return "split_sections"
     else:
         if not has_flagged:
-            logger.info("All sections approved, finalizing")
+            logger.debug("All sections approved")
         else:
-            logger.info(f"Max iterations ({max_iterations}) reached, finalizing")
+            logger.debug(f"Max iterations ({max_iterations}) reached")
         return "finalize"
 
 
@@ -1083,22 +1061,21 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
     """Finalize Loop 4 editing with duplicate cleanup."""
     document = state.get("current_review", "")
 
-    logger.debug(f"[finalize] Input document length: {len(document)} chars")
+    logger.debug(f"Finalizing Loop 4 ({len(document)} chars)")
 
     duplicates = detect_duplicate_headers(document)
     if duplicates:
-        logger.warning(f"[finalize] Found {len(duplicates)} duplicate header(s), cleaning up")
+        logger.info(f"Found {len(duplicates)} duplicate headers, cleaning up")
         document = remove_duplicate_headers(document, duplicates)
-        logger.info(f"[finalize] Cleaned document length: {len(document)} chars")
+        logger.debug(f"After cleanup: {len(document)} chars")
 
         remaining_duplicates = detect_duplicate_headers(document)
         if remaining_duplicates:
-            logger.error(
-                f"[finalize] Still have {len(remaining_duplicates)} duplicate(s) after cleanup"
-            )
+            logger.warning(f"Still have {len(remaining_duplicates)} duplicate headers after cleanup")
     else:
-        logger.debug("[finalize] No duplicate headers detected")
+        logger.debug("No duplicate headers detected")
 
+    logger.info("Loop 4 editing complete")
     return {"current_review": document, "is_complete": True}
 
 
@@ -1166,8 +1143,7 @@ async def run_loop4_standalone(
     # Enforce minimum iterations for self-correction capability
     if max_iterations < 2:
         logger.warning(
-            f"Loop 4 max_iterations={max_iterations} too low for self-correction, "
-            f"enforcing minimum of 2"
+            f"max_iterations={max_iterations} too low for self-correction, enforcing minimum of 2"
         )
         max_iterations = 2
 
@@ -1194,7 +1170,7 @@ async def run_loop4_standalone(
     corpus_from_keys = len(set(zotero_keys.values()))
     corpus_from_sources = len(zotero_key_sources or {})
     logger.info(
-        f"Starting Loop 4 standalone: max_iterations={max_iterations}, verify_zotero={verify_zotero}, "
+        f"Starting Loop 4: max_iterations={max_iterations}, verify_zotero={verify_zotero}, "
         f"corpus_keys={corpus_from_keys} from zotero_keys + {corpus_from_sources} from zotero_key_sources"
     )
 

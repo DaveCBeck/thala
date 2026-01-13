@@ -104,7 +104,7 @@ async def process_document(
         return output.model_dump(mode="json")
 
     except Exception as e:
-        logger.exception(f"Document processing failed: {e}")
+        logger.error(f"Document processing failed: {e}")
         return DocumentProcessingOutput(
             success=False,
             status="error",

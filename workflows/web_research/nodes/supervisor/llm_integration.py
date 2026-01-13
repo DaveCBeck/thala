@@ -41,7 +41,7 @@ async def _get_supervisor_decision_structured(
         action_data["updates"] = decision.draft_updates or ""
         action_data["gaps"] = decision.remaining_gaps
 
-    logger.info(
+    logger.debug(
         f"Supervisor (structured): {action}, reasoning: {decision.reasoning[:100]}..."
     )
 

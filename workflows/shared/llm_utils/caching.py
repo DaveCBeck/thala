@@ -73,9 +73,9 @@ async def invoke_with_cache(
         cache_read = details.get("cache_read", 0)
         cache_creation = details.get("cache_creation", 0)
         if cache_read > 0:
-            logger.debug(f"Cache HIT: {cache_read} tokens read from cache")
+            logger.debug(f"Cache hit: {cache_read} tokens read from cache")
         elif cache_creation > 0:
-            logger.debug(f"Cache MISS: {cache_creation} tokens written to cache")
+            logger.debug(f"Cache miss: {cache_creation} tokens written to cache")
 
     return response
 

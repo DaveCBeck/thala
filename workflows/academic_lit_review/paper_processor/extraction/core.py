@@ -278,7 +278,7 @@ async def extract_all_summaries(
 
                 completed_count += 1
                 title = paper.get("title", "Unknown")[:50]
-                logger.info(f"[{completed_count}/{total_to_extract}] Extracted summary: {title}")
+                logger.debug(f"[{completed_count}/{total_to_extract}] Extracted summary: {title}")
 
                 return doi, summary, es_record_id, zotero_key, None
 
@@ -398,7 +398,7 @@ Extract structured information from this paper."""
     all_results = {}
 
     if haiku_requests:
-        logger.info(f"Submitting batch of {len(haiku_requests)} papers (HAIKU)")
+        logger.debug(f"Submitting batch of {len(haiku_requests)} papers (HAIKU)")
         haiku_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=haiku_requests,
@@ -409,7 +409,7 @@ Extract structured information from this paper."""
         all_results.update(haiku_results.results)
 
     if sonnet_1m_requests:
-        logger.info(f"Submitting batch of {len(sonnet_1m_requests)} papers (SONNET_1M)")
+        logger.debug(f"Submitting batch of {len(sonnet_1m_requests)} papers (SONNET_1M)")
         sonnet_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=sonnet_1m_requests,
@@ -461,5 +461,5 @@ Extract structured information from this paper."""
             logger.warning(f"Summary extraction failed for {doi}: {error_msg}")
             failed_dois.add(doi)
 
-    logger.info(f"Extracted summaries for {len(summaries)} papers (batch), {len(failed_dois)} failed")
+    logger.info(f"Extracted {len(summaries)} summaries (batch), {len(failed_dois)} failed")
     return summaries, es_ids, zotero_keys, failed_dois

@@ -97,14 +97,13 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
             reasoning=result.reasoning,
         )
 
-        # Log detailed theme information for diagnostics
         logger.info(
             f"LLM clustering complete: {len(themes)} themes "
             f"from {len(paper_summaries)} papers"
         )
-        for t in themes[:5]:  # Log first 5 themes for diagnostics
-            logger.info(
-                f"  Theme '{t['name']}': {len(t['paper_dois'])} papers"
+        for t in themes[:5]:
+            logger.debug(
+                f"Theme '{t['name']}': {len(t['paper_dois'])} papers"
             )
 
         return {

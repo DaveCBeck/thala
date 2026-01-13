@@ -81,25 +81,25 @@ async def get_url(
     # Step 1: DOI Detection
     doi_info = detect_doi(url)
     if doi_info:
-        logger.info(f"DOI detected: {doi_info.doi} (source: {doi_info.source})")
+        logger.debug(f"DOI detected: {doi_info.doi} (source: {doi_info.source})")
         fallback_chain.append("doi_detected")
 
         # Try to get OA URL from OpenAlex
         oa_url = await get_oa_url_for_doi(doi_info.doi)
         if oa_url:
             resolved_url = oa_url
-            logger.info(f"Resolved DOI to OA URL: {oa_url}")
+            logger.debug(f"Resolved DOI to OA URL: {oa_url}")
             fallback_chain.append("openalex_oa_url")
         else:
             # No OA URL, use DOI URL as fallback
             resolved_url = doi_info.doi_url
-            logger.info(f"No OA URL found, using DOI URL: {resolved_url}")
+            logger.debug(f"No OA URL found, using DOI URL")
             fallback_chain.append("doi_url_fallback")
 
     # Step 2: PDF Detection
     if is_pdf_url(resolved_url):
         fallback_chain.append("pdf_direct")
-        logger.info(f"PDF URL detected: {resolved_url}")
+        logger.debug(f"PDF URL detected")
 
         result = await _handle_pdf_url(resolved_url, doi_info, opts, fallback_chain)
         if result:
@@ -114,9 +114,9 @@ async def get_url(
     scrape_result = None
     try:
         scrape_result = await scraper.scrape(resolved_url, include_links=opts.include_links)
-        logger.info(f"Scraped {resolved_url}: {len(scrape_result.markdown)} chars via {scrape_result.provider}")
+        logger.debug(f"Scraped {len(scrape_result.markdown)} chars via {scrape_result.provider}")
     except Exception as e:
-        logger.warning(f"Scraping failed for {resolved_url}: {type(e).__name__}: {e}")
+        logger.warning(f"Scraping failed: {type(e).__name__}: {e}")
 
     # Step 4: Content Classification (if enabled and scrape succeeded)
     if scrape_result and opts.detect_academic:
@@ -134,7 +134,7 @@ async def get_url(
             if content_doi:
                 doi_info = detect_doi(content_doi)
                 if doi_info:
-                    logger.info(f"DOI extracted from content: {doi_info.doi}")
+                    logger.debug(f"DOI extracted from content: {doi_info.doi}")
                     fallback_chain.append("doi_from_content")
 
         # Handle based on classification
@@ -154,7 +154,7 @@ async def get_url(
         elif classification.classification == "abstract_with_pdf":
             if classification.pdf_url:
                 fallback_chain.append("pdf_extracted")
-                logger.info(f"Extracted PDF URL: {classification.pdf_url}")
+                logger.debug(f"Extracted PDF URL from abstract page")
 
                 pdf_result = await _handle_pdf_url(
                     classification.pdf_url, doi_info, opts, fallback_chain
@@ -169,12 +169,12 @@ async def get_url(
             # Fall through to retrieve-academic
 
         elif classification.classification == "paywall":
-            logger.info(f"Paywall detected for {resolved_url}")
+            logger.debug(f"Paywall detected")
             fallback_chain.append("paywall_detected")
 
             # If no DOI known, try to find it via title search
             if not doi_info and classification.title:
-                logger.info(f"Searching OpenAlex for DOI by title: {classification.title[:50]}...")
+                logger.debug(f"Searching OpenAlex for DOI by title: {classification.title[:50]}...")
                 found_doi = await search_doi_by_title(
                     classification.title,
                     classification.authors,
@@ -186,7 +186,7 @@ async def get_url(
                         source="title_search",
                     )
                     fallback_chain.append("doi_from_title_search")
-                    logger.info(f"Found DOI via title search: {found_doi}")
+                    logger.debug(f"Found DOI via title search: {found_doi}")
             # Fall through to retrieve-academic
 
         elif classification.classification == "non_academic":
@@ -264,5 +264,5 @@ async def _handle_pdf_url(
             fallback_chain=fallback_chain,
         )
     except Exception as e:
-        logger.warning(f"PDF processing failed for {url}: {type(e).__name__}: {e}")
+        logger.warning(f"PDF processing failed: {type(e).__name__}: {e}")
         return None

@@ -10,6 +10,7 @@ from typing import Any, Literal, Optional
 
 from workflows.academic_lit_review.graph.api import academic_lit_review
 from workflows.academic_lit_review.quality_presets import QUALITY_PRESETS
+from workflows.shared.workflow_state_store import load_workflow_state, save_workflow_state
 from workflows.supervised_lit_review.supervision.orchestration import (
     run_supervision_configurable,
 )
@@ -74,8 +75,7 @@ async def supervised_lit_review(
         if result.get('final_review_v2'):
             print(f"Supervised review: {len(result['final_review_v2'].split())} words")
     """
-    logger.info(f"Starting supervised literature review: {topic}")
-    logger.info(f"Supervision loops: {supervision_loops}")
+    logger.info(f"Starting supervised literature review for '{topic}' with {supervision_loops} loops")
 
     # Step 1: Run the core literature review (without supervision)
     lit_review_result = await academic_lit_review(
@@ -93,7 +93,7 @@ async def supervised_lit_review(
     # Check for errors in lit review
     has_errors = bool(lit_review_result.get("errors"))
     if has_errors:
-        logger.warning(f"Lit review had errors: {lit_review_result['errors']}")
+        logger.warning(f"Base literature review completed with {len(lit_review_result['errors'])} errors")
 
     final_review = lit_review_result.get("final_review", "")
 
@@ -104,25 +104,26 @@ async def supervised_lit_review(
     # If no supervision requested, no valid review, or lit review failed - return as-is
     if supervision_loops == "none" or not has_valid_review:
         if has_errors and not has_valid_review:
-            logger.error("Lit review failed - skipping supervision loops")
-        logger.info("Skipping supervision (disabled or no review content)")
+            logger.error("Base literature review failed - skipping supervision")
+        else:
+            logger.debug("Supervision disabled or no valid review content")
         # Determine status: failed if no valid review, otherwise use lit_review status
         if has_errors and not has_valid_review:
             status = "failed"
         else:
             status = lit_review_result.get("status", "success" if has_valid_review else "failed")
         return {
-            **lit_review_result,
-            # Ensure standardized fields from academic_lit_review are present
             "final_report": lit_review_result.get("final_report", final_review),
             "status": status,
-            "final_review_v2": None,
-            "supervision": None,
-            "human_review_items": [],
+            "langsmith_run_id": lit_review_result.get("langsmith_run_id"),
+            "errors": lit_review_result.get("errors", []),
+            "source_count": lit_review_result.get("source_count", 0),
+            "started_at": lit_review_result.get("started_at"),
+            "completed_at": lit_review_result.get("completed_at"),
         }
 
     # Step 2: Apply supervision loops
-    logger.info(f"Applying supervision loops to {len(final_review)} char review")
+    logger.info(f"Starting supervision on {len(final_review)} char review")
 
     # Get quality settings for supervision
     quality_preset = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
@@ -144,12 +145,36 @@ async def supervised_lit_review(
     )
 
     try:
+        # Load full state from state store (required for supervision)
+        run_id = lit_review_result.get("langsmith_run_id")
+        full_state = load_workflow_state("academic_lit_review", run_id) if run_id else None
+
+        if not full_state:
+            logger.error(f"Cannot load state for run {run_id} - supervision requires state store (THALA_MODE=dev)")
+            return {
+                "final_report": lit_review_result.get("final_report", final_review),
+                "status": "partial",
+                "langsmith_run_id": run_id,
+                "errors": lit_review_result.get("errors", []) + [
+                    {"phase": "supervision", "error": "State store not available - run with THALA_MODE=dev"}
+                ],
+                "source_count": lit_review_result.get("source_count", 0),
+                "started_at": lit_review_result.get("started_at"),
+                "completed_at": datetime.utcnow(),
+            }
+
+        logger.debug(f"Loaded workflow state from run {run_id}")
+        paper_corpus = full_state.get("paper_corpus", {})
+        paper_summaries = full_state.get("paper_summaries", {})
+        zotero_keys = full_state.get("zotero_keys", {})
+        clusters = full_state.get("clusters", [])
+
         supervision_result = await run_supervision_configurable(
             review=final_review,
-            paper_corpus=lit_review_result.get("paper_corpus", {}),
-            paper_summaries=lit_review_result.get("paper_summaries", {}),
-            zotero_keys=lit_review_result.get("zotero_keys", {}),
-            clusters=lit_review_result.get("clusters", []),
+            paper_corpus=paper_corpus,
+            paper_summaries=paper_summaries,
+            zotero_keys=zotero_keys,
+            clusters=clusters,
             input_data=input_data,
             quality_settings=quality_preset,
             max_iterations_per_loop=max_stages,
@@ -164,8 +189,9 @@ async def supervised_lit_review(
         # Merge new papers from supervision
         added_papers = supervision_result.get("paper_corpus", {})
         added_summaries = supervision_result.get("paper_summaries", {})
-        original_corpus = lit_review_result.get("paper_corpus", {})
-        original_summaries = lit_review_result.get("paper_summaries", {})
+        # Use the corpus we loaded (from state store or return dict)
+        original_corpus = paper_corpus
+        original_summaries = paper_summaries
 
         merged_corpus = {**original_corpus, **added_papers}
         merged_summaries = {**original_summaries, **added_summaries}
@@ -175,8 +201,8 @@ async def supervised_lit_review(
         )
 
         logger.info(
-            f"Supervision complete: loops={loops_run}, "
-            f"{new_paper_count} new papers, {len(human_review_items)} items for review. "
+            f"Supervision complete: {len(loops_run)} loops, "
+            f"{new_paper_count} papers added, {len(human_review_items)} items flagged. "
             f"Reason: {completion_reason}"
         )
 
@@ -189,37 +215,53 @@ async def supervised_lit_review(
         else:
             status = "failed"
 
-        return {
-            **lit_review_result,
-            "final_review_v2": final_review_v2,
-            "final_report": final_review_v2,  # Standardized: use supervised version
-            "status": status,  # Standardized status
-            "paper_corpus": merged_corpus,
-            "paper_summaries": merged_summaries,
-            # Intermediate review snapshots
-            "review_loop1": supervision_result.get("review_loop1"),
-            "review_loop2": supervision_result.get("review_loop2"),
-            "review_loop3": supervision_result.get("review_loop3"),
-            "review_loop4": supervision_result.get("review_loop4"),
-            "supervision": {
-                "loops_run": loops_run,
-                "completion_reason": completion_reason,
-                "loop_progress": supervision_result.get("loop_progress"),
-                "new_papers_added": new_paper_count,
+        completed_at = datetime.utcnow()
+
+        # Save full state for tests (in dev/test mode)
+        save_workflow_state(
+            workflow_name="supervised_lit_review",
+            run_id=run_id,
+            state={
+                "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
+                "base_run_id": run_id,
+                "final_review_v2": final_review_v2,
+                "review_loop1": supervision_result.get("review_loop1"),
+                "review_loop2": supervision_result.get("review_loop2"),
+                "review_loop3": supervision_result.get("review_loop3"),
+                "review_loop4": supervision_result.get("review_loop4"),
+                "supervision": {
+                    "loops_run": loops_run,
+                    "completion_reason": completion_reason,
+                    "loop_progress": supervision_result.get("loop_progress"),
+                    "new_papers_added": new_paper_count,
+                },
+                "human_review_items": human_review_items,
+                "paper_corpus": merged_corpus,
+                "paper_summaries": merged_summaries,
+                "clusters": clusters,
+                "started_at": lit_review_result.get("started_at"),
+                "completed_at": completed_at,
             },
-            "human_review_items": human_review_items,
-            "completed_at": datetime.utcnow(),
+        )
+
+        return {
+            "final_report": final_review_v2,
+            "status": status,
+            "langsmith_run_id": run_id,
+            "errors": all_errors,
+            "source_count": len(merged_corpus),
+            "started_at": lit_review_result.get("started_at"),
+            "completed_at": completed_at,
         }
 
     except Exception as e:
         logger.error(f"Supervision failed: {e}")
         return {
-            **lit_review_result,
-            "final_report": lit_review_result.get("final_report", final_review),  # Use original
-            "status": "partial",  # Lit review succeeded but supervision failed
-            "final_review_v2": None,
-            "supervision": {"error": str(e)},
-            "human_review_items": [],
-            "errors": lit_review_result.get("errors", [])
-            + [{"phase": "supervision", "error": str(e)}],
+            "final_report": lit_review_result.get("final_report", final_review),
+            "status": "partial",
+            "langsmith_run_id": run_id,
+            "errors": lit_review_result.get("errors", []) + [{"phase": "supervision", "error": str(e)}],
+            "source_count": lit_review_result.get("source_count", 0),
+            "started_at": lit_review_result.get("started_at"),
+            "completed_at": datetime.utcnow(),
         }

@@ -59,9 +59,9 @@ async def create_brief(state: DeepResearchState) -> dict[str, Any]:
             memory_context="",
         )
 
-        logger.info(
+        logger.debug(
             f"Created research brief: topic='{brief['topic'][:50]}...', "
-            f"objectives={len(brief['objectives'])}, questions={len(brief['key_questions'])}"
+            f"{len(brief['objectives'])} objectives, {len(brief['key_questions'])} questions"
         )
 
         return {

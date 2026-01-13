@@ -99,7 +99,7 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
         # Extract priority questions for initial research
         priority_questions = plan_data.get("priority_questions", [])
 
-        logger.info(
+        logger.debug(
             f"Customized research plan: {len(plan_data.get('knowledge_gaps', []))} gaps, "
             f"{len(priority_questions)} priority questions"
         )

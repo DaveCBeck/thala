@@ -36,14 +36,14 @@ async def safe_http_request(
         response.raise_for_status()
         return response
     except httpx.ConnectError as e:
-        logger.warning(f"Connection failed to {client.base_url}{path}: {e}")
+        logger.error(f"Connection failed to {client.base_url}{path}: {e}")
         raise error_class(f"Connection failed: {e}")
     except httpx.TimeoutException as e:
-        logger.warning(f"Request timeout for {client.base_url}{path}: {e}")
+        logger.error(f"Request timeout for {client.base_url}{path}: {e}")
         raise error_class(f"Request timeout: {e}")
     except httpx.HTTPStatusError as e:
-        logger.warning(
-            f"HTTP error {e.response.status_code} for {client.base_url}{path}"
+        logger.error(
+            f"HTTP {e.response.status_code} error for {client.base_url}{path}"
         )
         raise error_class(
             f"HTTP {e.response.status_code}: {e.response.text}"

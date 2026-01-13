@@ -129,22 +129,6 @@ class MultiLangInput(TypedDict):
 
 
 # =============================================================================
-# Checkpoint Types
-# =============================================================================
-
-
-class CheckpointPhase(TypedDict):
-    """Tracks which phases have completed for resumption."""
-
-    language_selection: bool
-    relevance_checks: bool
-    languages_executed: dict[str, bool]  # code -> completed
-    sonnet_analysis: bool
-    opus_integration: bool
-    saved_to_store: bool
-
-
-# =============================================================================
 # Custom Reducers
 # =============================================================================
 
@@ -193,10 +177,6 @@ class MultiLangState(TypedDict):
     per_language_record_ids: dict[str, str]
     comparative_record_id: Optional[str]
     synthesis_record_id: Optional[str]
-
-    # Checkpointing
-    checkpoint_phase: CheckpointPhase
-    checkpoint_path: Optional[str]
 
     # Metadata
     started_at: Optional[datetime]

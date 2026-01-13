@@ -29,7 +29,6 @@ from workflows.supervised_lit_review.supervision.utils import number_paragraphs
 
 logger = logging.getLogger(__name__)
 
-# Number of context paragraphs to include before/after the section
 CONTEXT_PARAGRAPHS = 3
 
 
@@ -51,11 +50,9 @@ def extract_section_with_context(
     if not affected_paragraphs:
         return "", "", "", 0, 0
 
-    # Get the range of paragraphs to extract
     start_para = min(affected_paragraphs)
     end_para = max(affected_paragraphs)
 
-    # Get all paragraph numbers in order
     all_para_nums = sorted(paragraph_mapping.keys())
     if not all_para_nums:
         return "", "", "", start_para, end_para
@@ -63,7 +60,6 @@ def extract_section_with_context(
     min_para = min(all_para_nums)
     max_para = max(all_para_nums)
 
-    # Extract context before
     context_start = max(min_para, start_para - context_size)
     context_before_paras = []
     for p in range(context_start, start_para):
@@ -71,14 +67,12 @@ def extract_section_with_context(
             context_before_paras.append(paragraph_mapping[p])
     context_before = "\n\n".join(context_before_paras)
 
-    # Extract the section to rewrite
     section_paras = []
     for p in range(start_para, end_para + 1):
         if p in paragraph_mapping:
             section_paras.append(paragraph_mapping[p])
     section_content = "\n\n".join(section_paras)
 
-    # Extract context after
     context_end = min(max_para, end_para + context_size)
     context_after_paras = []
     for p in range(end_para + 1, context_end + 1):
@@ -107,7 +101,6 @@ async def rewrite_section_for_issue(
         Tuple of (SectionRewriteResult, None) on success, or
         (None, skip_reason) if rewrite failed/skipped
     """
-    # Handle dict input (from state)
     if isinstance(issue, dict):
         issue_id = issue.get("issue_id", 0)
         issue_type = issue.get("issue_type", "unknown")
@@ -123,12 +116,10 @@ async def rewrite_section_for_issue(
         suggested_resolution = issue.suggested_resolution
         affected_paragraphs = issue.affected_paragraphs
 
-    # Skip issues that are pure moves (can't fix by rewriting in place)
     if issue_type == "misplaced_content" and suggested_resolution == "move":
-        logger.info(f"Skipping issue {issue_id}: pure move operation")
+        logger.debug(f"Skipping issue {issue_id}: pure move operation")
         return None, "pure_move_operation"
 
-    # Extract section with context
     context_before, section_content, context_after, start_para, end_para = (
         extract_section_with_context(paragraph_mapping, affected_paragraphs)
     )
@@ -137,7 +128,6 @@ async def rewrite_section_for_issue(
         logger.warning(f"Issue {issue_id}: No content found for paragraphs {affected_paragraphs}")
         return None, f"no_content_for_paragraphs_{affected_paragraphs}"
 
-    # Build the prompt
     user_prompt = SECTION_REWRITE_USER.format(
         issue_id=issue_id,
         issue_type=issue_type,
@@ -151,7 +141,6 @@ async def rewrite_section_for_issue(
     )
 
     try:
-        # Use Sonnet for rewrites (faster, cheaper, good enough for this task)
         llm = get_llm(tier=ModelTier.SONNET)
         messages = [
             {"role": "system", "content": SECTION_REWRITE_SYSTEM},
@@ -160,18 +149,16 @@ async def rewrite_section_for_issue(
         response = await llm.ainvoke(messages)
         rewritten_content = response.content.strip()
 
-        # Basic validation: rewrite shouldn't be empty
         if not rewritten_content or len(rewritten_content) < 50:
             actual_len = len(rewritten_content) if rewritten_content else 0
             logger.warning(f"Issue {issue_id}: Rewrite too short ({actual_len} < 50 chars)")
             return None, f"rewrite_too_short_{actual_len}_chars"
 
-        # Generate a change summary for audit
         changes_summary = await generate_change_summary(
             section_content, rewritten_content, description
         )
 
-        logger.info(
+        logger.debug(
             f"Issue {issue_id} ({issue_type}): Rewrote P{start_para}-P{end_para}, "
             f"original={len(section_content)} chars, new={len(rewritten_content)} chars"
         )
@@ -181,11 +168,11 @@ async def rewrite_section_for_issue(
             original_paragraphs=list(range(start_para, end_para + 1)),
             rewritten_content=rewritten_content,
             changes_summary=changes_summary,
-            confidence=0.8,  # Could be made more dynamic based on issue type
+            confidence=0.8,
         ), None
 
     except Exception as e:
-        logger.error(f"Issue {issue_id}: Rewrite failed: {e}")
+        logger.error(f"Issue {issue_id}: Rewrite failed: {e}", exc_info=True)
         return None, f"llm_error_{type(e).__name__}"
 
 
@@ -196,10 +183,9 @@ async def generate_change_summary(
 ) -> str:
     """Generate a brief summary of what changed for audit purposes."""
     try:
-        # Use Haiku for this simple summarization task
         llm = get_llm(tier=ModelTier.HAIKU, max_tokens=500)
         user_prompt = SECTION_REWRITE_SUMMARY_USER.format(
-            original_content=original_content[:2000],  # Truncate for token efficiency
+            original_content=original_content[:2000],
             rewritten_content=rewritten_content[:2000],
             issue_description=issue_description,
         )
@@ -233,30 +219,19 @@ def apply_rewrite_to_document(
     start_para = min(rewrite.original_paragraphs)
     end_para = max(rewrite.original_paragraphs)
 
-    # Build new mapping
     new_mapping = {}
 
-    # Copy paragraphs before the rewritten section
     for p, text in paragraph_mapping.items():
         if p < start_para:
             new_mapping[p] = text
 
-    # Insert the rewritten content as a single paragraph at start_para
-    # Note: The rewritten content may have multiple logical paragraphs
-    # but we treat it as replacing the range
     new_mapping[start_para] = rewrite.rewritten_content
 
-    # Determine the shift for paragraphs after
-    # Original: paragraphs start_para to end_para (inclusive) = end_para - start_para + 1 paragraphs
-    # New: single paragraph at start_para
-    # But the rewritten content may contain multiple paragraphs - we'll re-number later
     old_range_size = end_para - start_para + 1
     new_para_num = start_para + 1
 
-    # Copy paragraphs after the rewritten section (shifted)
     for p in sorted(paragraph_mapping.keys()):
         if p > end_para:
-            # Shift down by (old_range_size - 1) since we now have just 1 paragraph
             new_mapping[new_para_num] = paragraph_mapping[p]
             new_para_num += 1
 
@@ -290,7 +265,7 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
     issues = issue_analysis.get("issues", [])
 
     if not issues:
-        logger.info("No issues to rewrite")
+        logger.debug("No issues to rewrite")
         return {
             "rewrite_manifest": Loop3RewriteManifest(
                 rewrites=[],
@@ -301,9 +276,6 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
             "current_review": state["current_review"],
         }
 
-    # Process issues bottom-to-top (reverse order by max paragraph number)
-    # This ensures paragraph number shifts from earlier rewrites don't
-    # invalidate the paragraph references for later issues
     sorted_issues = sorted(
         issues,
         key=lambda x: max(x.get("affected_paragraphs", [0])),
@@ -315,16 +287,12 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
     issues_skipped: list[int] = []
     skip_reasons: dict[int, str] = {}
 
-    # Working copy of paragraph mapping
     working_mapping = dict(paragraph_mapping)
-
-    # Get zotero keys from state
     zotero_keys = state.get("zotero_keys", {})
 
     for issue in sorted_issues:
         issue_id = issue.get("issue_id", 0)
 
-        # Rewrite section for this issue
         result, skip_reason = await rewrite_section_for_issue(
             issue=issue,
             paragraph_mapping=working_mapping,
@@ -333,21 +301,18 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
         )
 
         if result:
-            # Apply rewrite and update working mapping
             working_mapping = apply_rewrite_to_document(working_mapping, result)
             rewrites.append(result)
             issues_addressed.append(issue_id)
-            logger.info(f"Applied rewrite for issue {issue_id}")
+            logger.debug(f"Applied rewrite for issue {issue_id}")
         else:
             issues_skipped.append(issue_id)
             if skip_reason:
                 skip_reasons[issue_id] = skip_reason
-            logger.info(f"Skipped issue {issue_id}: {skip_reason}")
+            logger.debug(f"Skipped issue {issue_id}: {skip_reason}")
 
-    # Rebuild document from final mapping
     final_document = rebuild_document_from_mapping(working_mapping)
 
-    # Build manifest
     manifest = Loop3RewriteManifest(
         rewrites=rewrites,
         issues_addressed=issues_addressed,

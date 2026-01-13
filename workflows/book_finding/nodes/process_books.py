@@ -42,23 +42,24 @@ async def _process_single_book(
     try:
         # Only process PDFs for now
         if book["format"].lower() != "pdf":
-            logger.info(f"Skipping non-PDF book: {book['title']} (format: {book['format']})")
+            logger.debug(f"Skipping non-PDF: '{book['title']}' (format: {book['format']})")
             return None, book["title"]
 
         # Download via VPN and convert via Marker
-        logger.info(f"Processing book: {book['title']}")
+        logger.debug(f"Processing '{book['title']}'")
         content = await fetch_pdf_via_marker(
             md5=book["md5"],
             identifier=book["title"],
         )
 
         if not content:
-            logger.warning(f"No content extracted from: {book['title']}")
+            logger.warning(f"No content extracted from '{book['title']}'")
             return None, book["title"]
 
         # Truncate content for summary generation based on quality settings
         max_content = quality_settings["max_content_for_summary"]
         content_truncated = content[:max_content]
+        logger.debug(f"Extracted {len(content)} chars from '{book['title']}', using {len(content_truncated)} for summary")
 
         # Generate theme-relevant summary using Sonnet
         summary_tokens = quality_settings["summary_max_tokens"]
@@ -87,11 +88,11 @@ async def _process_single_book(
             content_summary=summary,
         )
 
-        logger.info(f"Successfully processed: {book['title']}")
+        logger.debug(f"Successfully processed '{book['title']}'")
         return updated_book, None
 
     except Exception as e:
-        logger.error(f"Failed to process book '{book['title']}': {e}")
+        logger.error(f"Failed to process '{book['title']}': {e}")
         return None, book["title"]
 
 
@@ -109,6 +110,8 @@ async def process_books(state: dict) -> dict[str, Any]:
     if not books:
         logger.warning("No books to process")
         return {"processed_books": [], "processing_failed": []}
+
+    logger.debug(f"Processing {len(books)} books with max_concurrent={quality_settings['max_concurrent_downloads']}")
 
     # Get translated summary prompt if needed
     summary_prompt_template = await get_summary_prompt(language_config)
@@ -129,7 +132,7 @@ async def process_books(state: dict) -> dict[str, Any]:
 
     for result in results:
         if isinstance(result, Exception):
-            logger.error(f"Processing task failed with exception: {result}")
+            logger.error(f"Processing task failed: {result}")
             continue
 
         updated_book, failed_title = result
@@ -138,7 +141,7 @@ async def process_books(state: dict) -> dict[str, Any]:
         elif failed_title:
             failed.append(failed_title)
 
-    logger.info(f"Processed {len(processed)} books, {len(failed)} failed/skipped")
+    logger.info(f"Book processing complete: {len(processed)} processed, {len(failed)} failed/skipped")
 
     return {
         "processed_books": processed,

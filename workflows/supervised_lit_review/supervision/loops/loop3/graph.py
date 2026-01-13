@@ -42,25 +42,20 @@ class Loop3State(TypedDict):
     max_iterations: int
     is_complete: bool
 
-    # Phase A: Issue identification
     issue_analysis: Optional[dict]
     phase_a_complete: bool
 
-    # Phase B: Section rewrites (new approach)
     rewrite_manifest: Optional[dict]
     changes_applied: list[str]
 
-    # Verification
     architecture_verification: Optional[dict]
     needs_another_iteration: bool
 
-    # Citation context (for preserving citations during rewrites)
-    zotero_keys: dict[str, str]  # DOI -> citation key
-    zotero_key_sources: dict[str, dict]  # Citation key -> metadata
+    zotero_keys: dict[str, str]
+    zotero_key_sources: dict[str, dict]
 
-    # Legacy fields (kept for compatibility, may be removed later)
-    edit_manifest: Optional[dict]  # Deprecated - use rewrite_manifest
-    applied_edits: list[str]  # Deprecated - use changes_applied
+    edit_manifest: Optional[dict]
+    applied_edits: list[str]
 
 
 def create_loop3_graph():
@@ -83,7 +78,6 @@ def create_loop3_graph():
     """
     graph = StateGraph(Loop3State)
 
-    # Core nodes
     graph.add_node("number_paragraphs", number_paragraphs_node)
     graph.add_node("phase_a_identify_issues", analyze_structure_phase_a_node)
     graph.add_node("phase_b_rewrite_sections", rewrite_sections_for_issues_node)
@@ -92,11 +86,9 @@ def create_loop3_graph():
     graph.add_node("increment_iteration", increment_iteration)
     graph.add_node("finalize", finalize_node)
 
-    # Entry: number paragraphs, then identify issues
     graph.add_edge(START, "number_paragraphs")
     graph.add_edge("number_paragraphs", "phase_a_identify_issues")
 
-    # Phase A routing: either rewrite or pass through
     graph.add_conditional_edges(
         "phase_a_identify_issues",
         route_after_phase_a,
@@ -106,11 +98,9 @@ def create_loop3_graph():
         },
     )
 
-    # Phase B: rewrite sections, then verify
     graph.add_edge("phase_b_rewrite_sections", "verify_architecture")
     graph.add_edge("verify_architecture", "validate_result")
 
-    # Continuation: either loop again or finalize
     graph.add_conditional_edges(
         "validate_result",
         check_continue_rewrite,
@@ -161,24 +151,19 @@ async def run_loop3_standalone(
         "iteration": 0,
         "max_iterations": max_iterations,
         "is_complete": False,
-        # Phase A
         "issue_analysis": None,
         "phase_a_complete": False,
-        # Phase B (new approach)
         "rewrite_manifest": None,
         "changes_applied": [],
-        # Verification
         "architecture_verification": None,
         "needs_another_iteration": False,
-        # Citation context
         "zotero_keys": zotero_keys or {},
         "zotero_key_sources": zotero_key_sources or {},
-        # Legacy (for compatibility)
         "edit_manifest": None,
         "applied_edits": [],
     }
 
-    logger.info(f"Running Loop 3 standalone with max_iterations={max_iterations}")
+    logger.info(f"Loop 3 starting with max_iterations={max_iterations}")
 
     if config:
         final_state = await compiled_graph.ainvoke(initial_state, config=config)
@@ -190,6 +175,5 @@ async def run_loop3_standalone(
         "is_complete": final_state.get("is_complete", False),
         "iteration": final_state.get("iteration", 0),
         "rewrite_manifest": final_state.get("rewrite_manifest"),
-        # Legacy compatibility
         "edit_manifest": final_state.get("edit_manifest"),
     }

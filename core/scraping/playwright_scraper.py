@@ -65,7 +65,7 @@ class PlaywrightScraper:
         if self._browser is None:
             from playwright.async_api import async_playwright
 
-            logger.info("Starting Playwright browser...")
+            logger.debug("Initializing Playwright browser")
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
                 headless=self._headless,
@@ -114,7 +114,7 @@ class PlaywrightScraper:
         page = await context.new_page()
 
         try:
-            logger.debug(f"Playwright: navigating to {url}")
+            logger.debug(f"Playwright navigating to {url}")
             await page.goto(
                 url,
                 timeout=self._timeout,
@@ -127,11 +127,11 @@ class PlaywrightScraper:
             # Convert to markdown
             markdown = self._html2text.handle(html)
 
-            logger.debug(f"Playwright: scraped {len(markdown)} chars from {url}")
+            logger.debug(f"Playwright scraped {len(markdown)} chars")
             return markdown.strip()
 
         except Exception as e:
-            logger.error(f"Playwright scrape failed for {url}: {e}")
+            logger.error(f"Playwright scrape failed: {e}")
             raise
 
         finally:
@@ -148,7 +148,7 @@ class PlaywrightScraper:
         if self._playwright:
             await self._playwright.stop()
             self._playwright = None
-            logger.info("Playwright browser closed")
+            logger.debug("Playwright browser closed")
 
     async def __aenter__(self) -> "PlaywrightScraper":
         """Context manager entry."""

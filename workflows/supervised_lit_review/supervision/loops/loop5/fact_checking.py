@@ -32,7 +32,7 @@ def select_model_tier_for_context(estimated_tokens: int) -> ModelTier:
         )
         return ModelTier.SONNET_1M
     elif model_name == "sonnet":
-        logger.info(f"Using SONNET for context size {estimated_tokens:,} tokens")
+        logger.debug(f"Using SONNET for context size {estimated_tokens:,} tokens")
         return ModelTier.SONNET
     else:
         return ModelTier.HAIKU
@@ -42,7 +42,7 @@ async def fact_check_node(state: dict[str, Any]) -> dict[str, Any]:
     """Sequential fact checking across all sections with dynamic token budgeting."""
     sections = state["sections"]
     num_sections = len(sections)
-    logger.info(f"Loop 5: Starting fact checking across {num_sections} sections")
+    logger.info(f"Loop 5 fact checking: starting across {num_sections} sections")
 
     store_query = SupervisionStoreQuery(state["paper_summaries"])
     paper_tools = create_paper_tools(state["paper_summaries"], store_query)
@@ -114,7 +114,7 @@ async def fact_check_node(state: dict[str, Any]) -> dict[str, Any]:
         all_edits.extend(result.edits)
         all_ambiguous.extend(result.ambiguous_claims)
 
-    logger.info(f"Loop 5: Fact check found {len(all_edits)} edits, {len(all_ambiguous)} ambiguous claims")
+    logger.info(f"Loop 5 fact checking complete: {len(all_edits)} edits, {len(all_ambiguous)} ambiguous claims")
     return {
         "all_edits": all_edits,
         "ambiguous_claims": all_ambiguous,

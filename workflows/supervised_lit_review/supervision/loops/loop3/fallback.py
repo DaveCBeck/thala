@@ -60,7 +60,7 @@ Provide an EditManifest with the SAME edits but include replacement_text for eac
             max_retries=1,
         )
 
-        logger.info(f"Retry analysis: {len(manifest.edits)} edits returned")
+        logger.debug(f"Retry analysis: {len(manifest.edits)} edits returned")
 
         return {
             "edit_manifest": manifest.model_dump(),
@@ -68,7 +68,7 @@ Provide an EditManifest with the SAME edits but include replacement_text for eac
         }
 
     except Exception as e:
-        logger.error(f"Retry analysis failed: {e}")
+        logger.error(f"Retry analysis failed: {e}", exc_info=True)
         return {"retry_attempted": True}
 
 
@@ -159,5 +159,5 @@ async def execute_manifest_node(state: dict) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Manifest execution failed: {e}")
+        logger.error(f"Manifest execution failed: {e}", exc_info=True)
         return {"fallback_used": True}

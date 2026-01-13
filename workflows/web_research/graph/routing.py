@@ -16,7 +16,7 @@ def route_after_clarify(state: DeepResearchState) -> str:
         # If clarification needed but no responses yet, proceed anyway
         # (In a real implementation, this would pause for user input)
         if not state.get("clarification_responses"):
-            logger.info("Clarification needed but proceeding without responses")
+            logger.debug("Clarification needed but proceeding without responses")
     return "create_brief"
 
 
@@ -38,7 +38,7 @@ def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
         pending = state.get("pending_questions", [])
 
         if not pending:
-            logger.warning("No pending questions for research - completing")
+            logger.warning("No pending questions for research, completing")
             return "final_report"
 
         # All researchers use primary language config
@@ -62,7 +62,7 @@ def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
         if not sends:
             return "final_report"
 
-        logger.info(
+        logger.debug(
             f"Launching {len(sends)} web researchers"
             + (f" (language: {language_config['code']})" if language_config else "")
         )

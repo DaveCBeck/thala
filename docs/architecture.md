@@ -35,8 +35,6 @@ User Query / Input
     ├→ Analysis: Clustering, relevance scoring, validation
     └→ Synthesis: Structured output, citations, reports
     ↓
-[Checkpointing] → Persistent cache for resumption
-    ↓
 [Store Integration]
     ├→ Elasticsearch: Main results
     ├→ Zotero: Citations (source of truth)

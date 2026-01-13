@@ -243,15 +243,6 @@ class SupervisionExpansion(TypedDict):
     integration_summary: str  # What was integrated and how
 
 
-class LoopCheckpoint(TypedDict):
-    """Checkpoint state for restart capability."""
-
-    loop_number: int
-    iteration: int
-    review_snapshot: str
-    timestamp: str  # ISO format datetime string
-
-
 class RevisionRecord(TypedDict):
     """Record of what each loop changed."""
 
@@ -268,7 +259,6 @@ class MultiLoopProgress(TypedDict):
     current_loop: int  # 1-5
     loop_iterations: dict[str, int]  # "loop_1" -> iterations used (string keys for TypedDict)
     max_iterations_per_loop: int  # Budget per loop (not shared across loops)
-    checkpoints: list[LoopCheckpoint]
     revision_history: list[RevisionRecord]
     loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max 1)
 

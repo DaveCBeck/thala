@@ -19,7 +19,7 @@ def validate_edits_node(state: dict) -> dict[str, Any]:
     paragraph_mapping = state.get("paragraph_mapping", {})
 
     if not manifest or not manifest.get("edits"):
-        logger.info("No edits to validate")
+        logger.debug("No edits to validate")
         return {
             "valid_edits": [],
             "invalid_edits": [],
@@ -32,7 +32,7 @@ def validate_edits_node(state: dict) -> dict[str, Any]:
     result = validate_structural_edits(paragraph_mapping, edits)
 
     logger.info(
-        f"Edit validation: {len(result['valid_edits'])} valid, "
+        f"Edit validation complete: {len(result['valid_edits'])} valid, "
         f"{len(result['invalid_edits'])} invalid, "
         f"{len(result['needs_retry_edits'])} need retry"
     )
@@ -43,7 +43,7 @@ def validate_edits_node(state: dict) -> dict[str, Any]:
 
     if result["needs_retry_edits"]:
         for edit in result["needs_retry_edits"]:
-            logger.info(f"Edit needs retry (missing replacement_text): P{edit.source_paragraph}")
+            logger.debug(f"Edit needs retry (missing replacement_text): P{edit.source_paragraph}")
 
     return {
         "valid_edits": [e.model_dump() for e in result["valid_edits"]],
@@ -59,7 +59,7 @@ def apply_edits_programmatically_node(state: dict) -> dict[str, Any]:
     valid_edits = state.get("valid_edits", [])
 
     if not valid_edits:
-        logger.info("No valid edits to apply programmatically")
+        logger.debug("No valid edits to apply programmatically")
         return {"fallback_used": False}
 
     edits = [StructuralEdit(**e) for e in valid_edits]
@@ -95,6 +95,6 @@ def verify_application_node(state: dict) -> dict[str, Any]:
     if failed:
         logger.warning(f"Edit verification failures: {failed}")
     else:
-        logger.info(f"All {len(verifications)} edits verified as applied")
+        logger.debug(f"All {len(verifications)} edits verified as applied")
 
     return {}

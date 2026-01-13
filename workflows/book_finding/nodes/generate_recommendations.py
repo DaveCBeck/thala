@@ -58,6 +58,8 @@ async def _generate_recommendations(
     brief_section = _format_brief_section(brief)
     user_prompt = user_template.format(theme=theme, brief_section=brief_section)
 
+    logger.debug(f"Generating {category} recommendations with {model_tier.name} (max_recs={max_recs})")
+
     try:
         response = await llm.ainvoke([
             {"role": "system", "content": system_prompt},
@@ -83,7 +85,7 @@ async def _generate_recommendations(
             for r in recommendations_raw[:max_recs]
         ]
 
-        logger.info(f"Generated {len(recommendations)} {category} recommendations for theme: {theme[:50]}...")
+        logger.debug(f"Generated {len(recommendations)} {category} recommendations")
         return recommendations
 
     except json.JSONDecodeError as e:

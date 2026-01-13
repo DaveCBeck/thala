@@ -142,8 +142,10 @@ class OpenAIEmbeddings(EmbeddingProvider):
         cache_key = generate_cache_key(self.model, text)
         cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
         if cached is not None:
+            logger.debug(f"Cache hit for embedding (model={self.model})")
             return cached
 
+        logger.debug(f"Cache miss, generating embedding (model={self.model})")
         results = await self.embed_batch([text])
         embedding = results[0]
         set_cached("embeddings", cache_key, embedding)
@@ -165,6 +167,14 @@ class OpenAIEmbeddings(EmbeddingProvider):
                 uncached_indices.append(i)
                 uncached_texts.append(text)
 
+        if uncached_texts:
+            logger.debug(
+                f"Generating {len(uncached_texts)}/{len(texts)} embeddings "
+                f"({len(texts) - len(uncached_texts)} cached, model={self.model})"
+            )
+        else:
+            logger.debug(f"All {len(texts)} embeddings from cache (model={self.model})")
+
         # Generate embeddings for uncached texts
         if uncached_texts:
             try:
@@ -182,11 +192,15 @@ class OpenAIEmbeddings(EmbeddingProvider):
                     results[idx] = embedding
                     set_cached("embeddings", cache_keys[idx], embedding)
             except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"OpenAI API error: {e.response.status_code} - {e.response.text}"
+                )
                 raise EmbeddingError(
                     f"OpenAI API error: {e.response.status_code} - {e.response.text}",
                     provider="openai",
                 )
             except Exception as e:
+                logger.error(f"Failed to generate embeddings: {e}")
                 raise EmbeddingError(str(e), provider="openai")
 
         return results
@@ -213,8 +227,10 @@ class OllamaEmbeddings(EmbeddingProvider):
         cache_key = generate_cache_key(self.model, text)
         cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
         if cached is not None:
+            logger.debug(f"Cache hit for embedding (model={self.model})")
             return cached
 
+        logger.debug(f"Cache miss, generating embedding (model={self.model})")
         try:
             response = await self._client.post(
                 "/api/embeddings",
@@ -225,16 +241,19 @@ class OllamaEmbeddings(EmbeddingProvider):
             set_cached("embeddings", cache_key, embedding)
             return embedding
         except httpx.HTTPStatusError as e:
+            logger.error(f"Ollama API error: {e.response.status_code}")
             raise EmbeddingError(
                 f"Ollama API error: {e.response.status_code}",
                 provider="ollama",
             )
         except httpx.ConnectError:
+            logger.error(f"Cannot connect to Ollama at {self.host}")
             raise EmbeddingError(
                 f"Cannot connect to Ollama at {self.host}. Is Ollama running?",
                 provider="ollama",
             )
         except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
             raise EmbeddingError(str(e), provider="ollama")
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -269,11 +288,13 @@ class EmbeddingService:
             model = model or os.environ.get("THALA_EMBEDDING_MODEL", "text-embedding-3-small")
             self.model = model
             self._provider = OpenAIEmbeddings(model=model)
+            logger.info(f"Initialized OpenAI embeddings with model={model}")
         elif provider == "ollama":
             model = model or os.environ.get("THALA_EMBEDDING_MODEL", "nomic-embed-text")
             host = os.environ.get("THALA_OLLAMA_HOST", "http://localhost:11434")
             self.model = model
             self._provider = OllamaEmbeddings(model=model, host=host)
+            logger.info(f"Initialized Ollama embeddings with model={model}, host={host}")
         else:
             raise EmbeddingError(
                 f"Unknown embedding provider: {provider}. Use 'openai' or 'ollama'."

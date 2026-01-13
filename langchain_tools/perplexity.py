@@ -124,7 +124,7 @@ async def perplexity_search(
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
     if cached is not None:
-        logger.debug(f"Cache hit for perplexity search: {query[:50]}...")
+        logger.debug(f"Cache hit for perplexity search: {query[:50]}")
         return cached
 
     client = _get_perplexity()
@@ -158,14 +158,14 @@ async def perplexity_search(
             total_results=len(results),
             results=results,
         )
-        logger.debug(f"perplexity_search returned {len(results)} results for: {query}")
+        logger.debug(f"Perplexity search returned {len(results)} results for '{query}'")
 
         result = output_dict(output)
         set_cached(CACHE_TYPE, cache_key, result)
         return result
 
     except Exception as e:
-        logger.error(f"perplexity_search failed: {e}")
+        logger.error(f"perplexity_search failed for '{query}': {e}")
         return output_dict(
             PerplexitySearchOutput(
                 query=query,
@@ -196,7 +196,7 @@ async def check_fact(
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
     if cached is not None:
-        logger.debug(f"Cache hit for fact check: {claim[:50]}...")
+        logger.debug(f"Cache hit for fact check: {claim[:50]}")
         return cached
 
     client = _get_perplexity()
@@ -271,8 +271,7 @@ Respond with ONLY valid JSON (no markdown):
         )
 
         logger.info(
-            f"check_fact: '{claim[:50]}...' -> {output.verdict} "
-            f"(conf: {output.confidence:.2f})"
+            f"Fact check for '{claim[:50]}': {output.verdict} (confidence: {output.confidence:.2f})"
         )
 
         result = output_dict(output)
@@ -280,7 +279,7 @@ Respond with ONLY valid JSON (no markdown):
         return result
 
     except Exception as e:
-        logger.error(f"check_fact failed: {e}")
+        logger.error(f"check_fact failed for '{claim}': {e}")
         return output_dict(
             FactCheckOutput(
                 claim=claim,

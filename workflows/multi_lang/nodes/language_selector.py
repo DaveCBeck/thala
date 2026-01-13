@@ -1,7 +1,11 @@
 """Language selection node for multi-lingual research workflow."""
 
+import logging
+
 from workflows.multi_lang.state import MultiLangState
 from workflows.shared.language import get_language_config, is_supported_language
+
+logger = logging.getLogger(__name__)
 
 
 MAJOR_10_LANGUAGES = [
@@ -33,6 +37,7 @@ async def select_languages(state: MultiLangState) -> dict:
     if mode == "set_languages":
         requested_languages = state["input"].get("languages", [])
         if not requested_languages:
+            logger.error("No languages provided for set_languages mode")
             return {
                 "current_phase": "language_selection",
                 "current_status": "Error: No languages provided for set_languages mode",
@@ -54,10 +59,10 @@ async def select_languages(state: MultiLangState) -> dict:
                 invalid_languages.append(code)
 
         if invalid_languages:
-            warning_msg = f"Warning: Invalid language codes filtered out: {', '.join(invalid_languages)}"
-            print(warning_msg)
+            logger.warning(f"Invalid language codes filtered out: {', '.join(invalid_languages)}")
 
         if not valid_languages:
+            logger.error(f"All provided language codes are invalid: {requested_languages}")
             return {
                 "current_phase": "language_selection",
                 "current_status": "Error: No valid language codes provided",
@@ -88,6 +93,8 @@ async def select_languages(state: MultiLangState) -> dict:
     language_names = ", ".join(
         config["name"] for config in language_configs.values()
     )
+
+    logger.info(f"Selected {len(selected_languages)} languages: {language_names}")
 
     return {
         "target_languages": selected_languages,

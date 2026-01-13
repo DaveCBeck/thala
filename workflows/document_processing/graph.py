@@ -20,17 +20,15 @@ from datetime import datetime
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import RetryPolicy, Send
+from langgraph.types import Send
 
 from workflows.document_processing.nodes import (
     check_metadata,
     create_zotero_stub,
     detect_document_language,
     generate_summary,
-    process_marker,
     resolve_input,
     save_short_summary,
-    smart_chunker,
     update_store,
     update_zotero,
 )
@@ -44,13 +42,6 @@ from workflows.document_processing.subgraphs.chapter_summarization import (
 from workflows.shared.async_utils import gather_with_error_collection
 
 logger = logging.getLogger(__name__)
-
-
-def route_by_source_type(state: DocumentProcessingState) -> str:
-    """Route based on whether input is already markdown."""
-    if state.get("is_already_markdown"):
-        return "markdown"
-    return "needs_marker"
 
 
 def fan_out_to_agents(state: DocumentProcessingState) -> list[Send]:
@@ -75,12 +66,6 @@ def create_document_processing_graph():
 
     builder.add_node("resolve_input", resolve_input)
     builder.add_node("create_zotero_stub", create_zotero_stub)
-    builder.add_node(
-        "process_marker",
-        process_marker,
-        retry=RetryPolicy(max_attempts=3, backoff_factor=2.0),
-    )
-    builder.add_node("smart_chunker", smart_chunker)
     builder.add_node("update_store", update_store)
     builder.add_node("detect_language", detect_document_language)
     builder.add_node("generate_summary", generate_summary)
@@ -92,20 +77,10 @@ def create_document_processing_graph():
     builder.add_node("save_tenth_summary", save_tenth_summary)
     builder.add_node("finalize", finalize)
 
+    # Linear flow: resolve_input now produces processing_result directly
     builder.add_edge(START, "resolve_input")
     builder.add_edge("resolve_input", "create_zotero_stub")
-
-    builder.add_conditional_edges(
-        "create_zotero_stub",
-        route_by_source_type,
-        {
-            "markdown": "smart_chunker",
-            "needs_marker": "process_marker",
-        },
-    )
-
-    builder.add_edge("smart_chunker", "update_store")
-    builder.add_edge("process_marker", "update_store")
+    builder.add_edge("create_zotero_stub", "update_store")
 
     # Language detection before summary generation
     builder.add_edge("update_store", "detect_language")

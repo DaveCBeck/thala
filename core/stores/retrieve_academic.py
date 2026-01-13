@@ -120,7 +120,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                 data = response.json()
                 return data.get("vpn_connected", False)
         except Exception as e:
-            logger.warning(f"Health check failed: {e}")
+            logger.debug(f"Health check failed: {e}")
         return False
 
     async def get_health_status(self) -> Optional[HealthStatus]:
@@ -131,7 +131,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
             if response.status_code == 200:
                 return HealthStatus.model_validate(response.json())
         except Exception as e:
-            logger.warning(f"Health status failed: {e}")
+            logger.debug(f"Health status check failed: {e}")
         return None
 
     async def retrieve(
@@ -258,7 +258,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                 # Check timeout
                 elapsed = asyncio.get_event_loop().time() - start_times[job_id]
                 if elapsed > timeout:
-                    logger.warning(f"Job {job_id} for {doi} timed out after {timeout}s")
+                    logger.warning(f"Retrieval job for {doi} timed out after {timeout}s")
                     completed_this_round.append(
                         (doi, local_path, asyncio.TimeoutError(f"Timeout: {doi}"))
                     )
@@ -271,16 +271,16 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                     if result.status == "completed":
                         # Download file before yielding
                         await self.download_file(job_id, local_path)
-                        logger.info(f"Acquired full text for {doi}: {local_path}")
+                        logger.debug(f"Acquired full text for {doi}: {local_path}")
                         completed_this_round.append((doi, local_path, result))
                         pending.pop(job_id)
                     elif result.status == "failed":
                         error = Exception(f"{result.error_code}: {result.error}")
-                        logger.warning(f"Job {job_id} for {doi} failed: {result.error}")
+                        logger.debug(f"Retrieval failed for {doi}: {result.error}")
                         completed_this_round.append((doi, local_path, error))
                         pending.pop(job_id)
                 except Exception as e:
-                    logger.error(f"Error polling job {job_id} for {doi}: {e}")
+                    logger.error(f"Error polling retrieval job for {doi}: {e}")
                     completed_this_round.append((doi, local_path, e))
                     pending.pop(job_id)
 

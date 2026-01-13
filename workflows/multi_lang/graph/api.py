@@ -12,42 +12,49 @@ from workflows.multi_lang.state import (
     MultiLangState,
     MultiLangInput,
     MultiLangQualitySettings,
-    CheckpointPhase,
 )
 from workflows.multi_lang.graph.construction import multi_lang_graph
 from workflows.multi_lang.workflow_registry import build_workflow_selection
+from workflows.shared.workflow_state_store import save_workflow_state
 
 
 class MultiLangResult:
-    """Result from multi_lang_research workflow."""
+    """Result from multi_lang_research workflow.
+
+    Contains only standardized fields. For detailed state (language_results,
+    sonnet_analysis, etc.), use load_workflow_state("multi_lang", langsmith_run_id).
+    """
 
     def __init__(self, state: MultiLangState):
-        self.synthesis = state.get("final_synthesis")
-        self.comparative = state.get("sonnet_analysis", {}).get("comparative_document") if state.get("sonnet_analysis") else None
-        self.language_results = state.get("language_results", [])
-        self.sonnet_analysis = state.get("sonnet_analysis")
-        self.integration_steps = state.get("integration_steps", [])
-        self.synthesis_record_id = state.get("synthesis_record_id")
-        self.comparative_record_id = state.get("comparative_record_id")
-        self.per_language_record_ids = state.get("per_language_record_ids", {})
+        synthesis = state.get("final_synthesis")
+        errors = state.get("errors", [])
+
+        # Standardized fields only
+        self.final_report = synthesis
+        self.langsmith_run_id = state.get("langsmith_run_id")
+        self.errors = errors
+        self.source_count = len(state.get("language_results", []))
         self.started_at = state.get("started_at")
         self.completed_at = state.get("completed_at")
-        self.errors = state.get("errors", [])
+
+        # Determine status
+        if synthesis and not errors:
+            self.status = "success"
+        elif synthesis and errors:
+            self.status = "partial"
+        else:
+            self.status = "failed"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "synthesis": self.synthesis,
-            "comparative": self.comparative,
-            "language_results": self.language_results,
-            "sonnet_analysis": self.sonnet_analysis,
-            "integration_steps": self.integration_steps,
-            "synthesis_record_id": self.synthesis_record_id,
-            "comparative_record_id": self.comparative_record_id,
-            "per_language_record_ids": self.per_language_record_ids,
+            "final_report": self.final_report,
+            "status": self.status,
+            "langsmith_run_id": self.langsmith_run_id,
+            "errors": self.errors,
+            "source_count": self.source_count,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
-            "errors": self.errors,
         }
 
 
@@ -147,15 +154,6 @@ async def multi_lang_research(
         "per_language_record_ids": {},
         "comparative_record_id": None,
         "synthesis_record_id": None,
-        "checkpoint_phase": CheckpointPhase(
-            language_selection=False,
-            relevance_checks=False,
-            languages_executed={},
-            sonnet_analysis=False,
-            opus_integration=False,
-            saved_to_store=False,
-        ),
-        "checkpoint_path": None,
         "started_at": datetime.utcnow(),
         "completed_at": None,
         "current_phase": "initializing",
@@ -171,5 +169,23 @@ async def multi_lang_research(
     }
 
     result_state = await multi_lang_graph.ainvoke(initial_state, config=config)
+
+    # Save full state for downstream workflows (in dev/test mode)
+    save_workflow_state(
+        workflow_name="multi_lang",
+        run_id=run_id,
+        state={
+            "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
+            "language_results": result_state.get("language_results", []),
+            "sonnet_analysis": result_state.get("sonnet_analysis"),
+            "integration_steps": result_state.get("integration_steps", []),
+            "final_synthesis": result_state.get("final_synthesis"),
+            "per_language_record_ids": result_state.get("per_language_record_ids", {}),
+            "synthesis_record_id": result_state.get("synthesis_record_id"),
+            "comparative_record_id": result_state.get("comparative_record_id"),
+            "started_at": result_state.get("started_at"),
+            "completed_at": result_state.get("completed_at"),
+        },
+    )
 
     return MultiLangResult(result_state)

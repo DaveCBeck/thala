@@ -64,7 +64,6 @@ async def run_supervision_orchestration(
             "loop_5": 0,
         },
         max_iterations_per_loop=max_iterations_per_loop,
-        checkpoints=[],
         revision_history=[],
         loop3_repeat_count=0,
     )
@@ -106,7 +105,7 @@ async def run_supervision_orchestration(
     graph = create_orchestration_graph()
     topic = input_data.get("topic", "")[:20]
     orch_run_id = uuid.uuid4()
-    logger.info(f"Starting supervision orchestration, LangSmith run ID: {orch_run_id}")
+    logger.info(f"Starting supervision orchestration for '{topic}' (run_id: {orch_run_id})")
     final_state = await graph.ainvoke(
         initial_state,
         config={
@@ -115,9 +114,7 @@ async def run_supervision_orchestration(
         },
     )
 
-    logger.info(
-        f"Orchestration complete: {final_state.get('completion_reason', 'Unknown')}"
-    )
+    logger.info(f"Orchestration complete: {final_state.get('completion_reason', 'Unknown')}")
 
     return {
         "final_review": final_state.get("final_review", review),
@@ -172,7 +169,7 @@ async def run_supervision_configurable(
     loop_count = SUPERVISION_LOOP_CONFIGS.get(loops.lower(), 5)
 
     if loop_count == 0:
-        logger.info("Supervision skipped (loops='none')")
+        logger.debug("Supervision skipped (loops='none')")
         return {
             "final_review": review,
             "loop_progress": None,
@@ -182,7 +179,7 @@ async def run_supervision_configurable(
         }
 
     if loop_count >= 5:
-        logger.info("Running full multi-loop supervision (all loops)")
+        logger.info("Running full multi-loop supervision")
         result = await run_supervision_orchestration(
             review=review,
             paper_corpus=paper_corpus,
@@ -197,7 +194,7 @@ async def run_supervision_configurable(
         result["loops_run"] = ["loop1", "loop2", "loop3", "loop4", "loop4_5", "loop5"]
         return result
 
-    logger.info(f"Running partial supervision (loops='{loops}', count={loop_count})")
+    logger.info(f"Running {loop_count} supervision loop(s)")
 
     current_review = review
     current_corpus = paper_corpus.copy()
@@ -214,7 +211,7 @@ async def run_supervision_configurable(
     review_loop4 = None
 
     if loop_count >= 1:
-        logger.info("Running Loop 1: Theoretical depth expansion")
+        logger.info("Running Loop 1: Theoretical depth")
         loops_run.append("loop1")
         loop1_run_id = uuid.uuid4()
 
@@ -242,7 +239,7 @@ async def run_supervision_configurable(
         current_summaries.update(added_summaries)
 
     if loop_count >= 2:
-        logger.info("Running Loop 2: Literature base expansion")
+        logger.info("Running Loop 2: Literature expansion")
         loops_run.append("loop2")
         loop2_run_id = uuid.uuid4()
 
@@ -287,7 +284,7 @@ async def run_supervision_configurable(
         all_results["loop3_result"] = loop3_result
 
     if loop_count >= 4:
-        logger.info("Running Loop 4: Section-level deep editing")
+        logger.info("Running Loop 4: Section editing")
         loops_run.append("loop4")
         loop4_run_id = uuid.uuid4()
 
@@ -318,7 +315,7 @@ async def run_supervision_configurable(
         }
 
         if cohesion_result.needs_restructuring:
-            logger.info("Cohesion check flagged issues - running Loop 3 again")
+            logger.info("Cohesion check failed, repeating Loop 3")
             loop3_repeat_run_id = uuid.uuid4()
             loop3_repeat = await run_loop3_standalone(
                 review=current_review,
@@ -333,7 +330,7 @@ async def run_supervision_configurable(
             review_loop3 = current_review
 
     completion_reason = f"Completed {loop_count} supervision loop(s)"
-    logger.info(f"Partial supervision complete: {completion_reason}")
+    logger.info(completion_reason)
 
     return {
         "final_review": current_review,

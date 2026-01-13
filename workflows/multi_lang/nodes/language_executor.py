@@ -71,7 +71,7 @@ Format your response as JSON:
             data.get("unique_perspectives", []),
         )
     except Exception as e:
-        logger.error(f"Failed to compress findings: {e}")
+        logger.error(f"Failed to compress findings for {language_config['name']}: {e}")
         return (
             f"Summary generation failed: {e}",
             ["Error compressing insights"],
@@ -108,7 +108,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
     languages_to_process = state.get("languages_with_content") or state["target_languages"]
 
     if idx >= len(languages_to_process):
-        # Should not happen - router should prevent this
+        logger.error(f"Language index {idx} exceeds list length {len(languages_to_process)}")
         return {
             "current_status": "Error: Language index out of bounds",
             "errors": [
@@ -123,7 +123,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
     language_config = state["language_configs"][language_code]
     language_name = language_config["name"]
 
-    logger.info(f"Executing workflows for {language_name} ({language_code})")
+    logger.info(f"Executing workflows for {language_name}")
 
     started_at = datetime.utcnow()
 
@@ -135,6 +135,8 @@ async def execute_next_language(state: MultiLangState) -> dict:
         quality = per_lang_overrides[language_code]["quality_tier"]
     else:
         quality = quality_settings["default_quality"]
+
+    logger.debug(f"Using quality={quality} for {language_name}")
 
     # Determine which workflows to run
     workflows = state["input"]["workflows"]
@@ -157,9 +159,10 @@ async def execute_next_language(state: MultiLangState) -> dict:
             enabled = config["default_enabled"]
 
         if not enabled:
+            logger.debug(f"Skipping {config['name']} for {language_name} (not enabled)")
             continue
 
-        logger.info(f"Running {config['name']} for {language_name}")
+        logger.debug(f"Running {config['name']} for {language_name}")
 
         # Build arguments for the workflow runner
         kwargs = {
@@ -184,11 +187,9 @@ async def execute_next_language(state: MultiLangState) -> dict:
         all_errors.extend(result.get("errors", []))
 
     # Check if any workflow succeeded
-    # WorkflowResult uses "success"/"partial"/"failed", WrapperResult uses "completed"/"failed"
     has_results = any(r["status"] in ("success", "partial", "completed") for r in workflow_results)
 
     if not has_results:
-        # All workflows failed
         logger.error(f"All workflows failed for {language_name}")
         return {
             "languages_failed": [language_code],
@@ -204,24 +205,20 @@ async def execute_next_language(state: MultiLangState) -> dict:
             ] + all_errors,
         }
 
-    # Check for zero results - workflows succeeded but found no papers
-    # This is different from failure - it means the search worked but there
-    # are no papers in this language for this topic
+    # Check for zero results
     if total_sources == 0:
         logger.info(
-            f"No papers found for {language_name} - workflows succeeded but no results. "
-            "This may indicate limited academic coverage in this language for this topic."
+            f"No sources found for {language_name} - workflows ran but returned no results"
         )
-        # Don't count as failure - just no content for this language
-        # Still record as completed so we don't retry
         return {
             "languages_completed": [language_code],
             "current_language_index": idx + 1,
             "current_phase": f"completed_{language_code}",
-            "current_status": f"Completed {language_name} (no papers found)",
+            "current_status": f"Completed {language_name} (no sources found)",
         }
 
     # Compress findings
+    logger.debug(f"Compressing findings for {language_name}")
     summary, key_insights, unique_perspectives = await _compress_language_findings(
         workflow_results, language_config
     )
@@ -244,9 +241,11 @@ async def execute_next_language(state: MultiLangState) -> dict:
         source_count=total_sources,
         key_insights=key_insights,
         unique_perspectives=unique_perspectives,
-        store_record_id=None,  # Will be set by store_results node
+        store_record_id=None,
         errors=all_errors,
     )
+
+    logger.info(f"Completed {language_name}: {total_sources} sources from {len(workflows_run)} workflows")
 
     return {
         "language_results": [language_result],
@@ -272,11 +271,13 @@ async def check_languages_complete(state: MultiLangState) -> dict:
     total = len(languages_to_process)
 
     if idx >= total:
+        logger.info(f"All {total} languages complete")
         return {
             "current_phase": "languages_complete",
             "current_status": f"All languages complete ({total}/{total})",
         }
     else:
+        logger.debug(f"Processed {idx}/{total} languages")
         return {
             "current_status": f"Processed {idx}/{total} languages",
         }

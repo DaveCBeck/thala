@@ -49,5 +49,5 @@ class ForgottenStore(BaseElasticsearchStore):
         )
 
         await self.add(forgotten)
-        logger.info(f"Archived record to forgotten: {forgotten.id}, reason: {reason}")
+        logger.debug(f"Archived record {forgotten.id} to forgotten: {reason}")
         return forgotten.id

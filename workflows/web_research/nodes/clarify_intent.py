@@ -76,7 +76,7 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
                 for q in result.questions
             ]
 
-            logger.info(f"Clarification needed: {len(questions)} questions")
+            logger.debug(f"Clarification needed: {len(questions)} questions generated")
 
             return {
                 "clarification_needed": True,
@@ -84,7 +84,7 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
                 "current_status": "awaiting_clarification",
             }
         else:
-            logger.info("No clarification needed, proceeding with research")
+            logger.debug("No clarification needed")
 
             return {
                 "clarification_needed": False,

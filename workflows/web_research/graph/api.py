@@ -35,6 +35,7 @@ from workflows.web_research.state import (
     parse_allocation,
 )
 from workflows.web_research.config.languages import get_language_config
+from workflows.shared.workflow_state_store import save_workflow_state
 
 from .construction import deep_research_graph
 from .config import RECURSION_LIMITS
@@ -54,7 +55,7 @@ async def deep_research(
     preserve_quotes: bool = True,
     # Researcher allocation
     researcher_allocation: str = None,
-) -> DeepResearchState:
+) -> dict:
     """
     Run deep research on a topic.
 
@@ -192,14 +193,43 @@ async def deep_research(
         f"iterations={result.get('diffusion', {}).get('iteration', 0)}"
     )
 
-    # Set standardized status field
+    # Determine standardized status
     errors = result.get("errors", [])
     final_report = result.get("final_report")
     if final_report and not errors:
-        result["status"] = "success"
+        status = "success"
     elif final_report and errors:
-        result["status"] = "partial"
+        status = "partial"
     else:
-        result["status"] = "failed"
+        status = "failed"
 
-    return result
+    # Save full state for downstream workflows (in dev/test mode)
+    save_workflow_state(
+        workflow_name="web_research",
+        run_id=str(run_id),
+        state={
+            "input": initial_state.get("input"),
+            "research_findings": result.get("research_findings", []),
+            "research_brief": result.get("research_brief"),
+            "memory_findings": result.get("memory_findings", []),
+            "memory_context": result.get("memory_context", ""),
+            "citations": result.get("citations", []),
+            "diffusion": result.get("diffusion", {}),
+            "draft_report": result.get("draft_report"),
+            "final_report": final_report,
+            "translated_report": result.get("translated_report"),
+            "store_record_id": result.get("store_record_id"),
+            "started_at": initial_state.get("started_at"),
+            "completed_at": result.get("completed_at"),
+        },
+    )
+
+    return {
+        "final_report": final_report,
+        "status": status,
+        "langsmith_run_id": str(run_id),
+        "errors": errors,
+        "source_count": len(result.get("research_findings", [])),
+        "started_at": initial_state.get("started_at"),
+        "completed_at": result.get("completed_at"),
+    }

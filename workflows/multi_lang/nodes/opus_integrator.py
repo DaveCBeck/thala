@@ -1,5 +1,6 @@
 """Opus-powered one-by-one integration producing synthesized documents."""
 
+import logging
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,8 @@ from workflows.multi_lang.state import (
     LanguageResult,
     OpusIntegrationStep,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class InitialSynthesisOutput(BaseModel):
@@ -58,6 +61,8 @@ async def _create_initial_synthesis(
     research_questions: list[str] | None,
 ) -> str:
     """Create the initial synthesis document from English findings."""
+    logger.debug("Creating initial synthesis from English findings")
+
     questions_formatted = (
         "\n".join(f"- {q}" for q in research_questions)
         if research_questions
@@ -89,6 +94,8 @@ async def _integrate_language(
     """Integrate one language's findings into the current synthesis."""
     language_name = language_result["language_name"]
     language_code = language_result["language_code"]
+
+    logger.debug(f"Integrating {language_name} findings")
 
     guidance_formatted = "\n".join(f"- {item}" for item in sonnet_guidance)
 
@@ -128,6 +135,8 @@ async def _finalize_synthesis(
     integration_steps: list[OpusIntegrationStep],
 ) -> str:
     """Finalize the synthesis document."""
+    logger.debug("Finalizing synthesis document")
+
     languages_list = ", ".join(languages_integrated)
     workflows_list = ", ".join(workflows_used)
 
@@ -162,6 +171,7 @@ async def run_opus_integration(state: MultiLangState) -> dict:
         sonnet_analysis = state.get("sonnet_analysis")
 
         if not language_results:
+            logger.warning("No language results available for integration")
             return {
                 "integration_steps": [],
                 "final_synthesis": "No language results available for integration.",
@@ -178,6 +188,8 @@ async def run_opus_integration(state: MultiLangState) -> dict:
         # Create initial synthesis
         topic = state["input"]["topic"]
         research_questions = state["input"].get("research_questions")
+
+        logger.info("Starting Opus integration")
 
         current_document = await _create_initial_synthesis(
             baseline_result, topic, research_questions
@@ -217,9 +229,10 @@ async def run_opus_integration(state: MultiLangState) -> dict:
                     current_document, language_result, sonnet_guidance
                 )
                 integration_steps.append(step)
+                logger.debug(f"Integrated {language_result['language_name']}")
 
             except Exception as e:
-                # Log error and continue with other languages
+                logger.error(f"Failed to integrate {language_code}: {e}")
                 error_dict = {
                     "timestamp": datetime.now().isoformat(),
                     "phase": "opus_integration",
@@ -227,7 +240,6 @@ async def run_opus_integration(state: MultiLangState) -> dict:
                     "error": str(e),
                     "error_type": type(e).__name__,
                 }
-                # Continue with next language
                 continue
 
         # Finalize the document
@@ -248,6 +260,8 @@ async def run_opus_integration(state: MultiLangState) -> dict:
             current_document, languages_integrated, workflows_used, integration_steps
         )
 
+        logger.info(f"Integration complete: {len(languages_integrated)} languages integrated")
+
         return {
             "integration_steps": integration_steps,
             "final_synthesis": final_document,
@@ -256,6 +270,7 @@ async def run_opus_integration(state: MultiLangState) -> dict:
         }
 
     except Exception as e:
+        logger.error(f"Opus integration failed: {e}")
         error_dict = {
             "timestamp": datetime.now().isoformat(),
             "phase": "opus_integration",

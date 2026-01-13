@@ -29,7 +29,7 @@ def aggregate_researcher_findings(state: DeepResearchState) -> dict[str, Any]:
         gaps_remaining=draft.get("gaps_remaining", []) if draft else [],
     )
 
-    logger.info(f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}")
+    logger.debug(f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}")
 
     return {
         "pending_questions": [],

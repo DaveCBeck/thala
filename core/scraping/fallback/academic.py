@@ -32,7 +32,7 @@ async def try_retrieve_academic(
     Returns:
         GetUrlResult if successful, None otherwise
     """
-    logger.info(f"Attempting retrieve-academic fallback for DOI: {doi}")
+    logger.debug(f"Attempting retrieve-academic fallback for DOI: {doi}")
 
     try:
         async with RetrieveAcademicClient() as client:
@@ -46,7 +46,7 @@ async def try_retrieve_academic(
                 doi=doi,
                 timeout_seconds=int(options.retrieve_academic_timeout),
             )
-            logger.info(f"Submitted retrieve-academic job: {job.job_id}")
+            logger.debug(f"Submitted retrieve-academic job: {job.job_id}")
 
             # Wait for completion
             result = await client.wait_for_completion(
@@ -65,7 +65,7 @@ async def try_retrieve_academic(
                 local_path = Path(temp_dir) / f"{doi.replace('/', '_')}.pdf"
                 await client.download_file(job.job_id, str(local_path))
 
-                logger.info(f"Downloaded via retrieve-academic: {local_path}")
+                logger.debug(f"Downloaded via retrieve-academic: {local_path}")
 
                 # Process PDF via Marker
                 markdown = await process_pdf_file(

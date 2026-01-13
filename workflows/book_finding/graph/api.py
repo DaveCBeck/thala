@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Literal, Optional
 
 from workflows.shared.language import get_language_config
+from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.book_finding.state import (
     BookFindingInput,
     BookFindingState,
@@ -99,8 +100,8 @@ async def book_finding(
     )
 
     run_id = uuid.uuid4()
-    logger.info(f"Starting book finding for theme: {theme[:100]}... (language: {language})")
-    logger.info(f"LangSmith run ID: {run_id}")
+    logger.info(f"Starting book finding workflow for theme '{theme[:100]}' (quality: {quality}, language: {language})")
+    logger.debug(f"LangSmith run ID: {run_id}")
 
     try:
         result = await book_finding_graph.ainvoke(
@@ -122,36 +123,44 @@ async def book_finding(
         else:
             status = "failed"
 
+        # Save full state for downstream workflows (in dev/test mode)
+        save_workflow_state(
+            workflow_name="book_finding",
+            run_id=str(run_id),
+            state={
+                "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
+                "processed_books": result.get("processed_books", []),
+                "analogous_recommendations": result.get("analogous_recommendations", []),
+                "inspiring_recommendations": result.get("inspiring_recommendations", []),
+                "expressive_recommendations": result.get("expressive_recommendations", []),
+                "search_results": result.get("search_results", []),
+                "processing_failed": result.get("processing_failed", []),
+                "final_markdown": final_markdown,
+                "started_at": initial_state["started_at"],
+                "completed_at": result.get("completed_at"),
+            },
+        )
+
+        logger.info(f"Book finding workflow completed with status '{status}' ({len(result.get('processed_books', []))} books processed)")
+
         return {
-            "final_markdown": final_markdown,
-            "final_report": final_markdown,  # Standardized field name
-            "status": status,  # Standardized status
-            "processed_books": result.get("processed_books", []),
-            "analogous_recommendations": result.get("analogous_recommendations", []),
-            "inspiring_recommendations": result.get("inspiring_recommendations", []),
-            "expressive_recommendations": result.get("expressive_recommendations", []),
-            "search_results": result.get("search_results", []),
-            "processing_failed": result.get("processing_failed", []),
-            "started_at": initial_state["started_at"],
-            "completed_at": result.get("completed_at"),
+            "final_report": final_markdown,
+            "status": status,
             "langsmith_run_id": str(run_id),
             "errors": errors,
+            "source_count": len(result.get("processed_books", [])),
+            "started_at": initial_state["started_at"],
+            "completed_at": result.get("completed_at"),
         }
 
     except Exception as e:
         logger.error(f"Book finding workflow failed: {e}")
         return {
-            "final_markdown": f"# Book Finding Failed\n\nError: {e}",
-            "final_report": f"# Book Finding Failed\n\nError: {e}",  # Standardized
-            "status": "failed",  # Standardized
-            "processed_books": [],
-            "analogous_recommendations": [],
-            "inspiring_recommendations": [],
-            "expressive_recommendations": [],
-            "search_results": [],
-            "processing_failed": [],
-            "started_at": initial_state["started_at"],
-            "completed_at": datetime.utcnow(),
+            "final_report": f"# Book Finding Failed\n\nError: {e}",
+            "status": "failed",
             "langsmith_run_id": str(run_id),
             "errors": [{"phase": "unknown", "error": str(e)}],
+            "source_count": 0,
+            "started_at": initial_state["started_at"],
+            "completed_at": datetime.utcnow(),
         }

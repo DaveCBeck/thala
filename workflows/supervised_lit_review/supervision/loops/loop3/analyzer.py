@@ -59,16 +59,15 @@ async def analyze_structure_phase_a_node(state: dict) -> dict[str, Any]:
         )
 
         logger.info(
-            f"Loop 3 Phase A: needs_restructuring={analysis.needs_restructuring}, "
+            f"Loop 3 Phase A complete: needs_restructuring={analysis.needs_restructuring}, "
             f"issues_found={len(analysis.issues)}"
         )
 
-        # Log each identified issue with full details
         for issue in analysis.issues:
             num_paragraphs = len(issue.affected_paragraphs)
-            log_fn = logger.warning if num_paragraphs > 25 else logger.info
+            log_fn = logger.warning if num_paragraphs > 25 else logger.debug
             log_fn(
-                f"  Issue {issue.issue_id} ({issue.issue_type}): "
+                f"Issue {issue.issue_id} ({issue.issue_type}): "
                 f"{num_paragraphs} paragraphs affected - {issue.description}"
             )
 
@@ -78,7 +77,7 @@ async def analyze_structure_phase_a_node(state: dict) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"Phase A analysis failed: {e}")
+        logger.error(f"Phase A analysis failed: {e}", exc_info=True)
         return {
             "issue_analysis": {
                 "issues": [],
@@ -133,7 +132,7 @@ async def generate_edits_phase_b_node(state: dict) -> dict[str, Any]:
     issues = issue_analysis.get("issues", [])
 
     if not issues:
-        logger.warning("Phase B called with no issues")
+        logger.debug("Phase B called with no issues")
         return {
             "edit_manifest": {
                 "edits": [],
@@ -168,7 +167,7 @@ async def generate_edits_phase_b_node(state: dict) -> dict[str, Any]:
             manifest_dict["architecture_assessment"] = issue_analysis["architecture_assessment"]
 
         logger.info(
-            f"Loop 3 Phase B: generated {len(manifest.edits)} edits, "
+            f"Loop 3 Phase B complete: generated {len(manifest.edits)} edits, "
             f"{len(manifest.todo_markers)} todos"
         )
 
@@ -185,7 +184,7 @@ async def generate_edits_phase_b_node(state: dict) -> dict[str, Any]:
         return {"edit_manifest": manifest_dict}
 
     except Exception as e:
-        logger.error(f"Phase B edit generation failed: {e}")
+        logger.error(f"Phase B edit generation failed: {e}", exc_info=True)
         todos = [
             f"Resolve issue {i['issue_id']}: {i['description'][:100]}"
             for i in issues[:5]

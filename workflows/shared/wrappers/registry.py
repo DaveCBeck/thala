@@ -88,7 +88,7 @@ def register_workflow(
         description: Human-readable description
     """
     if key in WORKFLOW_REGISTRY:
-        logger.warning(f"Overwriting existing workflow registration: {key}")
+        logger.debug(f"Overwriting existing workflow registration: {key}")
 
     WORKFLOW_REGISTRY[key] = WorkflowConfig(
         name=name,
@@ -161,5 +161,5 @@ def build_workflow_selection(
             if key in WORKFLOW_REGISTRY:
                 selection[key] = enabled
             else:
-                logger.warning(f"Unknown workflow in selection: {key}")
+                logger.debug(f"Unknown workflow in selection: {key}")
     return selection

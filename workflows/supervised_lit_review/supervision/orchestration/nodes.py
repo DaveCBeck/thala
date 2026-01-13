@@ -18,7 +18,6 @@ from ..utils.citation_validation import (
     CITATION_SOURCE_LOOP4,
     CITATION_SOURCE_LOOP5,
 )
-from workflows.academic_lit_review.state import LoopCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +60,6 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
             after_text=after_text,
         )
         loop_progress["revision_history"].append(revision)
-
-    checkpoint = LoopCheckpoint(
-        loop_number=1,
-        iteration=iterations_used,
-        review_snapshot=after_text[:1000] + "...",
-        timestamp="",
-    )
-    loop_progress["checkpoints"].append(checkpoint)
 
     zotero_key_sources = state.get("zotero_key_sources", {})
     updated_zotero_keys = dict(state["zotero_keys"])
@@ -148,14 +139,6 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
         )
         loop_progress["revision_history"].append(revision)
 
-    checkpoint = LoopCheckpoint(
-        loop_number=2,
-        iteration=iterations_used,
-        review_snapshot=after_text[:1000] + "...",
-        timestamp="",
-    )
-    loop_progress["checkpoints"].append(checkpoint)
-
     # Track newly added zotero keys (mirrors Loop 1 pattern)
     zotero_key_sources = state.get("zotero_key_sources", {})
     updated_zotero_keys = dict(state["zotero_keys"])
@@ -231,14 +214,6 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
         )
         loop_progress["revision_history"].append(revision)
 
-    checkpoint = LoopCheckpoint(
-        loop_number=3,
-        iteration=iterations_used,
-        review_snapshot=after_text[:1000] + "...",
-        timestamp="",
-    )
-    loop_progress["checkpoints"].append(checkpoint)
-
     logger.info(f"Loop 3 complete: {iterations_used} iterations used")
 
     return {
@@ -294,14 +269,6 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
             after_text=after_text,
         )
         loop_progress["revision_history"].append(revision)
-
-    checkpoint = LoopCheckpoint(
-        loop_number=4,
-        iteration=iterations_used,
-        review_snapshot=after_text[:1000] + "...",
-        timestamp="",
-    )
-    loop_progress["checkpoints"].append(checkpoint)
 
     zotero_key_sources = state.get("zotero_key_sources", {})
     verified_keys = result.get("verified_citation_keys", set())
@@ -385,14 +352,6 @@ async def run_loop5_node(state: OrchestrationState) -> dict[str, Any]:
             after_text=after_text,
         )
         loop_progress["revision_history"].append(revision)
-
-    checkpoint = LoopCheckpoint(
-        loop_number=5,
-        iteration=1,
-        review_snapshot=after_text[:1000] + "...",
-        timestamp="",
-    )
-    loop_progress["checkpoints"].append(checkpoint)
 
     human_review_items = result.get("human_review_items", [])
 

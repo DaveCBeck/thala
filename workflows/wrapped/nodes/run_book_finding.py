@@ -30,7 +30,7 @@ async def run_book_finding(state: WrappedResearchState) -> dict[str, Any]:
     started_at = datetime.utcnow()
 
     try:
-        logger.info(f"Starting book finding for theme: {theme[:100]}... (quality: {book_quality})")
+        logger.debug(f"Starting book finding for theme: '{theme[:100]}...' (quality: {book_quality})")
 
         result = await book_finding(
             theme=theme,
@@ -40,7 +40,7 @@ async def run_book_finding(state: WrappedResearchState) -> dict[str, Any]:
 
         book_result = WorkflowResult(
             workflow_type="books",
-            final_output=result.get("final_report"),  # Use standardized field
+            final_output=result.get("final_report"),
             started_at=started_at,
             completed_at=datetime.utcnow(),
             status=result.get("status", "completed"),
@@ -48,11 +48,9 @@ async def run_book_finding(state: WrappedResearchState) -> dict[str, Any]:
             top_of_mind_id=None,
         )
 
-        logger.info(
-            f"Book finding complete. "
-            f"Processed: {len(result.get('processed_books', []))}, "
-            f"Failed: {len(result.get('processing_failed', []))}"
-        )
+        processed_count = len(result.get("processed_books", []))
+        failed_count = len(result.get("processing_failed", []))
+        logger.info(f"Book finding complete: processed={processed_count}, failed={failed_count}")
 
         return {
             "book_result": book_result,

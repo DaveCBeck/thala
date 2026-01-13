@@ -46,8 +46,8 @@ async def run_web_research(
         )
 
         return WorkflowResult(
-            final_report=result.get("final_report"),  # Use standardized field
-            source_count=len(result.get("research_findings", [])),
+            final_report=result.get("final_report"),
+            source_count=result.get("source_count", 0),
             status=result.get("status", "completed" if result.get("final_report") else "failed"),
             errors=result.get("errors", []),
         )
@@ -97,8 +97,8 @@ async def run_academic_research(
         )
 
         return WorkflowResult(
-            final_report=result.get("final_report"),  # Use standardized field
-            source_count=len(result.get("paper_corpus", {})),
+            final_report=result.get("final_report"),
+            source_count=result.get("source_count", 0),
             status=result.get("status", "completed" if result.get("final_report") else "failed"),
             errors=result.get("errors", []),
         )
@@ -139,8 +139,8 @@ async def run_book_research(
         )
 
         return WorkflowResult(
-            final_report=result.get("final_report"),  # Use standardized field
-            source_count=len(result.get("processed_books", [])),
+            final_report=result.get("final_report"),
+            source_count=result.get("source_count", 0),
             status=result.get("status", "completed" if result.get("final_report") else "failed"),
             errors=result.get("errors", []),
         )
@@ -164,7 +164,7 @@ def register_builtin_workflows() -> None:
         name="Web Research",
         runner=run_web_research,
         default_enabled=True,
-        requires_questions=False,  # deep_research doesn't use research_questions
+        requires_questions=False,
         description="Deep web research using search and content scraping",
     )
 

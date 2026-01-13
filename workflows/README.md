@@ -1,6 +1,6 @@
 # Workflows
 
-LangGraph-based research and knowledge workflows. Each workflow uses composable subgraphs, quality tiers, and checkpointing for resilience.
+LangGraph-based research and knowledge workflows. Each workflow uses composable subgraphs and quality tiers.
 
 ## Available Workflows
 
@@ -73,7 +73,6 @@ shared/
 ├── llm_utils/           # Structured output, model tiers
 ├── language/            # Multi-language support (30+ languages)
 ├── persistent_cache.py  # File-based cache with TTL
-├── checkpointing.py     # State serialization for resumption
 ├── text_utils.py        # Chunking, word counting
 ├── batch_processor.py   # Async batch processing
 └── wrappers/            # Workflow registry, result types
@@ -91,13 +90,4 @@ result = await get_structured_output(
     user_prompt="Analyze this",
     tier=ModelTier.SONNET,
 )
-```
-
-### Checkpointing
-
-```python
-from workflows.shared.checkpointing import save_checkpoint, load_checkpoint
-
-save_checkpoint(state, "after_processing")
-state = load_checkpoint("after_processing")
 ```

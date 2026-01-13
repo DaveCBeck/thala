@@ -130,12 +130,11 @@ async def _search_books_internal(
         if books and not CACHE_DISABLED:
             _search_cache[cache_key] = output
 
-        logger.debug(f"book_search returned {len(books)} results for '{query}'")
+        logger.debug(f"Book search returned {len(books)} results for '{query}'")
         return output
 
     except Exception as e:
-        # Log at debug level - service might not be running
-        logger.debug(f"Book search service unavailable: {e}")
+        logger.warning(f"Book search service unavailable: {e}")
         return BookSearchOutput(query=query, total_results=0, results=[])
 
 
@@ -160,7 +159,7 @@ async def book_search(query: str, limit: int = 10, language: Optional[str] = Non
         output = await _search_books_internal(query, limit, language)
         return output_dict(output)
     except Exception as e:
-        logger.error(f"book_search failed: {e}")
+        logger.error(f"book_search failed for '{query}': {e}")
         return output_dict(
             BookSearchOutput(
                 query=query,
