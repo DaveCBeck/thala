@@ -39,7 +39,6 @@ from workflows.document_processing.state import DocumentProcessingState
 from workflows.document_processing.subgraphs.chapter_summarization import (
     chapter_summarization_subgraph,
 )
-from workflows.shared.async_utils import gather_with_error_collection
 
 logger = logging.getLogger(__name__)
 
@@ -179,20 +178,19 @@ async def process_documents_batch(
     logger.info(f"Starting batch processing of {len(documents)} documents (concurrency: {concurrency})")
 
     tasks = [process_with_limit(doc) for doc in documents]
-    successes, errors = await gather_with_error_collection(tasks, logger, error_template="Document failed: {error}")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     processed_results = []
-    for i, doc in enumerate(documents):
-        error_match = next((e for e in errors if e["index"] == i), None)
-        if error_match:
+    for i, (doc, result) in enumerate(zip(documents, results)):
+        if isinstance(result, Exception):
+            logger.warning(f"Document failed: {result}")
             processed_results.append({
                 "input": doc,
                 "current_status": "failed",
-                "errors": [{"node": "batch_processor", "error": error_match["error"]}],
+                "errors": [{"node": "batch_processor", "error": str(result)}],
             })
         else:
-            result_idx = i - sum(1 for e in errors if e["index"] < i)
-            processed_results.append(successes[result_idx])
+            processed_results.append(result)
 
     succeeded = sum(1 for r in processed_results if r.get("current_status") != "failed")
     logger.info(f"Batch processing complete: {succeeded}/{len(documents)} succeeded")

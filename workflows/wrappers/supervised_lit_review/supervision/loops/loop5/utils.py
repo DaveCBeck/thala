@@ -20,15 +20,6 @@ SONNET_1M_THRESHOLD = 120_000
 RESPONSE_BUFFER_TOKENS = DEFAULT_RESPONSE_BUFFER
 
 
-def estimate_tokens(text: str) -> int:
-    """Estimate token count from character count.
-
-    DEPRECATED: Use estimate_tokens_fast() from workflows.shared.token_utils.
-    Kept for backward compatibility.
-    """
-    return estimate_tokens_fast(text, with_safety_margin=True)
-
-
 def estimate_loop5_request_tokens(
     section_content: str,
     system_prompt: str,

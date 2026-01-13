@@ -3,7 +3,11 @@
 import logging
 
 from workflows.wrappers.multi_lang.state import MultiLangState
-from workflows.shared.language import get_language_config, is_supported_language
+from workflows.shared.language import (
+    get_language_config,
+    is_supported_language,
+    get_all_supported_languages,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +26,23 @@ MAJOR_10_LANGUAGES = [
 ]
 
 
+def _get_all_languages() -> list[str]:
+    """Get all supported languages, ensuring 'en' is first."""
+    all_langs = get_all_supported_languages()
+    if "en" in all_langs:
+        all_langs.remove("en")
+        all_langs.insert(0, "en")
+    return all_langs
+
+
 async def select_languages(state: MultiLangState) -> dict:
     """
     Select target languages based on mode.
 
-    Mode 1 (set_languages): Use user-specified languages
-    Mode 2 (all_languages): Start with MAJOR_10_LANGUAGES
+    Modes:
+        - set_languages: Use user-specified languages (no relevance filtering)
+        - main_languages: Use MAJOR_10_LANGUAGES with relevance filtering
+        - all_languages: Use all 29 supported languages with relevance filtering
 
     Also builds language_configs dict using get_language_config from shared/language.
     """
@@ -75,8 +90,14 @@ async def select_languages(state: MultiLangState) -> dict:
             }
 
         selected_languages = valid_languages
-    else:  # all_languages mode
+
+    elif mode == "main_languages":
+        # Major 10 languages with relevance filtering
         selected_languages = MAJOR_10_LANGUAGES.copy()
+
+    else:  # all_languages mode
+        # All 29 supported languages with relevance filtering
+        selected_languages = _get_all_languages()
 
     # Ensure "en" is first if present
     if "en" in selected_languages:

@@ -4,11 +4,17 @@ from workflows.wrappers.multi_lang.state import MultiLangState
 
 
 def route_after_language_selection(state: MultiLangState) -> str:
-    """Route after language selection based on mode."""
+    """Route after language selection based on mode.
+
+    - set_languages: Skip relevance check (user specified exact languages)
+    - main_languages: Run relevance check (filter from major 10)
+    - all_languages: Run relevance check (filter from all 29)
+    """
     mode = state["input"]["mode"]
-    if mode == "all_languages":
-        return "check_relevance_batch"
-    return "execute_next_language"
+    if mode == "set_languages":
+        return "execute_next_language"
+    # main_languages and all_languages both do relevance checking
+    return "check_relevance_batch"
 
 
 def route_language_loop(state: MultiLangState) -> str:

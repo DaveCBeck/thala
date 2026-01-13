@@ -3,7 +3,7 @@ Shared workflow wrapper infrastructure.
 
 This module provides common infrastructure for workflow orchestration:
 - Registry: Dynamic workflow registration and discovery
-- Quality: Unified quality tier mapping
+- Quality: Unified quality tier system (QualityTier)
 - Invoker: Standardized workflow invocation
 - Result types: Common result schemas
 
@@ -11,7 +11,6 @@ Usage:
     from workflows.shared.wrappers import (
         register_workflow,
         invoke_workflow,
-        QUALITY_MAPPING,
         WorkflowResult,
     )
 """
@@ -27,13 +26,10 @@ from workflows.shared.wrappers.registry import (
     build_workflow_selection,
 )
 from workflows.shared.wrappers.quality import (
-    QUALITY_MAPPING,
-    get_workflow_quality,
     get_quality_tiers,
 )
 from workflows.shared.wrappers.result_types import (
     WorkflowResult,
-    WrapperResult,
 )
 from workflows.shared.wrappers.invoker import (
     invoke_workflow,
@@ -50,12 +46,9 @@ __all__ = [
     "get_default_workflow_selection",
     "build_workflow_selection",
     # Quality
-    "QUALITY_MAPPING",
-    "get_workflow_quality",
     "get_quality_tiers",
     # Result types
     "WorkflowResult",
-    "WrapperResult",
     # Invoker
     "invoke_workflow",
 ]

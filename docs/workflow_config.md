@@ -71,14 +71,12 @@ async def book_finding(
 ```python
 async def multi_lang_research(
     topic: str,
-    mode: Literal["set_languages", "all_languages"] = "set_languages",
+    mode: Literal["set_languages", "main_languages", "all_languages"] = "set_languages",
     languages: Optional[list[str]] = None,
     research_questions: Optional[list[str]] = None,
     brief: Optional[str] = None,
-    workflows: Optional[dict[str, bool]] = None,
+    workflow: Literal["web", "academic", "books"] = "web",
     quality: QualityTier = "standard",
-    per_language_quality: Optional[dict[str, dict]] = None,
-    extend_to_all_30: bool = False,
 ) -> MultiLangResult
 ```
 

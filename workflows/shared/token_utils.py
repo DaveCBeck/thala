@@ -260,16 +260,3 @@ def select_model_for_context(
         return "sonnet_1m"
 
 
-# =============================================================================
-# Backward Compatibility Aliases
-# =============================================================================
-# These maintain compatibility with code using old function names
-
-
-def estimate_tokens(text: str) -> int:
-    """Estimate token count from character count.
-
-    DEPRECATED: Use estimate_tokens_fast() for explicit control over safety margin.
-    Kept for backward compatibility.
-    """
-    return estimate_tokens_fast(text, with_safety_margin=True)

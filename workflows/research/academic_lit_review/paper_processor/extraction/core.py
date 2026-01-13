@@ -9,7 +9,7 @@ from workflows.research.academic_lit_review.state import (
     PaperMetadata,
     PaperSummary,
 )
-from workflows.shared.llm_utils import ModelTier, extract_json_cached
+from workflows.shared.llm_utils import ModelTier
 from workflows.shared.llm_utils.structured import (
     get_structured_output,
     StructuredRequest,
@@ -65,10 +65,12 @@ Extract structured information from this paper."""
     tier = ModelTier.SONNET_1M if len(content) > 400_000 else ModelTier.HAIKU
 
     try:
-        extracted = await extract_json_cached(
-            text=user_prompt,
-            system_instructions=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+        extracted = await get_structured_output(
+            output_schema=PaperSummarySchema,
+            user_prompt=user_prompt,
+            system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
             tier=tier,
+            enable_prompt_cache=True,
         )
 
         return PaperSummary(
@@ -80,11 +82,11 @@ Extract structured information from this paper."""
             short_summary=short_summary,
             es_record_id=es_record_id,
             zotero_key=zotero_key,
-            key_findings=extracted.get("key_findings", []),
-            methodology=extracted.get("methodology", "Not specified"),
-            limitations=extracted.get("limitations", []),
-            future_work=extracted.get("future_work", []),
-            themes=extracted.get("themes", []),
+            key_findings=extracted.key_findings,
+            methodology=extracted.methodology,
+            limitations=extracted.limitations,
+            future_work=extracted.future_work,
+            themes=extracted.themes,
             claims=[],
             relevance_score=0.7,
             processing_status="success",
@@ -152,10 +154,12 @@ Extract structured information based on this metadata."""
     generated_zotero_key = doi.replace("/", "_").replace(".", "")[:20].upper()
 
     try:
-        extracted = await extract_json_cached(
-            text=user_prompt,
-            system_instructions=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+        extracted = await get_structured_output(
+            output_schema=PaperSummarySchema,
+            user_prompt=user_prompt,
+            system_prompt=METADATA_SUMMARY_EXTRACTION_SYSTEM,
             tier=ModelTier.HAIKU,
+            enable_prompt_cache=True,
         )
 
         # Use existing short_summary from document processing if available,
@@ -171,11 +175,11 @@ Extract structured information based on this metadata."""
             short_summary=short_summary,
             es_record_id=None,
             zotero_key=generated_zotero_key,
-            key_findings=extracted.get("key_findings", []),
-            methodology=extracted.get("methodology", "Not available from abstract"),
-            limitations=extracted.get("limitations", []),
-            future_work=extracted.get("future_work", []),
-            themes=extracted.get("themes", []),
+            key_findings=extracted.key_findings,
+            methodology=extracted.methodology or "Not available from abstract",
+            limitations=extracted.limitations,
+            future_work=extracted.future_work,
+            themes=extracted.themes,
             claims=[],
             relevance_score=paper.get("relevance_score", 0.6),
             processing_status="metadata_only",

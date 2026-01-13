@@ -67,9 +67,11 @@ class BookFindingQualityAnalyzer(BaseQualityAnalyzer):
 
     def _analyze_workflow_specific(self, metrics: QualityMetrics) -> None:
         """Analyze book-specific metrics."""
-        analogous = self.result.get("analogous_recommendations", [])
-        inspiring = self.result.get("inspiring_recommendations", [])
-        expressive = self.result.get("expressive_recommendations", [])
+        state = load_workflow_state("book_finding", self.result["langsmith_run_id"])
+
+        analogous = state.get("analogous_recommendations", []) if state else []
+        inspiring = state.get("inspiring_recommendations", []) if state else []
+        expressive = state.get("expressive_recommendations", []) if state else []
 
         metrics.workflow_specific["analogous_count"] = len(analogous)
         metrics.workflow_specific["inspiring_count"] = len(inspiring)
@@ -77,9 +79,9 @@ class BookFindingQualityAnalyzer(BaseQualityAnalyzer):
         metrics.workflow_specific["total_recommendations"] = len(analogous) + len(inspiring) + len(expressive)
 
         # Processing metrics
-        processed = self.result.get("processed_books", [])
-        failed = self.result.get("processing_failed", [])
-        search_results = self.result.get("search_results", [])
+        processed = state.get("processed_books", []) if state else []
+        failed = state.get("processing_failed", []) if state else []
+        search_results = state.get("search_results", []) if state else []
 
         metrics.workflow_specific["books_found"] = len(search_results)
         metrics.workflow_specific["books_processed"] = len(processed)
@@ -133,10 +135,13 @@ def print_result_summary(result: dict, theme: str) -> None:
     # Timing
     print_timing(result.get("started_at"), result.get("completed_at"))
 
+    # Load state for detailed fields
+    state = load_workflow_state("book_finding", result["langsmith_run_id"])
+
     # Recommendations
-    analogous = result.get("analogous_recommendations", [])
-    inspiring = result.get("inspiring_recommendations", [])
-    expressive = result.get("expressive_recommendations", [])
+    analogous = state.get("analogous_recommendations", []) if state else []
+    inspiring = state.get("inspiring_recommendations", []) if state else []
+    expressive = state.get("expressive_recommendations", []) if state else []
 
     print(f"\n--- Recommendations ---")
     print(f"Analogous Domain: {len(analogous)} books")
@@ -158,9 +163,9 @@ def print_result_summary(result: dict, theme: str) -> None:
         print(f"  - {title} by {author}")
 
     # Processed books
-    processed = result.get("processed_books", [])
-    failed = result.get("processing_failed", [])
-    search_results = result.get("search_results", [])
+    processed = state.get("processed_books", []) if state else []
+    failed = state.get("processing_failed", []) if state else []
+    search_results = state.get("search_results", []) if state else []
 
     print(f"\n--- Processing ---")
     print(f"Books found in search: {len(search_results)}")
@@ -218,16 +223,6 @@ async def run_book_finding(
         quality=quality,
         language=language,
     )
-
-    # Load full state from state store for detailed analysis
-    run_id = result.get("langsmith_run_id")
-    if run_id:
-        full_state = load_workflow_state("book_finding", run_id)
-        if full_state:
-            result = {**full_state, **result}
-            logger.info(f"Loaded full state from state store for run {run_id}")
-        else:
-            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
 
     return result
 

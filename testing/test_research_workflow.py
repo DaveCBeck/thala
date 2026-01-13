@@ -71,15 +71,19 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
 
     def _count_sources(self, metrics: QualityMetrics) -> None:
         """Count sources from findings and citations."""
-        findings = self.result.get("research_findings", [])
+        state = load_workflow_state("web_research", self.result["langsmith_run_id"])
+
+        findings = state.get("research_findings", []) if state else []
         total_sources = sum(len(f.get("sources", [])) for f in findings)
 
-        citations = self.result.get("citations", [])
+        citations = state.get("citations", []) if state else []
         metrics.source_count = max(total_sources, len(citations))
 
     def _analyze_workflow_specific(self, metrics: QualityMetrics) -> None:
         """Analyze research-specific metrics."""
-        findings = self.result.get("research_findings", [])
+        state = load_workflow_state("web_research", self.result["langsmith_run_id"])
+
+        findings = state.get("research_findings", []) if state else []
         metrics.workflow_specific["total_findings"] = len(findings)
 
         # Confidence scores
@@ -94,7 +98,7 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
         metrics.workflow_specific["unique_gaps"] = len(set(all_gaps))
 
         # Diffusion metrics
-        diffusion = self.result.get("diffusion", {})
+        diffusion = state.get("diffusion", {}) if state else {}
         if diffusion:
             metrics.workflow_specific["completeness_score"] = diffusion.get("completeness_score", 0)
             metrics.workflow_specific["iterations_used"] = diffusion.get("iteration", 0)
@@ -103,12 +107,13 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
             metrics.workflow_specific["areas_remaining"] = len(diffusion.get("areas_to_explore", []))
 
         # Translation
-        if self.result.get("translated_report"):
+        translated_report = state.get("translated_report") if state else None
+        if translated_report:
             metrics.workflow_specific["translation_generated"] = True
-            metrics.workflow_specific["translation_length"] = len(self.result["translated_report"])
+            metrics.workflow_specific["translation_length"] = len(translated_report)
 
         # Citations
-        citations = self.result.get("citations", [])
+        citations = state.get("citations", []) if state else []
         metrics.workflow_specific["citation_count"] = len(citations)
 
     def _identify_issues(self, metrics: QualityMetrics) -> None:
@@ -125,7 +130,8 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
 
         areas_remaining = metrics.workflow_specific.get("areas_remaining", 0)
         if areas_remaining:
-            diffusion = self.result.get("diffusion", {})
+            state = load_workflow_state("web_research", self.result["langsmith_run_id"])
+            diffusion = state.get("diffusion", {}) if state else {}
             areas = diffusion.get("areas_to_explore", [])[:3]
             metrics.issues.append(f"Unexplored areas: {', '.join(areas)}")
 
@@ -149,6 +155,10 @@ def print_result_summary(result: dict, topic: str) -> None:
     """Print a detailed summary of the research workflow result."""
     print_section_header("RESEARCH WORKFLOW RESULT")
 
+    # Load state once for all field accesses
+    run_id = result.get("langsmith_run_id")
+    state = load_workflow_state("web_research", run_id) if run_id else None
+
     # Topic and Status
     print(f"\nTopic: {topic}")
     status = result.get("current_status", "unknown")
@@ -158,7 +168,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     print_timing(result.get("started_at"), result.get("completed_at"))
 
     # Research Brief
-    brief = result.get("research_brief")
+    brief = state.get("research_brief") if state else None
     if brief:
         print(f"\n--- Research Brief ---")
         print_key_value("Topic", brief.get("topic", "N/A"))
@@ -175,7 +185,7 @@ def print_result_summary(result: dict, topic: str) -> None:
         )
 
     # Memory Context
-    memory_context = result.get("memory_context")
+    memory_context = state.get("memory_context") if state else None
     if memory_context:
         print(f"\n--- Memory Context ---")
         print(safe_preview(memory_context, 500))
@@ -187,7 +197,7 @@ def print_result_summary(result: dict, topic: str) -> None:
         print(safe_preview(research_plan, 800))
 
     # Diffusion State
-    diffusion = result.get("diffusion")
+    diffusion = state.get("diffusion") if state else None
     if diffusion:
         print(f"\n--- Diffusion Algorithm ---")
         print(f"Iterations: {diffusion.get('iteration', 0)}/{diffusion.get('max_iterations', 'N/A')}")
@@ -199,7 +209,7 @@ def print_result_summary(result: dict, topic: str) -> None:
         )
 
     # Research Findings
-    findings = result.get("research_findings", [])
+    findings = state.get("research_findings", []) if state else []
     if findings:
         print(f"\n--- Research Findings ({len(findings)}) ---")
         for i, finding in enumerate(findings[:5], 1):
@@ -215,7 +225,7 @@ def print_result_summary(result: dict, topic: str) -> None:
             print(f"\n  ... and {len(findings) - 5} more findings")
 
     # Draft Report
-    draft = result.get("draft_report")
+    draft = state.get("draft_report") if state else None
     if draft:
         print(f"\n--- Draft Report (v{draft.get('version', 0)}) ---")
         print(f"Length: {len(draft.get('content', ''))} chars")
@@ -233,7 +243,7 @@ def print_result_summary(result: dict, topic: str) -> None:
         print(safe_preview(final_report, 1000))
 
     # Citations
-    citations = result.get("citations", [])
+    citations = state.get("citations", []) if state else []
     if citations:
         print(f"\n--- Citations ({len(citations)}) ---")
         for i, cite in enumerate(citations[:10], 1):
@@ -245,7 +255,7 @@ def print_result_summary(result: dict, topic: str) -> None:
             print(f"  ... and {len(citations) - 10} more citations")
 
     # Storage and Tracing
-    store_id = result.get("store_record_id")
+    store_id = state.get("store_record_id") if state else None
     zotero_key = result.get("zotero_key")
     langsmith_run_id = result.get("langsmith_run_id")
     if store_id or zotero_key or langsmith_run_id:
@@ -259,7 +269,7 @@ def print_result_summary(result: dict, topic: str) -> None:
 
     # Language Results
     primary_lang = result.get("primary_language")
-    translated_report = result.get("translated_report")
+    translated_report = state.get("translated_report") if state else None
 
     if primary_lang and primary_lang != "en":
         print(f"\n--- Language Settings ---")

@@ -119,15 +119,6 @@ async def multi_lang_research(
     if mode == "set_languages" and not languages:
         languages = ["en"]
 
-    # Build workflow selection from registry (applies user overrides to defaults)
-    workflow_selection = build_workflow_selection(workflows)
-
-    # Build quality settings
-    quality_settings = MultiLangQualitySettings(
-        default_quality=quality,
-        per_language_overrides=per_language_quality or {},
-    )
-
     # Build input
     input_data = MultiLangInput(
         topic=topic,
@@ -135,9 +126,8 @@ async def multi_lang_research(
         brief=brief,
         mode=mode,
         languages=languages,
-        extend_to_all_30=extend_to_all_30,
-        workflows=workflow_selection,
-        quality_settings=quality_settings,
+        workflow=workflow,
+        quality=quality,
     )
 
     # Build initial state

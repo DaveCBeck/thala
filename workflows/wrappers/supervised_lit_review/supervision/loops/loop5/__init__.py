@@ -12,7 +12,6 @@ from .result_processing import (
     filter_ambiguous_claims,
 )
 from .utils import (
-    estimate_tokens,
     estimate_loop5_request_tokens,
     calculate_dynamic_char_budget,
     format_paper_summaries,
@@ -36,7 +35,6 @@ __all__ = [
     "finalize_node",
     "filter_ambiguous_claims",
     "select_model_tier_for_context",
-    "estimate_tokens",
     "estimate_loop5_request_tokens",
     "calculate_dynamic_char_budget",
     "format_paper_summaries",

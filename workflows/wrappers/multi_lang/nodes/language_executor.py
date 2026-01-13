@@ -123,23 +123,16 @@ async def execute_next_language(state: MultiLangState) -> dict:
     language_config = state["language_configs"][language_code]
     language_name = language_config["name"]
 
-    logger.info(f"Executing workflows for {language_name}")
+    logger.info(f"Executing workflow for {language_name}")
 
     started_at = datetime.utcnow()
 
-    # Get quality settings
-    quality_settings = state["input"]["quality_settings"]
-    per_lang_overrides = quality_settings.get("per_language_overrides", {})
-
-    if language_code in per_lang_overrides:
-        quality = per_lang_overrides[language_code]["quality_tier"]
-    else:
-        quality = quality_settings["default_quality"]
-
+    # Get quality (single global quality tier)
+    quality = state["input"]["quality"]
     logger.debug(f"Using quality={quality} for {language_name}")
 
-    # Determine which workflows to run
-    workflows = state["input"]["workflows"]
+    # Get the single workflow to run
+    workflow_key = state["input"]["workflow"]
     topic = state["input"]["topic"]
     research_questions = state["input"].get("research_questions")
 
@@ -148,43 +141,47 @@ async def execute_next_language(state: MultiLangState) -> dict:
     total_sources = 0
     all_errors = []
 
-    # Run workflows from registry
-    for workflow_key, config in WORKFLOW_REGISTRY.items():
-        # Determine if this workflow should run
-        if workflows:
-            # User provided explicit selection - only run what's explicitly True
-            enabled = workflows.get(workflow_key, False)
-        else:
-            # No selection provided - use registry defaults
-            enabled = config["default_enabled"]
-
-        if not enabled:
-            logger.debug(f"Skipping {config['name']} for {language_name} (not enabled)")
-            continue
-
-        logger.debug(f"Running {config['name']} for {language_name}")
-
-        # Build arguments for the workflow runner
-        kwargs = {
-            "topic": topic,
-            "language_config": language_config,
-            "quality": quality,
+    # Get workflow config from registry
+    config = WORKFLOW_REGISTRY.get(workflow_key)
+    if not config:
+        logger.error(f"Unknown workflow: {workflow_key}")
+        return {
+            "languages_failed": [language_code],
+            "current_language_index": idx + 1,
+            "current_phase": f"failed_{language_code}",
+            "current_status": f"Failed: Unknown workflow '{workflow_key}'",
+            "errors": [
+                {
+                    "language": language_code,
+                    "phase": "language_execution",
+                    "error": f"Unknown workflow: {workflow_key}",
+                }
+            ],
         }
-        if config["requires_questions"]:
-            kwargs["research_questions"] = research_questions
 
-        # Run the workflow
-        result = await config["runner"](**kwargs)
+    logger.debug(f"Running {config['name']} for {language_name}")
 
-        workflow_results.append({
-            "workflow_type": config["name"],
-            "report": result["final_report"],
-            "source_count": result["source_count"],
-            "status": result["status"],
-        })
-        workflows_run.append(workflow_key)
-        total_sources += result["source_count"]
-        all_errors.extend(result.get("errors", []))
+    # Build arguments for the workflow runner
+    kwargs = {
+        "topic": topic,
+        "language_config": language_config,
+        "quality": quality,
+    }
+    if config["requires_questions"]:
+        kwargs["research_questions"] = research_questions
+
+    # Run the workflow
+    result = await config["runner"](**kwargs)
+
+    workflow_results.append({
+        "workflow_type": config["name"],
+        "report": result["final_report"],
+        "source_count": result["source_count"],
+        "status": result["status"],
+    })
+    workflows_run.append(workflow_key)
+    total_sources += result["source_count"]
+    all_errors.extend(result.get("errors", []))
 
     # Check if any workflow succeeded
     has_results = any(r["status"] in ("success", "partial", "completed") for r in workflow_results)

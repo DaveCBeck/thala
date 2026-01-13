@@ -6,10 +6,11 @@ configurable supervision loops to enhance quality.
 
 import logging
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from workflows.research.academic_lit_review.graph.api import academic_lit_review
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
+from workflows.shared.quality_config import QualityTier
 from workflows.shared.workflow_state_store import load_workflow_state, save_workflow_state
 from workflows.wrappers.supervised_lit_review.supervision.orchestration import (
     run_supervision_configurable,
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def supervised_lit_review(
     topic: str,
     research_questions: list[str],
-    quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"] = "standard",
+    quality: QualityTier = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
     supervision_loops: str = "all",

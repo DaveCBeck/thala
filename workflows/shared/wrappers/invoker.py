@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from workflows.shared.wrappers.registry import get_workflow, get_available_workflows
-from workflows.shared.wrappers.quality import get_workflow_quality, QUALITY_MAPPING
+from workflows.shared.wrappers.quality import get_quality_tiers
 from workflows.shared.wrappers.result_types import WorkflowResult
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def invoke_workflow(
     Args:
         workflow_key: The workflow to invoke (e.g., "web_research", "academic_lit_review")
         query: The research query/topic/theme
-        quality: Unified quality tier ("quick", "standard", "comprehensive")
+        quality: Unified quality tier ("test", "quick", "standard", "comprehensive", "high_quality")
         language: ISO 639-1 language code (default: "en")
         research_questions: Optional research questions (for workflows that require them)
         date_range: Optional (start_year, end_year) tuple
@@ -55,14 +55,15 @@ async def invoke_workflow(
         )
 
     # Validate quality tier
-    if quality not in QUALITY_MAPPING:
+    valid_tiers = get_quality_tiers()
+    if quality not in valid_tiers:
         raise KeyError(
             f"Unknown quality tier: {quality}. "
-            f"Valid tiers: {', '.join(QUALITY_MAPPING.keys())}"
+            f"Valid tiers: {', '.join(valid_tiers)}"
         )
 
-    # Get workflow-specific quality setting
-    workflow_quality = get_workflow_quality(quality, workflow_key)
+    # Use quality tier directly (unified across all workflows)
+    workflow_quality = quality
 
     # Build invocation arguments
     invoke_kwargs: dict[str, Any] = {

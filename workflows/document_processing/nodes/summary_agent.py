@@ -10,12 +10,20 @@ from typing import Any
 
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.language import LANGUAGE_NAMES
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache, summarize_text_cached
+from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.llm_utils.response_parsing import extract_response_content
 from workflows.shared.retry_utils import with_retry
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
 
 logger = logging.getLogger(__name__)
+
+# System prompt for summarization (cached)
+SUMMARY_SYSTEM = """You are a skilled summarizer. Create concise summaries that capture the essential information.
+
+Guidelines:
+- Focus on the main thesis, key arguments, and conclusions
+- Preserve critical details and nuance
+- Write in clear, professional prose"""
 
 # System prompt for translation (kept simple for summaries)
 TRANSLATION_SYSTEM = """You are a skilled translator. Translate the following text accurately to English while:
@@ -54,21 +62,31 @@ async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
         else:
             content = markdown
 
-        # Build context with language instruction if non-English
-        context = "Create a concise summary capturing the main thesis, key arguments, and conclusions. Focus on what makes this work significant and its core contributions."
-
+        # Build user prompt with language instruction if non-English
+        lang_instruction = ""
         if original_language != "en":
             lang_name = LANGUAGE_NAMES.get(original_language, original_language)
-            context += f" Write the summary in {lang_name}."
+            lang_instruction = f" Write the summary in {lang_name}."
+
+        user_prompt = f"""Summarize the following text in approximately 100 words.{lang_instruction}
+
+Focus on the main thesis, key arguments, and conclusions. Highlight what makes this work significant.
+
+Text:
+{content}"""
 
         # Generate summary via LLM with prompt caching
-        original_summary = await summarize_text_cached(
-            text=content,
-            target_words=100,
-            context=context,
-            tier=ModelTier.SONNET,
-        )
-        original_summary = original_summary.strip()
+        llm = get_llm(tier=ModelTier.SONNET)
+
+        async def _summarize():
+            response = await invoke_with_cache(
+                llm,
+                system_prompt=SUMMARY_SYSTEM,
+                user_prompt=user_prompt,
+            )
+            return extract_response_content(response)
+
+        original_summary = (await with_retry(_summarize)).strip()
 
         logger.info(
             f"Generated original summary ({len(original_summary.split())} words, "

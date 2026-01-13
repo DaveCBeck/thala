@@ -33,18 +33,10 @@ Prompt Caching:
 """
 
 from .models import ModelTier, get_llm
-from .text_processors import (
-    summarize_text,
-    extract_json,
-    analyze_with_thinking,
-    extract_structured,
-)
 from .caching import (
     CacheTTL,
     create_cached_messages,
     invoke_with_cache,
-    summarize_text_cached,
-    extract_json_cached,
 )
 from .structured import (
     StructuredOutputStrategy,
@@ -74,15 +66,8 @@ __all__ = [
     "get_structured_output_with_result",
     "extract_from_text",
     "classify_content",
-    # Legacy text processors (consider using get_structured_output instead)
-    "summarize_text",
-    "extract_json",
-    "analyze_with_thinking",
-    "extract_structured",
     # Caching utilities
     "CacheTTL",
     "create_cached_messages",
     "invoke_with_cache",
-    "summarize_text_cached",
-    "extract_json_cached",
 ]

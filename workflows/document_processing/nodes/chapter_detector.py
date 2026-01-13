@@ -3,18 +3,32 @@ Chapter detection node for 10:1 summarization.
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
 
 from workflows.document_processing.state import ChapterInfo, DocumentProcessingState
 from workflows.shared.chunking_utils import (
     create_fallback_chunks,
     create_heading_based_chapters,
 )
-from workflows.shared.llm_utils import extract_structured, ModelTier
+from workflows.shared.llm_utils import get_structured_output, ModelTier
 from workflows.shared.markdown_utils import extract_headings
 from workflows.shared.text_utils import count_words
 
 logger = logging.getLogger(__name__)
+
+
+class HeadingAnalysis(BaseModel):
+    """Analysis of a single heading."""
+    heading: str = Field(description="Exact heading text")
+    is_chapter: bool = Field(description="Whether this is a chapter boundary")
+    chapter_author: Optional[str] = Field(default=None, description="Author name if multi-author book")
+
+
+class HeadingAnalysisResult(BaseModel):
+    """Result of heading structure analysis."""
+    headings: list[HeadingAnalysis] = Field(description="Analysis of each heading")
 
 
 def _build_chapter_boundaries(
@@ -141,7 +155,7 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         ])
 
         # Build prompt
-        prompt = """Analyze this list of document headings and identify which ones represent major section divisions.
+        system_prompt = """Analyze document headings and identify which ones represent major section divisions.
 Mark each heading with is_chapter=true if it represents a major division boundary, false otherwise.
 
 Guidelines:
@@ -153,38 +167,17 @@ Guidelines:
 - When in doubt, prefer marking more headings as chapters rather than fewer - splitting is better than one huge chunk"""
 
         if is_multi_author:
-            prompt += "\n\nThis is a multi-author book. For each chapter, identify the author name if present in the heading."
-
-        # Schema for structured extraction (guaranteed valid JSON)
-        schema = {
-            "type": "object",
-            "properties": {
-                "headings": {
-                    "type": "array",
-                    "description": "Analysis of each heading",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "heading": {"type": "string", "description": "Exact heading text"},
-                            "is_chapter": {"type": "boolean", "description": "Whether this is a chapter boundary"},
-                            "chapter_author": {"type": ["string", "null"], "description": "Author name if multi-author book"},
-                        },
-                        "required": ["heading", "is_chapter"],
-                    },
-                },
-            },
-            "required": ["headings"],
-        }
+            system_prompt += "\n\nThis is a multi-author book. For each chapter, identify the author name if present in the heading."
 
         try:
             # Use structured extraction for guaranteed valid JSON
-            result = await extract_structured(
-                text=heading_list,
-                prompt=prompt,
-                schema=schema,
+            result = await get_structured_output(
+                output_schema=HeadingAnalysisResult,
+                user_prompt=heading_list,
+                system_prompt=system_prompt,
                 tier=ModelTier.SONNET,
             )
-            analysis = result.get("headings", [])
+            analysis = [h.model_dump() for h in result.headings]
 
             # Build chapter boundaries
             chapters = _build_chapter_boundaries(markdown, headings, analysis)

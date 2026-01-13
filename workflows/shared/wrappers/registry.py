@@ -84,7 +84,7 @@ def register_workflow(
         default_enabled: Whether this workflow runs by default
         requires_questions: Whether research_questions are required
         supports_date_range: Whether date_range parameter is supported
-        quality_tiers: List of quality tiers supported (default: quick/standard/comprehensive)
+        quality_tiers: List of quality tiers supported (default: all 5 tiers)
         description: Human-readable description
     """
     if key in WORKFLOW_REGISTRY:
@@ -96,7 +96,7 @@ def register_workflow(
         default_enabled=default_enabled,
         requires_questions=requires_questions,
         supports_date_range=supports_date_range,
-        quality_tiers=quality_tiers or ["quick", "standard", "comprehensive"],
+        quality_tiers=quality_tiers or ["test", "quick", "standard", "comprehensive", "high_quality"],
         description=description,
     )
     logger.debug(f"Registered workflow: {key} ({name})")

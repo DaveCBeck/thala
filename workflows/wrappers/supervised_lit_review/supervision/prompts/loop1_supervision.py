@@ -58,17 +58,13 @@ Research Questions:
 {research_questions}
 </Original Research Context>
 
-<Thematic Clusters Covered>
-{cluster_summary}
-</Thematic Clusters Covered>
-
 <Previously Explored Issues>
 {issues_explored}
 </Previously Explored Issues>
 
 <Supervision Context>
 Iteration: {iteration}/{max_iterations}
-Papers in corpus: {corpus_size}
+Sources in corpus: {source_count}
 </Supervision Context>
 
 Analyze this literature review. Identify at most ONE area where theoretical depth could be strengthened, or indicate pass_through if the review is theoretically adequate for its purpose."""

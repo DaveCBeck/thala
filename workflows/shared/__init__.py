@@ -10,10 +10,8 @@ from .text_utils import (
 )
 from .llm_utils import (
     ModelTier,
-    analyze_with_thinking,
-    extract_json,
     get_llm,
-    summarize_text,
+    get_structured_output,
 )
 from .batch_processor import (
     BatchProcessor,
@@ -28,10 +26,7 @@ from .persistent_cache import (
     get_cache_stats,
     compute_file_hash,
 )
-from .async_utils import (
-    run_with_concurrency,
-    gather_with_error_collection,
-)
+from .async_utils import run_with_concurrency
 from .retry_utils import with_retry
 from .node_utils import safe_node_execution, StateUpdater
 from .llm_utils.response_parsing import (
@@ -41,7 +36,6 @@ from .llm_utils.response_parsing import (
 from .token_utils import (
     estimate_tokens_fast,
     count_tokens_accurate,
-    estimate_tokens,
     estimate_request_tokens,
     check_token_budget,
     select_model_for_context,
@@ -66,10 +60,8 @@ __all__ = [
     "get_last_n_pages",
     # LLM utilities
     "ModelTier",
-    "analyze_with_thinking",
-    "extract_json",
     "get_llm",
-    "summarize_text",
+    "get_structured_output",
     # Batch processing
     "BatchProcessor",
     "BatchRequest",
@@ -83,7 +75,6 @@ __all__ = [
     "compute_file_hash",
     # Async utilities
     "run_with_concurrency",
-    "gather_with_error_collection",
     # Retry utilities
     "with_retry",
     # Node utilities
@@ -95,7 +86,6 @@ __all__ = [
     # Token utilities
     "estimate_tokens_fast",
     "count_tokens_accurate",
-    "estimate_tokens",
     "estimate_request_tokens",
     "check_token_budget",
     "select_model_for_context",

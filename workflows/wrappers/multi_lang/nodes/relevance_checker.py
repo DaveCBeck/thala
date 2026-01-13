@@ -210,49 +210,22 @@ async def filter_relevant_languages(state: MultiLangState) -> dict:
     - has_meaningful_discussion=True AND confidence >= 0.5
     - OR it's English (always included)
 
-    Also updates quality settings based on suggested_depth from Haiku.
-
     Returns:
         languages_with_content: list[str]
         current_status: "Filtered to N languages with content"
     """
     relevance_checks = state.get("relevance_checks", [])
-    quality_settings = state["input"]["quality_settings"]
 
     languages_with_content = []
-    per_language_overrides = quality_settings.get("per_language_overrides", {}).copy()
 
     for check in relevance_checks:
         lang_code = check["language_code"]
         has_discussion = check["has_meaningful_discussion"]
         confidence = check["confidence"]
-        suggested_depth = check["suggested_depth"]
 
         # Include if meaningful discussion with sufficient confidence, or if English
         if (has_discussion and confidence >= 0.5) or lang_code == "en":
             languages_with_content.append(lang_code)
-
-            # Update quality settings based on suggested_depth
-            if suggested_depth != "skip" and lang_code != "en":
-                quality_tier = suggested_depth if suggested_depth != "skip" else "quick"
-
-                per_language_overrides[lang_code] = {
-                    "language_code": lang_code,
-                    "quality_tier": quality_tier,
-                }
-                logger.debug(
-                    f"Updated quality for {lang_code}: {quality_tier} (suggested by Haiku)"
-                )
-
-    # Update quality settings with new overrides
-    updated_quality_settings = {
-        "default_quality": quality_settings["default_quality"],
-        "per_language_overrides": per_language_overrides,
-    }
-
-    # Update the input state with new quality settings
-    updated_input = state["input"].copy()
-    updated_input["quality_settings"] = updated_quality_settings
 
     language_names = ", ".join(
         state["language_configs"][code]["name"] for code in languages_with_content
@@ -262,6 +235,5 @@ async def filter_relevant_languages(state: MultiLangState) -> dict:
 
     return {
         "languages_with_content": languages_with_content,
-        "input": updated_input,
         "current_status": f"Filtered to {len(languages_with_content)} languages with content: {language_names}",
     }

@@ -2,10 +2,11 @@
 
 import logging
 import uuid
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from workflows.research.academic_lit_review.state import LitReviewInput
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
+from workflows.shared.quality_config import QualityTier
 from workflows.shared.workflow_state_store import save_workflow_state
 from .state_init import build_initial_state
 from .construction import academic_lit_review_graph
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def academic_lit_review(
     topic: str,
     research_questions: list[str],
-    quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"] = "standard",
+    quality: QualityTier = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
 ) -> dict[str, Any]:
