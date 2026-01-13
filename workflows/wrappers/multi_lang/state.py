@@ -89,8 +89,6 @@ class OpusIntegrationStep(TypedDict):
     language_name: str
     integrated_content: str
     enhancement_notes: str
-    new_sections_added: list[str]
-    existing_sections_enhanced: list[str]
 
 
 # =============================================================================

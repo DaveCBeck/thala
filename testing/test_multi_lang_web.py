@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""
+Test script for multi-language web research.
+
+Uses the multi_lang workflow with web_research configuration, producing:
+- Per-language web research reports
+- Cross-language comparative analysis
+- Final integrated synthesis report
+
+Usage:
+    python test_multi_lang_web.py "topic" [quality] --languages <langs>
+    python test_multi_lang_web.py "topic" test --languages en,es
+    python test_multi_lang_web.py "topic" quick --languages en,de,fr
+
+Language options:
+    --languages en,es,de   Specific language codes (comma-separated)
+    --languages major      Use MAJOR_10_LANGUAGES
+
+Valid quality levels: test, quick, standard, comprehensive (default: quick)
+
+Outputs saved to testing/test_data/:
+    multilang-web-{lang}-{datetime}.md     Per-language reports
+    multilang-web-comparative-{datetime}.md   Cross-language analysis
+    multilang-web-final-{datetime}.md         Final integrated synthesis
+
+Environment:
+    Set THALA_MODE=dev in .env to enable LangSmith tracing
+"""
+
+import asyncio
+import os
+from datetime import datetime
+
+# Enable dev mode for LangSmith tracing before any imports
+os.environ["THALA_MODE"] = "dev"
+
+import logging
+
+from testing.utils import (
+    configure_logging,
+    get_output_dir,
+    print_section_header,
+    format_duration,
+    create_test_parser,
+    add_quality_argument,
+)
+from workflows.shared.workflow_state_store import load_workflow_state
+
+configure_logging("multi_lang_web")
+logger = logging.getLogger(__name__)
+
+# Output directory for results
+OUTPUT_DIR = get_output_dir()
+
+# Major 10 languages for comprehensive coverage
+MAJOR_10_LANGUAGES = ["en", "zh", "es", "de", "fr", "ja", "pt", "ru", "ar", "ko"]
+
+VALID_QUALITIES = ["test", "quick", "standard", "comprehensive"]
+DEFAULT_QUALITY = "quick"
+DEFAULT_LANGUAGES = ["en", "es"]
+
+
+# =============================================================================
+# Translation
+# =============================================================================
+
+
+async def translate_to_english(text: str, source_language: str) -> str:
+    """Translate text to English using LLM.
+
+    Args:
+        text: Text to translate
+        source_language: Source language name (e.g., "Spanish", "Chinese")
+
+    Returns:
+        English translation of the text
+    """
+    from workflows.shared.llm_utils.models import get_llm, ModelTier
+
+    llm = get_llm(ModelTier.SONNET, max_tokens=16384)
+
+    prompt = f"""Translate the following {source_language} research report to English.
+
+Preserve:
+- All formatting (headers, lists, citations)
+- Technical terminology (translate but keep original term in parentheses for key concepts)
+- Report structure
+- All citations and references
+
+Text to translate:
+
+{text}
+
+Provide only the English translation, no commentary."""
+
+    try:
+        response = await llm.ainvoke(prompt)
+        return response.content
+    except Exception as e:
+        logger.error(f"Translation failed: {e}")
+        return f"[Translation failed: {e}]\n\n{text}"
+
+
+# =============================================================================
+# Output Saving
+# =============================================================================
+
+
+async def save_markdown_outputs(result: dict, timestamp: str) -> dict[str, str]:
+    """Save all markdown outputs from the multi_lang result.
+
+    Non-English reports are translated to English before saving.
+
+    Args:
+        result: Combined result dict with state store data
+        timestamp: Timestamp string for filenames
+
+    Returns:
+        Dict mapping output type to file path
+    """
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    saved_files = {}
+
+    state = load_workflow_state("multi_lang", result["langsmith_run_id"])
+
+    # Save per-language reports (translated to English if needed)
+    lang_results = state.get("language_results", []) if state else []
+    for lang_result in lang_results:
+        lang_code = lang_result["language_code"]
+        lang_name = lang_result["language_name"]
+        full_report = lang_result.get("full_report")
+
+        if full_report:
+            # Translate non-English reports
+            if lang_code != "en":
+                logger.info(f"Translating {lang_name} report to English...")
+                translated_report = await translate_to_english(full_report, lang_name)
+            else:
+                translated_report = full_report
+
+            filename = f"multilang-web-{lang_code}-{timestamp}.md"
+            filepath = OUTPUT_DIR / filename
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(f"# {lang_name} Web Research Report\n\n")
+                if lang_code != "en":
+                    f.write(f"*Translated from {lang_name} to English*\n\n")
+                f.write(f"**Quality:** {lang_result.get('quality_used', 'unknown')}\n")
+                f.write(f"**Sources:** {lang_result.get('source_count', 0)}\n")
+                f.write(f"**Workflows:** {', '.join(lang_result.get('workflows_run', []))}\n\n")
+                f.write("---\n\n")
+                f.write(translated_report)
+            saved_files[f"lang_{lang_code}"] = str(filepath)
+            logger.info(f"Saved {lang_code} report: {filepath}")
+
+    # Save comparative analysis
+    comparative = state.get("comparative") if state else None
+    if comparative:
+        filename = f"multilang-web-comparative-{timestamp}.md"
+        filepath = OUTPUT_DIR / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("# Cross-Language Comparative Analysis\n\n")
+            f.write(comparative)
+        saved_files["comparative"] = str(filepath)
+        logger.info(f"Saved comparative analysis: {filepath}")
+
+    # Save final synthesis
+    synthesis = state.get("final_synthesis") if state else None
+    if not synthesis:
+        synthesis = result.get("final_report")
+    if synthesis:
+        filename = f"multilang-web-final-{timestamp}.md"
+        filepath = OUTPUT_DIR / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("# Integrated Multi-Language Web Research Report\n\n")
+            f.write(synthesis)
+        saved_files["final"] = str(filepath)
+        logger.info(f"Saved final synthesis: {filepath}")
+
+    return saved_files
+
+
+def print_result_summary(result: dict) -> None:
+    """Print a summary of multi-lang results."""
+    print_section_header("MULTI-LANGUAGE WEB RESEARCH RESULTS")
+
+    state = load_workflow_state("multi_lang", result["langsmith_run_id"])
+
+    # Language results
+    lang_results = state.get("language_results", []) if state else []
+    print(f"\nLanguages processed: {len(lang_results)}")
+
+    total_sources = 0
+    for lang_result in lang_results:
+        lang = lang_result["language_code"]
+        name = lang_result["language_name"]
+        sources = lang_result.get("source_count", 0)
+        workflows = lang_result.get("workflows_run", [])
+        total_sources += sources
+        print(f"  {lang} ({name}): {sources} sources via {', '.join(workflows)}")
+
+    print(f"\nTotal sources: {total_sources}")
+
+    # Synthesis status
+    comparative = state.get("comparative") if state else None
+    synthesis = state.get("final_synthesis") if state else None
+    if not synthesis:
+        synthesis = result.get("final_report")
+    print("\n--- Synthesis Status ---")
+    print(f"Comparative analysis: {'Yes' if comparative else 'No'}")
+    print(f"Final synthesis: {'Yes' if synthesis else 'No'}")
+
+    sonnet_analysis = state.get("sonnet_analysis") if state else None
+    if sonnet_analysis:
+        if sonnet_analysis.get("universal_themes"):
+            print(f"\nUniversal themes: {len(sonnet_analysis['universal_themes'])}")
+        if sonnet_analysis.get("unique_contributions"):
+            print(f"Languages with unique contributions: {len(sonnet_analysis['unique_contributions'])}")
+
+    # Errors
+    errors = result.get("errors", [])
+    if errors:
+        print(f"\n--- Errors ({len(errors)}) ---")
+        for error in errors[:5]:
+            print(f"  - {error}")
+        if len(errors) > 5:
+            print(f"  ... and {len(errors) - 5} more")
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+
+def parse_languages(languages_str: str) -> list[str]:
+    """Parse language argument into list of language codes."""
+    if languages_str.lower() == "major":
+        return MAJOR_10_LANGUAGES.copy()
+
+    # Parse comma-separated list
+    langs = [lang.strip().lower() for lang in languages_str.split(",")]
+
+    # Validate language codes (basic check)
+    valid_codes = {
+        "en", "es", "zh", "ja", "de", "fr", "pt", "ko", "ru", "ar",
+        "it", "nl", "pl", "tr", "vi", "th", "id", "hi", "bn", "sv",
+        "no", "da", "fi", "cs", "el", "he", "uk", "ro", "hu"
+    }
+    invalid = [lang for lang in langs if lang not in valid_codes]
+    if invalid:
+        logger.warning(f"Unknown language codes (proceeding anyway): {invalid}")
+
+    return langs
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = create_test_parser(
+        description="Run multi-language web research",
+        default_topic="The impact of artificial intelligence on healthcare in 2025",
+        topic_help="Research topic for web research",
+        epilog_examples="""
+Examples:
+  %(prog)s "AI in healthcare" test --languages en,es
+  %(prog)s "climate change solutions" quick --languages en,de,fr
+  %(prog)s "renewable energy" standard --languages major
+        """
+    )
+
+    add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
+
+    parser.add_argument(
+        "--languages", "-L",
+        type=str,
+        default=",".join(DEFAULT_LANGUAGES),
+        help="Languages: comma-separated codes (en,es,de) or 'major' for top 10"
+    )
+
+    return parser.parse_args()
+
+
+async def main():
+    """Run multi-language web research."""
+    from workflows.wrappers.multi_lang import multi_lang_research
+
+    args = parse_args()
+
+    topic = args.topic
+    quality = args.quality
+    languages = parse_languages(args.languages)
+
+    print_section_header("MULTI-LANGUAGE WEB RESEARCH")
+    print(f"\nTopic: {topic}")
+    print(f"Quality: {quality}")
+    print(f"Languages: {', '.join(languages)} ({len(languages)} total)")
+    print(f"Workflow: web")
+    print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
+    print(f"\nStarting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 80)
+
+    try:
+        # Run multi_lang workflow with web workflow
+        workflow_result = await multi_lang_research(
+            topic=topic,
+            mode="set_languages",
+            languages=languages,
+            research_questions=None,  # Web research doesn't require questions
+            workflow="web",
+            quality=quality,
+        )
+
+        result = workflow_result.to_dict()
+
+        # Print summary
+        print_result_summary(result)
+
+        # Save all outputs
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        saved_files = await save_markdown_outputs(result, timestamp)
+
+        print("\n--- Saved Files ---")
+        for output_type, filepath in saved_files.items():
+            print(f"  {output_type}: {filepath}")
+
+        # Duration
+        started_at = result.get("started_at")
+        completed_at = result.get("completed_at")
+        if started_at and completed_at:
+            duration_str = format_duration(started_at, completed_at)
+            print(f"\nTotal duration: {duration_str}")
+
+    except KeyboardInterrupt:
+        print("\n\nInterrupted by user.")
+    except Exception as e:
+        logger.exception(f"Error during multi-lang web research: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

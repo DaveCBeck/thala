@@ -3,23 +3,26 @@
 INTEGRATION_SYSTEM = """You are integrating research findings from {language_name} into an evolving English synthesis document.
 
 Context:
-- You are building a comprehensive, unified research review that incorporates multilingual sources
+- You are building a comprehensive, unified research review
 - Previous languages have already been integrated (see current document)
-- Your task: thoughtfully integrate {language_name} findings
+- Your task: thoughtfully integrate {language_name} findings into the content
 
 Guidelines:
 1. ADD new insights not already covered
 2. ENHANCE existing sections with supporting or contrasting evidence
-3. NOTE where {language_name} sources provide unique perspectives (use inline notes like "[German sources add: ...]")
-4. MAINTAIN academic tone and proper attribution
-5. FLAG any conflicts with existing content for reader awareness
+3. PRESERVE ALL citation keys in [@KEY] format - these are Zotero references that must remain intact
+4. When mentioning contributions from {language_name} sources, briefly note the language origin in parentheses, e.g., "(from Spanish sources)"
+5. MAINTAIN academic tone with proper citations
 6. PRESERVE the document's coherent narrative flow
+7. Focus on CONTENT, not process - do not add methodology sections or meta-commentary about the integration
+
+CRITICAL: Citation keys like [@7NM5HWY5] or [@ABC123] MUST be preserved exactly as they appear. These link to the reference database.
 
 Do NOT simply append content. Weave it in naturally where it fits thematically.
 
 Output:
-1. The updated synthesis document
-2. Notes on what was added/changed"""
+1. The updated synthesis document with all citations preserved
+2. Brief notes on what was added/changed"""
 
 INTEGRATION_USER = """Current synthesis document:
 {current_document}
@@ -45,9 +48,12 @@ This document will serve as the foundation that other languages' findings will b
 Create a well-structured research synthesis that:
 1. Has clear sections organized by theme/topic
 2. Includes an Executive Summary
-3. Has proper citations and source attributions
+3. PRESERVES ALL citation keys in [@KEY] format exactly as they appear - these are Zotero references
 4. Leaves natural places where additional perspectives could enhance the content
 5. Is written in clear, academic English
+6. Focuses on CONTENT, not methodology or process
+
+CRITICAL: Citation keys like [@7NM5HWY5] MUST be preserved exactly. Do not describe them, include them inline.
 
 This is the STARTING POINT - it will be enriched with non-English sources in subsequent steps."""
 
@@ -65,13 +71,18 @@ FINAL_ENHANCEMENT_SYSTEM = """You are finalizing a multi-language research synth
 
 The document has been built by integrating findings from multiple languages. Your task is to:
 
-1. ADD an "Enhanced Coverage Notes" section at the end summarizing how non-English sources improved the research
-2. ENSURE the document flows coherently as one unified piece
-3. FIX any awkward transitions between integrated sections
-4. ADD a "Methodology" section listing languages analyzed and workflows used
-5. POLISH the Executive Summary to reflect the full multi-language scope
+1. ENSURE the document flows coherently as one unified piece
+2. FIX any awkward transitions between integrated sections
+3. POLISH the Executive Summary to reflect the full scope of findings
+4. PRESERVE ALL citation keys in [@KEY] format exactly as they appear
+5. End the document after the Conclusion - do not add methodology sections, coverage notes, or other meta-commentary
 
-Do not remove content - only enhance, smooth, and finalize."""
+CRITICAL:
+- Citation keys like [@7NM5HWY5] MUST be preserved exactly
+- Focus on CONTENT quality, not process documentation
+- The document should read as a focused research synthesis, not a report about the synthesis process
+
+Do not remove substantive content. Remove any meta-commentary about the integration process."""
 
 FINAL_ENHANCEMENT_USER = """Current synthesis document:
 {current_document}

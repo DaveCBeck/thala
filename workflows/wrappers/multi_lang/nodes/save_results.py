@@ -69,7 +69,7 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
     errors: list[dict] = []
     topic = state["input"]["topic"]
     mode = state["input"]["mode"]
-    workflows = state["input"]["workflows"]
+    workflow = state["input"]["workflow"]
 
     # 1. Save per-language records
     language_results = state.get("language_results", [])
@@ -177,8 +177,8 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
             languages_integrated = list(per_language_record_ids.keys())
             integration_steps = state.get("integration_steps", [])
 
-            # Determine workflows used (which were enabled)
-            workflows_used = [k for k, v in workflows.items() if v]
+            # Determine workflows used
+            workflows_used = [workflow]
 
             record = StoreRecord(
                 id=record_id,

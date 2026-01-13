@@ -41,7 +41,7 @@ async def run_web_research(
     try:
         result = await deep_research(
             query=topic,
-            depth=quality,
+            quality=quality,
             language=language_config["code"],
         )
 

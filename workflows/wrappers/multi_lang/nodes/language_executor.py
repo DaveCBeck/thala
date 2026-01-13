@@ -9,6 +9,7 @@ from datetime import datetime
 from workflows.wrappers.multi_lang.state import MultiLangState, LanguageResult
 from workflows.wrappers.multi_lang.workflow_registry import WORKFLOW_REGISTRY
 from workflows.shared.llm_utils.models import get_llm, ModelTier
+from workflows.research.web_research.utils import extract_json_from_llm_response
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,8 @@ Format your response as JSON:
         response = await llm.ainvoke(prompt)
         content = response.content
 
-        # Parse JSON response
-        import json
-
-        data = json.loads(content)
+        # Parse JSON response using robust extraction
+        data = extract_json_from_llm_response(content)
         return (
             data.get("summary", ""),
             data.get("key_insights", []),

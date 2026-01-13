@@ -39,12 +39,6 @@ class IntegrationOutput(BaseModel):
     enhancement_notes: str = Field(
         description="What was added or changed during integration"
     )
-    new_sections_added: list[str] = Field(
-        description="List of new section titles added"
-    )
-    existing_sections_enhanced: list[str] = Field(
-        description="List of existing section titles that were enhanced"
-    )
 
 
 class FinalEnhancementOutput(BaseModel):
@@ -69,10 +63,12 @@ async def _create_initial_synthesis(
         else "None specified"
     )
 
+    # Use full_report to preserve citation keys like [@ABC123]
+    english_findings = english_result.get("full_report") or english_result["findings_summary"]
     user_prompt = INITIAL_SYNTHESIS_USER.format(
         topic=topic,
         research_questions=questions_formatted,
-        english_findings=english_result["findings_summary"],
+        english_findings=english_findings,
     )
 
     result: InitialSynthesisOutput = await get_structured_output(
@@ -100,11 +96,13 @@ async def _integrate_language(
     guidance_formatted = "\n".join(f"- {item}" for item in sonnet_guidance)
 
     system_prompt = INTEGRATION_SYSTEM.format(language_name=language_name)
+    # Use full_report to preserve citation keys like [@ABC123]
+    language_findings = language_result.get("full_report") or language_result["findings_summary"]
     user_prompt = INTEGRATION_USER.format(
         current_document=current_document,
         language_name=language_name,
         sonnet_guidance=guidance_formatted,
-        language_findings=language_result["findings_summary"],
+        language_findings=language_findings,
     )
 
     result: IntegrationOutput = await get_structured_output(
@@ -112,8 +110,8 @@ async def _integrate_language(
         user_prompt=user_prompt,
         system_prompt=system_prompt,
         tier=ModelTier.OPUS,
-        max_tokens=16384,
-        thinking_budget=8000,
+        max_tokens=64000,  # Must be > thinking_budget, and <= 64000 for model compatibility
+        thinking_budget=24000,
     )
 
     integration_step: OpusIntegrationStep = {
@@ -121,8 +119,6 @@ async def _integrate_language(
         "language_name": language_name,
         "integrated_content": result.updated_document,
         "enhancement_notes": result.enhancement_notes,
-        "new_sections_added": result.new_sections_added,
-        "existing_sections_enhanced": result.existing_sections_enhanced,
     }
 
     return result.updated_document, integration_step
