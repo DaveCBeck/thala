@@ -51,6 +51,9 @@ from .types import (
 )
 from .unified import get_url
 
+# PDF processing
+from .pdf import process_pdf_by_md5
+
 __all__ = [
     # Primary interface (unified URL retrieval)
     "get_url",
@@ -59,6 +62,8 @@ __all__ = [
     "ContentSource",
     "ContentClassification",
     "DoiInfo",
+    # PDF processing
+    "process_pdf_by_md5",
     # Low-level scraping service
     "ScraperService",
     "ScrapeResult",

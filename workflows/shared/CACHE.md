@@ -16,7 +16,6 @@ This caching system provides:
 | Type | Location | TTL | Purpose |
 |------|----------|-----|---------|
 | `openalex` | `.cache/openalex/` | 30 days | OpenAlex API metadata lookups |
-| `marker` | `.cache/marker/` | 30 days | PDF to Markdown conversion results |
 
 ### OpenAlex API Cache
 
@@ -25,13 +24,6 @@ Caches:
 - Forward/backward citation queries
 - Author works queries
 - DOI to OpenAlex ID resolution
-
-### Marker PDF Processing Cache
-
-Caches PDF conversion results using content hash:
-- **Cache key**: `SHA256(file_content):quality:langs`
-- **Benefit**: Skip GPU processing for already-processed files
-- **Use case**: Re-running workflows, testing with same documents
 
 ## Usage
 
@@ -45,25 +37,6 @@ work = await get_work_by_doi("10.1234/example")
 
 # Second call: cache hit
 work = await get_work_by_doi("10.1234/example")  # <1ms
-```
-
-### Automatic Caching (Marker)
-
-```python
-from workflows.shared.marker_client import MarkerClient
-
-async with MarkerClient() as client:
-    # First call: GPU processing + cache
-    result = await client.convert(
-        file_path="paper.pdf",
-        absolute_path="/full/path/to/paper.pdf"
-    )
-
-    # Second call: cache hit (even after service restart)
-    result = await client.convert(
-        file_path="paper.pdf",
-        absolute_path="/full/path/to/paper.pdf"
-    )
 ```
 
 ### Manual Cache Operations
@@ -111,26 +84,19 @@ Default: `/home/dave/thala/.cache`
 ```
 Paper pipeline: 14 acquired (0 from cache)
 - OpenAlex lookups: 14 × 300ms = 4.2s
-- PDF processing: 14 × 15s = 210s
-Total: ~214s
 ```
 
 ### After Caching (Subsequent Runs)
 ```
 Paper pipeline: 14 acquired (14 from cache)
 - OpenAlex lookups: 14 × <1ms = ~14ms
-- PDF processing: 14 × <100ms = ~1.4s
-Total: ~1.5s
 ```
-
-**Speedup**: ~140x faster on re-runs
 
 ### Expected Metrics
 
 | Operation | Before | After | Speedup |
 |-----------|--------|-------|---------|
 | OpenAlex DOI lookup | 200-500ms | <1ms | 200-500x |
-| Marker PDF processing | 5-30s | <100ms | 50-300x |
 
 ## Cache Invalidation
 
@@ -143,12 +109,9 @@ Automatic invalidation when:
 
 ```
 .cache/
-├── openalex/
-│   ├── a1b2c3d4e5f6.pkl  # work:10.1234/example
-│   ├── f7e8d9c0b1a2.pkl  # forward:10.1234/example:50:10:None
-│   └── ...
-└── marker/
-    ├── 1a2b3c4d5e6f.pkl  # SHA256(pdf_content):fast:English
+└── openalex/
+    ├── a1b2c3d4e5f6.pkl  # work:10.1234/example
+    ├── f7e8d9c0b1a2.pkl  # forward:10.1234/example:50:10:None
     └── ...
 ```
 

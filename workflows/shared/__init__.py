@@ -1,6 +1,5 @@
 """Shared utilities for document processing workflows."""
 
-from .marker_client import MarkerClient, MarkerJobResult
 from .text_utils import (
     chunk_by_headings,
     count_words,
@@ -49,9 +48,6 @@ from .token_utils import (
 )
 
 __all__ = [
-    # Marker client
-    "MarkerClient",
-    "MarkerJobResult",
     # Text utilities
     "chunk_by_headings",
     "count_words",

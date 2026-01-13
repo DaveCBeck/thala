@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Any
 
-from workflows.research.web_research.subgraphs.researcher_base import fetch_pdf_via_marker
+from core.scraping import process_pdf_by_md5
 from workflows.research.book_finding.state import (
     BookResult,
     BookFindingQualitySettings,
@@ -47,7 +47,7 @@ async def _process_single_book(
 
         # Download via VPN and convert via Marker
         logger.debug(f"Processing '{book['title']}'")
-        content = await fetch_pdf_via_marker(
+        content = await process_pdf_by_md5(
             md5=book["md5"],
             identifier=book["title"],
         )

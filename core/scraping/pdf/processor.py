@@ -407,3 +407,66 @@ async def process_pdf_file(
         timeout=timeout,
         filename=path.name,
     )
+
+
+async def process_pdf_by_md5(
+    md5: str,
+    identifier: Optional[str] = None,
+    quality: str = "fast",
+    langs: Optional[list[str]] = None,
+    timeout: float = 120.0,
+) -> Optional[str]:
+    """Download PDF via MD5 hash (Anna's Archive pattern) and convert via Marker.
+
+    Uses the retrieve-academic service (VPN-enabled) to download PDFs by MD5 hash,
+    then converts to markdown using Marker.
+
+    Args:
+        md5: MD5 hash of the document to download
+        identifier: Identifier for logging (e.g., book title)
+        quality: Quality preset (fast, balanced, quality). Defaults to "fast".
+        langs: Languages for OCR
+        timeout: Download timeout in seconds
+
+    Returns:
+        Markdown content or None if failed.
+    """
+    from core.stores import RetrieveAcademicClient
+
+    logger.debug(f"Processing PDF by MD5: {md5[:12]}...")
+
+    try:
+        async with RetrieveAcademicClient() as client:
+            if not await client.health_check():
+                logger.warning("retrieve-academic service unavailable")
+                return None
+
+            # Download to temp file
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                await client.download_by_md5(
+                    md5=md5,
+                    local_path=tmp_path,
+                    identifier=identifier or md5,
+                    timeout=timeout,
+                )
+
+                # Convert via Marker
+                return await process_pdf_file(
+                    tmp_path,
+                    quality=quality,
+                    langs=langs,
+                    timeout=timeout,
+                )
+            finally:
+                # Cleanup temp file
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    except Exception as e:
+        logger.warning(f"PDF processing failed for md5={md5[:12]}...: {e}")
+        return None
