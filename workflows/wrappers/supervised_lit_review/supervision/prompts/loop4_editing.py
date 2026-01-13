@@ -21,9 +21,7 @@ LOOP4_SECTION_EDITOR_SYSTEM = """You are an expert academic editor performing de
 ## You have access to:
 - Surrounding context (the section before and after yours, read-only)
 - Your assigned section to edit
-- Paper summaries for papers cited in this section
-- The full paper corpus for additional citations if genuinely needed
-- Tools to verify claims against source paper content
+- Tools to search and retrieve content from the full paper corpus
 
 ## Available Tools
 
@@ -31,10 +29,10 @@ You have access to tools for verifying citations:
 
 1. **search_papers(query, limit)** - Search papers by topic/keyword
    - Uses hybrid semantic + keyword search
-   - Returns brief metadata (title, year, authors, relevance)
-   - Use to locate papers in the corpus that support your claims
+   - Returns brief metadata (zotero_key, title, year, authors, relevance)
+   - Use to find papers that support your claims
 
-2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+2. **get_paper_content(zotero_key, max_chars)** - Fetch detailed paper content
    - Returns 10:1 compressed summary with key findings
    - Use for papers you want to cite or verify
 
@@ -45,11 +43,9 @@ You have access to tools for verifying citations:
 - Use get_paper_content to verify claims before citing
 - If you cannot support a claim with corpus papers, mark with <!-- TODO: needs citation -->
 
-## Budget Limits
+## Tool Usage
 
-- Maximum 5 tool calls per section
-- Maximum 50,000 characters of retrieved content
-- If budget exceeded, complete with available information
+Use as many tool calls as needed to thoroughly verify claims and find supporting evidence.
 
 ## Your Task
 
@@ -111,13 +107,9 @@ Below is your section with one section before and after for context:
 ## Your Section to Edit: {section_id}
 {section_content}
 
-## Papers Cited in This Section
-{paper_summaries}
-
-## Available Citation Keys
-When citing papers, use the [@KEY] format. The `search_papers` tool returns a `zotero_key` field - use that value in your citation like [@zotero_key_value].
-
-{available_citation_keys}
+## Finding Paper Content
+Use the `search_papers` and `get_paper_content` tools to find and verify paper content.
+When citing papers, use the [@KEY] format where KEY is the `zotero_key` from search results.
 
 ## TODOs to Address
 {todos_in_section}
@@ -322,9 +314,9 @@ Stay within ±25% of original length. Framing sections may need slight expansion
 You have access to tools for verifying citations if needed:
 
 1. **search_papers(query, limit)** - Search papers by topic/keyword
-2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+2. **get_paper_content(zotero_key, max_chars)** - Fetch detailed paper content
 
-Use tools sparingly - framing sections typically need less verification than body sections."""
+Use tools as needed - framing sections typically need less verification than body sections."""
 
 
 def get_loop4_editor_prompts(section_type: str) -> tuple[str, str]:
@@ -364,7 +356,7 @@ You are given a TODO marker from the document that indicates missing information
    - Returns brief metadata for matching papers
    - Use to find papers that might contain the needed information
 
-2. **get_paper_content(doi, max_chars)** - Fetch detailed content from a specific paper
+2. **get_paper_content(zotero_key, max_chars)** - Fetch detailed content from a specific paper
    - Returns compressed summary with key findings
    - Use to verify specific facts or get exact information
 
@@ -390,10 +382,9 @@ You are given a TODO marker from the document that indicates missing information
 - If resolved: Set `resolved=True` and provide the `replacement` text (the content that should replace the TODO marker, NOT the surrounding text)
 - If not resolved: Set `resolved=False` with empty `replacement` and explain why in `reasoning`
 
-## Budget
+## Approach
 
-- Maximum 5 tool calls per TODO
-- Be efficient - search first, then fetch content if promising"""
+Search first to identify promising papers, then fetch content to verify."""
 
 TODO_RESOLUTION_USER = """Resolve this TODO marker from the literature review.
 

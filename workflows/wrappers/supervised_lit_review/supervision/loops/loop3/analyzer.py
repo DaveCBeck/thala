@@ -34,10 +34,9 @@ async def analyze_structure_phase_a_node(state: dict) -> dict[str, Any]:
     2. Phase B: Prescribe fixes
     """
     numbered_doc = state["numbered_document"]
-    input_data = state["input"]
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
-    topic = input_data.get("topic", "")
+    topic = state.get("topic", "")
 
     user_prompt = LOOP3_PHASE_A_USER.format(
         numbered_document=numbered_doc,
@@ -123,11 +122,13 @@ async def generate_edits_phase_b_node(state: dict) -> dict[str, Any]:
 
     Takes the issues from Phase A and generates specific edits.
     Each issue should map to one or more edits in the manifest.
+
+    Note: This is legacy code kept for backward compatibility.
+    The current graph uses rewrite_sections_for_issues_node instead.
     """
     numbered_doc = state["numbered_document"]
-    input_data = state["input"]
     issue_analysis = state.get("issue_analysis", {})
-    topic = input_data.get("topic", "")
+    topic = state.get("topic", "")
 
     issues = issue_analysis.get("issues", [])
 

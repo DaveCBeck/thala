@@ -8,6 +8,7 @@ import logging
 from typing import Any, Optional
 
 from langgraph.graph import END, START, StateGraph
+from langsmith import traceable
 from typing_extensions import TypedDict
 
 from workflows.research.academic_lit_review.state import (
@@ -396,6 +397,7 @@ loop2_graph = create_loop2_graph()
 # =============================================================================
 
 
+@traceable(run_type="chain", name="Loop2_LiteratureExpansion")
 async def run_loop2_standalone(
     review: str,
     paper_corpus: dict,

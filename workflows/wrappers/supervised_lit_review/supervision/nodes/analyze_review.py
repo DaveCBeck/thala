@@ -24,9 +24,9 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
     Args:
         state: Current supervision state containing:
             - current_review: The literature review text to analyze
-            - input: Original input with topic and research questions
-            - clusters: Thematic clusters for context
-            - paper_corpus: Paper metadata for context
+            - topic: Research topic
+            - research_questions: List of research questions
+            - source_count: Number of sources in corpus
             - issues_explored: Previously identified issues
             - iteration/max_iterations: Progress tracking
 
@@ -34,15 +34,13 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
         State updates including the supervisor decision
     """
     current_review = state.get("current_review", "")
-    input_data = state.get("input", {})
-    clusters = state.get("clusters", [])
-    paper_corpus = state.get("paper_corpus", {})
     issues_explored = state.get("issues_explored", [])
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 3)
 
-    topic = input_data.get("topic", "")
-    research_questions = input_data.get("research_questions", [])
+    topic = state.get("topic", "")
+    research_questions = state.get("research_questions", [])
+    source_count = state.get("source_count", 0)
 
     if not current_review:
         logger.warning("No review content to analyze")
@@ -63,8 +61,6 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    cluster_summary = _format_cluster_summary(clusters)
-
     rq_formatted = "\n".join(f"- {q}" for q in research_questions) if research_questions else "None specified"
 
     if issues_explored:
@@ -76,11 +72,10 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
         final_review=current_review,
         topic=topic,
         research_questions=rq_formatted,
-        cluster_summary=cluster_summary,
         issues_explored=explored_formatted,
         iteration=iteration + 1,
         max_iterations=max_iterations,
-        corpus_size=len(paper_corpus),
+        source_count=source_count,
     )
 
     try:
@@ -131,18 +126,3 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
 
-def _format_cluster_summary(clusters: list[dict]) -> str:
-    """Format thematic clusters for supervisor context."""
-    if not clusters:
-        return "No thematic clusters available"
-
-    lines = []
-    for i, cluster in enumerate(clusters, 1):
-        label = cluster.get("label", f"Cluster {i}")
-        description = cluster.get("description", "")
-        paper_count = len(cluster.get("paper_dois", []))
-        lines.append(f"{i}. {label} ({paper_count} papers)")
-        if description:
-            lines.append(f"   {description[:150]}...")
-
-    return "\n".join(lines)

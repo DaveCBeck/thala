@@ -1,6 +1,7 @@
 """Loop 2 graph construction and state definition."""
 
 import logging
+from dataclasses import dataclass
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
@@ -13,24 +14,42 @@ logger = logging.getLogger(__name__)
 
 
 class Loop2State(TypedDict, total=False):
-    """State for Loop 2 literature base expansion."""
+    """State for Loop 2 literature base expansion.
 
+    Uses simplified, standalone parameters - no corpus/summaries passed through.
+    Papers go directly to ES/Zotero via nested academic_lit_review workflows.
+    """
+
+    # Core inputs
     current_review: str
-    paper_corpus: dict
-    paper_summaries: dict
-    zotero_keys: dict
-    input: dict
+    topic: str
+    research_questions: list[str]
     quality_settings: dict
+
+    # Iteration tracking
     iteration: int
     max_iterations: int
     explored_bases: list[str]
     is_complete: bool
+
+    # Node outputs
     decision: dict | None
+
+    # Error tracking
     errors: list[dict]
     iterations_failed: int
     consecutive_failures: int
     integration_failed: bool
     mini_review_failed: bool
+
+
+@dataclass
+class Loop2Result:
+    """Result from running Loop 2."""
+
+    current_review: str
+    changes_summary: str
+    explored_bases: list[str]
 
 
 async def finalize_node(state: dict) -> dict:

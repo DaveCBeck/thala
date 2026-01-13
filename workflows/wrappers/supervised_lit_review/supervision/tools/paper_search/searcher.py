@@ -5,10 +5,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from workflows.research.academic_lit_review.state import PaperSummary
-from workflows.wrappers.supervised_lit_review.supervision.store_query import (
-    SupervisionStoreQuery,
-)
+from langchain_tools.base import get_store_manager
+from core.stores import ZoteroStore
 from .sources import semantic_search, keyword_search, merge_search_results
 
 logger = logging.getLogger(__name__)
@@ -29,17 +27,12 @@ def format_authors(authors: list[str]) -> str:
     return f"{authors[0].split()[-1]} et al."
 
 
-def create_paper_tools(
-    paper_summaries: dict[str, PaperSummary],
-    store_query: SupervisionStoreQuery,
-) -> list:
-    """Create paper search tools scoped to the current paper set.
+def create_paper_tools(store_query: "SupervisionStoreQuery") -> list:
+    """Create paper search tools for section editing.
 
-    Tools are closures over paper_summaries and store_query,
-    ensuring they only search/fetch papers available in the current review.
+    Tools search the full ES/Chroma corpus without filtering.
 
     Args:
-        paper_summaries: DOI -> PaperSummary mapping from workflow state
         store_query: SupervisionStoreQuery instance for content fetching
 
     Returns:
@@ -62,42 +55,33 @@ def create_paper_tools(
 
         Returns:
             Dict with query, total_found, and list of papers with:
-            - doi: Paper DOI for use with get_paper_content
+            - zotero_key: Citation key for [@KEY] format
             - title: Paper title
             - year: Publication year
             - authors: Brief author string
             - relevance: Combined relevance score (0-1)
-            - zotero_key: Citation key for [@KEY] format
         """
         limit = min(limit, 20)  # Cap at 20
 
-        # Run both search methods
-        semantic_results = await semantic_search(query, paper_summaries, limit)
-        keyword_results = await keyword_search(query, paper_summaries, limit)
+        # Run both search methods (no filtering through paper_summaries)
+        semantic_results = await semantic_search(query, limit)
+        keyword_results = await keyword_search(query, limit)
 
         # Merge results using reciprocal rank fusion
         merged = merge_search_results(semantic_results, keyword_results, limit)
 
         # Filter by minimum relevance threshold to prevent citation drift
-        merged = [
-            (doi, score) for doi, score in merged
-            if score >= MINIMUM_RELEVANCE_THRESHOLD
-        ]
+        merged = [r for r in merged if r["score"] >= MINIMUM_RELEVANCE_THRESHOLD]
 
         # Build output with paper metadata
         papers: list[dict[str, Any]] = []
-        for doi, score in merged:
-            summary = paper_summaries.get(doi)
-            if not summary:
-                continue
-
+        for result in merged:
             papers.append({
-                "doi": doi,
-                "title": summary.get("title", "Unknown")[:100],
-                "year": summary.get("year", 0),
-                "authors": format_authors(summary.get("authors", [])),
-                "relevance": round(score, 3),
-                "zotero_key": summary.get("zotero_key", ""),
+                "zotero_key": result["zotero_key"],
+                "title": result.get("title", "Unknown")[:100],
+                "year": result.get("year", 0),
+                "authors": format_authors(result.get("authors", [])),
+                "relevance": round(result["score"], 3),
             })
 
         logger.info(f"search_papers('{query[:30]}...'): {len(papers)} results")
@@ -109,61 +93,60 @@ def create_paper_tools(
         }
 
     @tool
-    async def get_paper_content(doi: str, max_chars: int = 10000) -> dict:
+    async def get_paper_content(zotero_key: str, max_chars: int = 10000) -> dict:
         """Fetch detailed content for a specific paper.
 
         Returns the 10:1 compressed summary (L2) which captures key content
         while fitting in context. Use after search_papers identifies relevant papers.
 
         Args:
-            doi: Paper DOI from search_papers results
+            zotero_key: Paper citation key from search_papers results
             max_chars: Maximum content length (default 10000, max 20000)
 
         Returns:
             Dict with:
-            - doi: Paper DOI
+            - zotero_key: Paper citation key
             - title: Full paper title
             - content: L2 10:1 compressed content
-            - key_findings: List of key findings from extraction
             - truncated: Whether content was cut to fit max_chars
         """
         max_chars = min(max_chars, 20000)  # Cap at 20K
 
-        summary = paper_summaries.get(doi)
-        if not summary:
-            return {
-                "doi": doi,
-                "title": "Unknown",
-                "content": f"Paper with DOI {doi} not found in available papers.",
-                "key_findings": [],
-                "truncated": False,
-            }
-
-        # Fetch L2 content
-        content = await store_query.get_paper_content(doi, compression_level=2)
+        # Fetch content from ES
+        content, metadata = await store_query.get_paper_content(zotero_key)
 
         if not content:
-            # Fall back to metadata
-            content = (
-                f"No detailed content available.\n\n"
-                f"Short summary: {summary.get('short_summary', 'N/A')}\n"
-                f"Methodology: {summary.get('methodology', 'N/A')}"
-            )
+            # Try to get metadata from Zotero as fallback
+            zotero_metadata = await store_query.get_zotero_metadata(zotero_key)
+            if zotero_metadata:
+                return {
+                    "zotero_key": zotero_key,
+                    "title": zotero_metadata.get("title", "Unknown"),
+                    "content": f"No detailed content available in store. Paper exists in Zotero library.",
+                    "truncated": False,
+                }
+            return {
+                "zotero_key": zotero_key,
+                "title": "Unknown",
+                "content": f"Paper with key {zotero_key} not found in store or Zotero.",
+                "truncated": False,
+            }
 
         # Truncate if needed
         truncated = len(content) > max_chars
         if truncated:
             content = content[:max_chars] + "\n\n[... content truncated ...]"
 
+        title = metadata.get("title", "Unknown") if metadata else "Unknown"
+
         logger.info(
-            f"get_paper_content({doi[:20]}...): {len(content)} chars, truncated={truncated}"
+            f"get_paper_content({zotero_key}): {len(content)} chars, truncated={truncated}"
         )
 
         return {
-            "doi": doi,
-            "title": summary.get("title", "Unknown"),
+            "zotero_key": zotero_key,
+            "title": title,
             "content": content,
-            "key_findings": summary.get("key_findings", [])[:5],
             "truncated": truncated,
         }
 

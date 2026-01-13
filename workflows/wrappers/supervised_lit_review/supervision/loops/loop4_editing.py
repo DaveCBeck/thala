@@ -4,16 +4,15 @@ import asyncio
 import json
 import logging
 import re
+import uuid
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from langgraph.graph import END, START, StateGraph
+from langsmith import traceable
 from typing_extensions import TypedDict
 
-from core.stores.zotero import ZoteroStore
-from workflows.research.academic_lit_review.state import (
-    LitReviewInput,
-    PaperSummary,
-)
+from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.wrappers.supervised_lit_review.supervision.types import (
     SectionEditResult,
     HolisticReviewResult,
@@ -33,11 +32,6 @@ from langchain_tools.perplexity import check_fact
 from workflows.wrappers.supervised_lit_review.supervision.utils import (
     split_into_sections,
     SectionInfo,
-    format_paper_summaries_with_budget,
-    create_manifest_note,
-    validate_edit_citations,
-    validate_edit_citations_with_zotero,
-    strip_invalid_citations,
     check_section_growth,
 )
 from workflows.wrappers.supervised_lit_review.supervision.utils.duplicate_handling import (
@@ -57,30 +51,36 @@ from workflows.shared.llm_utils import ModelTier, get_structured_output
 logger = logging.getLogger(__name__)
 
 
-class Loop4State(TypedDict):
-    """State schema for Loop 4 section-level editing."""
+@dataclass
+class Loop4Result:
+    """Result from running Loop 4 section-level editing."""
 
     current_review: str
-    paper_summaries: dict[str, PaperSummary]
-    zotero_keys: dict[str, str]  # DOI -> zotero citation key mapping
-    zotero_key_sources: dict[str, dict]  # Citation key -> metadata from earlier loops
-    input: LitReviewInput
+    changes_summary: str
+    iterations_used: int
 
+
+class Loop4State(TypedDict, total=False):
+    """State schema for Loop 4 section-level editing."""
+
+    # Core inputs
+    current_review: str
+    topic: str
+
+    # Section processing (internal)
     sections: list[SectionInfo]
     section_results: dict[str, SectionEditResult]
     editor_notes: list[str]
 
+    # Holistic review (internal)
     holistic_result: Optional[HolisticReviewResult]
     flagged_sections: list[str]
     flagged_reasons: dict[str, str]  # section_id -> reason from holistic reviewer
 
+    # Loop control
     iteration: int
     max_iterations: int
     is_complete: bool
-
-    # Zotero verification settings
-    verify_zotero: bool
-    verified_citation_keys: set[str]
 
 
 def get_section_context_window(
@@ -98,53 +98,6 @@ def get_section_context_window(
         context_parts.append(f"{prefix}{sections[i]['section_content']}")
 
     return "\n\n---\n\n".join(context_parts)
-
-
-def get_cited_papers_only(
-    section_content: str,
-    paper_summaries: dict[str, PaperSummary],
-    zotero_keys: dict[str, str],
-) -> dict[str, PaperSummary]:
-    """Filter paper summaries to only those cited in section."""
-    from ..utils.citation_validation import extract_citation_keys_from_text
-
-    cited_keys = extract_citation_keys_from_text(section_content)
-    key_to_doi = {v: k for k, v in zotero_keys.items()}
-    cited_dois = {key_to_doi.get(key) for key in cited_keys if key in key_to_doi}
-
-    return {doi: paper_summaries[doi] for doi in cited_dois if doi in paper_summaries}
-
-
-def format_available_citation_keys(
-    zotero_keys: dict[str, str],
-    paper_summaries: dict[str, PaperSummary],
-    max_keys: int = 50,
-) -> str:
-    """Format available citation keys for the section editor.
-
-    Shows a sample of available keys with their paper titles so the LLM
-    knows what citations are valid and how to use them.
-    """
-    if not zotero_keys:
-        return "No citation keys available. Use search_papers to find papers."
-
-    lines = ["Here are some available citation keys (use search_papers for more):"]
-    lines.append("")
-
-    count = 0
-    for doi, key in zotero_keys.items():
-        if count >= max_keys:
-            lines.append(f"... and {len(zotero_keys) - max_keys} more (use search_papers to find specific topics)")
-            break
-
-        summary = paper_summaries.get(doi, {})
-        title = summary.get("title", "Unknown title")[:60]
-        year = summary.get("year", "n.d.")
-
-        lines.append(f"- [@{key}] {title} ({year})")
-        count += 1
-
-    return "\n".join(lines)
 
 
 def _log_section_info(stage: str, sections: list[SectionInfo]) -> None:
@@ -226,32 +179,22 @@ def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
 async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     """Phase A: Parallel section editing with concurrent Opus calls and dynamic store access."""
     sections = state.get("sections", [])
-    paper_summaries = state.get("paper_summaries", {})
-    zotero_keys = state.get("zotero_keys", {})
-    verify_zotero = state.get("verify_zotero", True)  # Default True: verify citations against Zotero
-    verified_keys = state.get("verified_citation_keys", set())
 
     _log_section_info("parallel_edit_input", sections)
     logger.info(f"Starting parallel editing of {len(sections)} sections")
 
-    store_query = SupervisionStoreQuery(paper_summaries)
-
-    # Initialize Zotero client if verification is enabled
-    zotero_client: Optional[ZoteroStore] = None
-    if verify_zotero:
-        zotero_client = ZoteroStore()
+    store_query = SupervisionStoreQuery()
 
     semaphore = asyncio.Semaphore(5)
 
     async def edit_section(
         section: SectionInfo, section_idx: int
-    ) -> tuple[str, SectionEditResult, set[str]]:
+    ) -> tuple[str, SectionEditResult]:
         """Edit a single section with Opus, dynamic store access, and search tools."""
         async with semaphore:
             section_id = section["section_id"]
             section_content = section["section_content"]
-            section_type = section.get("section_type", "content")  # Backwards compatible
-            newly_verified: set[str] = set()
+            section_type = section.get("section_type", "content")
 
             original_word_count = len(section_content.split())
 
@@ -294,40 +237,12 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                 )
             else:
                 # Content sections: full flow with paper tools
-                cited_papers = get_cited_papers_only(section_content, paper_summaries, zotero_keys)
-
-                detailed_content = await store_query.get_papers_for_section(
-                    section_content,
-                    max_papers=5,
-                    compression_level=2,
-                    max_total_chars=30000,
-                )
-
-                summary_text = format_paper_summaries_with_budget(
-                    cited_papers,
-                    detailed_content,
-                    max_total_chars=30000,
-                )
-
-                manifest_note = create_manifest_note(
-                    papers_with_detail=len(detailed_content),
-                    papers_total=len(cited_papers),
-                    compression_level=2,
-                )
-
-                paper_tools = create_paper_tools(paper_summaries, store_query)
-
-                # Format available citation keys so LLM knows what's valid
-                available_keys_text = format_available_citation_keys(
-                    zotero_keys, paper_summaries, max_keys=30
-                )
+                paper_tools = create_paper_tools(store_query)
 
                 user_prompt = user_prompt_template.format(
                     context_window=context_window,
                     section_id=section_id,
                     section_content=section_content,
-                    paper_summaries=f"{manifest_note}\n\n{summary_text}",
-                    available_citation_keys=available_keys_text,
                     todos_in_section="\n".join(todos) if todos else "None"
                 )
 
@@ -341,61 +256,6 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                     max_tool_calls=10,
                     max_tool_result_chars=100000,
                 )
-
-            # Build corpus_keys from both zotero_keys and zotero_key_sources
-            # This ensures citations added in Loops 1-2 are recognized
-            zotero_key_sources = state.get("zotero_key_sources", {})
-            corpus_keys = set(zotero_keys.values()) | set(zotero_key_sources.keys())
-            logger.debug(
-                f"Section '{section_id}': corpus has {len(corpus_keys)} valid citation keys "
-                f"({len(set(zotero_keys.values()))} from zotero_keys + {len(zotero_key_sources)} from sources)"
-            )
-
-            # Citation validation - with optional Zotero verification
-            # Use verify_all=True to make Zotero the source of truth
-            if verify_zotero and zotero_client:
-                is_valid, invalid_cites, new_verified = await validate_edit_citations_with_zotero(
-                    original_section=section_content,
-                    edited_section=response.edited_content,
-                    corpus_keys=corpus_keys | verified_keys,
-                    zotero_client=zotero_client,
-                    verify_all=True,
-                )
-                newly_verified = new_verified - corpus_keys - verified_keys
-
-                if not is_valid:
-                    invalid_key_set = {c.split(" ")[0] for c in invalid_cites}
-                    cleaned_content = strip_invalid_citations(
-                        response.edited_content, invalid_key_set, add_todo=True
-                    )
-                    logger.warning(
-                        f"Section '{section_id}': Stripped {len(invalid_cites)} unverified citations"
-                    )
-                    response = SectionEditResult(
-                        section_id=section_id,
-                        edited_content=cleaned_content,
-                        notes=f"Stripped unverified citations: {invalid_cites}",
-                        new_paper_todos=response.new_paper_todos,
-                        confidence=response.confidence * 0.9,
-                    )
-            else:
-                is_valid, invalid_cites = validate_edit_citations(
-                    original_section=section_content,
-                    edited_section=response.edited_content,
-                    corpus_keys=corpus_keys,
-                )
-
-                if not is_valid:
-                    logger.warning(
-                        f"Section '{section_id}': Invalid citations detected: {invalid_cites}"
-                    )
-                    response = SectionEditResult(
-                        section_id=section_id,
-                        edited_content=section_content,
-                        notes=f"Edit rejected due to invalid citations: {invalid_cites}",
-                        new_paper_todos=response.new_paper_todos,
-                        confidence=0.0,
-                    )
 
             # Word count validation - handle both absolute limits (abstracts) and tolerance-based (content)
             if response.confidence > 0 and min_words is not None and max_words is not None:
@@ -513,70 +373,42 @@ If you cannot improve meaningfully within limits, return the original section un
                         max_tokens=16384,
                     )
 
-                    # Validate retry citations (verify_all=True for Zotero as source of truth)
-                    if verify_zotero and zotero_client:
-                        is_valid_retry, retry_invalid, retry_verified = await validate_edit_citations_with_zotero(
-                            original_section=section_content,
-                            edited_section=retry_response.edited_content,
-                            corpus_keys=corpus_keys | verified_keys | newly_verified,
-                            zotero_client=zotero_client,
-                            verify_all=True,
-                        )
-                        newly_verified |= retry_verified - corpus_keys - verified_keys
-                    else:
-                        is_valid_retry, retry_invalid = validate_edit_citations(
-                            original_section=section_content,
-                            edited_section=retry_response.edited_content,
-                            corpus_keys=corpus_keys,
-                        )
+                    # Check word count limits for retry
+                    is_retry_within_limit, retry_growth = check_section_growth(
+                        section_content, retry_response.edited_content, tolerance=tolerance
+                    )
 
-                    if not is_valid_retry:
-                        logger.warning(
-                            f"Section '{section_id}': Retry has invalid citations: {retry_invalid}"
-                        )
-                        response = SectionEditResult(
-                            section_id=section_id,
-                            edited_content=section_content,
-                            notes=f"Edit rejected after retry - invalid citations: {retry_invalid}",
-                            new_paper_todos=response.new_paper_todos,
-                            confidence=0.0,
-                        )
+                    if is_retry_within_limit:
+                        logger.debug(f"Section '{section_id}': Retry succeeded ({retry_growth:+.1%})")
+                        response = retry_response
                     else:
-                        is_retry_within_limit, retry_growth = check_section_growth(
-                            section_content, retry_response.edited_content, tolerance=tolerance
-                        )
+                        # Check if retry is "close enough" (within extended tolerance)
+                        extended_tolerance = tolerance + 0.05  # e.g., 20% -> 25%, 30% -> 35%
+                        is_close_enough = abs(retry_growth) <= extended_tolerance
 
-                        if is_retry_within_limit:
-                            logger.debug(f"Section '{section_id}': Retry succeeded ({retry_growth:+.1%})")
-                            response = retry_response
+                        if is_close_enough:
+                            logger.debug(
+                                f"Section '{section_id}': Accepting retry at {retry_growth:+.1%} "
+                                f"(within extended {extended_tolerance*100:.0f}% tolerance)"
+                            )
+                            response = SectionEditResult(
+                                section_id=section_id,
+                                edited_content=retry_response.edited_content,
+                                notes=f"{retry_response.notes} [Accepted at extended tolerance: {retry_growth:+.1%}]",
+                                new_paper_todos=retry_response.new_paper_todos,
+                                confidence=retry_response.confidence * 0.85,  # Slight penalty
+                            )
                         else:
-                            # Check if retry is "close enough" (within extended tolerance)
-                            extended_tolerance = tolerance + 0.05  # e.g., 20% -> 25%, 30% -> 35%
-                            is_close_enough = abs(retry_growth) <= extended_tolerance
-
-                            if is_close_enough:
-                                logger.debug(
-                                    f"Section '{section_id}': Accepting retry at {retry_growth:+.1%} "
-                                    f"(within extended {extended_tolerance*100:.0f}% tolerance)"
-                                )
-                                response = SectionEditResult(
-                                    section_id=section_id,
-                                    edited_content=retry_response.edited_content,
-                                    notes=f"{retry_response.notes} [Accepted at extended tolerance: {retry_growth:+.1%}]",
-                                    new_paper_todos=retry_response.new_paper_todos,
-                                    confidence=retry_response.confidence * 0.85,  # Slight penalty
-                                )
-                            else:
-                                logger.warning(
-                                    f"Section '{section_id}': Retry still exceeds extended limit ({retry_growth:+.1%}), reverting"
-                                )
-                                response = SectionEditResult(
-                                    section_id=section_id,
-                                    edited_content=section_content,
-                                    notes=f"Edit rejected after retry: word count {retry_growth:+.1%} exceeds extended +/-{extended_tolerance*100:.0f}%",
-                                    new_paper_todos=response.new_paper_todos,
-                                    confidence=0.0,
-                                )
+                            logger.warning(
+                                f"Section '{section_id}': Retry still exceeds extended limit ({retry_growth:+.1%}), reverting"
+                            )
+                            response = SectionEditResult(
+                                section_id=section_id,
+                                edited_content=section_content,
+                                notes=f"Edit rejected after retry: word count {retry_growth:+.1%} exceeds extended +/-{extended_tolerance*100:.0f}%",
+                                new_paper_todos=response.new_paper_todos,
+                                confidence=0.0,
+                            )
 
             elif response.confidence > 0 and tolerance is None and min_words is None:
                 # No word limit applied (very short sections)
@@ -595,21 +427,12 @@ If you cannot improve meaningfully within limits, return the original section un
                     f"Edited section '{section_id}' (confidence: {response.confidence:.2f}, "
                     f"category: {section_category}, papers_with_detail: {len(detailed_content)})"
                 )
-            return section_id, response, newly_verified
+            return section_id, response
 
     edit_tasks = [edit_section(s, idx) for idx, s in enumerate(sections)]
     results = await asyncio.gather(*edit_tasks)
 
-    # Close Zotero client
-    if zotero_client:
-        await zotero_client.close()
-
-    section_results = {section_id: result for section_id, result, _ in results}
-
-    # Collect all newly verified keys
-    all_newly_verified: set[str] = set()
-    for _, _, newly_verified in results:
-        all_newly_verified |= newly_verified
+    section_results = {section_id: result for section_id, result in results}
 
     logger.debug(f"Edited section IDs: {list(section_results.keys())}")
 
@@ -620,13 +443,10 @@ If you cannot improve meaningfully within limits, return the original section un
     ]
 
     logger.info(f"Parallel editing complete: {len(section_results)} sections processed")
-    if all_newly_verified:
-        logger.info(f"Verified {len(all_newly_verified)} new citation keys against Zotero")
 
     return {
         "section_results": section_results,
         "editor_notes": editor_notes,
-        "verified_citation_keys": verified_keys | all_newly_verified,
     }
 
 
@@ -646,7 +466,6 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
     3. If not resolved, remove the TODO and log a WARNING
     """
     section_results = state.get("section_results", {})
-    paper_summaries = state.get("paper_summaries", {})
 
     if not section_results:
         return {"section_results": section_results}
@@ -664,8 +483,8 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
     logger.info(f"Resolving {total_todos} TODO markers across {len(section_results)} sections")
 
     # Setup tools
-    store_query = SupervisionStoreQuery(paper_summaries)
-    paper_tools = create_paper_tools(paper_summaries, store_query)
+    store_query = SupervisionStoreQuery()
+    paper_tools = create_paper_tools(store_query)
     all_tools = paper_tools + [check_fact]
 
     updated_results = {}
@@ -1114,45 +933,31 @@ def create_loop4_graph() -> StateGraph:
 loop4_graph = create_loop4_graph()
 
 
+@traceable(run_type="chain", name="Loop4_SectionEditing")
 async def run_loop4_standalone(
     review: str,
-    paper_summaries: dict,
-    input_data: LitReviewInput,
-    zotero_keys: dict[str, str],
-    zotero_key_sources: dict[str, dict] | None = None,
-    max_iterations: int = 3,
+    topic: str,
+    quality_settings: dict[str, Any],
     config: dict | None = None,
-    verify_zotero: bool = True,  # Default True: verify citations against Zotero
-) -> dict:
-    """Run Loop 4 as standalone operation for testing.
+) -> Loop4Result:
+    """Run Loop 4 as standalone operation.
 
     Args:
         review: Current literature review text
-        paper_summaries: Dictionary of DOI -> PaperSummary
-        input_data: Original research input
-        zotero_keys: Dictionary of DOI -> zotero citation key for validation
-        zotero_key_sources: Citation key metadata from earlier loops (key -> metadata)
-        max_iterations: Maximum editing iterations (minimum 2 enforced for self-correction)
+        topic: Research topic for context
+        quality_settings: Quality tier settings (max_stages used for iterations)
         config: Optional LangGraph config with run_id and run_name for tracing
-        verify_zotero: If True, verify new citations against Zotero programmatically
 
     Returns:
-        Dictionary containing edited_review, iterations, section_results, holistic_result,
-        and verified_citation_keys (if verify_zotero=True)
+        Loop4Result with current_review, changes_summary, iterations_used
     """
-    # Enforce minimum iterations for self-correction capability
-    if max_iterations < 2:
-        logger.warning(
-            f"max_iterations={max_iterations} too low for self-correction, enforcing minimum of 2"
-        )
-        max_iterations = 2
+    # Derive max_iterations from quality settings (minimum 2 for self-correction)
+    max_iterations = max(quality_settings.get("max_stages", 3), 2)
+    run_id = config.get("run_id", uuid.uuid4()) if config else uuid.uuid4()
 
-    initial_state = {
+    initial_state: Loop4State = {
         "current_review": review,
-        "paper_summaries": paper_summaries,
-        "zotero_keys": zotero_keys,
-        "zotero_key_sources": zotero_key_sources or {},
-        "input": input_data,
+        "topic": topic,
         "sections": [],
         "section_results": {},
         "editor_notes": [],
@@ -1162,27 +967,50 @@ async def run_loop4_standalone(
         "iteration": 0,
         "max_iterations": max_iterations,
         "is_complete": False,
-        "verify_zotero": verify_zotero,
-        "verified_citation_keys": set(),
     }
 
-    # Log corpus size for debugging
-    corpus_from_keys = len(set(zotero_keys.values()))
-    corpus_from_sources = len(zotero_key_sources or {})
-    logger.info(
-        f"Starting Loop 4: max_iterations={max_iterations}, verify_zotero={verify_zotero}, "
-        f"corpus_keys={corpus_from_keys} from zotero_keys + {corpus_from_sources} from zotero_key_sources"
-    )
+    logger.info(f"Loop 4 starting with max_iterations={max_iterations}")
 
     if config:
         final_state = await loop4_graph.ainvoke(initial_state, config=config)
     else:
         final_state = await loop4_graph.ainvoke(initial_state)
 
-    return {
-        "edited_review": final_state.get("current_review", review),
-        "iterations": final_state.get("iteration", 0),
-        "section_results": final_state.get("section_results", {}),
-        "holistic_result": final_state.get("holistic_result"),
-        "verified_citation_keys": final_state.get("verified_citation_keys", set()),
-    }
+    # Build changes summary
+    iterations_used = final_state.get("iteration", 0)
+    holistic_result = final_state.get("holistic_result")
+    section_results = final_state.get("section_results", {})
+
+    sections_edited = len(section_results)
+    if holistic_result:
+        coherence = holistic_result.overall_coherence_score
+        changes_summary = f"Edited {sections_edited} sections over {iterations_used} iterations (coherence: {coherence:.2f})"
+    else:
+        changes_summary = f"Edited {sections_edited} sections over {iterations_used} iterations"
+
+    # Save state for analysis (dev mode only)
+    save_workflow_state(
+        workflow_name="supervision_loop4",
+        run_id=str(run_id),
+        state={
+            "input": {
+                "topic": topic,
+                "review_length": len(review),
+                "max_iterations": max_iterations,
+            },
+            "output": {
+                "changes_summary": changes_summary,
+                "iterations_used": iterations_used,
+                "sections_edited": sections_edited,
+            },
+            "final_state": {
+                "holistic_result": holistic_result.__dict__ if holistic_result else None,
+            },
+        },
+    )
+
+    return Loop4Result(
+        current_review=final_state.get("current_review", review),
+        changes_summary=changes_summary,
+        iterations_used=iterations_used,
+    )

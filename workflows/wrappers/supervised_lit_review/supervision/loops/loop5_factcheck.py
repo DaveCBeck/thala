@@ -7,6 +7,7 @@ This file exists for backward compatibility only.
 
 from .loop5 import (
     Loop5State,
+    Loop5Result,
     create_loop5_graph,
     run_loop5_standalone,
     fact_check_node,
@@ -18,10 +19,6 @@ from .loop5 import (
     finalize_node,
     filter_ambiguous_claims,
     select_model_tier_for_context,
-    estimate_loop5_request_tokens,
-    calculate_dynamic_char_budget,
-    format_paper_summaries,
-    format_citation_keys,
     HAIKU_MAX_TOKENS,
     SONNET_1M_MAX_TOKENS,
     SONNET_1M_THRESHOLD,
@@ -30,6 +27,7 @@ from .loop5 import (
 
 __all__ = [
     "Loop5State",
+    "Loop5Result",
     "create_loop5_graph",
     "run_loop5_standalone",
     "fact_check_node",
@@ -41,10 +39,6 @@ __all__ = [
     "finalize_node",
     "filter_ambiguous_claims",
     "select_model_tier_for_context",
-    "estimate_loop5_request_tokens",
-    "calculate_dynamic_char_budget",
-    "format_paper_summaries",
-    "format_citation_keys",
     "HAIKU_MAX_TOKENS",
     "SONNET_1M_MAX_TOKENS",
     "SONNET_1M_THRESHOLD",

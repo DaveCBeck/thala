@@ -24,7 +24,6 @@ async def run_focused_expansion(
     topic: str,
     research_query: str,
     quality_settings: dict[str, Any],
-    exclude_dois: set[str],
     parent_topic: str,
 ) -> dict[str, Any]:
     """Run focused literature discovery on a specific theoretical topic.
@@ -33,16 +32,18 @@ async def run_focused_expansion(
     (NOT clustering or synthesis) to gather papers on a specific topic
     identified by the supervisor.
 
+    Duplicate handling is done internally by the paper processing pipeline,
+    which checks Elasticsearch for existing documents before acquisition.
+
     Args:
         topic: The specific theory/concept to explore
         research_query: Search query for discovery
         quality_settings: Quality settings inherited from parent workflow
-        exclude_dois: DOIs already in parent corpus (to avoid duplicates)
         parent_topic: The original research topic (for context)
 
     Returns:
         Dictionary containing:
-            - paper_corpus: New papers discovered (excluding already-known ones)
+            - paper_corpus: New papers discovered
             - paper_summaries: Summaries of processed papers
             - zotero_keys: Citation keys for new papers
             - processed_dois: Successfully processed DOIs
@@ -50,7 +51,6 @@ async def run_focused_expansion(
     """
     logger.info(f"Starting focused expansion on: {topic}")
     logger.info(f"Using query: {research_query}")
-    logger.info(f"Excluding {len(exclude_dois)} existing DOIs")
 
     # Build research questions from the topic
     research_questions = [
@@ -70,20 +70,17 @@ async def run_focused_expansion(
     discovered_papers = keyword_result.get("discovered_papers", [])
     keyword_dois = keyword_result.get("keyword_dois", [])
 
-    # Build paper corpus, excluding already-known papers
-    paper_corpus = {}
-    for paper in discovered_papers:
-        doi = paper.get("doi")
-        if doi and doi not in exclude_dois:
-            paper_corpus[doi] = paper
+    # Build paper corpus from discovered papers
+    paper_corpus = {
+        paper.get("doi"): paper
+        for paper in discovered_papers
+        if paper.get("doi")
+    }
 
-    logger.info(
-        f"Discovery found {len(keyword_dois)} papers, "
-        f"{len(paper_corpus)} are new (not in parent corpus)"
-    )
+    logger.info(f"Discovery found {len(keyword_dois)} papers")
 
     if not paper_corpus:
-        logger.warning("No new papers discovered, returning empty result")
+        logger.warning("No papers discovered, returning empty result")
         return {
             "paper_corpus": {},
             "paper_summaries": {},
@@ -93,7 +90,7 @@ async def run_focused_expansion(
         }
 
     # Phase 2: Diffusion - expand citation network (with inherited quality settings)
-    logger.info("Phase 2: Running diffusion on new discoveries")
+    logger.info("Phase 2: Running diffusion on discoveries")
     discovery_seeds = list(paper_corpus.keys())
 
     diffusion_result = await run_diffusion(
@@ -108,20 +105,19 @@ async def run_focused_expansion(
     expanded_corpus = diffusion_result.get("paper_corpus", paper_corpus)
     final_corpus_dois = diffusion_result.get("final_corpus_dois", list(expanded_corpus.keys()))
 
-    # Filter to only new papers (not in parent corpus) AND in the filtered list
     final_corpus = {
         doi: expanded_corpus[doi]
         for doi in final_corpus_dois
-        if doi in expanded_corpus and doi not in exclude_dois
+        if doi in expanded_corpus
     }
 
     logger.info(
         f"Diffusion expanded to {len(expanded_corpus)} papers, "
-        f"filtered to {len(final_corpus_dois)}, {len(final_corpus)} are new"
+        f"filtered to {len(final_corpus)} for processing"
     )
 
     if not final_corpus:
-        logger.warning("All diffusion papers already in corpus, returning empty result")
+        logger.warning("No papers to process after diffusion")
         return {
             "paper_corpus": {},
             "paper_summaries": {},

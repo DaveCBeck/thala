@@ -5,7 +5,7 @@ import uuid
 
 from .types import OrchestrationState
 from .builder import create_orchestration_graph
-from ..graph import run_supervision
+from ..graph import run_loop1_standalone
 from ..loops.loop2 import run_loop2_standalone
 from ..loops.loop3 import run_loop3_standalone
 from ..loops.loop4_editing import run_loop4_standalone
@@ -215,28 +215,25 @@ async def run_supervision_configurable(
         loops_run.append("loop1")
         loop1_run_id = uuid.uuid4()
 
-        loop1_result = await run_supervision(
-            final_review=current_review,
-            paper_corpus=current_corpus,
-            paper_summaries=current_summaries,
-            clusters=clusters,
+        loop1_result = await run_loop1_standalone(
+            review=current_review,
+            topic=input_data.get("topic", ""),
+            research_questions=input_data.get("research_questions", []),
+            max_iterations=max_iterations_per_loop,
+            source_count=len(current_corpus),
             quality_settings=quality_settings,
-            input_data=input_data,
-            zotero_keys=current_zotero,
             config={
                 "run_id": loop1_run_id,
                 "run_name": f"loop1_theory:{topic}",
             },
         )
 
-        current_review = loop1_result.get("final_review_v2", current_review)
+        current_review = loop1_result.current_review
         review_loop1 = current_review
-        all_results["loop1_result"] = loop1_result
-
-        added_papers = loop1_result.get("added_papers", {})
-        added_summaries = loop1_result.get("added_summaries", {})
-        current_corpus.update(added_papers)
-        current_summaries.update(added_summaries)
+        all_results["loop1_result"] = {
+            "issues_explored": loop1_result.issues_explored,
+            "changes_summary": loop1_result.changes_summary,
+        }
 
     if loop_count >= 2:
         logger.info("Running Loop 2: Literature expansion")
@@ -245,24 +242,21 @@ async def run_supervision_configurable(
 
         loop2_result = await run_loop2_standalone(
             review=current_review,
-            paper_corpus=current_corpus,
-            paper_summaries=current_summaries,
-            zotero_keys=current_zotero,
-            input_data=input_data,
+            topic=input_data.get("topic", ""),
+            research_questions=input_data.get("research_questions", []),
             quality_settings=quality_settings,
-            max_iterations=max_iterations_per_loop,
             config={
                 "run_id": loop2_run_id,
                 "run_name": f"loop2_literature:{topic}",
             },
         )
 
-        current_review = loop2_result.get("current_review", current_review)
+        current_review = loop2_result.current_review
         review_loop2 = current_review
-        current_corpus = loop2_result.get("paper_corpus", current_corpus)
-        current_summaries = loop2_result.get("paper_summaries", current_summaries)
-        current_zotero = loop2_result.get("zotero_keys", current_zotero)
-        all_results["loop2_result"] = loop2_result
+        all_results["loop2_result"] = {
+            "explored_bases": loop2_result.explored_bases,
+            "changes_summary": loop2_result.changes_summary,
+        }
 
     if loop_count >= 3:
         logger.info("Running Loop 3: Structure and cohesion")
@@ -271,17 +265,20 @@ async def run_supervision_configurable(
 
         loop3_result = await run_loop3_standalone(
             review=current_review,
-            input_data=input_data,
-            max_iterations=max_iterations_per_loop,
+            topic=input_data.get("topic", ""),
+            quality_settings=quality_settings,
             config={
                 "run_id": loop3_run_id,
                 "run_name": f"loop3_structure:{topic}",
             },
         )
 
-        current_review = loop3_result.get("current_review", current_review)
+        current_review = loop3_result.current_review
         review_loop3 = current_review
-        all_results["loop3_result"] = loop3_result
+        all_results["loop3_result"] = {
+            "iterations_used": loop3_result.iterations_used,
+            "changes_summary": loop3_result.changes_summary,
+        }
 
     if loop_count >= 4:
         logger.info("Running Loop 4: Section editing")
@@ -290,20 +287,20 @@ async def run_supervision_configurable(
 
         loop4_result = await run_loop4_standalone(
             review=current_review,
-            paper_summaries=current_summaries,
-            input_data=input_data,
-            zotero_keys=current_zotero,
-            max_iterations=max_iterations_per_loop,
+            topic=input_data.get("topic", ""),
+            quality_settings=quality_settings,
             config={
                 "run_id": loop4_run_id,
                 "run_name": f"loop4_editing:{topic}",
             },
-            verify_zotero=verify_zotero,
         )
 
-        current_review = loop4_result.get("edited_review", current_review)
+        current_review = loop4_result.current_review
         review_loop4 = current_review
-        all_results["loop4_result"] = loop4_result
+        all_results["loop4_result"] = {
+            "iterations_used": loop4_result.iterations_used,
+            "changes_summary": loop4_result.changes_summary,
+        }
 
         logger.info("Running Loop 4.5: Cohesion check")
         loops_run.append("loop4_5")
@@ -317,16 +314,18 @@ async def run_supervision_configurable(
         if cohesion_result.needs_restructuring:
             logger.info("Cohesion check failed, repeating Loop 3")
             loop3_repeat_run_id = uuid.uuid4()
+            # Use reduced quality settings for repeat (max 2 iterations)
+            repeat_quality = {**quality_settings, "max_stages": 1}
             loop3_repeat = await run_loop3_standalone(
                 review=current_review,
-                input_data=input_data,
-                max_iterations=2,
+                topic=input_data.get("topic", ""),
+                quality_settings=repeat_quality,
                 config={
                     "run_id": loop3_repeat_run_id,
                     "run_name": f"loop3_repeat:{topic}",
                 },
             )
-            current_review = loop3_repeat.get("current_review", current_review)
+            current_review = loop3_repeat.current_review
             review_loop3 = current_review
 
     completion_reason = f"Completed {loop_count} supervision loop(s)"

@@ -19,15 +19,16 @@ async def analyze_for_bases_node(state: dict) -> dict:
         "Analyzing for missing literature bases"
     )
 
-    input_data = state["input"]
+    topic = state["topic"]
+    research_questions = state["research_questions"]
     explored_bases_text = "\n".join(
         f"- {base}" for base in state.get("explored_bases", [])
     ) or "None yet"
 
     user_prompt = LOOP2_ANALYZER_USER.format(
         review=state["current_review"],
-        topic=input_data["topic"],
-        research_questions="\n".join(f"- {q}" for q in input_data["research_questions"]),
+        topic=topic,
+        research_questions="\n".join(f"- {q}" for q in research_questions),
         explored_bases=explored_bases_text,
         iteration=iteration + 1,
         max_iterations=max_iterations,

@@ -87,7 +87,6 @@ async def rewrite_section_for_issue(
     issue: StructuralIssue | dict,
     paragraph_mapping: dict[int, str],
     topic: str,
-    zotero_keys: dict[str, str] | None = None,
 ) -> tuple[SectionRewriteResult | None, str | None]:
     """Rewrite a section to fix a specific structural issue.
 
@@ -95,7 +94,6 @@ async def rewrite_section_for_issue(
         issue: The structural issue to fix
         paragraph_mapping: {paragraph_num: text} mapping
         topic: Research topic for context
-        zotero_keys: DOI -> citation key mapping for citation validation
 
     Returns:
         Tuple of (SectionRewriteResult, None) on success, or
@@ -256,11 +254,9 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
     This replaces generate_edits_phase_b_node with a more natural approach
     that doesn't require structured edit specification.
     """
-    numbered_doc = state["numbered_document"]
     paragraph_mapping = state["paragraph_mapping"]
-    input_data = state["input"]
     issue_analysis = state.get("issue_analysis", {})
-    topic = input_data.get("topic", "")
+    topic = state.get("topic", "")
 
     issues = issue_analysis.get("issues", [])
 
@@ -288,7 +284,6 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
     skip_reasons: dict[int, str] = {}
 
     working_mapping = dict(paragraph_mapping)
-    zotero_keys = state.get("zotero_keys", {})
 
     for issue in sorted_issues:
         issue_id = issue.get("issue_id", 0)
@@ -297,7 +292,6 @@ async def rewrite_sections_for_issues_node(state: dict) -> dict[str, Any]:
             issue=issue,
             paragraph_mapping=working_mapping,
             topic=topic,
-            zotero_keys=zotero_keys,
         )
 
         if result:

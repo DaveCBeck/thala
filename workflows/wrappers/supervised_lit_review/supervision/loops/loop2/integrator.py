@@ -17,12 +17,14 @@ async def run_academic_review_for_base(
     literature_base: LiteratureBase,
     parent_topic: str,
     quality_settings: QualitySettings,
-    exclude_dois: set[str],
 ) -> dict[str, Any]:
     """Run academic_lit_review workflow for a literature base expansion.
 
     This replaces the previous mini_review with the more robust academic_lit_review
     workflow which has proper Zotero key verification built in.
+
+    Papers go directly to ES/Zotero via the nested workflow - no need to
+    filter or return corpus data.
     """
     # Determine quality preset based on parent settings
     quality_preset = "quick"
@@ -40,32 +42,13 @@ async def run_academic_review_for_base(
         quality=quality_preset,
     )
 
-    # Filter out parent corpus DOIs
-    filtered_corpus = {
-        doi: meta for doi, meta in result.get("paper_corpus", {}).items()
-        if doi not in exclude_dois
-    }
-    filtered_dois = set(filtered_corpus.keys())
+    papers_processed = len(result.get("paper_corpus", {}))
+    logger.info(f"Academic review complete: {papers_processed} papers processed")
 
-    logger.info(
-        f"Academic review complete: {len(filtered_dois)} new papers "
-        f"(filtered from {len(result.get('paper_corpus', {}))})"
-    )
-
-    # Return format expected by Loop 2 integrator
+    # Return only what's needed for integration (the mini-review text and citation keys)
     return {
         "mini_review_text": result.get("final_review", ""),
-        "paper_summaries": {
-            doi: summary for doi, summary in result.get("paper_summaries", {}).items()
-            if doi in filtered_dois
-        },
-        "paper_corpus": filtered_corpus,
-        "zotero_keys": {
-            doi: key for doi, key in result.get("zotero_keys", {}).items()
-            if doi in filtered_dois
-        },
-        "clusters": result.get("clusters", []),
-        "references": result.get("references", []),
+        "zotero_keys": result.get("zotero_keys", {}),
     }
 
 
@@ -105,34 +88,27 @@ async def run_mini_review_node(state: dict) -> dict:
     literature_base = LiteratureBase(**decision["literature_base"])
     logger.info(f"Running mini-review for: {literature_base.name}")
 
-    exclude_dois = set(state["paper_corpus"].keys())
-    parent_topic = state["input"]["topic"]
+    parent_topic = state["topic"]
 
     mini_review_result = await run_academic_review_for_base(
         literature_base=literature_base,
         parent_topic=parent_topic,
         quality_settings=state["quality_settings"],
-        exclude_dois=exclude_dois,
     )
 
-    new_paper_summaries = mini_review_result.get("paper_summaries", {})
-    new_paper_corpus = mini_review_result.get("paper_corpus", {})
+    mini_review_text = mini_review_result.get("mini_review_text", "")
     new_zotero_keys = mini_review_result.get("zotero_keys", {})
 
     logger.info(
-        f"Mini-review complete: {len(new_paper_summaries)} new papers, "
-        f"{len(mini_review_result.get('mini_review_text', ''))} chars"
+        f"Mini-review complete: {len(new_zotero_keys)} papers, "
+        f"{len(mini_review_text)} chars"
     )
 
     return {
         "decision": {
             **decision,
-            "mini_review_text": mini_review_result.get("mini_review_text", ""),
-            "new_paper_summaries": new_paper_summaries,
-            "new_paper_corpus": new_paper_corpus,
+            "mini_review_text": mini_review_text,
             "new_zotero_keys": new_zotero_keys,
-            "clusters": mini_review_result.get("clusters", []),
-            "references": mini_review_result.get("references", []),
         }
     }
 
@@ -165,8 +141,6 @@ async def integrate_findings_node(state: dict) -> dict:
         logger.info(f"Integrating findings for: {literature_base.name}")
 
         mini_review_text = decision.get("mini_review_text", "")
-        new_paper_summaries = decision.get("new_paper_summaries", {})
-        new_paper_corpus = decision.get("new_paper_corpus", {})
         new_zotero_keys = decision.get("new_zotero_keys", {})
 
         if not mini_review_text or len(mini_review_text.strip()) < 100:
@@ -187,11 +161,8 @@ async def integrate_findings_node(state: dict) -> dict:
                 "integration_failed": True,
             }
 
-        citation_keys = "\n".join(
-            f"[@{key}] - {new_paper_summaries[doi]['title']}"
-            for doi, key in new_zotero_keys.items()
-            if doi in new_paper_summaries
-        )
+        # Format citation keys for the prompt (keys only, no titles since we don't have summaries)
+        citation_keys = "\n".join(f"[@{key}]" for key in new_zotero_keys.values())
 
         user_prompt = LOOP2_INTEGRATOR_USER.format(
             current_review=state["current_review"],
@@ -208,29 +179,15 @@ async def integrate_findings_node(state: dict) -> dict:
         ])
 
         updated_review = response.content
-
-        merged_summaries = {**state["paper_summaries"], **new_paper_summaries}
-        merged_zotero = {**state["zotero_keys"], **new_zotero_keys}
-
-        merged_corpus = state["paper_corpus"].copy()
-        new_papers_added = 0
-        for doi, paper_metadata in new_paper_corpus.items():
-            if doi not in merged_corpus:
-                merged_corpus[doi] = paper_metadata
-                new_papers_added += 1
-
         explored_bases = state.get("explored_bases", []) + [literature_base.name]
 
         logger.info(
             f"Integration complete: review length {len(updated_review)}, "
-            f"total papers {len(merged_summaries)}, new papers added: {new_papers_added}"
+            f"{len(new_zotero_keys)} new citations available"
         )
 
         return {
             "current_review": updated_review,
-            "paper_summaries": merged_summaries,
-            "zotero_keys": merged_zotero,
-            "paper_corpus": merged_corpus,
             "explored_bases": explored_bases,
             "iteration": iteration + 1,
         }

@@ -19,9 +19,8 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
     Args:
         state: Current supervision state containing:
             - decision: Supervisor decision with identified issue
-            - input: Original input with parent topic
+            - topic: Parent topic
             - quality_settings: Inherited quality settings
-            - paper_corpus: Existing papers to exclude
 
     Returns:
         State updates including:
@@ -39,27 +38,21 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
             "expansion_result": None,
         }
 
-    topic = issue.get("topic", "")
-    research_query = issue.get("research_query", topic)
+    issue_topic = issue.get("topic", "")
+    research_query = issue.get("research_query", issue_topic)
     issue_type = issue.get("issue_type", "underlying_theory")
 
-    input_data = state.get("input", {})
     quality_settings = state.get("quality_settings", {})
-    existing_corpus = state.get("paper_corpus", {})
-    parent_topic = input_data.get("topic", "")
+    parent_topic = state.get("topic", "")
 
-    logger.info(f"Expanding on identified issue: {topic}")
+    logger.info(f"Expanding on identified issue: {issue_topic}")
     logger.info(f"Issue type: {issue_type}")
-
-    # Get DOIs to exclude (already in corpus)
-    exclude_dois = set(existing_corpus.keys())
 
     try:
         expansion_result = await run_focused_expansion(
-            topic=topic,
+            topic=issue_topic,
             research_query=research_query,
             quality_settings=quality_settings,
-            exclude_dois=exclude_dois,
             parent_topic=parent_topic,
         )
 
@@ -75,7 +68,7 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
 
         return {
             "expansion_result": {
-                "topic": topic,
+                "topic": issue_topic,
                 "issue_type": issue_type,
                 "paper_summaries": new_summaries,
                 "zotero_keys": new_zotero_keys,
@@ -92,7 +85,7 @@ async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
         iteration = state.get("iteration", 0)
         return {
             "expansion_result": {
-                "topic": topic,
+                "topic": issue_topic,
                 "issue_type": issue_type,
                 "error": str(e),
                 "paper_summaries": {},

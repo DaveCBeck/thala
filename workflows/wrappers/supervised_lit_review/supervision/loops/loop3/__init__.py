@@ -10,7 +10,7 @@ sections. This eliminates the "identifies issues but can't generate valid edits"
 failure mode.
 """
 
-from .graph import Loop3State, create_loop3_graph, run_loop3_standalone
+from .graph import Loop3Result, Loop3State, create_loop3_graph, run_loop3_standalone
 from .analyzer import (
     analyze_structure_phase_a_node,
     # Legacy exports for backward compatibility
@@ -43,6 +43,7 @@ from .validator import (
 
 __all__ = [
     # Core graph
+    "Loop3Result",
     "Loop3State",
     "create_loop3_graph",
     "run_loop3_standalone",

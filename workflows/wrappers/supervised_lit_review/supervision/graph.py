@@ -1,4 +1,4 @@
-"""Supervision loop subgraph for iterative review improvement.
+"""Supervision loop subgraph for iterative review improvement (Loop 1).
 
 Implements an iterative loop that:
 1. Analyzes the review for theoretical gaps
@@ -7,18 +7,15 @@ Implements an iterative loop that:
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from langgraph.graph import END, START, StateGraph
+from langsmith import traceable
 from typing_extensions import TypedDict
 
-from workflows.research.academic_lit_review.state import (
-    LitReviewInput,
-    PaperMetadata,
-    PaperSummary,
-    QualitySettings,
-    ThematicCluster,
-)
+from workflows.shared.workflow_state_store import save_workflow_state
+
 from workflows.wrappers.supervised_lit_review.supervision.nodes import (
     analyze_review_node,
     expand_topic_node,
@@ -32,50 +29,64 @@ from workflows.wrappers.supervised_lit_review.supervision.routing import (
 logger = logging.getLogger(__name__)
 
 
-class SupervisionSubgraphState(TypedDict, total=False):
-    """State schema for the supervision subgraph.
+class Loop1State(TypedDict, total=False):
+    """State schema for Loop 1 (theoretical depth supervision).
 
-    Defines all fields to ensure LangGraph properly preserves state
-    across node transitions. Uses total=False to allow partial updates.
+    Uses simplified, standalone parameters - no nested dicts or corpus objects.
     """
 
-    # Review content
+    # Core inputs
     current_review: str
-    final_review_v2: Optional[str]
+    topic: str
+    research_questions: list[str]
+    source_count: int
 
-    # Context from main workflow
-    input: LitReviewInput
-    paper_corpus: dict[str, PaperMetadata]
-    paper_summaries: dict[str, PaperSummary]
-    clusters: list[ThematicCluster]
-    quality_settings: QualitySettings
-    zotero_keys: dict[str, str]
-
-    # Supervision tracking
-    iteration: int
+    # Quality config
+    quality_settings: dict[str, Any]
     max_iterations: int
-    supervision_depth: int
+
+    # Iteration tracking
+    iteration: int
     issues_explored: list[str]
     is_complete: bool
 
-    # Outputs
-    supervision_expansions: list[dict]
+    # Node outputs
     decision: Optional[dict]
     expansion_result: Optional[dict]
+    supervision_expansions: list[dict]
+
+    # Final outputs
+    final_review: Optional[str]
     completion_reason: Optional[str]
 
+    # Papers added during this loop
+    paper_corpus: dict[str, Any]
+    paper_summaries: dict[str, Any]
+    zotero_keys: dict[str, str]
 
-def finalize_supervision_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Finalize the supervision loop and prepare output.
+    # Error tracking
+    loop_error: Optional[dict]
+    expansion_failed: bool
+    integration_failed: bool
+    consecutive_failures: int
 
-    Sets the final review and marks supervision as complete.
-    """
+
+@dataclass
+class Loop1Result:
+    """Result from running Loop 1."""
+
+    current_review: str
+    changes_summary: str
+    issues_explored: list[str]
+
+
+def finalize_loop1_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Finalize Loop 1 and prepare output."""
     current_review = state.get("current_review", "")
     iteration = state.get("iteration", 0)
     is_complete = state.get("is_complete", False)
     decision = state.get("decision", {})
 
-    # Determine reason for completion
     if is_complete or decision.get("action") == "pass_through":
         completion_reason = "Supervisor approved theoretical depth"
     else:
@@ -83,19 +94,19 @@ def finalize_supervision_node(state: dict[str, Any]) -> dict[str, Any]:
         completion_reason = f"Reached maximum iterations ({max_iterations})"
 
     logger.info(
-        f"Finalizing supervision after {iteration} iterations. "
+        f"Finalizing Loop 1 after {iteration} iterations. "
         f"Reason: {completion_reason}"
     )
 
     return {
-        "final_review_v2": current_review,
+        "final_review": current_review,
         "is_complete": True,
         "completion_reason": completion_reason,
     }
 
 
-def create_supervision_subgraph() -> StateGraph:
-    """Create the supervision loop subgraph.
+def create_loop1_graph() -> StateGraph:
+    """Create the Loop 1 subgraph.
 
     Flow:
         START -> analyze_review -> route
@@ -104,18 +115,15 @@ def create_supervision_subgraph() -> StateGraph:
                                -> (complete) -> finalize -> END
             -> (pass_through) -> finalize -> END
     """
-    builder = StateGraph(SupervisionSubgraphState)
+    builder = StateGraph(Loop1State)
 
-    # Add nodes
     builder.add_node("analyze_review", analyze_review_node)
     builder.add_node("expand_topic", expand_topic_node)
     builder.add_node("integrate_content", integrate_content_node)
-    builder.add_node("finalize", finalize_supervision_node)
+    builder.add_node("finalize", finalize_loop1_node)
 
-    # Entry point
     builder.add_edge(START, "analyze_review")
 
-    # Route based on supervisor decision
     builder.add_conditional_edges(
         "analyze_review",
         route_after_analysis,
@@ -125,10 +133,8 @@ def create_supervision_subgraph() -> StateGraph:
         },
     )
 
-    # Expansion -> Integration -> Check continue
     builder.add_edge("expand_topic", "integrate_content")
 
-    # After integration, check if we should continue or complete
     builder.add_conditional_edges(
         "integrate_content",
         should_continue_supervision,
@@ -138,141 +144,108 @@ def create_supervision_subgraph() -> StateGraph:
         },
     )
 
-    # Finalize -> END
     builder.add_edge("finalize", END)
 
     return builder.compile()
 
 
-# Export compiled graph
-supervision_subgraph = create_supervision_subgraph()
+loop1_graph = create_loop1_graph()
 
 
-async def run_supervision(
-    final_review: str,
-    paper_corpus: dict[str, Any],
-    paper_summaries: dict[str, Any],
-    clusters: list[dict],
-    quality_settings: dict[str, Any],
-    input_data: dict[str, Any],
-    zotero_keys: dict[str, str],
+@traceable(run_type="chain", name="Loop1_TheoreticalDepth")
+async def run_loop1_standalone(
+    review: str,
+    topic: str,
+    research_questions: list[str],
+    max_iterations: int = 3,
+    source_count: int = 0,
+    quality_settings: dict[str, Any] | None = None,
     config: dict | None = None,
-) -> dict[str, Any]:
-    """Run the supervision loop on a completed literature review.
+) -> Loop1Result:
+    """Run Loop 1 (theoretical depth supervision) as a standalone operation.
 
     Args:
-        final_review: The literature review to analyze and improve
-        paper_corpus: Existing paper corpus from main workflow
-        paper_summaries: Existing paper summaries
-        clusters: Thematic clusters for context
-        quality_settings: Quality settings (determines max_iterations)
-        input_data: Original input with topic and research questions
-        zotero_keys: Existing Zotero citation keys
-        config: Optional LangGraph config with run_id and run_name for tracing
+        review: The literature review text to analyze and improve
+        topic: Research topic
+        research_questions: List of research questions
+        max_iterations: Maximum supervision iterations
+        source_count: Number of sources currently in corpus (for context)
+        quality_settings: Quality settings for focused expansion
+        config: Optional LangGraph config for tracing
 
     Returns:
-        Dictionary containing:
-            - final_review_v2: The improved review after supervision
-            - supervision_state: Final supervision state
-            - expansions: List of expansion records
-            - iterations: Number of iterations performed
-            - added_papers: New papers added to corpus
-            - added_summaries: New paper summaries
+        Loop1Result with improved review and metadata
     """
-    # Determine max iterations from quality settings
-    max_stages = quality_settings.get("max_stages", 3)
-    max_iterations = max_stages  # Use same as diffusion stages
-
-    # Build initial supervision state
-    initial_state = {
-        # Review content
-        "current_review": final_review,
-        "final_review_v2": None,
-
-        # Context from main workflow
-        "input": input_data,
-        "paper_corpus": paper_corpus,
-        "paper_summaries": paper_summaries,
-        "clusters": clusters,
-        "quality_settings": quality_settings,
-        "zotero_keys": zotero_keys,
-
-        # Supervision tracking
-        "iteration": 0,
+    initial_state: Loop1State = {
+        "current_review": review,
+        "topic": topic,
+        "research_questions": research_questions,
+        "source_count": source_count,
+        "quality_settings": quality_settings or {},
         "max_iterations": max_iterations,
-        "supervision_depth": 0,
+        "iteration": 0,
         "issues_explored": [],
         "is_complete": False,
-
-        # Outputs
-        "supervision_expansions": [],
         "decision": None,
         "expansion_result": None,
+        "supervision_expansions": [],
+        "final_review": None,
+        "completion_reason": None,
+        "paper_corpus": {},
+        "paper_summaries": {},
+        "zotero_keys": {},
+        "loop_error": None,
+        "expansion_failed": False,
+        "integration_failed": False,
+        "consecutive_failures": 0,
     }
 
     logger.info(
-        f"Starting supervision loop: max_iterations={max_iterations}, "
-        f"review length={len(final_review)} chars"
+        f"Starting Loop 1: max_iterations={max_iterations}, "
+        f"review length={len(review)} chars"
     )
 
-    # Run the subgraph
     if config:
-        final_state = await supervision_subgraph.ainvoke(initial_state, config=config)
+        final_state = await loop1_graph.ainvoke(initial_state, config=config)
     else:
-        final_state = await supervision_subgraph.ainvoke(initial_state)
+        final_state = await loop1_graph.ainvoke(initial_state)
 
-    # Extract results
-    iterations = final_state.get("iteration", 0)
     expansions = final_state.get("supervision_expansions", [])
+    issues_explored = final_state.get("issues_explored", [])
 
-    # Collect added papers across all expansions
-    added_papers = {}
-    added_summaries = {}
-    for exp in expansions:
-        # These are accumulated via the expansion nodes
-        pass
+    # Build changes summary
+    if expansions:
+        topics_explored = [exp.get("topic", "unknown") for exp in expansions]
+        changes_summary = f"Explored {len(expansions)} theoretical gaps: {', '.join(topics_explored)}"
+    else:
+        changes_summary = "No theoretical gaps identified"
 
-    # Get final papers/summaries from state (they were merged during expansion)
-    final_corpus = final_state.get("paper_corpus", {})
-    final_summaries = final_state.get("paper_summaries", {})
+    logger.info(f"Loop 1 complete: {len(issues_explored)} issues explored")
 
-    # Calculate what was added (not in original)
-    added_papers = {
-        doi: paper for doi, paper in final_corpus.items()
-        if doi not in paper_corpus
-    }
-    added_summaries = {
-        doi: summary for doi, summary in final_summaries.items()
-        if doi not in paper_summaries
-    }
-
-    # Calculate added zotero keys (new in this supervision run)
-    final_zotero_keys = final_state.get("zotero_keys", {})
-    added_zotero_keys = {
-        doi: key for doi, key in final_zotero_keys.items()
-        if doi not in zotero_keys
-    }
-
-    logger.info(
-        f"Supervision complete: {iterations} iterations, "
-        f"{len(expansions)} expansions, {len(added_papers)} new papers, "
-        f"{len(added_zotero_keys)} new citation keys"
+    # Save state for analysis (dev mode only)
+    run_id = config.get("run_id", "unknown") if config else "unknown"
+    save_workflow_state(
+        workflow_name="supervision_loop1",
+        run_id=str(run_id),
+        state={
+            "input": {
+                "review_length": len(review),
+                "topic": topic,
+                "research_questions": research_questions,
+                "max_iterations": max_iterations,
+                "source_count": source_count,
+            },
+            "output": {
+                "review_length": len(final_state.get("final_review", review)),
+                "issues_explored": issues_explored,
+                "expansions": expansions,
+            },
+            "final_state": final_state,
+        },
     )
 
-    return {
-        "final_review_v2": final_state.get("final_review_v2", final_review),
-        "supervision_state": {
-            "iteration": iterations,
-            "max_iterations": max_iterations,
-            "supervision_depth": 0,
-            "current_review": final_state.get("current_review", ""),
-            "issues_explored": final_state.get("issues_explored", []),
-            "is_complete": True,
-        },
-        "expansions": expansions,
-        "iterations": iterations,
-        "added_papers": added_papers,
-        "added_summaries": added_summaries,
-        "added_zotero_keys": added_zotero_keys,
-        "completion_reason": final_state.get("completion_reason", ""),
-    }
+    return Loop1Result(
+        current_review=final_state.get("final_review", review),
+        changes_summary=changes_summary,
+        issues_explored=issues_explored,
+    )

@@ -28,6 +28,11 @@ from .retrieve_academic import (
     RetrieveJobResponse,
     RetrieveResult,
 )
+from .utils import (
+    KeyVerificationResult,
+    verify_zotero_keys,
+    verify_zotero_keys_batch,
+)
 
 __all__ = [
     # Schema
@@ -56,4 +61,8 @@ __all__ = [
     "RetrieveAcademicHealthStatus",
     "RetrieveJobResponse",
     "RetrieveResult",
+    # Utils
+    "KeyVerificationResult",
+    "verify_zotero_keys",
+    "verify_zotero_keys_batch",
 ]

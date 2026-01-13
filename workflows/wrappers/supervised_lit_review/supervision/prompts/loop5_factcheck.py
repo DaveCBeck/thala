@@ -14,9 +14,9 @@ You have access to tools for verifying claims against source papers:
 
 1. **search_papers(query, limit)** - Search papers by topic/keyword
    - Use to find papers that might support or contradict a claim
-   - Returns brief metadata (title, year, authors, relevance)
+   - Returns brief metadata (zotero_key, title, year, authors, relevance)
 
-2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+2. **get_paper_content(zotero_key, max_chars)** - Fetch detailed paper content
    - Use to verify specific facts against source documents
    - Returns 10:1 compressed summary with key findings
 
@@ -32,7 +32,6 @@ You have access to tools for verifying claims against source papers:
 - Search for papers on specific topics when checking accuracy
 - Fetch content to confirm exact facts, statistics, or quotes
 - When corpus search fails, use check_fact to verify established facts before flagging
-- Budget: 8 tool calls per section, 30K chars total
 
 ## Check for:
 - Factual accuracy of claims
@@ -160,8 +159,7 @@ LOOP5_FACT_CHECK_USER = """Fact-check this section of the literature review.
 ## Section Content
 {section_content}
 
-## Papers Cited in This Section
-{paper_summaries}
+Use `search_papers` and `get_paper_content` tools to verify claims against source papers.
 
 Return a DocumentEdits object with any corrections needed."""
 
@@ -192,9 +190,9 @@ You have access to tools for verifying references:
 
 1. **search_papers(query, limit)** - Search papers by topic/keyword
    - Use to find papers that should be cited for a claim
-   - Returns brief metadata including zotero_key for [@KEY] citations
+   - Returns brief metadata (zotero_key, title, year, authors, relevance)
 
-2. **get_paper_content(doi, max_chars)** - Fetch detailed paper content
+2. **get_paper_content(zotero_key, max_chars)** - Fetch detailed paper content
    - Use to verify that a cited paper actually supports a claim
    - Returns 10:1 compressed summary with key findings
 
@@ -209,7 +207,6 @@ You have access to tools for verifying references:
 - Search for additional papers when claims lack citations
 - Fetch content to confirm paper supports the specific claim
 - Use check_fact to verify if uncited claims are established knowledge
-- Budget: 8 tool calls per section, 30K chars total
 
 For each issue found, provide a precise edit using the find/replace format.
 
@@ -262,7 +259,6 @@ LOOP5_REF_CHECK_USER = """Check references in this section of the literature rev
 ## Citation Keys in This Section
 {citation_keys}
 
-## Papers Cited in This Section
-{paper_summaries}
+Use `search_papers` and `get_paper_content` tools to verify that cited papers support the claims made.
 
 Return a DocumentEdits object with any reference corrections needed."""

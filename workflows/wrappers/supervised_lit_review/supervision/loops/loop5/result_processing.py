@@ -12,7 +12,6 @@ from ...utils import (
     EditValidationResult,
     extract_citation_keys_from_text,
     validate_citations_against_zotero,
-    strip_invalid_citations,
 )
 from ..todo_verification import verify_todos
 
@@ -52,66 +51,55 @@ def validate_edits_node(state: dict[str, Any]) -> dict[str, Any]:
 
 
 async def apply_edits_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Apply validated edits to the document with optional Zotero verification."""
+    """Apply validated edits and verify/fix invalid citations."""
+    from .citation_resolution import resolve_invalid_citations
+
     allowed_types = {"fact_correction", "citation_fix", "clarity"}
     filtered_edits = [
         edit for edit in state["valid_edits"] if edit.edit_type in allowed_types
     ]
 
-    verify_zotero = state.get("verify_zotero", True)
-    verified_keys = state.get("verified_citation_keys", set())
-    zotero_keys = state.get("zotero_keys", {})
-    corpus_keys = set(zotero_keys.values())
-
     updated_review = apply_edits(state["current_review"], filtered_edits)
-
-    newly_verified: set[str] = set()
-    if verify_zotero:
-        zotero_client = ZoteroStore()
-        try:
-            valid_keys, invalid_keys = await validate_citations_against_zotero(
-                text=updated_review,
-                zotero_client=zotero_client,
-                known_valid_keys=corpus_keys | verified_keys,
-            )
-
-            newly_verified = valid_keys - corpus_keys - verified_keys
-
-            if invalid_keys:
-                logger.warning(
-                    f"Found {len(invalid_keys)} unverified citations, adding TODOs"
-                )
-                updated_review = strip_invalid_citations(
-                    updated_review, invalid_keys, add_todo=True
-                )
-            else:
-                logger.debug("All citations verified in Zotero")
-
-            if newly_verified:
-                logger.debug(f"Verified {len(newly_verified)} new citation keys")
-
-        finally:
-            await zotero_client.close()
-
     logger.info(f"Applied {len(filtered_edits)} edits to document")
 
-    return {
-        "current_review": updated_review,
-        "verified_citation_keys": verified_keys | newly_verified,
-    }
+    # Extract all citation keys from document
+    all_keys = extract_citation_keys_from_text(updated_review)
+    if not all_keys:
+        logger.debug("No citations found in document")
+        return {"current_review": updated_review}
+
+    # Verify all citations against Zotero
+    zotero_client = ZoteroStore()
+    try:
+        valid_keys, invalid_keys = await validate_citations_against_zotero(
+            text=updated_review,
+            zotero_client=zotero_client,
+            known_valid_keys=set(),  # Verify all keys fresh
+        )
+
+        logger.info(f"Citation verification: {len(valid_keys)} valid, {len(invalid_keys)} invalid")
+
+        if invalid_keys:
+            # Use LLM to resolve invalid citations
+            updated_review = await resolve_invalid_citations(
+                document=updated_review,
+                invalid_keys=invalid_keys,
+                topic=state.get("topic", ""),
+            )
+
+    finally:
+        await zotero_client.close()
+
+    return {"current_review": updated_review}
 
 
 def filter_ambiguous_claims(
     claims: list[str],
-    verified_keys: set[str],
-    zotero_keys: dict[str, str],
     false_positive_patterns: list[str],
 ) -> tuple[list[str], list[str]]:
     """Filter out corpus-gap and low-value ambiguous claims."""
     filtered = []
     discarded = []
-    corpus_keys = set(zotero_keys.values())
-    all_valid_keys = verified_keys | corpus_keys
 
     methodological_indicators = [
         "we used", "we employed", "we selected", "we chose",
@@ -129,14 +117,6 @@ def filter_ambiguous_claims(
             discarded.append(f"Pre-filtered (corpus gap): {claim}")
             logger.debug(f"Filtered corpus-gap claim: {claim[:80]}...")
             continue
-
-        cited_in_claim = extract_citation_keys_from_text(claim)
-        if cited_in_claim:
-            all_cited_valid = all(k in all_valid_keys for k in cited_in_claim)
-            if all_cited_valid:
-                discarded.append(f"Pre-filtered (valid Zotero citations): {claim}")
-                logger.debug(f"Filtered claim with valid Zotero citations: {claim[:80]}...")
-                continue
 
         is_methodological = any(ind in claim_lower for ind in methodological_indicators)
         if is_methodological:
@@ -193,8 +173,6 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
 
     ambiguous_claims = state.get("ambiguous_claims", [])
     unaddressed_todos = state.get("unaddressed_todos", [])
-    verified_keys = state.get("verified_citation_keys", set())
-    zotero_keys = state.get("zotero_keys", {})
 
     logger.debug(
         f"Collecting {len(ambiguous_claims)} ambiguous claims, "
@@ -203,8 +181,6 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
 
     filtered_claims, claim_discards = filter_ambiguous_claims(
         claims=ambiguous_claims,
-        verified_keys=verified_keys,
-        zotero_keys=zotero_keys,
         false_positive_patterns=FALSE_POSITIVE_PATTERNS,
     )
     discarded_todos.extend(claim_discards)
@@ -221,7 +197,7 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
         else:
             human_items.append(f"Unaddressed TODO: {todo}")
 
-    if state.get("verify_todos_enabled", True) and human_items:
+    if human_items:
         logger.debug(f"Running TODO verification on {len(human_items)} items")
         try:
             verification_result = await verify_todos(
@@ -231,10 +207,10 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
                 batch_size=30,
             )
             human_items = verification_result.keep
-            discarded_todos = verification_result.discard
+            discarded_todos.extend(verification_result.discard)
             logger.debug(
                 f"TODO verification kept {len(human_items)}, "
-                f"discarded {len(discarded_todos)}"
+                f"discarded {len(verification_result.discard)}"
             )
         except Exception as e:
             logger.error(f"TODO verification failed: {e}", exc_info=True)

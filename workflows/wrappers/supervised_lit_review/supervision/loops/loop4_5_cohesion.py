@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.wrappers.supervised_lit_review.supervision.types import (
     CohesionCheckResult,
@@ -11,6 +13,7 @@ from workflows.wrappers.supervised_lit_review.supervision.prompts import (
 )
 
 
+@traceable(run_type="chain", name="Loop4_5_CohesionCheck")
 async def check_cohesion(document: str) -> CohesionCheckResult:
     """Check if document needs structural reorganization after Loop 4 edits.
 

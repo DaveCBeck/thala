@@ -2,16 +2,19 @@
 
 Two-phase structural editing loop:
 - Phase A: Identify structural issues (diagnosis)
-- Phase B: Rewrite sections to fix issues (new approach - replaces edit generation)
+- Phase B: Rewrite sections to fix issues (section-rewrite approach)
 """
 
 import logging
-from typing_extensions import TypedDict
-from typing import Optional
+import uuid
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from langgraph.graph import StateGraph, START, END
+from langsmith import traceable
+from typing_extensions import TypedDict
 
-from workflows.research.academic_lit_review.state import LitReviewInput
+from workflows.shared.workflow_state_store import save_workflow_state
 from .analyzer import analyze_structure_phase_a_node
 from .section_rewriter import rewrite_sections_for_issues_node
 from .verification import verify_architecture_node
@@ -26,36 +29,45 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
-class Loop3State(TypedDict):
+@dataclass
+class Loop3Result:
+    """Result from running Loop 3 structural editing."""
+
+    current_review: str
+    changes_summary: str
+    iterations_used: int
+
+
+class Loop3State(TypedDict, total=False):
     """State for Loop 3 structural editing.
 
-    Uses section-rewrite approach (replaces edit-based approach):
+    Uses section-rewrite approach:
     - issue_analysis: Phase A output (StructuralIssueAnalysis)
     - rewrite_manifest: Phase B output (Loop3RewriteManifest)
     """
 
+    # Core inputs
     current_review: str
-    numbered_document: str
-    paragraph_mapping: dict[int, str]
-    input: LitReviewInput
+    topic: str
     iteration: int
     max_iterations: int
     is_complete: bool
 
+    # Document processing (internal)
+    numbered_document: str
+    paragraph_mapping: dict[int, str]
+
+    # Phase A output (diagnosis)
     issue_analysis: Optional[dict]
     phase_a_complete: bool
 
+    # Phase B output (section rewrites)
     rewrite_manifest: Optional[dict]
     changes_applied: list[str]
 
+    # Verification output
     architecture_verification: Optional[dict]
     needs_another_iteration: bool
-
-    zotero_keys: dict[str, str]
-    zotero_key_sources: dict[str, dict]
-
-    edit_manifest: Optional[dict]
-    applied_edits: list[str]
 
 
 def create_loop3_graph():
@@ -116,38 +128,37 @@ def create_loop3_graph():
     return graph.compile()
 
 
+@traceable(run_type="chain", name="Loop3_StructureCohesion")
 async def run_loop3_standalone(
     review: str,
-    input_data: LitReviewInput,
-    max_iterations: int = 3,
+    topic: str,
+    quality_settings: dict[str, Any],
     config: dict | None = None,
-    zotero_keys: dict[str, str] | None = None,
-    zotero_key_sources: dict[str, dict] | None = None,
-) -> dict:
-    """Run Loop 3 as standalone operation for testing.
+) -> Loop3Result:
+    """Run Loop 3 as standalone operation.
 
     Args:
         review: Current literature review text
-        input_data: Original input parameters with topic and research questions
-        max_iterations: Maximum number of restructuring iterations
+        topic: Research topic for context
+        quality_settings: Quality tier settings (max_stages used for iterations)
         config: Optional LangGraph config with run_id and run_name for tracing
-        zotero_keys: DOI -> citation key mapping for citation validation
-        zotero_key_sources: Citation key -> metadata for citation validation
 
     Returns:
-        Dictionary containing:
-            - current_review: Final restructured review
-            - is_complete: Whether loop completed successfully
-            - iteration: Number of iterations used
-            - rewrite_manifest: Final rewrite manifest (if any)
+        Loop3Result with current_review, changes_summary, iterations_used
     """
+    # Derive max_iterations from quality settings (+1 for structural editing)
+    # Loop 3 gets an extra iteration because structural issues often
+    # require multiple passes to fully resolve
+    max_iterations = quality_settings.get("max_stages", 3) + 1
+
     compiled_graph = create_loop3_graph()
+    run_id = config.get("run_id", uuid.uuid4()) if config else uuid.uuid4()
 
     initial_state: Loop3State = {
         "current_review": review,
+        "topic": topic,
         "numbered_document": "",
         "paragraph_mapping": {},
-        "input": input_data,
         "iteration": 0,
         "max_iterations": max_iterations,
         "is_complete": False,
@@ -157,10 +168,6 @@ async def run_loop3_standalone(
         "changes_applied": [],
         "architecture_verification": None,
         "needs_another_iteration": False,
-        "zotero_keys": zotero_keys or {},
-        "zotero_key_sources": zotero_key_sources or {},
-        "edit_manifest": None,
-        "applied_edits": [],
     }
 
     logger.info(f"Loop 3 starting with max_iterations={max_iterations}")
@@ -170,10 +177,42 @@ async def run_loop3_standalone(
     else:
         final_state = await compiled_graph.ainvoke(initial_state)
 
-    return {
-        "current_review": final_state.get("current_review", review),
-        "is_complete": final_state.get("is_complete", False),
-        "iteration": final_state.get("iteration", 0),
-        "rewrite_manifest": final_state.get("rewrite_manifest"),
-        "edit_manifest": final_state.get("edit_manifest"),
-    }
+    # Build changes summary
+    iterations_used = final_state.get("iteration", 0)
+    rewrite_manifest = final_state.get("rewrite_manifest", {})
+    changes_applied = final_state.get("changes_applied", [])
+
+    if changes_applied:
+        changes_summary = f"Resolved {len(changes_applied)} structural issues"
+    elif rewrite_manifest and rewrite_manifest.get("rewrites"):
+        changes_summary = f"Applied {len(rewrite_manifest['rewrites'])} section rewrites"
+    else:
+        changes_summary = "No structural changes needed"
+
+    # Save state for analysis (dev mode only)
+    save_workflow_state(
+        workflow_name="supervision_loop3",
+        run_id=str(run_id),
+        state={
+            "input": {
+                "topic": topic,
+                "review_length": len(review),
+                "max_iterations": max_iterations,
+            },
+            "output": {
+                "changes_summary": changes_summary,
+                "iterations_used": iterations_used,
+            },
+            "final_state": {
+                "rewrite_manifest": rewrite_manifest,
+                "changes_applied": changes_applied,
+                "architecture_verification": final_state.get("architecture_verification"),
+            },
+        },
+    )
+
+    return Loop3Result(
+        current_review=final_state.get("current_review", review),
+        changes_summary=changes_summary,
+        iterations_used=iterations_used,
+    )
