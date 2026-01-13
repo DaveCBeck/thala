@@ -34,8 +34,10 @@ from datetime import datetime
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
+import logging
+
 from testing.utils import (
-    setup_logging,
+    configure_logging,
     get_output_dir,
     print_section_header,
     format_duration,
@@ -43,9 +45,10 @@ from testing.utils import (
     add_quality_argument,
     add_research_questions_argument,
 )
+from workflows.shared.workflow_state_store import load_workflow_state
 
-# Setup logging
-logger = setup_logging("multi_lang_academic")
+configure_logging("multi_lang_academic")
+logger = logging.getLogger(__name__)
 
 # Output directory for results
 OUTPUT_DIR = get_output_dir()
@@ -104,13 +107,13 @@ Provide only the English translation, no commentary."""
 # =============================================================================
 
 
-async def save_markdown_outputs(result, timestamp: str) -> dict[str, str]:
+async def save_markdown_outputs(result: dict, timestamp: str) -> dict[str, str]:
     """Save all markdown outputs from the multi_lang result.
 
     Non-English reports are translated to English before saving.
 
     Args:
-        result: MultiLangResult from multi_lang_research
+        result: Combined result dict with state store data
         timestamp: Timestamp string for filenames
 
     Returns:
@@ -120,7 +123,7 @@ async def save_markdown_outputs(result, timestamp: str) -> dict[str, str]:
     saved_files = {}
 
     # Save per-language reports (translated to English if needed)
-    for lang_result in result.language_results:
+    for lang_result in result.get("language_results", []):
         lang_code = lang_result["language_code"]
         lang_name = lang_result["language_name"]
         full_report = lang_result.get("full_report")
@@ -148,34 +151,36 @@ async def save_markdown_outputs(result, timestamp: str) -> dict[str, str]:
             logger.info(f"Saved {lang_code} report: {filepath}")
 
     # Save comparative analysis
-    if result.comparative:
+    comparative = result.get("comparative")
+    if comparative:
         filename = f"multilang-comparative-{timestamp}.md"
         filepath = OUTPUT_DIR / filename
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("# Cross-Language Comparative Analysis\n\n")
-            f.write(result.comparative)
+            f.write(comparative)
         saved_files["comparative"] = str(filepath)
         logger.info(f"Saved comparative analysis: {filepath}")
 
     # Save final synthesis
-    if result.synthesis:
+    synthesis = result.get("final_synthesis") or result.get("final_report")
+    if synthesis:
         filename = f"multilang-final-{timestamp}.md"
         filepath = OUTPUT_DIR / filename
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("# Integrated Multi-Language Literature Review\n\n")
-            f.write(result.synthesis)
+            f.write(synthesis)
         saved_files["final"] = str(filepath)
         logger.info(f"Saved final synthesis: {filepath}")
 
     return saved_files
 
 
-def print_result_summary(result) -> None:
+def print_result_summary(result: dict) -> None:
     """Print a summary of multi-lang results."""
     print_section_header("MULTI-LANGUAGE ACADEMIC LITERATURE REVIEW RESULTS")
 
     # Language results
-    lang_results = result.language_results
+    lang_results = result.get("language_results", [])
     print(f"\nLanguages processed: {len(lang_results)}")
 
     total_sources = 0
@@ -190,24 +195,27 @@ def print_result_summary(result) -> None:
     print(f"\nTotal sources: {total_sources}")
 
     # Synthesis status
+    comparative = result.get("comparative")
+    synthesis = result.get("final_synthesis") or result.get("final_report")
     print("\n--- Synthesis Status ---")
-    print(f"Comparative analysis: {'Yes' if result.comparative else 'No'}")
-    print(f"Final synthesis: {'Yes' if result.synthesis else 'No'}")
+    print(f"Comparative analysis: {'Yes' if comparative else 'No'}")
+    print(f"Final synthesis: {'Yes' if synthesis else 'No'}")
 
-    if result.sonnet_analysis:
-        analysis = result.sonnet_analysis
-        if analysis.get("universal_themes"):
-            print(f"\nUniversal themes: {len(analysis['universal_themes'])}")
-        if analysis.get("unique_contributions"):
-            print(f"Languages with unique contributions: {len(analysis['unique_contributions'])}")
+    sonnet_analysis = result.get("sonnet_analysis")
+    if sonnet_analysis:
+        if sonnet_analysis.get("universal_themes"):
+            print(f"\nUniversal themes: {len(sonnet_analysis['universal_themes'])}")
+        if sonnet_analysis.get("unique_contributions"):
+            print(f"Languages with unique contributions: {len(sonnet_analysis['unique_contributions'])}")
 
     # Errors
-    if result.errors:
-        print(f"\n--- Errors ({len(result.errors)}) ---")
-        for error in result.errors[:5]:
+    errors = result.get("errors", [])
+    if errors:
+        print(f"\n--- Errors ({len(errors)}) ---")
+        for error in errors[:5]:
             print(f"  - {error}")
-        if len(result.errors) > 5:
-            print(f"  ... and {len(result.errors) - 5} more")
+        if len(errors) > 5:
+            print(f"  ... and {len(errors) - 5} more")
 
 
 # =============================================================================
@@ -298,7 +306,7 @@ async def main():
 
     try:
         # Run multi_lang workflow with academic-only config
-        result = await multi_lang_research(
+        workflow_result = await multi_lang_research(
             topic=topic,
             mode="set_languages",
             languages=languages,
@@ -306,6 +314,17 @@ async def main():
             workflows={"academic": True},
             quality=quality,
         )
+
+        # Convert result to dict and load full state from state store
+        result = workflow_result.to_dict()
+        run_id = result.get("langsmith_run_id")
+        if run_id:
+            full_state = load_workflow_state("multi_lang", run_id)
+            if full_state:
+                result = {**full_state, **result}
+                logger.info(f"Loaded full state from state store for run {run_id}")
+            else:
+                logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
 
         # Print summary
         print_result_summary(result)
@@ -319,8 +338,10 @@ async def main():
             print(f"  {output_type}: {filepath}")
 
         # Duration
-        if result.started_at and result.completed_at:
-            duration_str = format_duration(result.started_at, result.completed_at)
+        started_at = result.get("started_at")
+        completed_at = result.get("completed_at")
+        if started_at and completed_at:
+            duration_str = format_duration(started_at, completed_at)
             print(f"\nTotal duration: {duration_str}")
 
     except KeyboardInterrupt:

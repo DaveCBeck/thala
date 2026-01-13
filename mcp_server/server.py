@@ -16,8 +16,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from core.config import configure_langsmith
+from core.config import configure_langsmith, configure_logging
 
+configure_logging()
 configure_langsmith()
 
 from mcp.server import Server
@@ -34,11 +35,6 @@ from core.stores.zotero import ZoteroStore
 from core.embedding import EmbeddingService
 from .errors import NotFoundError, StoreConnectionError, ToolError
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 # Global store instances (initialized on startup)

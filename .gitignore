@@ -1,10 +1,12 @@
 # Coding infrastructure
 .claude/
 .context/
+.cursor/
 .lit-review-state/
 dev.md
 claude.md
 todo.md
+logs/
 testing/test_data/
 testing/logs/
 testing/traces/

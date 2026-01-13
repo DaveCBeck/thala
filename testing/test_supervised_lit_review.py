@@ -35,13 +35,13 @@ from datetime import datetime
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
+import logging
+
 from testing.utils import (
-    setup_logging,
+    configure_logging,
     get_output_dir,
     save_json_result,
     save_markdown_report,
-    save_checkpoint,
-    load_checkpoint,
     print_section_header,
     safe_preview,
     print_timing,
@@ -53,9 +53,10 @@ from testing.utils import (
     add_date_range_arguments,
     add_research_questions_argument,
 )
+from workflows.shared.workflow_state_store import load_workflow_state
 
-# Setup logging
-logger = setup_logging("supervised_lit_review")
+configure_logging("supervised_lit_review")
+logger = logging.getLogger(__name__)
 
 # Output directory for results
 OUTPUT_DIR = get_output_dir()
@@ -391,6 +392,16 @@ async def run_supervised_literature_review(
         language=language,
         supervision_loops=supervision_loops,
     )
+
+    # Load full state from state store for detailed analysis
+    run_id = result.get("langsmith_run_id")
+    if run_id:
+        full_state = load_workflow_state("supervised_lit_review", run_id)
+        if full_state:
+            result = {**full_state, **result}
+            logger.info(f"Loaded full state from state store for run {run_id}")
+        else:
+            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
 
     return result
 

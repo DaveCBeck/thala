@@ -16,8 +16,10 @@ import asyncio
 import sys
 from pathlib import Path
 
+import logging
+
 from testing.utils import (
-    setup_logging,
+    configure_logging,
     get_output_dir,
     save_json_result,
     print_section_header,
@@ -26,8 +28,8 @@ from testing.utils import (
     print_errors,
 )
 
-# Setup logging
-logger = setup_logging("document_processing")
+configure_logging("document_processing")
+logger = logging.getLogger(__name__)
 
 # Test data paths
 TEST_DATA_DIR = get_output_dir()

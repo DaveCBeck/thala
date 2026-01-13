@@ -18,7 +18,9 @@ from pathlib import Path
 
 from elasticsearch import AsyncElasticsearch
 
-logging.basicConfig(level=logging.INFO)
+from core.config import configure_logging
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"

@@ -3,7 +3,7 @@
 Test script for the wrapped research workflow.
 
 Runs the comprehensive research workflow that orchestrates web research,
-academic literature review, and book finding with checkpointing support.
+academic literature review, and book finding.
 
 Usage:
     python test_wrapped_research.py "your research topic" [quality] [options]
@@ -20,19 +20,17 @@ Environment:
 import asyncio
 import os
 from datetime import datetime
-from pathlib import Path
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
+import logging
+
 from testing.utils import (
-    setup_logging,
+    configure_logging,
     get_output_dir,
     save_json_result,
     save_markdown_report,
-    save_checkpoint,
-    load_checkpoint,
-    get_checkpoint_dir,
     print_section_header,
     safe_preview,
     print_timing,
@@ -41,16 +39,15 @@ from testing.utils import (
     create_test_parser,
     add_quality_argument,
     add_date_range_arguments,
-    add_checkpoint_arguments,
     add_research_questions_argument,
 )
+from workflows.shared.workflow_state_store import load_workflow_state
 
-# Setup logging
-logger = setup_logging("wrapped_research")
+configure_logging("wrapped_research")
+logger = logging.getLogger(__name__)
 
 # Output directory for results
 OUTPUT_DIR = get_output_dir()
-CHECKPOINT_DIR = get_checkpoint_dir() / "wrapped"
 
 VALID_QUALITIES = ["quick", "standard", "comprehensive"]
 DEFAULT_QUALITY = "quick"
@@ -229,186 +226,17 @@ async def run_wrapped_research(
         date_range=date_range,
     )
 
+    # Load full state from state store for detailed analysis
+    run_id = result.get("langsmith_run_id")
+    if run_id:
+        full_state = load_workflow_state("wrapped_research", run_id)
+        if full_state:
+            result = {**full_state, **result}
+            logger.info(f"Loaded full state from state store for run {run_id}")
+        else:
+            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
+
     return result
-
-
-async def run_with_checkpoints(
-    query: str,
-    quality: str = "quick",
-    research_questions: list[str] | None = None,
-    date_range: tuple[int, int] | None = None,
-    checkpoint_prefix: str = "latest",
-) -> dict:
-    """Run wrapped workflow with manual checkpoint saves for testing.
-
-    The wrapped workflow has built-in checkpointing, but this adds explicit
-    saves after each major phase for test iteration.
-
-    Saves checkpoints:
-    - {prefix}_after_parallel: After web + academic complete
-    - {prefix}_after_books: After book finding complete
-    - {prefix}_final: Complete result
-    """
-    from workflows.wrapped.state import (
-        WrappedResearchState,
-        WrappedResearchInput,
-        CheckpointPhase,
-    )
-    from workflows.wrapped.nodes import (
-        run_parallel_research,
-        generate_book_query,
-        run_book_finding,
-        generate_final_summary,
-        save_to_top_of_mind,
-    )
-    import uuid
-
-    logger.info(f"Starting checkpointed wrapped research on: {query}")
-    logger.info(f"Checkpoint prefix: {checkpoint_prefix}")
-
-    run_id = str(uuid.uuid4())
-
-    # Build initial state
-    state = WrappedResearchState(
-        input=WrappedResearchInput(
-            query=query,
-            quality=quality,
-            research_questions=research_questions,
-            date_range=date_range,
-        ),
-        web_result=None,
-        academic_result=None,
-        book_result=None,
-        book_theme=None,
-        book_brief=None,
-        combined_summary=None,
-        top_of_mind_ids={},
-        checkpoint_phase=CheckpointPhase(
-            parallel_research=False,
-            book_query_generated=False,
-            book_finding=False,
-            saved_to_top_of_mind=False,
-        ),
-        checkpoint_path=None,
-        started_at=datetime.utcnow(),
-        completed_at=None,
-        current_phase="starting",
-        langsmith_run_id=run_id,
-        errors=[],
-    )
-
-    # Phase 1: Parallel research (web + academic)
-    logger.info("Running parallel research phase (web + academic)...")
-    updates = await run_parallel_research(state)
-    state = {**state, **updates}
-    save_checkpoint(state, f"{checkpoint_prefix}_after_parallel", CHECKPOINT_DIR)
-
-    # Phase 2: Generate book query
-    logger.info("Generating book query from research...")
-    updates = await generate_book_query(state)
-    state = {**state, **updates}
-
-    # Phase 3: Book finding
-    logger.info("Running book finding phase...")
-    updates = await run_book_finding(state)
-    state = {**state, **updates}
-    save_checkpoint(state, f"{checkpoint_prefix}_after_books", CHECKPOINT_DIR)
-
-    # Phase 4: Generate final summary
-    logger.info("Generating final summary...")
-    updates = await generate_final_summary(state)
-    state = {**state, **updates}
-
-    # Phase 5: Save to top of mind
-    logger.info("Saving to top of mind...")
-    updates = await save_to_top_of_mind(state)
-    state = {**state, **updates}
-
-    state["completed_at"] = datetime.utcnow()
-    save_checkpoint(state, f"{checkpoint_prefix}_final", CHECKPOINT_DIR)
-
-    return state
-
-
-async def run_from_parallel_checkpoint(checkpoint_prefix: str) -> dict:
-    """Resume workflow from after-parallel checkpoint.
-
-    Runs: book_query -> book_finding -> summary -> save
-    Skips: parallel research (web + academic)
-    """
-    from workflows.wrapped.nodes import (
-        generate_book_query,
-        run_book_finding,
-        generate_final_summary,
-        save_to_top_of_mind,
-    )
-
-    checkpoint_name = f"{checkpoint_prefix}_after_parallel"
-    state = load_checkpoint(checkpoint_name, CHECKPOINT_DIR)
-    if not state:
-        raise ValueError(f"Checkpoint not found: {checkpoint_name}")
-
-    logger.info(f"Resuming from parallel checkpoint: {checkpoint_name}")
-
-    # Phase 2: Generate book query
-    logger.info("Generating book query from research...")
-    updates = await generate_book_query(state)
-    state = {**state, **updates}
-
-    # Phase 3: Book finding
-    logger.info("Running book finding phase...")
-    updates = await run_book_finding(state)
-    state = {**state, **updates}
-    save_checkpoint(state, f"{checkpoint_prefix}_after_books", CHECKPOINT_DIR)
-
-    # Phase 4: Generate final summary
-    logger.info("Generating final summary...")
-    updates = await generate_final_summary(state)
-    state = {**state, **updates}
-
-    # Phase 5: Save to top of mind
-    logger.info("Saving to top of mind...")
-    updates = await save_to_top_of_mind(state)
-    state = {**state, **updates}
-
-    state["completed_at"] = datetime.utcnow()
-    save_checkpoint(state, f"{checkpoint_prefix}_final", CHECKPOINT_DIR)
-
-    return state
-
-
-async def run_from_books_checkpoint(checkpoint_prefix: str) -> dict:
-    """Resume workflow from after-books checkpoint.
-
-    Runs: summary -> save
-    Skips: parallel research, book finding
-    """
-    from workflows.wrapped.nodes import (
-        generate_final_summary,
-        save_to_top_of_mind,
-    )
-
-    checkpoint_name = f"{checkpoint_prefix}_after_books"
-    state = load_checkpoint(checkpoint_name, CHECKPOINT_DIR)
-    if not state:
-        raise ValueError(f"Checkpoint not found: {checkpoint_name}")
-
-    logger.info(f"Resuming from books checkpoint: {checkpoint_name}")
-
-    # Phase 4: Generate final summary
-    logger.info("Generating final summary...")
-    updates = await generate_final_summary(state)
-    state = {**state, **updates}
-
-    # Phase 5: Save to top of mind
-    logger.info("Saving to top of mind...")
-    updates = await save_to_top_of_mind(state)
-    state = {**state, **updates}
-
-    state["completed_at"] = datetime.utcnow()
-    save_checkpoint(state, f"{checkpoint_prefix}_final", CHECKPOINT_DIR)
-
-    return state
 
 
 # =============================================================================
@@ -424,41 +252,15 @@ def parse_args():
         topic_help="Research query/topic",
         epilog_examples="""
 Examples:
-  %(prog)s "AI agents in creative work"              # Quick run with checkpoints
+  %(prog)s "AI agents in creative work"              # Quick run
   %(prog)s "AI agents in creative work" standard     # Standard quality
   %(prog)s "Impact of LLMs" comprehensive            # Comprehensive (takes hours)
-
-Checkpoint examples:
-  %(prog)s "topic" quick --checkpoint-prefix mytest       # Full run, saves checkpoints
-  %(prog)s --resume-from parallel --checkpoint-prefix mytest  # Resume from after parallel
-  %(prog)s --resume-from books --checkpoint-prefix mytest     # Resume from after books
-  %(prog)s "topic" quick --no-checkpoint                  # Original behavior (no checkpoints)
         """
     )
 
     add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
     add_research_questions_argument(parser)
     add_date_range_arguments(parser)
-
-    # Custom checkpoint args for wrapped workflow
-    parser.add_argument(
-        "--resume-from",
-        type=str,
-        choices=["parallel", "books"],
-        default=None,
-        help="Resume from a checkpoint (skips earlier phases)"
-    )
-    parser.add_argument(
-        "--checkpoint-prefix",
-        type=str,
-        default="latest",
-        help="Prefix for checkpoint files (default: 'latest')"
-    )
-    parser.add_argument(
-        "--no-checkpoint",
-        action="store_true",
-        help="Disable manual checkpointing (use built-in workflow checkpoints only)"
-    )
 
     return parser.parse_args()
 
@@ -469,7 +271,6 @@ async def main():
 
     query = args.topic  # Note: topic arg is used as query
     quality = args.quality
-    checkpoint_prefix = args.checkpoint_prefix
 
     # Research questions (optional, for academic workflow)
     research_questions = args.questions
@@ -481,53 +282,26 @@ async def main():
         to_year = args.to_year or 2025
         date_range = (from_year, to_year)
 
-    # Determine run mode
-    if args.resume_from:
-        mode = f"resume from {args.resume_from}"
-    elif args.no_checkpoint:
-        mode = "no manual checkpoints"
-    else:
-        mode = "with manual checkpoints"
-
     print_section_header("WRAPPED RESEARCH WORKFLOW TEST")
     print(f"\nQuery: {query}")
     print(f"Quality: {quality}")
-    print(f"Mode: {mode}")
     if research_questions:
         print(f"Research Questions:")
         for q in research_questions:
             print(f"  - {q}")
     if date_range:
         print(f"Date Range: {date_range[0]}-{date_range[1]}")
-    if not args.no_checkpoint:
-        print(f"Checkpoint prefix: {checkpoint_prefix}")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
     print(f"\nStarting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
 
     try:
-        # Choose run function based on mode
-        if args.resume_from == "parallel":
-            result = await run_from_parallel_checkpoint(checkpoint_prefix)
-            query = result.get("input", {}).get("query", query)
-        elif args.resume_from == "books":
-            result = await run_from_books_checkpoint(checkpoint_prefix)
-            query = result.get("input", {}).get("query", query)
-        elif args.no_checkpoint:
-            result = await run_wrapped_research(
-                query=query,
-                quality=quality,
-                research_questions=research_questions,
-                date_range=date_range,
-            )
-        else:
-            result = await run_with_checkpoints(
-                query=query,
-                quality=quality,
-                research_questions=research_questions,
-                date_range=date_range,
-                checkpoint_prefix=checkpoint_prefix,
-            )
+        result = await run_wrapped_research(
+            query=query,
+            quality=quality,
+            research_questions=research_questions,
+            date_range=date_range,
+        )
 
         # Print detailed result summary
         print_result_summary(result, query)

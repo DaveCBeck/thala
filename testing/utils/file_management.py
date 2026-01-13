@@ -1,12 +1,11 @@
 """
 File management utilities for test scripts.
 
-Provides consistent handling of logging setup, output directories,
-and saving results/reports.
+Provides consistent handling of output directories and saving results/reports.
+Logging configuration is now handled centrally via core.config.configure_logging().
 """
 
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -15,12 +14,15 @@ TESTING_DIR = Path(__file__).parent.parent
 
 
 def get_log_dir() -> Path:
-    """Get/create log directory.
+    """Get the project log directory.
+
+    Note: Logs are now stored in ./logs/ at project root via configure_logging().
+    This function returns that path for reference.
 
     Returns:
-        Path to testing/logs directory
+        Path to logs directory
     """
-    log_dir = TESTING_DIR / "logs"
+    log_dir = TESTING_DIR.parent / "logs"
     log_dir.mkdir(exist_ok=True)
     return log_dir
 
@@ -37,48 +39,6 @@ def get_output_dir(subdir: str = "test_data") -> Path:
     output_dir = TESTING_DIR / subdir
     output_dir.mkdir(exist_ok=True)
     return output_dir
-
-
-def setup_logging(
-    workflow_name: str,
-    log_dir: Path | None = None,
-    level: int = logging.INFO,
-) -> logging.Logger:
-    """Configure logging with file and console handlers.
-
-    Creates a timestamped log file and sets up both console and file output.
-
-    Args:
-        workflow_name: Name for the log file (e.g., "lit_review")
-        log_dir: Directory for log files (default: testing/logs)
-        level: Logging level (default: INFO)
-
-    Returns:
-        Configured logger instance
-    """
-    if log_dir is None:
-        log_dir = get_log_dir()
-
-    log_dir.mkdir(exist_ok=True)
-
-    # Create timestamped log file
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = log_dir / f"{workflow_name}_{timestamp}.log"
-
-    # Configure root logger
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(log_file, mode='w'),
-        ]
-    )
-
-    logger = logging.getLogger(workflow_name)
-    logger.info(f"Logging to file: {log_file}")
-
-    return logger
 
 
 def save_json_result(

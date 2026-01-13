@@ -26,17 +26,16 @@ from datetime import datetime
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
+import logging
+
 from testing.utils import (
-    setup_logging,
+    configure_logging,
     get_output_dir,
     save_json_result,
     save_markdown_report,
-    save_checkpoint,
-    load_checkpoint,
     print_section_header,
     safe_preview,
     print_timing,
-    print_list_preview,
     print_errors,
     print_quality_analysis,
     BaseQualityAnalyzer,
@@ -45,12 +44,12 @@ from testing.utils import (
     add_quality_argument,
     add_language_argument,
     add_date_range_arguments,
-    add_checkpoint_arguments,
     add_research_questions_argument,
 )
+from workflows.shared.workflow_state_store import load_workflow_state
 
-# Setup logging
-logger = setup_logging("lit_review")
+configure_logging("academic_lit_review")
+logger = logging.getLogger(__name__)
 
 # Output directory for results
 OUTPUT_DIR = get_output_dir()
@@ -264,215 +263,18 @@ async def run_literature_review(
         language=language,
     )
 
+    # Load full state from state store for detailed analysis
+    run_id = result.get("langsmith_run_id")
+    if run_id:
+        full_state = load_workflow_state("academic_lit_review", run_id)
+        if full_state:
+            # Merge full state into result for analysis/display
+            result = {**full_state, **result}
+            logger.info(f"Loaded full state from state store for run {run_id}")
+        else:
+            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
+
     return result
-
-
-# =============================================================================
-# Checkpointed Run Functions
-# =============================================================================
-
-
-def build_initial_state(
-    topic: str,
-    research_questions: list[str],
-    quality: str,
-    date_range: tuple[int, int] | None,
-    language: str = "en",
-) -> dict:
-    """Build initial state for the literature review workflow.
-
-    This replicates the state initialization from academic_lit_review() in graph.py
-    to allow running phases individually with checkpointing.
-    """
-    import uuid
-    from workflows.academic_lit_review.state import (
-        QUALITY_PRESETS,
-        LitReviewInput,
-        LitReviewDiffusionState,
-    )
-    from workflows.shared.language import get_language_config
-
-    if quality not in QUALITY_PRESETS:
-        logger.warning(f"Unknown quality '{quality}', using 'standard'")
-        quality = "standard"
-
-    quality_settings = dict(QUALITY_PRESETS[quality])
-    language_config = get_language_config(language)
-
-    input_data = LitReviewInput(
-        topic=topic,
-        research_questions=research_questions,
-        quality=quality,
-        date_range=date_range,
-        include_books=True,
-        focus_areas=None,
-        exclude_terms=None,
-        max_papers=None,
-        language_code=language,
-    )
-
-    return {
-        "input": input_data,
-        "quality_settings": quality_settings,
-        "language_config": language_config,
-        "keyword_papers": [],
-        "citation_papers": [],
-        "expert_papers": [],
-        "book_dois": [],
-        "diffusion": LitReviewDiffusionState(
-            current_stage=0,
-            max_stages=quality_settings["max_stages"],
-            stages=[],
-            saturation_threshold=quality_settings["saturation_threshold"],
-            is_saturated=False,
-            consecutive_low_coverage=0,
-            total_papers_discovered=0,
-            total_papers_relevant=0,
-            total_papers_rejected=0,
-        ),
-        "paper_corpus": {},
-        "paper_summaries": {},
-        "citation_edges": [],
-        "paper_nodes": {},
-        "papers_to_process": [],
-        "papers_processed": [],
-        "papers_failed": [],
-        "bertopic_clusters": None,
-        "llm_topic_schema": None,
-        "clusters": [],
-        "section_drafts": {},
-        "final_review": None,
-        "references": [],
-        "prisma_documentation": None,
-        "elasticsearch_ids": {},
-        "zotero_keys": {},
-        "started_at": datetime.utcnow(),
-        "completed_at": None,
-        "current_phase": "discovery",
-        "current_status": "Starting literature review",
-        "langsmith_run_id": str(uuid.uuid4()),
-        "errors": [],
-    }
-
-
-async def run_with_checkpoints(
-    topic: str,
-    research_questions: list[str],
-    quality: str = "quick",
-    date_range: tuple[int, int] | None = None,
-    checkpoint_prefix: str = "latest",
-    language: str = "en",
-) -> dict:
-    """Run full workflow with automatic checkpoint saves after expensive phases.
-
-    Saves checkpoints:
-    - {prefix}_after_diffusion: After paper corpus is complete
-    - {prefix}_after_processing: After paper summaries are complete
-    """
-    from workflows.academic_lit_review.graph import (
-        discovery_phase_node,
-        diffusion_phase_node,
-        processing_phase_node,
-        clustering_phase_node,
-        synthesis_phase_node,
-    )
-
-    logger.info(f"Starting checkpointed literature review on: {topic}")
-    logger.info(f"Checkpoint prefix: {checkpoint_prefix}")
-    logger.info(f"Language: {language}")
-
-    # Build initial state
-    state = build_initial_state(topic, research_questions, quality, date_range, language)
-
-    # Phase 1: Discovery
-    logger.info("Running discovery phase...")
-    state.update(await discovery_phase_node(state))
-
-    # Phase 2: Diffusion (expensive - API calls, relevance scoring)
-    logger.info("Running diffusion phase...")
-    state.update(await diffusion_phase_node(state))
-    save_checkpoint(state, f"{checkpoint_prefix}_after_diffusion")
-
-    # Phase 3: Processing (expensive - PDF download, Marker, LLM summaries)
-    logger.info("Running processing phase...")
-    state.update(await processing_phase_node(state))
-    save_checkpoint(state, f"{checkpoint_prefix}_after_processing")
-
-    # Phase 4: Clustering
-    logger.info("Running clustering phase...")
-    state.update(await clustering_phase_node(state))
-
-    # Phase 5: Synthesis
-    logger.info("Running synthesis phase...")
-    state.update(await synthesis_phase_node(state))
-
-    return state
-
-
-async def run_from_diffusion_checkpoint(checkpoint_prefix: str) -> dict:
-    """Resume workflow from after-diffusion checkpoint.
-
-    Runs: processing -> clustering -> synthesis
-    Skips: discovery, diffusion
-    """
-    from workflows.academic_lit_review.graph import (
-        processing_phase_node,
-        clustering_phase_node,
-        synthesis_phase_node,
-    )
-
-    checkpoint_name = f"{checkpoint_prefix}_after_diffusion"
-    state = load_checkpoint(checkpoint_name)
-    if not state:
-        raise ValueError(f"Checkpoint not found: {checkpoint_name}")
-
-    logger.info(f"Resuming from diffusion checkpoint: {checkpoint_name}")
-    logger.info(f"Paper corpus size: {len(state.get('paper_corpus', {}))}")
-
-    # Phase 3: Processing
-    logger.info("Running processing phase...")
-    state.update(await processing_phase_node(state))
-    save_checkpoint(state, f"{checkpoint_prefix}_after_processing")
-
-    # Phase 4: Clustering
-    logger.info("Running clustering phase...")
-    state.update(await clustering_phase_node(state))
-
-    # Phase 5: Synthesis
-    logger.info("Running synthesis phase...")
-    state.update(await synthesis_phase_node(state))
-
-    return state
-
-
-async def run_from_processing_checkpoint(checkpoint_prefix: str) -> dict:
-    """Resume workflow from after-processing checkpoint.
-
-    Runs: clustering -> synthesis
-    Skips: discovery, diffusion, processing
-    """
-    from workflows.academic_lit_review.graph import (
-        clustering_phase_node,
-        synthesis_phase_node,
-    )
-
-    checkpoint_name = f"{checkpoint_prefix}_after_processing"
-    state = load_checkpoint(checkpoint_name)
-    if not state:
-        raise ValueError(f"Checkpoint not found: {checkpoint_name}")
-
-    logger.info(f"Resuming from processing checkpoint: {checkpoint_name}")
-    logger.info(f"Paper summaries size: {len(state.get('paper_summaries', {}))}")
-
-    # Phase 4: Clustering
-    logger.info("Running clustering phase...")
-    state.update(await clustering_phase_node(state))
-
-    # Phase 5: Synthesis
-    logger.info("Running synthesis phase...")
-    state.update(await synthesis_phase_node(state))
-
-    return state
 
 
 def parse_args():
@@ -483,22 +285,16 @@ def parse_args():
         topic_help="Research topic for literature review",
         epilog_examples="""
 Examples:
-  %(prog)s "transformer architectures"              # Quick review with checkpoints
-  %(prog)s "transformer architectures" standard     # Standard review with checkpoints
+  %(prog)s "transformer architectures"              # Quick review
+  %(prog)s "transformer architectures" standard     # Standard review
   %(prog)s "AI in drug discovery" comprehensive     # Comprehensive review
-
-Checkpoint examples:
-  %(prog)s "topic" quick --checkpoint-prefix mytest           # Full run, saves checkpoints
-  %(prog)s --resume-from processing --checkpoint-prefix mytest  # Resume from processing
-  %(prog)s --resume-from diffusion --checkpoint-prefix mytest   # Resume from diffusion
-  %(prog)s "topic" quick --no-checkpoint                      # Original behavior (no checkpoints)
+  %(prog)s "topic" quick --language es              # Spanish language review
         """
     )
 
     add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
     add_research_questions_argument(parser)
     add_date_range_arguments(parser)
-    add_checkpoint_arguments(parser)
     add_language_argument(parser)
 
     return parser.parse_args()
@@ -510,7 +306,6 @@ async def main():
 
     topic = args.topic
     quality = args.quality
-    checkpoint_prefix = args.checkpoint_prefix
     language = args.language
 
     # Default research questions if not provided
@@ -530,56 +325,27 @@ async def main():
         to_year = args.to_year or 2025
         date_range = (from_year, to_year)
 
-    # Determine run mode
-    if args.resume_from:
-        mode = f"resume from {args.resume_from}"
-    elif args.no_checkpoint:
-        mode = "no checkpoints"
-    else:
-        mode = "with checkpoints"
-
     print_section_header("ACADEMIC LITERATURE REVIEW TEST")
     print(f"\nTopic: {topic}")
     print(f"Quality: {quality}")
     print(f"Language: {language}")
-    print(f"Mode: {mode}")
-    if not args.resume_from:
-        print(f"Research Questions:")
-        for q in research_questions:
-            print(f"  - {q}")
+    print(f"Research Questions:")
+    for q in research_questions:
+        print(f"  - {q}")
     if date_range:
         print(f"Date Range: {date_range[0]}-{date_range[1]}")
-    if not args.no_checkpoint:
-        print(f"Checkpoint prefix: {checkpoint_prefix}")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
     print(f"\nStarting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
 
     try:
-        # Choose run function based on mode
-        if args.resume_from == "diffusion":
-            result = await run_from_diffusion_checkpoint(checkpoint_prefix)
-            topic = result.get("input", {}).get("topic", topic)
-        elif args.resume_from == "processing":
-            result = await run_from_processing_checkpoint(checkpoint_prefix)
-            topic = result.get("input", {}).get("topic", topic)
-        elif args.no_checkpoint:
-            result = await run_literature_review(
-                topic=topic,
-                research_questions=research_questions,
-                quality=quality,
-                date_range=date_range,
-                language=language,
-            )
-        else:
-            result = await run_with_checkpoints(
-                topic=topic,
-                research_questions=research_questions,
-                quality=quality,
-                date_range=date_range,
-                checkpoint_prefix=checkpoint_prefix,
-                language=language,
-            )
+        result = await run_literature_review(
+            topic=topic,
+            research_questions=research_questions,
+            quality=quality,
+            date_range=date_range,
+            language=language,
+        )
 
         # Print detailed result summary
         print_result_summary(result, topic)

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from core.config import configure_logging
 from workflows.shared.persistent_cache import (
     get_cached,
     set_cached,
@@ -12,7 +13,7 @@ from workflows.shared.persistent_cache import (
 )
 from langchain_tools.openalex.queries import get_work_by_doi
 
-logging.basicConfig(level=logging.INFO)
+configure_logging("cache_test")
 logger = logging.getLogger(__name__)
 
 

@@ -27,8 +27,10 @@ from datetime import datetime
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
+import logging
+
 from testing.utils import (
-    setup_logging,
+    configure_logging,
     get_output_dir,
     save_json_result,
     save_markdown_report,
@@ -43,9 +45,10 @@ from testing.utils import (
     add_quality_argument,
     add_language_argument,
 )
+from workflows.shared.workflow_state_store import load_workflow_state
 
-# Setup logging
-logger = setup_logging("book_finding")
+configure_logging("book_finding")
+logger = logging.getLogger(__name__)
 
 # Output directory for results
 OUTPUT_DIR = get_output_dir()
@@ -215,6 +218,16 @@ async def run_book_finding(
         quality=quality,
         language=language,
     )
+
+    # Load full state from state store for detailed analysis
+    run_id = result.get("langsmith_run_id")
+    if run_id:
+        full_state = load_workflow_state("book_finding", run_id)
+        if full_state:
+            result = {**full_state, **result}
+            logger.info(f"Loaded full state from state store for run {run_id}")
+        else:
+            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
 
     return result
 
