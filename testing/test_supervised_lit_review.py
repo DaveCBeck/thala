@@ -375,7 +375,7 @@ async def run_supervised_literature_review(
     supervision_loops: str = "all",
 ) -> dict:
     """Run the supervised academic literature review workflow on a topic."""
-    from workflows.supervised_lit_review import supervised_lit_review
+    from workflows.wrappers.supervised_lit_review import supervised_lit_review
 
     logger.info(f"Starting supervised literature review on: {topic}")
     logger.info(f"Quality: {quality}")

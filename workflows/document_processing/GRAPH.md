@@ -74,6 +74,5 @@ from workflows.document_processing import process_document
 result = await process_document(
     source="/path/to/document.pdf",
     title="Optional Title",
-    quality="balanced",
 )
 ```

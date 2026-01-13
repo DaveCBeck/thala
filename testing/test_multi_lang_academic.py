@@ -274,7 +274,7 @@ Examples:
 
 async def main():
     """Run multi-language academic literature review."""
-    from workflows.multi_lang import multi_lang_research
+    from workflows.wrappers.multi_lang import multi_lang_research
 
     args = parse_args()
 

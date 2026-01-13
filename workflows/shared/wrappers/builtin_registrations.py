@@ -25,11 +25,11 @@ async def _run_web_research(
     **kwargs,
 ) -> WorkflowResult:
     """Adapter for web_research workflow."""
-    from workflows.web_research.graph.api import deep_research
+    from workflows.research.web_research.graph.api import deep_research
 
     result = await deep_research(
         query=query,
-        depth=quality,  # web_research uses "depth" not "quality"
+        quality=quality,
         language=language,
     )
 
@@ -50,7 +50,7 @@ async def _run_academic_lit_review(
     **kwargs,
 ) -> WorkflowResult:
     """Adapter for academic_lit_review workflow."""
-    from workflows.academic_lit_review.graph.api import academic_lit_review
+    from workflows.research.academic_lit_review.graph.api import academic_lit_review
 
     result = await academic_lit_review(
         topic=query,
@@ -75,7 +75,7 @@ async def _run_book_finding(
     **kwargs,
 ) -> WorkflowResult:
     """Adapter for book_finding workflow."""
-    from workflows.book_finding.graph.api import book_finding
+    from workflows.research.book_finding.graph.api import book_finding
 
     result = await book_finding(
         theme=query,
@@ -100,7 +100,7 @@ async def _run_supervised_lit_review(
     **kwargs,
 ) -> WorkflowResult:
     """Adapter for supervised_lit_review workflow."""
-    from workflows.supervised_lit_review.api import supervised_lit_review
+    from workflows.wrappers.supervised_lit_review.api import supervised_lit_review
 
     result = await supervised_lit_review(
         topic=query,
@@ -131,7 +131,7 @@ def register_builtin_workflows() -> None:
         default_enabled=True,
         requires_questions=False,
         supports_date_range=False,
-        quality_tiers=["quick", "standard", "comprehensive"],
+        quality_tiers=["test", "quick", "standard", "comprehensive", "high_quality"],
         description="Deep web research using search and content scraping",
     )
 
@@ -153,7 +153,7 @@ def register_builtin_workflows() -> None:
         default_enabled=False,
         requires_questions=False,
         supports_date_range=False,
-        quality_tiers=["quick", "standard", "comprehensive"],
+        quality_tiers=["test", "quick", "standard", "comprehensive", "high_quality"],
         description="Book discovery and recommendation synthesis",
     )
 

@@ -49,7 +49,7 @@ async def resolve_input(state: dict) -> dict:
         result = await get_url(
             source,
             GetUrlOptions(
-                pdf_quality=input_data.get("quality", "balanced"),
+                pdf_quality="balanced",  # Fixed quality for PDF OCR
                 pdf_langs=input_data.get("langs", ["English"]),
                 detect_academic=False,
                 allow_retrieve_academic=False,

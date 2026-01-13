@@ -294,7 +294,7 @@ async def run_research(
         preserve_quotes: Keep direct quotes in original language when translating
         researcher_allocation: Number of parallel web researchers ("1"-"3")
     """
-    from workflows.web_research import deep_research
+    from workflows.research.web_research import deep_research
 
     logger.info(f"Starting research on: {topic}")
     logger.info(f"Depth: {depth}")
@@ -428,7 +428,7 @@ async def main():
 
     finally:
         # Clean up resources
-        from workflows.web_research import cleanup_research_resources
+        from workflows.research.web_research import cleanup_research_resources
         try:
             logger.info("Cleaning up research resources...")
             await cleanup_research_resources()

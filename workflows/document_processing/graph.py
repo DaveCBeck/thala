@@ -118,7 +118,6 @@ async def process_document(
     source: str,
     title: str = None,
     item_type: str = "document",
-    quality: str = "balanced",
     langs: list[str] = None,
     extra_metadata: dict = None,
     use_batch_api: bool = True,  # Set False for rapid iteration (skips batch API)
@@ -131,7 +130,6 @@ async def process_document(
             "source": source,
             "title": title,
             "item_type": item_type,
-            "quality": quality,
             "langs": langs or ["English"],
             "extra_metadata": extra_metadata or {},
             "use_batch_api": use_batch_api,
@@ -174,7 +172,6 @@ async def process_documents_batch(
                 source=doc_config["source"],
                 title=doc_config.get("title"),
                 item_type=doc_config.get("item_type", "document"),
-                quality=doc_config.get("quality", "balanced"),
                 langs=doc_config.get("langs"),
                 extra_metadata=doc_config.get("extra_metadata"),
             )

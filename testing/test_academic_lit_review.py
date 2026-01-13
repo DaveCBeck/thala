@@ -247,7 +247,7 @@ async def run_literature_review(
     language: str = "en",
 ) -> dict:
     """Run the academic literature review workflow on a topic."""
-    from workflows.academic_lit_review import academic_lit_review
+    from workflows.research.academic_lit_review import academic_lit_review
 
     logger.info(f"Starting literature review on: {topic}")
     logger.info(f"Quality: {quality}")

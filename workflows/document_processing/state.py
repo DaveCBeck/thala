@@ -19,7 +19,6 @@ class DocumentInput(TypedDict, total=False):
     source: str
     title: Optional[str]
     item_type: str
-    quality: Literal["fast", "balanced", "quality"]
     langs: list[str]
     extra_metadata: dict
     use_batch_api: bool  # Set False for rapid iteration (skips batch API, default True)
