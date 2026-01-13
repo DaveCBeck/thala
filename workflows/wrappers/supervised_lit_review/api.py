@@ -24,10 +24,6 @@ async def supervised_lit_review(
     quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"] = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
-    include_books: bool = True,
-    focus_areas: Optional[list[str]] = None,
-    exclude_terms: Optional[list[str]] = None,
-    max_papers: Optional[int] = None,
     supervision_loops: str = "all",
 ) -> dict[str, Any]:
     """Run a complete academic literature review WITH supervision loops.
@@ -41,10 +37,6 @@ async def supervised_lit_review(
         quality: Quality tier - "quick", "standard", "comprehensive", "high_quality"
         language: ISO 639-1 language code (default: "en")
         date_range: Optional (start_year, end_year) filter
-        include_books: Whether to include book sources (default: True)
-        focus_areas: Optional specific areas to prioritize
-        exclude_terms: Optional terms to filter out
-        max_papers: Override default max papers for quality tier
         supervision_loops: Which loops to run - "none", "one", "two", "three", "four", "all"
 
     Returns:
@@ -84,10 +76,6 @@ async def supervised_lit_review(
         quality=quality,
         language=language,
         date_range=date_range,
-        include_books=include_books,
-        focus_areas=focus_areas,
-        exclude_terms=exclude_terms,
-        max_papers=max_papers,
     )
 
     # Check for errors in lit review
@@ -137,10 +125,6 @@ async def supervised_lit_review(
         research_questions=research_questions,
         quality=quality,
         date_range=date_range,
-        include_books=include_books,
-        focus_areas=focus_areas,
-        exclude_terms=exclude_terms,
-        max_papers=max_papers,
         language_code=language,
     )
 

@@ -34,10 +34,6 @@ async def academic_lit_review(
     quality: QualityTier = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
-    include_books: bool = True,
-    focus_areas: Optional[list[str]] = None,
-    exclude_terms: Optional[list[str]] = None,
-    max_papers: Optional[int] = None,
 ) -> dict[str, Any]
 ```
 
@@ -97,10 +93,6 @@ async def supervised_lit_review(
     quality: QualityTier = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
-    include_books: bool = True,
-    focus_areas: Optional[list[str]] = None,
-    exclude_terms: Optional[list[str]] = None,
-    max_papers: Optional[int] = None,
     supervision_loops: str = "all",
 ) -> dict[str, Any]
 ```

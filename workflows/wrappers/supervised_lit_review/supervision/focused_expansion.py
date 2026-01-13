@@ -65,7 +65,6 @@ async def run_focused_expansion(
         research_questions=research_questions,
         quality_settings=quality_settings,
         date_range=None,  # No date restriction for theoretical foundations
-        focus_areas=None,
     )
 
     discovered_papers = keyword_result.get("discovered_papers", [])

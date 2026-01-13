@@ -67,8 +67,6 @@ async def run_mini_review(
         research_questions=literature_base.search_queries,
         quality_settings=quality_settings,
         date_range=None,
-        focus_areas=None,
-        language_config=None,
     )
 
     discovered_papers = keyword_result.get("discovered_papers", [])
