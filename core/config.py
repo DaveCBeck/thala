@@ -36,6 +36,22 @@ THIRD_PARTY_LOGGERS = [
     "huggingface_hub",
 ]
 
+# Loggers that should be set to WARNING to avoid race conditions during cleanup
+# httpcore logs DEBUG messages during connection close which can cause reentrant
+# call errors when multiple async operations try to log simultaneously
+NOISY_LOGGERS = [
+    "httpcore",
+    "httpcore._trace",
+    "httpcore.http11",
+    "httpcore.connection",
+    "httpcore._async.http11",
+    "httpcore._async.connection",
+    "httpcore._async.connection_pool",
+    "httpcore._sync.http11",
+    "httpcore._sync.connection",
+    "httpcore._sync.connection_pool",
+]
+
 _logging_configured = False
 
 
@@ -155,6 +171,13 @@ def configure_logging(name: str = "thala") -> Path:
         third_party_logger.handlers.clear()
         third_party_logger.addHandler(third_party_handler)
         third_party_logger.propagate = False  # Don't send to root logger
+
+    # Suppress noisy loggers that cause race conditions during async cleanup
+    # These log DEBUG messages during connection close which can trigger
+    # reentrant call errors in FileHandler when multiple operations flush
+    for logger_name in NOISY_LOGGERS:
+        noisy_logger = logging.getLogger(logger_name)
+        noisy_logger.setLevel(logging.WARNING)
 
     _logging_configured = True
 

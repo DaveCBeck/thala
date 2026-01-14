@@ -190,13 +190,21 @@ async def _download_pdf(url: str, timeout: float = 60.0) -> bytes:
     try:
         return await _download_pdf_httpx(url, timeout)
     except MarkerProcessingError as e:
-        if "not a valid PDF" in str(e):
-            # Site likely returned HTML (login page) - try Playwright
-            logger.debug(f"httpx got non-PDF response, trying Playwright")
+        error_str = str(e)
+        # Try Playwright for:
+        # - Non-PDF responses (HTML login pages)
+        # - HTTP 4xx errors (anti-bot blocking: 403, 418, 429, etc.)
+        # - Timeout errors (slow sites may work with browser)
+        if any(pattern in error_str for pattern in [
+            "not a valid PDF",
+            "HTTP error",
+            "Timeout",
+        ]):
+            logger.debug(f"httpx failed ({e}), trying Playwright fallback")
         else:
             raise
 
-    # Fallback to Playwright (handles anti-bot redirects)
+    # Fallback to Playwright (handles anti-bot redirects and blocks)
     return await _download_pdf_playwright(url, timeout)
 
 

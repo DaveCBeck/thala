@@ -41,7 +41,7 @@ services:
         condition: service_started
     command: ["node", "dist/src/harness.js", "--start-docker"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

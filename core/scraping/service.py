@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 
 from .errors import LocalServiceUnavailableError, ScrapingError, SiteBlockedError
-from .playwright_scraper import PlaywrightScraper
+from .playwright_scraper import PDFDownloadDetected, PlaywrightScraper
 
 if TYPE_CHECKING:
     from .firecrawl_clients import FirecrawlClients
@@ -277,9 +277,35 @@ class ScraperService:
     async def _scrape_playwright(
         self, url: str, include_links: bool = False
     ) -> ScrapeResult:
-        """Scrape using Playwright fallback."""
+        """Scrape using Playwright fallback.
+
+        If the URL triggers a PDF download, the PDF is converted to markdown
+        using the Marker service.
+        """
         scraper = self._get_playwright()
-        markdown = await scraper.scrape(url)
+
+        try:
+            markdown = await scraper.scrape(url)
+        except PDFDownloadDetected as e:
+            # URL was a PDF - convert to markdown using Marker
+            logger.info(f"Playwright detected PDF download ({len(e.content)} bytes), converting via Marker")
+            from .pdf import process_pdf_bytes
+
+            try:
+                markdown = await process_pdf_bytes(e.content)
+                return ScrapeResult(
+                    url=url,
+                    markdown=markdown,
+                    links=[],
+                    provider="playwright-pdf",
+                )
+            except Exception as pdf_error:
+                logger.warning(f"PDF conversion failed: {pdf_error}")
+                raise ScrapingError(
+                    f"PDF detected but conversion failed: {pdf_error}",
+                    url=url,
+                    provider="playwright-pdf",
+                )
 
         # TODO: Extract links from markdown if include_links is True
         # For now, we don't extract links from Playwright results
