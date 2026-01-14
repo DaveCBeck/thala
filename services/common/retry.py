@@ -16,7 +16,7 @@ async def with_retry(
     for attempt in range(max_attempts):
         try:
             return await fn()
-        except retry_on as e:
+        except retry_on:
             if attempt < max_attempts - 1:
                 wait_time = backoff_factor**attempt
                 await asyncio.sleep(wait_time)

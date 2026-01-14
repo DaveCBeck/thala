@@ -22,7 +22,9 @@ def route_language_loop(state: MultiLangState) -> str:
     idx = state.get("current_language_index", 0)
 
     # Determine which list to use
-    languages_to_process = state.get("languages_with_content") or state.get("target_languages", [])
+    languages_to_process = state.get("languages_with_content") or state.get(
+        "target_languages", []
+    )
 
     if idx < len(languages_to_process):
         return "execute_next_language"

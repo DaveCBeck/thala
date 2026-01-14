@@ -44,10 +44,12 @@ class RequestBuilder:
             if req.tool_choice:
                 params["tool_choice"] = req.tool_choice
 
-            batch_requests.append({
-                "custom_id": sanitized_id,
-                "params": params,
-            })
+            batch_requests.append(
+                {
+                    "custom_id": sanitized_id,
+                    "params": params,
+                }
+            )
 
         return batch_requests
 

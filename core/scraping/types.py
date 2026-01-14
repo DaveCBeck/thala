@@ -70,7 +70,9 @@ class GetUrlOptions(BaseModel):
 
     # Timeouts (seconds)
     scrape_timeout: float = 60.0
-    pdf_timeout: Optional[float] = None  # None = no client-side limit, uses Marker queue limits
+    pdf_timeout: Optional[float] = (
+        None  # None = no client-side limit, uses Marker queue limits
+    )
     retrieve_academic_timeout: float = 180.0
 
 

@@ -1,6 +1,5 @@
 """Quality tier configuration for academic literature review workflow."""
 
-from typing import Literal
 from typing_extensions import TypedDict
 
 

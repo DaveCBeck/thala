@@ -13,9 +13,11 @@ from workflows.research.web_research.nodes.refine_draft import refine_draft
 from workflows.research.web_research.nodes.final_report import final_report
 from workflows.research.web_research.nodes.process_citations import process_citations
 from workflows.research.web_research.nodes.save_findings import save_findings
-from workflows.research.web_research.subgraphs.web_researcher import web_researcher_subgraph
+from workflows.research.web_research.subgraphs.web_researcher import (
+    web_researcher_subgraph,
+)
 
-from .routing import route_after_clarify, route_after_create_brief, route_supervisor_action
+from .routing import route_after_clarify, route_supervisor_action
 from .aggregation import aggregate_researcher_findings
 
 
@@ -58,7 +60,9 @@ def create_deep_research_graph():
 
     # Entry flow
     builder.add_edge(START, "clarify_intent")
-    builder.add_conditional_edges("clarify_intent", route_after_clarify, ["create_brief"])
+    builder.add_conditional_edges(
+        "clarify_intent", route_after_clarify, ["create_brief"]
+    )
     builder.add_edge("create_brief", "search_memory")
     builder.add_edge("search_memory", "iterate_plan")
     builder.add_edge("iterate_plan", "supervisor")

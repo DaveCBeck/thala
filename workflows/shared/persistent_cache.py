@@ -128,6 +128,7 @@ def cached(
         async def get_work_by_doi(doi: str):
             ...
     """
+
     def decorator(fn):
         async def wrapper(*args, **kwargs):
             if key_fn:
@@ -146,7 +147,9 @@ def cached(
                 set_cached(cache_type, cache_key, result, format)
 
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -204,7 +207,9 @@ def get_cache_stats(cache_type: Optional[str] = None) -> dict[str, Any]:
         Dict with cache stats
     """
     if cache_type:
-        target_dirs = [CACHE_DIR / cache_type] if (CACHE_DIR / cache_type).exists() else []
+        target_dirs = (
+            [CACHE_DIR / cache_type] if (CACHE_DIR / cache_type).exists() else []
+        )
     else:
         target_dirs = [d for d in CACHE_DIR.iterdir() if d.is_dir()]
 

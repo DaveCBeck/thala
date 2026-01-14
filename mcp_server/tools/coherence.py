@@ -5,7 +5,7 @@ from typing import Any
 from mcp.types import Tool
 
 from ..embedding_utils import generate_embedding
-from ..errors import NotFoundError, ToolError, ValidationError
+from ..errors import NotFoundError, ToolError
 from ..response_utils import format_search_results, format_single_record
 from ..store_utils import get_es_substore
 from ..validation_utils import parse_uuid_arg
@@ -162,9 +162,13 @@ async def handle(
     coherence_store = get_es_substore(stores, "coherence")
 
     if name == "coherence.add":
-        _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
+        _, embedding_model = await generate_embedding(
+            embedding_service, arguments["content"]
+        )
 
-        source_type = SourceType.EXTERNAL if arguments.get("zotero_key") else SourceType.INTERNAL
+        source_type = (
+            SourceType.EXTERNAL if arguments.get("zotero_key") else SourceType.INTERNAL
+        )
 
         record = CoherenceRecord(
             source_type=source_type,
@@ -193,7 +197,9 @@ async def handle(
 
         if "content" in arguments:
             updates["content"] = arguments["content"]
-            _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
+            _, embedding_model = await generate_embedding(
+                embedding_service, arguments["content"]
+            )
             if embedding_model:
                 updates["embedding_model"] = embedding_model
 

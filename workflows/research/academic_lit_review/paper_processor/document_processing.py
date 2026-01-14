@@ -42,7 +42,12 @@ async def process_single_document(
                     "doi": doi,
                     "success": False,
                     "zotero_key": None,
-                    "errors": [{"node": "process_document", "error": f"File not found: {source}"}],
+                    "errors": [
+                        {
+                            "node": "process_document",
+                            "error": f"File not found: {source}",
+                        }
+                    ],
                 }
 
             file_size_mb = source_path.stat().st_size / (1024 * 1024)
@@ -52,7 +57,9 @@ async def process_single_document(
             "DOI": doi,
             "date": paper.get("publication_date", ""),
             "publicationTitle": paper.get("venue", ""),
-            "abstractNote": paper.get("abstract", "")[:500] if paper.get("abstract") else "",
+            "abstractNote": paper.get("abstract", "")[:500]
+            if paper.get("abstract")
+            else "",
         }
 
         result = await process_document(
@@ -65,10 +72,14 @@ async def process_single_document(
 
         status = result.get("current_status", "unknown")
         errors = result.get("errors", [])
-        logger.info(f"Document {doi} processed with status: {status}, errors: {len(errors)}")
+        logger.info(
+            f"Document {doi} processed with status: {status}, errors: {len(errors)}"
+        )
         if errors:
             for err in errors:
-                logger.warning(f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}")
+                logger.warning(
+                    f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}"
+                )
 
         # Extract ES record ID from store_records list (first record at compression level 0)
         store_records = result.get("store_records", [])
@@ -98,5 +109,7 @@ async def process_single_document(
             "doi": doi,
             "success": False,
             "zotero_key": None,
-            "errors": [{"node": "process_document", "error": f"{type(e).__name__}: {e}"}],
+            "errors": [
+                {"node": "process_document", "error": f"{type(e).__name__}: {e}"}
+            ],
         }

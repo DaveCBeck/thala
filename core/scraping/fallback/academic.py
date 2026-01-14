@@ -38,7 +38,9 @@ async def try_retrieve_academic(
         async with RetrieveAcademicClient() as client:
             # Check if service is available
             if not await client.health_check():
-                logger.warning("retrieve-academic service unavailable (VPN not connected)")
+                logger.warning(
+                    "retrieve-academic service unavailable (VPN not connected)"
+                )
                 return None
 
             # Submit retrieval job
@@ -86,5 +88,7 @@ async def try_retrieve_academic(
                 )
 
     except Exception as e:
-        logger.error(f"retrieve-academic fallback failed for {doi}: {type(e).__name__}: {e}")
+        logger.error(
+            f"retrieve-academic fallback failed for {doi}: {type(e).__name__}: {e}"
+        )
         return None

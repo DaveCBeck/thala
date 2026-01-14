@@ -47,7 +47,7 @@ def chunk_text_by_sections(text: str, max_chars: int = SAFE_CHAR_LIMIT) -> list[
     chunks = []
 
     # First try splitting by markdown headers
-    sections = re.split(r'\n(?=## )', text)
+    sections = re.split(r"\n(?=## )", text)
 
     current_chunk = ""
     for section in sections:
@@ -61,7 +61,7 @@ def chunk_text_by_sections(text: str, max_chars: int = SAFE_CHAR_LIMIT) -> list[
                 current_chunk = ""
 
             # Split large section by paragraphs
-            paragraphs = section.split('\n\n')
+            paragraphs = section.split("\n\n")
             para_chunk = ""
             for para in paragraphs:
                 if len(para_chunk) + len(para) + 2 <= max_chars:
@@ -79,7 +79,9 @@ def chunk_text_by_sections(text: str, max_chars: int = SAFE_CHAR_LIMIT) -> list[
                 chunks.append(para_chunk.strip())
 
         elif len(current_chunk) + len(section) + 2 <= max_chars:
-            current_chunk = current_chunk + "\n\n" + section if current_chunk else section
+            current_chunk = (
+                current_chunk + "\n\n" + section if current_chunk else section
+            )
         else:
             if current_chunk:
                 chunks.append(current_chunk.strip())
@@ -123,7 +125,9 @@ class EmbeddingProvider(ABC):
 class OpenAIEmbeddings(EmbeddingProvider):
     """OpenAI embeddings provider."""
 
-    def __init__(self, model: str = "text-embedding-3-small", api_key: str | None = None):
+    def __init__(
+        self, model: str = "text-embedding-3-small", api_key: str | None = None
+    ):
         self.model = model
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
@@ -160,7 +164,9 @@ class OpenAIEmbeddings(EmbeddingProvider):
 
         # Check cache for each text
         for i, (text, cache_key) in enumerate(zip(texts, cache_keys)):
-            cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
+            cached = get_cached(
+                "embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS
+            )
             if cached is not None:
                 results[i] = cached
             else:
@@ -285,7 +291,9 @@ class EmbeddingService:
         self.provider_name = provider
 
         if provider == "openai":
-            model = model or os.environ.get("THALA_EMBEDDING_MODEL", "text-embedding-3-small")
+            model = model or os.environ.get(
+                "THALA_EMBEDDING_MODEL", "text-embedding-3-small"
+            )
             self.model = model
             self._provider = OpenAIEmbeddings(model=model)
             logger.info(f"Initialized OpenAI embeddings with model={model}")
@@ -294,7 +302,9 @@ class EmbeddingService:
             host = os.environ.get("THALA_OLLAMA_HOST", "http://localhost:11434")
             self.model = model
             self._provider = OllamaEmbeddings(model=model, host=host)
-            logger.info(f"Initialized Ollama embeddings with model={model}, host={host}")
+            logger.info(
+                f"Initialized Ollama embeddings with model={model}, host={host}"
+            )
         else:
             raise EmbeddingError(
                 f"Unknown embedding provider: {provider}. Use 'openai' or 'ollama'."

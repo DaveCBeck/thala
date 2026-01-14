@@ -36,7 +36,9 @@ async def _run_web_research(
     return WorkflowResult(
         final_report=result.get("final_report"),
         source_count=result.get("source_count", 0),
-        status=result.get("status", "success" if result.get("final_report") else "failed"),
+        status=result.get(
+            "status", "success" if result.get("final_report") else "failed"
+        ),
         errors=result.get("errors", []),
     )
 
@@ -63,7 +65,9 @@ async def _run_academic_lit_review(
     return WorkflowResult(
         final_report=result.get("final_report"),
         source_count=result.get("source_count", 0),
-        status=result.get("status", "success" if result.get("final_report") else "failed"),
+        status=result.get(
+            "status", "success" if result.get("final_report") else "failed"
+        ),
         errors=result.get("errors", []),
     )
 
@@ -86,7 +90,9 @@ async def _run_book_finding(
     return WorkflowResult(
         final_report=result.get("final_report"),
         source_count=result.get("source_count", 0),
-        status=result.get("status", "success" if result.get("final_report") else "failed"),
+        status=result.get(
+            "status", "success" if result.get("final_report") else "failed"
+        ),
         errors=result.get("errors", []),
     )
 
@@ -113,7 +119,9 @@ async def _run_supervised_lit_review(
     return WorkflowResult(
         final_report=result.get("final_report"),
         source_count=result.get("source_count", 0),
-        status=result.get("status", "success" if result.get("final_report") else "failed"),
+        status=result.get(
+            "status", "success" if result.get("final_report") else "failed"
+        ),
         errors=result.get("errors", []),
     )
 

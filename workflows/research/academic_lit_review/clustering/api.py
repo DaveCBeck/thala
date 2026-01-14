@@ -8,7 +8,6 @@ from workflows.research.academic_lit_review.state import (
     QualitySettings,
 )
 
-from .analysis import ClusterAnalysis
 from .graph import ClusteringState, clustering_subgraph
 
 

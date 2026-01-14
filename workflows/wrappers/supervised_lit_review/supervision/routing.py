@@ -62,7 +62,9 @@ def should_continue_supervision(state: dict[str, Any]) -> str:
             logger.warning("Too many consecutive failures, completing Loop 1")
             return "complete"
         # Allow retry - don't mark complete, continue to next iteration
-        logger.info(f"Failure detected, allowing retry (consecutive: {consecutive_failures})")
+        logger.info(
+            f"Failure detected, allowing retry (consecutive: {consecutive_failures})"
+        )
         return "continue"
 
     # Check if marked complete (pass-through was hit in a previous iteration)

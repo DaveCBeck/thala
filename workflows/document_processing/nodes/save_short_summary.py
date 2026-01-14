@@ -28,7 +28,9 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
     """
     try:
         # Prefer new field, fall back to old for compatibility
-        short_summary_original = state.get("short_summary_original") or state.get("short_summary")
+        short_summary_original = state.get("short_summary_original") or state.get(
+            "short_summary"
+        )
         short_summary_english = state.get("short_summary_english")
         original_language = state.get("original_language", "en")
 
@@ -36,7 +38,9 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.error("No short_summary in state")
             return {
                 "current_status": "save_summary_failed",
-                "errors": [{"node": "save_short_summary", "error": "No summary to save"}],
+                "errors": [
+                    {"node": "save_short_summary", "error": "No summary to save"}
+                ],
             }
 
         # Find the original record (compression_level=0)
@@ -51,7 +55,9 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.error("No original record found in state")
             return {
                 "current_status": "save_summary_failed",
-                "errors": [{"node": "save_short_summary", "error": "No original record found"}],
+                "errors": [
+                    {"node": "save_short_summary", "error": "No original record found"}
+                ],
             }
 
         store_manager = get_store_manager()
@@ -87,14 +93,18 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
         record_original.embedding_model = store_manager.embedding.model
         await store_manager.es_stores.store.add(record_original)
 
-        logger.info(f"Saved original language L1 record: {record_id_original} (lang={original_language})")
+        logger.info(
+            f"Saved original language L1 record: {record_id_original} (lang={original_language})"
+        )
 
-        new_refs.append(StoreRecordRef(
-            id=str(record_id_original),
-            compression_level=1,
-            content_preview=short_summary_original[:100],
-            language_code=original_language,
-        ))
+        new_refs.append(
+            StoreRecordRef(
+                id=str(record_id_original),
+                compression_level=1,
+                content_preview=short_summary_original[:100],
+                language_code=original_language,
+            )
+        )
 
         # Create English translation L1 record if non-English
         if original_language != "en" and short_summary_english:
@@ -122,12 +132,14 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
 
             logger.info(f"Saved English translation L1 record: {record_id_english}")
 
-            new_refs.append(StoreRecordRef(
-                id=str(record_id_english),
-                compression_level=1,
-                content_preview=short_summary_english[:100],
-                language_code="en",
-            ))
+            new_refs.append(
+                StoreRecordRef(
+                    id=str(record_id_english),
+                    compression_level=1,
+                    content_preview=short_summary_english[:100],
+                    language_code="en",
+                )
+            )
 
         return {
             "store_records": new_refs,

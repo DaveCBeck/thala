@@ -20,7 +20,9 @@ def strip_invalid_citations(
     for key in invalid_keys:
         pattern = rf"\[@{re.escape(key)}\]"
         if add_todo:
-            replacement = f"<!-- TODO: Verify citation [@{key}] - not found in Zotero -->"
+            replacement = (
+                f"<!-- TODO: Verify citation [@{key}] - not found in Zotero -->"
+            )
         else:
             replacement = ""
         result = re.sub(pattern, replacement, result)

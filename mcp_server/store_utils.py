@@ -9,7 +9,9 @@ def get_es_stores(stores: dict[str, Any]):
     """Get Elasticsearch stores or raise StoreConnectionError."""
     es_stores = stores.get("es")
     if not es_stores:
-        raise StoreConnectionError("elasticsearch", "Elasticsearch stores not initialized")
+        raise StoreConnectionError(
+            "elasticsearch", "Elasticsearch stores not initialized"
+        )
     return es_stores
 
 

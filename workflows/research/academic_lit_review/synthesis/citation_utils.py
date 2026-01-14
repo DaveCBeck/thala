@@ -33,10 +33,10 @@ def format_papers_with_keys(
             )
 
         paper_text = f"""
-[@{key}] {summary.get('title', 'Unknown')} ({summary.get('year', 'n.d.')})
-  Authors: {', '.join(summary.get('authors', [])[:3])}
-  Key Findings: {'; '.join(summary.get('key_findings', [])[:2])}
-  Methodology: {summary.get('methodology', 'N/A')[:100]}"""
+[@{key}] {summary.get("title", "Unknown")} ({summary.get("year", "n.d.")})
+  Authors: {", ".join(summary.get("authors", [])[:3])}
+  Key Findings: {"; ".join(summary.get("key_findings", [])[:2])}
+  Methodology: {summary.get("methodology", "N/A")[:100]}"""
 
         formatted.append(paper_text)
 
@@ -45,7 +45,7 @@ def format_papers_with_keys(
 
 def extract_citations_from_text(text: str) -> list[str]:
     """Extract all [@KEY] citations from text."""
-    pattern = r'\[@([^\]]+)\]'
+    pattern = r"\[@([^\]]+)\]"
     matches = re.findall(pattern, text)
 
     keys = []
@@ -83,17 +83,23 @@ def calculate_quality_metrics(
     all_dois = set(paper_summaries.keys())
     uncited_papers = list(all_dois - cited_dois)
 
-    sections = re.split(r'^## ', review_text, flags=re.MULTILINE)
+    sections = re.split(r"^## ", review_text, flags=re.MULTILINE)
     sections_count = len(sections) - 1
 
-    section_lengths = [len(s.split()) for s in sections[1:]] if sections_count > 0 else [0]
-    avg_section_length = sum(section_lengths) // len(section_lengths) if section_lengths else 0
+    section_lengths = (
+        [len(s.split()) for s in sections[1:]] if sections_count > 0 else [0]
+    )
+    avg_section_length = (
+        sum(section_lengths) // len(section_lengths) if section_lengths else 0
+    )
 
     # Issues are informational - actual pass/fail is determined by verify_quality_node
     # using quality-tier-aware thresholds. These thresholds should be lenient.
     issues = []
     if corpus_coverage < 0.3:  # Very low coverage - worth flagging
-        issues.append(f"Low corpus coverage: only {corpus_coverage:.0%} of papers cited")
+        issues.append(
+            f"Low corpus coverage: only {corpus_coverage:.0%} of papers cited"
+        )
     if total_words < 1000:  # Very short - worth flagging
         issues.append(f"Review may be too short: {total_words} words")
     if citation_count < 5:  # Very few citations - worth flagging

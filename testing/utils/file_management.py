@@ -61,7 +61,7 @@ def save_json_result(
 
     output_dir.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filepath = output_dir / f"{prefix}_{timestamp}.json"
 
     with open(filepath, "w") as f:
@@ -94,7 +94,7 @@ def save_markdown_report(
 
     output_dir.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filepath = output_dir / f"{prefix}_{timestamp}.md"
 
     with open(filepath, "w") as f:

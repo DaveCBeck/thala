@@ -147,7 +147,9 @@ async def save_markdown_outputs(result: dict, timestamp: str) -> dict[str, str]:
                     f.write(f"*Translated from {lang_name} to English*\n\n")
                 f.write(f"**Quality:** {lang_result.get('quality_used', 'unknown')}\n")
                 f.write(f"**Sources:** {lang_result.get('source_count', 0)}\n")
-                f.write(f"**Workflows:** {', '.join(lang_result.get('workflows_run', []))}\n\n")
+                f.write(
+                    f"**Workflows:** {', '.join(lang_result.get('workflows_run', []))}\n\n"
+                )
                 f.write("---\n\n")
                 f.write(translated_report)
             saved_files[f"lang_{lang_code}"] = str(filepath)
@@ -215,7 +217,9 @@ def print_result_summary(result: dict) -> None:
         if sonnet_analysis.get("universal_themes"):
             print(f"\nUniversal themes: {len(sonnet_analysis['universal_themes'])}")
         if sonnet_analysis.get("unique_contributions"):
-            print(f"Languages with unique contributions: {len(sonnet_analysis['unique_contributions'])}")
+            print(
+                f"Languages with unique contributions: {len(sonnet_analysis['unique_contributions'])}"
+            )
 
     # Errors
     errors = result.get("errors", [])
@@ -242,9 +246,35 @@ def parse_languages(languages_str: str) -> list[str]:
 
     # Validate language codes (basic check)
     valid_codes = {
-        "en", "es", "zh", "ja", "de", "fr", "pt", "ko", "ru", "ar",
-        "it", "nl", "pl", "tr", "vi", "th", "id", "hi", "bn", "sv",
-        "no", "da", "fi", "cs", "el", "he", "uk", "ro", "hu"
+        "en",
+        "es",
+        "zh",
+        "ja",
+        "de",
+        "fr",
+        "pt",
+        "ko",
+        "ru",
+        "ar",
+        "it",
+        "nl",
+        "pl",
+        "tr",
+        "vi",
+        "th",
+        "id",
+        "hi",
+        "bn",
+        "sv",
+        "no",
+        "da",
+        "fi",
+        "cs",
+        "el",
+        "he",
+        "uk",
+        "ro",
+        "hu",
     }
     invalid = [lang for lang in langs if lang not in valid_codes]
     if invalid:
@@ -264,16 +294,17 @@ Examples:
   %(prog)s "transformer architectures" quick --languages en,es,de
   %(prog)s "AI in healthcare" standard --languages major
   %(prog)s "climate change policy" comprehensive --languages en,zh,de,fr
-        """
+        """,
     )
 
     add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
 
     parser.add_argument(
-        "--languages", "-L",
+        "--languages",
+        "-L",
         type=str,
         default=",".join(DEFAULT_LANGUAGES),
-        help="Languages: comma-separated codes (en,es,de) or 'major' for top 10"
+        help="Languages: comma-separated codes (en,es,de) or 'major' for top 10",
     )
 
     add_research_questions_argument(parser)
@@ -305,8 +336,8 @@ async def main():
     print(f"\nTopic: {topic}")
     print(f"Quality: {quality}")
     print(f"Languages: {', '.join(languages)} ({len(languages)} total)")
-    print(f"Workflow: academic")
-    print(f"Research Questions:")
+    print("Workflow: academic")
+    print("Research Questions:")
     for q in research_questions:
         print(f"  - {q}")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
@@ -330,7 +361,7 @@ async def main():
         print_result_summary(result)
 
         # Save all outputs
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         saved_files = await save_markdown_outputs(result, timestamp)
 
         print("\n--- Saved Files ---")

@@ -35,7 +35,9 @@ async def get_forward_citations(
     Returns:
         OpenAlexCitationResult with citing works sorted by citation count
     """
-    work_id_clean = work_id.replace("https://doi.org/", "").replace("http://doi.org/", "")
+    work_id_clean = work_id.replace("https://doi.org/", "").replace(
+        "http://doi.org/", ""
+    )
     cache_key = f"forward:{work_id_clean}:{limit}:{min_citations}:{from_year}"
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
@@ -47,7 +49,9 @@ async def get_forward_citations(
     limit = clamp_limit(limit, min_val=1, max_val=200)
 
     try:
-        if work_id_clean.startswith("W") or work_id_clean.startswith("https://openalex.org/"):
+        if work_id_clean.startswith("W") or work_id_clean.startswith(
+            "https://openalex.org/"
+        ):
             openalex_id = work_id_clean.replace("https://openalex.org/", "")
         else:
             openalex_id = await resolve_doi_to_openalex_id(work_id_clean)
@@ -127,7 +131,9 @@ async def get_backward_citations(
     Returns:
         OpenAlexCitationResult with referenced works
     """
-    work_id_clean = work_id.replace("https://doi.org/", "").replace("http://doi.org/", "")
+    work_id_clean = work_id.replace("https://doi.org/", "").replace(
+        "http://doi.org/", ""
+    )
     cache_key = f"backward:{work_id_clean}:{limit}"
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
@@ -400,8 +406,7 @@ async def get_works_by_dois(dois: list[str]) -> list[OpenAlexWork]:
         return []
 
     dois_clean = [
-        d.replace("https://doi.org/", "").replace("http://doi.org/", "")
-        for d in dois
+        d.replace("https://doi.org/", "").replace("http://doi.org/", "") for d in dois
     ]
 
     results = []
@@ -438,7 +443,9 @@ async def get_works_by_dois(dois: list[str]) -> list[OpenAlexWork]:
                 parsed = _parse_work(work)
                 results.append(parsed)
 
-                doi_clean = parsed.doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+                doi_clean = parsed.doi.replace("https://doi.org/", "").replace(
+                    "http://doi.org/", ""
+                )
                 cache_key = f"work:{doi_clean}"
                 set_cached(CACHE_TYPE, cache_key, parsed.model_dump())
             except Exception as e:

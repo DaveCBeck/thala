@@ -160,8 +160,8 @@ def extract_citations(content: str) -> list[str]:
     if not content:
         return []
 
-    citations = []
     import re
+
     # Match [@XXXXXX] pattern
     pattern = r"\[@([A-Z0-9]+)\]"
     matches = re.findall(pattern, content)
@@ -188,7 +188,7 @@ def extract_loop4_edits(trace_path: Path) -> dict:
     results = {
         "trace_id": data.get("run_id"),
         "extraction_date": datetime.now().isoformat(),
-        "iterations": []
+        "iterations": [],
     }
 
     for idx, loop4_run in enumerate(loop4_runs, 1):
@@ -197,9 +197,9 @@ def extract_loop4_edits(trace_path: Path) -> dict:
 
         # Find LangGraph child
         langgraph_runs = [
-            r for r in all_runs
-            if r.get("parent_run_id") == loop4_id
-            and r.get("name") == "LangGraph"
+            r
+            for r in all_runs
+            if r.get("parent_run_id") == loop4_id and r.get("name") == "LangGraph"
         ]
 
         if not langgraph_runs:
@@ -210,7 +210,8 @@ def extract_loop4_edits(trace_path: Path) -> dict:
 
         # Find parallel_edit_sections child
         parallel_edit_runs = [
-            r for r in all_runs
+            r
+            for r in all_runs
             if r.get("parent_run_id") == langgraph_id
             and r.get("name") == "parallel_edit_sections"
         ]
@@ -223,7 +224,8 @@ def extract_loop4_edits(trace_path: Path) -> dict:
 
         # Find all ChatAnthropic children of parallel_edit_sections
         chat_runs = [
-            r for r in all_runs
+            r
+            for r in all_runs
             if r.get("parent_run_id") == parallel_edit_id
             and r.get("name") == "ChatAnthropic"
         ]
@@ -238,27 +240,31 @@ def extract_loop4_edits(trace_path: Path) -> dict:
 
         print(f"  Extracted {len(iteration_edits)} edits")
 
-        results["iterations"].append({
-            "iteration": idx,
-            "run_id": loop4_id,
-            "start_time": loop4_run.get("start_time"),
-            "end_time": loop4_run.get("end_time"),
-            "total_edits": len(iteration_edits),
-            "edits": iteration_edits
-        })
+        results["iterations"].append(
+            {
+                "iteration": idx,
+                "run_id": loop4_id,
+                "start_time": loop4_run.get("start_time"),
+                "end_time": loop4_run.get("end_time"),
+                "total_edits": len(iteration_edits),
+                "edits": iteration_edits,
+            }
+        )
 
     return results
 
 
 def main():
-    trace_path = Path("/home/dave/thala/testing/traces/019ba18e-7124-7923-9dca-4565ead80738.json")
+    trace_path = Path(
+        "/home/dave/thala/testing/traces/019ba18e-7124-7923-9dca-4565ead80738.json"
+    )
     output_path = Path("/home/dave/thala/testing/traces/loop4_edits.json")
 
     print(f"Extracting Loop 4 edits from {trace_path}")
 
     results = extract_loop4_edits(trace_path)
 
-    print(f"\nExtraction complete:")
+    print("\nExtraction complete:")
     print(f"  Total iterations: {len(results['iterations'])}")
     for iteration in results["iterations"]:
         print(f"  Iteration {iteration['iteration']}: {iteration['total_edits']} edits")

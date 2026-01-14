@@ -72,7 +72,9 @@ async def fact_check_node(state: dict[str, Any]) -> dict[str, Any]:
 
     await store_query.close()
 
-    logger.info(f"Loop 5 fact checking complete: {len(all_edits)} edits, {len(all_ambiguous)} ambiguous claims")
+    logger.info(
+        f"Loop 5 fact checking complete: {len(all_edits)} edits, {len(all_ambiguous)} ambiguous claims"
+    )
     return {
         "all_edits": all_edits,
         "ambiguous_claims": all_ambiguous,

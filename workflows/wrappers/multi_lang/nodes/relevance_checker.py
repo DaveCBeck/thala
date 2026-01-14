@@ -89,7 +89,11 @@ async def _check_language_relevance(
         results_text = "(No search results found)"
 
     # Format research questions
-    questions_text = "\n".join(f"- {q}" for q in research_questions) if research_questions else "(No specific questions provided)"
+    questions_text = (
+        "\n".join(f"- {q}" for q in research_questions)
+        if research_questions
+        else "(No specific questions provided)"
+    )
 
     # Build prompts
     system_prompt = RELEVANCE_CHECK_SYSTEM.format(language_name=language_name)
@@ -192,7 +196,9 @@ async def check_relevance_batch(state: MultiLangState) -> dict:
         1 for check in relevance_checks if check["has_meaningful_discussion"]
     )
 
-    logger.info(f"Relevance check complete: {languages_with_content}/{len(relevance_checks)} languages have content")
+    logger.info(
+        f"Relevance check complete: {languages_with_content}/{len(relevance_checks)} languages have content"
+    )
 
     return {
         "relevance_checks": relevance_checks,
@@ -231,7 +237,9 @@ async def filter_relevant_languages(state: MultiLangState) -> dict:
         state["language_configs"][code]["name"] for code in languages_with_content
     )
 
-    logger.info(f"Filtered to {len(languages_with_content)} languages: {language_names}")
+    logger.info(
+        f"Filtered to {len(languages_with_content)} languages: {language_names}"
+    )
 
     return {
         "languages_with_content": languages_with_content,

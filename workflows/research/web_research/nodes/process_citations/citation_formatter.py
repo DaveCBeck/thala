@@ -38,7 +38,7 @@ def _replace_citations_in_report(
             return f"[@{index_to_key[idx]}]"
         return match.group(0)  # Keep original if no mapping
 
-    updated_report = re.sub(r'\[(\d+)\]', replace_inline, report)
+    updated_report = re.sub(r"\[(\d+)\]", replace_inline, report)
 
     # Update references section
     # Pattern: [N] Title: URL -> [@KEY] Title
@@ -50,7 +50,7 @@ def _replace_citations_in_report(
         return match.group(0)
 
     updated_report = re.sub(
-        r'^\[(\d+)\]\s+(.+?):\s+https?://\S+\s*$',
+        r"^\[(\d+)\]\s+(.+?):\s+https?://\S+\s*$",
         replace_reference,
         updated_report,
         flags=re.MULTILINE,

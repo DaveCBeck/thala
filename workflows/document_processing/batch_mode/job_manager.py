@@ -40,7 +40,9 @@ class JobManager:
         """Build prompt for document summarization."""
         prompt = f"Summarize the following text in approximately {doc.summary_target_words} words."
         prompt += "\n\nCreate a concise summary capturing the main thesis, key arguments, and conclusions."
-        prompt += " Focus on what makes this work significant and its core contributions."
+        prompt += (
+            " Focus on what makes this work significant and its core contributions."
+        )
 
         # Use first and last portions for long documents
         content = doc.content
@@ -72,7 +74,11 @@ Return ONLY a JSON object with these fields. Use null for missing values, empty 
         content = doc.content
         first_part = content[:15000]
         last_part = content[-15000:] if len(content) > 15000 else ""
-        excerpt = f"{first_part}\n\n--- END OF FRONT MATTER ---\n\n{last_part}" if last_part else first_part
+        excerpt = (
+            f"{first_part}\n\n--- END OF FRONT MATTER ---\n\n{last_part}"
+            if last_part
+            else first_part
+        )
 
         prompt += f"\n\nText:\n{excerpt}"
         return prompt
@@ -129,7 +135,7 @@ Text:
             if doc.include_chapter_summaries and doc.chapters:
                 for i, chapter in enumerate(doc.chapters):
                     chapter_content = doc.content[
-                        chapter["start_position"]:chapter["end_position"]
+                        chapter["start_position"] : chapter["end_position"]
                     ]
                     target_words = max(50, chapter.get("word_count", 500) // 10)
 

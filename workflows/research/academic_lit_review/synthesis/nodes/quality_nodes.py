@@ -25,9 +25,9 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
 
     target_words = quality_settings.get("target_word_count", 10000)
     quality_passed = (
-        metrics["corpus_coverage"] >= 0.5 and  # 50% citation coverage is sufficient
-        metrics["total_words"] >= target_words * 0.5 and  # 50% of target is sufficient
-        len(metrics["issues"]) <= 3  # Allow more minor issues
+        metrics["corpus_coverage"] >= 0.5  # 50% citation coverage is sufficient
+        and metrics["total_words"] >= target_words * 0.5  # 50% of target is sufficient
+        and len(metrics["issues"]) <= 3  # Allow more minor issues
     )
 
     try:

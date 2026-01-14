@@ -77,7 +77,11 @@ async def run_bertopic_clustering_node(state: dict) -> dict[str, Any]:
             topic_words = [word for word, _ in topic_info[:10]] if topic_info else []
 
             cluster_indices = [i for i, t in enumerate(topics) if t == topic_id]
-            coherence = float(probs[cluster_indices].mean()) if len(cluster_indices) > 0 else 0.0
+            coherence = (
+                float(probs[cluster_indices].mean())
+                if len(cluster_indices) > 0
+                else 0.0
+            )
 
             clusters.append(
                 BERTopicCluster(
@@ -88,11 +92,11 @@ async def run_bertopic_clustering_node(state: dict) -> dict[str, Any]:
                 )
             )
 
-        outlier_dois = [
-            document_dois[i] for i, t in enumerate(topics) if t == -1
-        ]
+        outlier_dois = [document_dois[i] for i, t in enumerate(topics) if t == -1]
         if outlier_dois:
-            logger.debug(f"BERTopic: {len(outlier_dois)} papers not assigned to clusters")
+            logger.debug(
+                f"BERTopic: {len(outlier_dois)} papers not assigned to clusters"
+            )
 
         logger.info(
             f"BERTopic clustering complete: {len(clusters)} clusters "
@@ -140,26 +144,60 @@ def _evaluate_bertopic_quality(
     # Check 1: Too few clusters for the corpus size
     expected_min_clusters = max(3, total_papers // 15)
     if len(bertopic_clusters) < expected_min_clusters:
-        return False, f"Too few clusters ({len(bertopic_clusters)}) for {total_papers} papers"
+        return (
+            False,
+            f"Too few clusters ({len(bertopic_clusters)}) for {total_papers} papers",
+        )
 
     # Check 2: Cluster imbalance - one cluster dominates
     cluster_sizes = [len(c["paper_dois"]) for c in bertopic_clusters]
     if cluster_sizes:
         max_size = max(cluster_sizes)
         if max_size > total_papers * 0.6:
-            return False, f"Cluster imbalance: largest cluster has {max_size}/{total_papers} papers"
+            return (
+                False,
+                f"Cluster imbalance: largest cluster has {max_size}/{total_papers} papers",
+            )
 
     # Check 3: Topic words quality - check for stop words or overly generic terms
     bad_topic_words = {
-        "the", "and", "to", "of", "in", "for", "a", "is", "that", "with",
-        "on", "are", "be", "this", "an", "as", "it", "by", "from", "or",
-        "using", "based", "can", "we", "our", "their", "these", "which",
+        "the",
+        "and",
+        "to",
+        "of",
+        "in",
+        "for",
+        "a",
+        "is",
+        "that",
+        "with",
+        "on",
+        "are",
+        "be",
+        "this",
+        "an",
+        "as",
+        "it",
+        "by",
+        "from",
+        "or",
+        "using",
+        "based",
+        "can",
+        "we",
+        "our",
+        "their",
+        "these",
+        "which",
     }
 
     for cluster in bertopic_clusters:
         topic_words = cluster.get("topic_words", [])[:5]
         bad_count = sum(1 for w in topic_words if w.lower() in bad_topic_words)
         if bad_count >= 3:
-            return False, f"Poor topic words in cluster {cluster['cluster_id']}: {topic_words}"
+            return (
+                False,
+                f"Poor topic words in cluster {cluster['cluster_id']}: {topic_words}",
+            )
 
     return True, "BERTopic quality acceptable"

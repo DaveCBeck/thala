@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 def increment_loop3_repeat_node(state: OrchestrationState) -> dict[str, Any]:
     """Increment loop3_repeat_count when returning from Loop 4.5 to Loop 3."""
     current_count = state.get("loop3_repeat_count", 0)
-    logger.info(f"Incrementing loop3_repeat_count from {current_count} to {current_count + 1}")
+    logger.info(
+        f"Incrementing loop3_repeat_count from {current_count} to {current_count + 1}"
+    )
     return {"loop3_repeat_count": current_count + 1}
 
 

@@ -55,7 +55,9 @@ PUBLISHER_PATTERNS: list[tuple[re.Pattern, Callable[[re.Match], Optional[str]]]]
     ),
     # Taylor & Francis: tandfonline.com/doi/full/10.1080/12345678
     (
-        re.compile(r"tandfonline\.com/doi/(?:full|abs)/(10\.\d+/[^/?]+)", re.IGNORECASE),
+        re.compile(
+            r"tandfonline\.com/doi/(?:full|abs)/(10\.\d+/[^/?]+)", re.IGNORECASE
+        ),
         lambda m: m.group(1),
     ),
     # SAGE: journals.sagepub.com/doi/10.1177/12345678901234

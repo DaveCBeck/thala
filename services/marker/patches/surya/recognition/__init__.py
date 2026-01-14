@@ -4,6 +4,7 @@ Modified surya recognition module with parallel postprocessing.
 This adds ThreadPoolExecutor-based parallelization to get_bboxes_text()
 similar to how detection uses parallel postprocessing.
 """
+
 from __future__ import annotations
 
 import re
@@ -11,9 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 import numpy as np
-import torch
 from PIL import Image
-import torch.nn.functional as F
 
 from surya.common.polygon import PolygonBox
 from surya.common.surya.processor import NOMATH_TOKEN
@@ -34,7 +33,7 @@ from surya.recognition.util import (
     unwrap_math,
     clean_math_tags,
     filter_blacklist_tags,
-    words_from_chars
+    words_from_chars,
 )
 from surya.foundation.util import detect_repeat_token, prediction_to_polygon_batch
 from surya.recognition.schema import TextLine, OCRResult, TextChar
@@ -88,11 +87,7 @@ def _process_single_slice(
     ):
         nonlocal detokenize_sequence, detokenize_sequences
 
-        if (
-            special_token
-            or past_special_token
-            or force
-        ) and detokenize_sequence:
+        if (special_token or past_special_token or force) and detokenize_sequence:
             chars = [dt[0] for dt in detokenize_sequence]
             scores = [dt[1] for dt in detokenize_sequence]
             bboxes = [dt[2] for dt in detokenize_sequence]
@@ -113,18 +108,12 @@ def _process_single_slice(
         ]:
             break
 
-        special_token = (
-            char_id >= processor.ocr_tokenizer.ocr_tokenizer.SPECIAL_BASE
-        )
-        _add_detokenize_sequence(
-            special_token, past_special_token
-        )
+        special_token = char_id >= processor.ocr_tokenizer.ocr_tokenizer.SPECIAL_BASE
+        _add_detokenize_sequence(special_token, past_special_token)
         detokenize_sequence.append((char_id, score, bbox))
         past_special_token = special_token
 
-    _add_detokenize_sequence(
-        False, past_special_token, force=True
-    )
+    _add_detokenize_sequence(False, past_special_token, force=True)
 
     img_chars = []
     for sequence in detokenize_sequences:
@@ -133,9 +122,7 @@ def _process_single_slice(
             text = processor.ocr_tokenizer.decode(
                 token_ids, task=TaskNames.ocr_with_boxes
             )
-            bboxes = clean_close_polygons(
-                bboxes
-            )  # clean out bboxes that are close
+            bboxes = clean_close_polygons(bboxes)  # clean out bboxes that are close
             bbox_idx = 0
             for text_idx, text_line in enumerate(text):
                 img_chars.append(
@@ -151,9 +138,7 @@ def _process_single_slice(
                 if bbox_idx < len(bboxes) - 1:
                     bbox_idx += 1
         elif token_type == "special":
-            text = processor.ocr_tokenizer.decode(
-                token_ids, task="ocr_without_boxes"
-            )
+            text = processor.ocr_tokenizer.decode(token_ids, task="ocr_without_boxes")
             if text in [NOMATH_TOKEN] or re.match(r"<SCRIPT-\w+>", text):
                 continue
 
@@ -403,7 +388,7 @@ class RecognitionPredictor(BasePredictor):
         drop_repeated_text: bool = False,
         max_sliding_window: int | None = None,
         max_tokens: int | None = None,
-        filter_tag_list: List[str] = None
+        filter_tag_list: List[str] = None,
     ) -> List[OCRResult]:
         if task_names is None:
             task_names = [TaskNames.ocr_with_boxes] * len(images)
@@ -460,16 +445,14 @@ class RecognitionPredictor(BasePredictor):
         # No images passed, or no boxes passed, or no text detected in the images
         if len(flat["slices"]) == 0:
             return [
-                OCRResult(
-                    text_lines=[], image_bbox=[0, 0, im.size[0], im.size[1]]
-                )
+                OCRResult(text_lines=[], image_bbox=[0, 0, im.size[0], im.size[1]])
                 for im in images
             ]
 
         # Sort by image sizes. Negative so that longer images come first, fits in with continuous batching better
         sorted_pairs = sorted(
             enumerate(flat["slices"]),
-            key=lambda x: -(x[1].shape[0] * x[1].shape[1])  # height * width
+            key=lambda x: -(x[1].shape[0] * x[1].shape[1]),  # height * width
         )
         indices, sorted_slices = zip(*sorted_pairs)
 
@@ -479,17 +462,19 @@ class RecognitionPredictor(BasePredictor):
         flat["task_names"] = [flat["task_names"][i] for i in indices]
 
         # Make predictions
-        predicted_tokens, batch_bboxes, scores, _ = self.foundation_predictor.prediction_loop(
-            images=flat["slices"],
-            input_texts=flat["input_text"],
-            task_names=flat["task_names"],
-            batch_size=recognition_batch_size,
-            math_mode=math_mode,
-            drop_repeated_tokens=True,
-            max_lookahead_tokens=self.foundation_predictor.model.config.multi_output_distance,
-            max_sliding_window=max_sliding_window,
-            max_tokens=max_tokens,
-            tqdm_desc="Recognizing Text"
+        predicted_tokens, batch_bboxes, scores, _ = (
+            self.foundation_predictor.prediction_loop(
+                images=flat["slices"],
+                input_texts=flat["input_text"],
+                task_names=flat["task_names"],
+                batch_size=recognition_batch_size,
+                math_mode=math_mode,
+                drop_repeated_tokens=True,
+                max_lookahead_tokens=self.foundation_predictor.model.config.multi_output_distance,
+                max_sliding_window=max_sliding_window,
+                max_tokens=max_tokens,
+                tqdm_desc="Recognizing Text",
+            )
         )
 
         # Get text and bboxes in structured form

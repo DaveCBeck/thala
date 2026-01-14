@@ -3,7 +3,6 @@
 Uses unified structured output interface that auto-selects batch API for 5+ papers.
 """
 
-import asyncio
 import logging
 from typing import Any
 
@@ -37,10 +36,10 @@ class MetadataSummarySchema(BaseModel):
         description="3-5 topic tags based on title and abstract",
     )
 
+
 from .acquisition import run_paper_pipeline
 from .extraction import (
     extract_all_summaries,
-    extract_summary_from_metadata,
     METADATA_SUMMARY_EXTRACTION_SYSTEM,
 )
 from .types import MAX_PAPER_PIPELINE_CONCURRENT, PaperProcessingState
@@ -48,7 +47,9 @@ from .types import MAX_PAPER_PIPELINE_CONCURRENT, PaperProcessingState
 logger = logging.getLogger(__name__)
 
 
-async def acquire_and_process_papers_node(state: PaperProcessingState) -> dict[str, Any]:
+async def acquire_and_process_papers_node(
+    state: PaperProcessingState,
+) -> dict[str, Any]:
     """Acquire and process all papers using unified pipeline.
 
     This node combines acquisition and processing as one operation per paper,
@@ -69,7 +70,12 @@ async def acquire_and_process_papers_node(state: PaperProcessingState) -> dict[s
 
     logger.info(f"Starting unified paper pipeline for {len(papers)} papers")
 
-    acquired, processing_results, acquisition_failed, processing_failed = await run_paper_pipeline(
+    (
+        acquired,
+        processing_results,
+        acquisition_failed,
+        processing_failed,
+    ) = await run_paper_pipeline(
         papers=papers,
         max_concurrent=MAX_PAPER_PIPELINE_CONCURRENT,
         use_batch_api=use_batch_api,
@@ -95,7 +101,6 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
     Uses unified structured output interface that auto-selects batch API for 5+ papers.
     """
     processing_results = state.get("processing_results", {})
-    processing_failed = state.get("processing_failed", [])
     papers = state.get("papers_to_process", [])
     quality_settings = state["quality_settings"]
     use_batch_api = quality_settings.get("use_batch_api", True)
@@ -108,7 +113,12 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
 
     extraction_failed_dois = set()
     if processing_results:
-        full_text_summaries, full_text_es_ids, full_text_zotero_keys, extraction_failed_dois = await extract_all_summaries(
+        (
+            full_text_summaries,
+            full_text_es_ids,
+            full_text_zotero_keys,
+            extraction_failed_dois,
+        ) = await extract_all_summaries(
             processing_results=processing_results,
             papers_by_doi=papers_by_doi,
             use_batch_api=use_batch_api,
@@ -135,9 +145,13 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
             f"Document processing failed for {len(papers_needing_fallback)} papers, "
             f"using metadata-only extraction with Zotero stubs"
         )
-        logger.debug(f"Failed DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}")
+        logger.debug(
+            f"Failed DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}"
+        )
 
-        paper_zotero_keys = await _create_zotero_stubs_for_papers(papers_needing_fallback)
+        paper_zotero_keys = await _create_zotero_stubs_for_papers(
+            papers_needing_fallback
+        )
 
         metadata_summaries = await _extract_metadata_summaries_batched(
             papers=papers_needing_fallback,
@@ -270,20 +284,22 @@ async def _extract_metadata_summaries_batched(
         if len(authors) > 5:
             authors_str += " et al."
 
-        user_prompt = f"""Paper: {title} ({paper.get('year', 'Unknown')})
+        user_prompt = f"""Paper: {title} ({paper.get("year", "Unknown")})
 Authors: {authors_str}
-Venue: {paper.get('venue', 'Unknown')}
-Citations: {paper.get('cited_by_count', 0)}
+Venue: {paper.get("venue", "Unknown")}
+Citations: {paper.get("cited_by_count", 0)}
 
 Abstract:
-{abstract if abstract else 'No abstract available'}
+{abstract if abstract else "No abstract available"}
 
 Extract structured information based on this metadata."""
 
-        requests.append(StructuredRequest(
-            id=custom_id,
-            user_prompt=user_prompt,
-        ))
+        requests.append(
+            StructuredRequest(
+                id=custom_id,
+                user_prompt=user_prompt,
+            )
+        )
 
     logger.debug(f"Submitting batch of {len(papers)} papers for metadata extraction")
 
@@ -307,9 +323,14 @@ Extract structured information based on this metadata."""
             try:
                 extracted = result.value
 
-                short_summary = existing_short_summaries.get(doi) or (abstract[:500] if abstract else f"Study on {title}")
+                short_summary = existing_short_summaries.get(doi) or (
+                    abstract[:500] if abstract else f"Study on {title}"
+                )
 
-                paper_zotero_key = zotero_keys.get(doi) or doi.replace("/", "_").replace(".", "")[:20].upper()
+                paper_zotero_key = (
+                    zotero_keys.get(doi)
+                    or doi.replace("/", "_").replace(".", "")[:20].upper()
+                )
 
                 summaries[doi] = PaperSummary(
                     doi=doi,

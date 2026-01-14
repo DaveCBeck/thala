@@ -8,7 +8,11 @@ from typing import Optional, Type, TypeVar
 from pydantic import BaseModel
 
 from ...models import get_llm
-from ..types import StructuredOutputConfig, StructuredOutputResult, StructuredOutputStrategy
+from ..types import (
+    StructuredOutputConfig,
+    StructuredOutputResult,
+    StructuredOutputStrategy,
+)
 from .base import StrategyExecutor
 
 T = TypeVar("T", bound=BaseModel)

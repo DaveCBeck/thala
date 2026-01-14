@@ -28,7 +28,6 @@ Usage:
 import gzip
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -130,11 +129,15 @@ def save_workflow_state(
         if use_compression:
             with gzip.open(path, "wt", encoding="utf-8") as f:
                 f.write(state_json)
-            logger.debug(f"Saved compressed workflow state ({len(state_json) / 1024:.1f}KB): {path}")
+            logger.debug(
+                f"Saved compressed workflow state ({len(state_json) / 1024:.1f}KB): {path}"
+            )
         else:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(state_json)
-            logger.debug(f"Saved workflow state ({len(state_json) / 1024:.1f}KB): {path}")
+            logger.debug(
+                f"Saved workflow state ({len(state_json) / 1024:.1f}KB): {path}"
+            )
 
         return path
 
@@ -220,12 +223,14 @@ def list_workflow_states(workflow_name: str, limit: int = 100) -> list[dict]:
 
         try:
             stat = path.stat()
-            states.append({
-                "run_id": run_id,
-                "path": str(path),
-                "timestamp": stat.st_mtime,
-                "size_bytes": stat.st_size,
-            })
+            states.append(
+                {
+                    "run_id": run_id,
+                    "path": str(path),
+                    "timestamp": stat.st_mtime,
+                    "size_bytes": stat.st_size,
+                }
+            )
         except OSError:
             continue
 

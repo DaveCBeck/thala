@@ -165,6 +165,7 @@ class MarkerProcessor:
             "ocr_method": "surya" if preset["force_ocr"] else "native",
         }
 
+
 # Singleton processor instance for Celery workers
 _processor: MarkerProcessor | None = None
 

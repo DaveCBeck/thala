@@ -51,7 +51,9 @@ class MainStore(BaseElasticsearchStore):
         """Get index name for a compression level."""
         return self.COMPRESSION_INDICES.get(compression_level, "store_l0")
 
-    async def get(self, record_id: UUID, compression_level: Optional[int] = None) -> Optional[StoreRecord]:
+    async def get(
+        self, record_id: UUID, compression_level: Optional[int] = None
+    ) -> Optional[StoreRecord]:
         """
         Get a record by UUID.
 
@@ -107,7 +109,9 @@ class MainStore(BaseElasticsearchStore):
             return results[0]
         return None
 
-    async def update(self, record_id: UUID, updates: dict[str, Any], compression_level: int = 0) -> bool:
+    async def update(
+        self, record_id: UUID, updates: dict[str, Any], compression_level: int = 0
+    ) -> bool:
         """
         Partially update a record.
 
@@ -119,7 +123,9 @@ class MainStore(BaseElasticsearchStore):
         index = self._index_for_level(compression_level)
         return await super().update(record_id, updates, index=index)
 
-    async def delete(self, record_id: UUID, reason: str, compression_level: Optional[int] = None) -> bool:
+    async def delete(
+        self, record_id: UUID, reason: str, compression_level: Optional[int] = None
+    ) -> bool:
         """
         Delete a store record with required reason, archiving to forgotten_store.
 
@@ -151,7 +157,9 @@ class MainStore(BaseElasticsearchStore):
                 index=index,
                 id=str(record_id),
             )
-            logger.debug(f"Deleted store record {record_id} from {index}, archived to forgotten")
+            logger.debug(
+                f"Deleted store record {record_id} from {index}, archived to forgotten"
+            )
             return True
         except NotFoundError:
             return False

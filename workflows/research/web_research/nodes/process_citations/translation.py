@@ -27,9 +27,9 @@ async def _check_existing_zotero_item(
 ) -> Optional[str]:
     """Check if a Zotero item already exists for this URL."""
     try:
-        results = await store_manager.zotero.search([
-            ZoteroSearchCondition(condition="url", operator="is", value=url)
-        ], limit=1)
+        results = await store_manager.zotero.search(
+            [ZoteroSearchCondition(condition="url", operator="is", value=url)], limit=1
+        )
         if results:
             return results[0].key
     except Exception as e:

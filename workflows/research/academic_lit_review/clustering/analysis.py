@@ -63,12 +63,12 @@ async def per_cluster_analysis_node(state: dict) -> dict[str, Any]:
                 continue
 
             paper_text = f"""
-Title: {summary.get('title', 'Unknown')}
-Year: {summary.get('year', 'Unknown')}
-Summary: {summary.get('short_summary', 'N/A')}
-Key Findings: {'; '.join(summary.get('key_findings', [])[:3])}
-Methodology: {summary.get('methodology', 'N/A')[:150]}
-Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
+Title: {summary.get("title", "Unknown")}
+Year: {summary.get("year", "Unknown")}
+Summary: {summary.get("short_summary", "N/A")}
+Key Findings: {"; ".join(summary.get("key_findings", [])[:3])}
+Methodology: {summary.get("methodology", "N/A")[:150]}
+Limitations: {"; ".join(summary.get("limitations", [])[:2])}"""
             papers_detail.append(paper_text)
 
         papers_text = "\n---\n".join(papers_detail)
@@ -148,12 +148,12 @@ async def _per_cluster_analysis_batched(
                 continue
 
             paper_text = f"""
-Title: {summary.get('title', 'Unknown')}
-Year: {summary.get('year', 'Unknown')}
-Summary: {summary.get('short_summary', 'N/A')}
-Key Findings: {'; '.join(summary.get('key_findings', [])[:3])}
-Methodology: {summary.get('methodology', 'N/A')[:150]}
-Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
+Title: {summary.get("title", "Unknown")}
+Year: {summary.get("year", "Unknown")}
+Summary: {summary.get("short_summary", "N/A")}
+Key Findings: {"; ".join(summary.get("key_findings", [])[:3])}
+Methodology: {summary.get("methodology", "N/A")[:150]}
+Limitations: {"; ".join(summary.get("limitations", [])[:2])}"""
             papers_detail.append(paper_text)
 
         papers_text = "\n---\n".join(papers_detail)
@@ -165,10 +165,12 @@ Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
         )
 
         request_id = f"cluster-{i}"
-        requests.append(StructuredRequest(
-            id=request_id,
-            user_prompt=user_prompt,
-        ))
+        requests.append(
+            StructuredRequest(
+                id=request_id,
+                user_prompt=user_prompt,
+            )
+        )
         cluster_id_map[request_id] = cluster["cluster_id"]
 
     logger.info(f"Submitting batch of {len(final_clusters)} clusters for analysis")
@@ -191,35 +193,45 @@ Limitations: {'; '.join(summary.get('limitations', [])[:2])}"""
             try:
                 parsed = result.value
 
-                cluster_analyses.append(ClusterAnalysis(
-                    cluster_id=cluster_id,
-                    narrative_summary=parsed.narrative_summary,
-                    timeline=parsed.timeline,
-                    key_debates=parsed.key_debates,
-                    methodologies=parsed.methodologies,
-                    outstanding_questions=parsed.outstanding_questions,
-                ))
+                cluster_analyses.append(
+                    ClusterAnalysis(
+                        cluster_id=cluster_id,
+                        narrative_summary=parsed.narrative_summary,
+                        timeline=parsed.timeline,
+                        key_debates=parsed.key_debates,
+                        methodologies=parsed.methodologies,
+                        outstanding_questions=parsed.outstanding_questions,
+                    )
+                )
             except Exception as e:
-                logger.warning(f"Failed to parse analysis for cluster {cluster['label']}: {e}")
-                cluster_analyses.append(ClusterAnalysis(
+                logger.warning(
+                    f"Failed to parse analysis for cluster {cluster['label']}: {e}"
+                )
+                cluster_analyses.append(
+                    ClusterAnalysis(
+                        cluster_id=cluster_id,
+                        narrative_summary=f"Analysis parsing failed: {e}",
+                        timeline=[],
+                        key_debates=[],
+                        methodologies=[],
+                        outstanding_questions=[],
+                    )
+                )
+        else:
+            error_msg = result.error if result else "No result returned"
+            logger.warning(
+                f"Cluster analysis failed for {cluster['label']}: {error_msg}"
+            )
+            cluster_analyses.append(
+                ClusterAnalysis(
                     cluster_id=cluster_id,
-                    narrative_summary=f"Analysis parsing failed: {e}",
+                    narrative_summary=f"Analysis failed: {error_msg}",
                     timeline=[],
                     key_debates=[],
                     methodologies=[],
                     outstanding_questions=[],
-                ))
-        else:
-            error_msg = result.error if result else "No result returned"
-            logger.warning(f"Cluster analysis failed for {cluster['label']}: {error_msg}")
-            cluster_analyses.append(ClusterAnalysis(
-                cluster_id=cluster_id,
-                narrative_summary=f"Analysis failed: {error_msg}",
-                timeline=[],
-                key_debates=[],
-                methodologies=[],
-                outstanding_questions=[],
-            ))
+                )
+            )
 
     logger.info(f"Completed analysis for {len(cluster_analyses)} clusters (batch)")
 

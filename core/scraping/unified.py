@@ -35,8 +35,13 @@ Example usage:
 import logging
 from typing import Optional
 
-from .classification import classify_content, ClassificationResult
-from .doi import detect_doi, extract_doi_from_content, get_oa_url_for_doi, search_doi_by_title
+from .classification import classify_content
+from .doi import (
+    detect_doi,
+    extract_doi_from_content,
+    get_oa_url_for_doi,
+    search_doi_by_title,
+)
 from .fallback import try_retrieve_academic
 from .pdf import is_pdf_url, process_pdf_url
 from .service import get_scraper_service
@@ -93,20 +98,20 @@ async def get_url(
         else:
             # No OA URL, use DOI URL as fallback
             resolved_url = doi_info.doi_url
-            logger.debug(f"No OA URL found, using DOI URL")
+            logger.debug("No OA URL found, using DOI URL")
             fallback_chain.append("doi_url_fallback")
 
     # Step 2: PDF Detection
     is_pdf = is_pdf_url(resolved_url)
     if is_pdf:
         fallback_chain.append("pdf_direct")
-        logger.debug(f"PDF URL detected")
+        logger.debug("PDF URL detected")
 
         result = await _handle_pdf_url(resolved_url, doi_info, opts, fallback_chain)
         if result:
             return result
         # PDF download failed - skip web scraping (won't work for PDFs) and go to retrieve-academic
-        logger.warning(f"PDF download failed, skipping web scraping for PDF URL")
+        logger.warning("PDF download failed, skipping web scraping for PDF URL")
         # Jump directly to retrieve-academic fallback (Step 5)
         if opts.allow_retrieve_academic and doi_info:
             fallback_chain.append("retrieve_academic")
@@ -125,8 +130,12 @@ async def get_url(
 
     scrape_result = None
     try:
-        scrape_result = await scraper.scrape(resolved_url, include_links=opts.include_links)
-        logger.debug(f"Scraped {len(scrape_result.markdown)} chars via {scrape_result.provider}")
+        scrape_result = await scraper.scrape(
+            resolved_url, include_links=opts.include_links
+        )
+        logger.debug(
+            f"Scraped {len(scrape_result.markdown)} chars via {scrape_result.provider}"
+        )
     except Exception as e:
         logger.warning(f"Scraping failed: {type(e).__name__}: {e}")
 
@@ -166,7 +175,7 @@ async def get_url(
         elif classification.classification == "abstract_with_pdf":
             if classification.pdf_url:
                 fallback_chain.append("pdf_extracted")
-                logger.debug(f"Extracted PDF URL from abstract page")
+                logger.debug("Extracted PDF URL from abstract page")
 
                 pdf_result = await _handle_pdf_url(
                     classification.pdf_url, doi_info, opts, fallback_chain
@@ -175,18 +184,20 @@ async def get_url(
                     pdf_result.classification = ContentClassification.ABSTRACT_WITH_PDF
                     return pdf_result
                 # Fall through to retrieve-academic
-                logger.warning(f"Extracted PDF download failed")
+                logger.warning("Extracted PDF download failed")
             else:
-                logger.warning(f"Abstract page but no valid PDF URL extracted")
+                logger.warning("Abstract page but no valid PDF URL extracted")
             # Fall through to retrieve-academic
 
         elif classification.classification == "paywall":
-            logger.debug(f"Paywall detected")
+            logger.debug("Paywall detected")
             fallback_chain.append("paywall_detected")
 
             # If no DOI known, try to find it via title search
             if not doi_info and classification.title:
-                logger.debug(f"Searching OpenAlex for DOI by title: {classification.title[:50]}...")
+                logger.debug(
+                    f"Searching OpenAlex for DOI by title: {classification.title[:50]}..."
+                )
                 found_doi = await search_doi_by_title(
                     classification.title,
                     classification.authors,

@@ -2,7 +2,7 @@
 
 import functools
 import logging
-from typing import Callable, Any
+from typing import Callable
 
 
 def safe_node_execution(
@@ -11,6 +11,7 @@ def safe_node_execution(
     fallback_status: str = "failed",
 ):
     """Decorator for safe async node execution with error handling."""
+
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         async def wrapper(state: dict, *args, **kwargs) -> dict:
@@ -22,7 +23,9 @@ def safe_node_execution(
                     "current_status": fallback_status,
                     "errors": [{"node": node_name, "error": str(e)}],
                 }
+
         return wrapper
+
     return decorator
 
 
@@ -34,9 +37,11 @@ class StateUpdater:
         return {"current_status": status, **kwargs}
 
     @staticmethod
-    def error(node_name: str, error: Exception | str, status: str = "failed", **kwargs) -> dict:
+    def error(
+        node_name: str, error: Exception | str, status: str = "failed", **kwargs
+    ) -> dict:
         return {
             "current_status": status,
             "errors": [{"node": node_name, "error": str(error)}],
-            **kwargs
+            **kwargs,
         }

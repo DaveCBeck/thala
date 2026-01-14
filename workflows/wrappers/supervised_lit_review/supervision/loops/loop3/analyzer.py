@@ -105,12 +105,14 @@ def validate_issue_edit_mapping(
     """
     import re
 
-    phase_a_ids = {issue.get("issue_id") for issue in issues if issue.get("issue_id") is not None}
+    phase_a_ids = {
+        issue.get("issue_id") for issue in issues if issue.get("issue_id") is not None
+    }
 
     mapped_ids = set()
     for edit in edits:
         notes = edit.get("notes", "")
-        matches = re.findall(r'issue[_\s]?(?:id)?[:\s]*(\d+)', notes.lower())
+        matches = re.findall(r"issue[_\s]?(?:id)?[:\s]*(\d+)", notes.lower())
         mapped_ids.update(int(m) for m in matches)
 
     unmapped = phase_a_ids - mapped_ids
@@ -164,8 +166,12 @@ async def generate_edits_phase_b_node(state: dict) -> dict[str, Any]:
         )
 
         manifest_dict = manifest.model_dump()
-        if not manifest_dict.get("architecture_assessment") and issue_analysis.get("architecture_assessment"):
-            manifest_dict["architecture_assessment"] = issue_analysis["architecture_assessment"]
+        if not manifest_dict.get("architecture_assessment") and issue_analysis.get(
+            "architecture_assessment"
+        ):
+            manifest_dict["architecture_assessment"] = issue_analysis[
+                "architecture_assessment"
+            ]
 
         logger.info(
             f"Loop 3 Phase B complete: generated {len(manifest.edits)} edits, "
@@ -196,6 +202,8 @@ async def generate_edits_phase_b_node(state: dict) -> dict[str, Any]:
                 "todo_markers": todos,
                 "overall_assessment": f"Edit generation failed: {e}. Manual review needed.",
                 "needs_restructuring": False,
-                "architecture_assessment": issue_analysis.get("architecture_assessment"),
+                "architecture_assessment": issue_analysis.get(
+                    "architecture_assessment"
+                ),
             }
         }

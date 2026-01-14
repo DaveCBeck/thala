@@ -25,9 +25,7 @@ class CrossAnalysisOutput(BaseModel):
     universal_themes: list[str] = Field(
         description="Themes appearing across most languages"
     )
-    consensus_findings: list[str] = Field(
-        description="Findings with broad agreement"
-    )
+    consensus_findings: list[str] = Field(description="Findings with broad agreement")
 
     # Differences
     regional_variations: list[dict] = Field(
@@ -92,7 +90,9 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
         if not language_results or (
             len(language_results) == 1 and language_results[0]["language_code"] == "en"
         ):
-            logger.info("Only English sources available, skipping cross-language analysis")
+            logger.info(
+                "Only English sources available, skipping cross-language analysis"
+            )
             minimal_analysis: SonnetCrossAnalysis = {
                 "universal_themes": [],
                 "consensus_findings": [],
@@ -118,7 +118,9 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
 
         language_findings = _format_language_findings(language_results)
 
-        logger.debug(f"Running cross-language analysis for {len(language_results)} languages")
+        logger.debug(
+            f"Running cross-language analysis for {len(language_results)} languages"
+        )
 
         user_prompt = CROSS_ANALYSIS_USER.format(
             topic=topic,

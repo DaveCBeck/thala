@@ -174,7 +174,9 @@ async def handle(
     main_store = get_es_substore(stores, "store")
 
     if name == "store.add":
-        _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
+        _, embedding_model = await generate_embedding(
+            embedding_service, arguments["content"]
+        )
 
         source_type = SourceType(arguments["source_type"])
 
@@ -211,7 +213,9 @@ async def handle(
 
         if "content" in arguments:
             updates["content"] = arguments["content"]
-            _, embedding_model = await generate_embedding(embedding_service, arguments["content"])
+            _, embedding_model = await generate_embedding(
+                embedding_service, arguments["content"]
+            )
             if embedding_model:
                 updates["embedding_model"] = embedding_model
 
@@ -229,7 +233,9 @@ async def handle(
             updates["language_code"] = arguments["language_code"]
 
         if not updates:
-            raise ValidationError("updates", "At least one field must be provided for update")
+            raise ValidationError(
+                "updates", "At least one field must be provided for update"
+            )
 
         success = await main_store.update(record_id, updates)
         if not success:

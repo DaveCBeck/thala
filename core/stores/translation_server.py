@@ -78,7 +78,10 @@ class TranslationResult(BaseModel):
         return {
             "itemType": self.item_type,
             "title": self.title,
-            "authors": [c.to_full_name() for c in self.creators] if self.creators else [],
+            # pylint: disable=not-an-iterable  # Pydantic Field(default_factory=list)
+            "authors": [c.to_full_name() for c in self.creators]
+            if self.creators
+            else [],
             "date": self.date,
             "url": self.url,
             "abstractNote": self.abstract_note,
@@ -165,7 +168,9 @@ class TranslationServerClient(BaseAsyncHttpClient):
             elif response.status_code == 300:
                 # Multiple results - server returns selection dialog info
                 # We'll create a basic result with the URL
-                logger.debug(f"Multiple translation matches for {url}, using basic result")
+                logger.debug(
+                    f"Multiple translation matches for {url}, using basic result"
+                )
                 result = TranslationResult(
                     item_type="webpage",
                     url=url,

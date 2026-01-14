@@ -33,7 +33,9 @@ SECTION_HEADERS_EN = {
 }
 
 
-async def _get_translated_headers(language_config: LanguageConfig | None) -> dict[str, str]:
+async def _get_translated_headers(
+    language_config: LanguageConfig | None,
+) -> dict[str, str]:
     """Get translated section headers if needed."""
     if not language_config or language_config["code"] == "en":
         return SECTION_HEADERS_EN
@@ -76,7 +78,9 @@ def _format_book_entry(
     if recommendation:
         lines.append(f"**Why this book:** {recommendation['explanation']}")
     else:
-        lines.append(f"**Matched recommendation:** {book.get('matched_recommendation', 'Unknown')}")
+        lines.append(
+            f"**Matched recommendation:** {book.get('matched_recommendation', 'Unknown')}"
+        )
 
     lines.append("")
 
@@ -116,7 +120,9 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
     # Get processed books
     processed_books = state.get("processed_books", [])
 
-    logger.debug(f"Synthesizing output: {len(processed_books)} processed books, {len(analogous_recs)+len(inspiring_recs)+len(expressive_recs)} total recommendations")
+    logger.debug(
+        f"Synthesizing output: {len(processed_books)} processed books, {len(analogous_recs) + len(inspiring_recs) + len(expressive_recs)} total recommendations"
+    )
 
     # Build a lookup of matched recommendation titles -> processed books
     processed_by_rec_title: dict[str, BookResult] = {}
@@ -151,9 +157,7 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
 
         for rec in recommendations:
             if rec["title"] in processed_by_rec_title:
-                processed_in_section.append(
-                    (rec, processed_by_rec_title[rec["title"]])
-                )
+                processed_in_section.append((rec, processed_by_rec_title[rec["title"]]))
             else:
                 unprocessed_in_section.append(rec)
 
@@ -177,37 +181,45 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
         return lines
 
     # Build each section
-    sections.extend(build_section(
-        headers["analogous_domain"],
-        headers["analogous_subtitle"],
-        analogous_recs,
-    ))
+    sections.extend(
+        build_section(
+            headers["analogous_domain"],
+            headers["analogous_subtitle"],
+            analogous_recs,
+        )
+    )
 
-    sections.extend(build_section(
-        headers["inspiring_action"],
-        headers["inspiring_subtitle"],
-        inspiring_recs,
-    ))
+    sections.extend(
+        build_section(
+            headers["inspiring_action"],
+            headers["inspiring_subtitle"],
+            inspiring_recs,
+        )
+    )
 
-    sections.extend(build_section(
-        headers["expressive_fiction"],
-        headers["expressive_subtitle"],
-        expressive_recs,
-    ))
+    sections.extend(
+        build_section(
+            headers["expressive_fiction"],
+            headers["expressive_subtitle"],
+            expressive_recs,
+        )
+    )
 
     # Add summary stats
     total_recs = len(analogous_recs) + len(inspiring_recs) + len(expressive_recs)
     total_processed = len(processed_books)
     failed = state.get("processing_failed", [])
 
-    sections.extend([
-        "---",
-        "",
-        f"## {headers['summary']}",
-        f"- **{headers['total_recommendations']}:** {total_recs}",
-        f"- **{headers['books_processed']}:** {total_processed}",
-        f"- **{headers['books_not_available']}:** {len(failed)}",
-    ])
+    sections.extend(
+        [
+            "---",
+            "",
+            f"## {headers['summary']}",
+            f"- **{headers['total_recommendations']}:** {total_recs}",
+            f"- **{headers['books_processed']}:** {total_processed}",
+            f"- **{headers['books_not_available']}:** {len(failed)}",
+        ]
+    )
 
     final_markdown = "\n".join(sections)
 

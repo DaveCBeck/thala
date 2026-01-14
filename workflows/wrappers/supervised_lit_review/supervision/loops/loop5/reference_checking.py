@@ -35,7 +35,9 @@ async def reference_check_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Extract citation keys from section for display
         cited_keys = extract_citation_keys_from_text(section_content)
-        citation_keys_text = ", ".join(f"[@{k}]" for k in sorted(cited_keys)) if cited_keys else "None"
+        citation_keys_text = (
+            ", ".join(f"[@{k}]" for k in sorted(cited_keys)) if cited_keys else "None"
+        )
 
         user_prompt = LOOP5_REF_CHECK_USER.format(
             section_content=section_content,
@@ -63,7 +65,9 @@ async def reference_check_node(state: dict[str, Any]) -> dict[str, Any]:
 
     await store_query.close()
 
-    logger.info(f"Loop 5 reference checking complete: {len(all_edits)} total edits, {len(all_todos)} unaddressed TODOs")
+    logger.info(
+        f"Loop 5 reference checking complete: {len(all_edits)} total edits, {len(all_todos)} unaddressed TODOs"
+    )
     return {
         "all_edits": all_edits,
         "unaddressed_todos": all_todos,

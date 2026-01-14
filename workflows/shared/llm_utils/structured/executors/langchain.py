@@ -9,7 +9,11 @@ from pydantic import BaseModel
 
 from ...caching import create_cached_messages
 from ...models import get_llm
-from ..types import StructuredOutputConfig, StructuredOutputResult, StructuredOutputStrategy
+from ..types import (
+    StructuredOutputConfig,
+    StructuredOutputResult,
+    StructuredOutputStrategy,
+)
 from .base import StrategyExecutor
 
 T = TypeVar("T", bound=BaseModel)

@@ -3,8 +3,13 @@
 from workflows.research.academic_lit_review.citation_graph.algorithms import (
     CitationGraphAlgorithms,
 )
-from workflows.research.academic_lit_review.citation_graph.builder import CitationGraphBuilder
-from workflows.research.academic_lit_review.citation_graph.types import CitationEdge, PaperNode
+from workflows.research.academic_lit_review.citation_graph.builder import (
+    CitationGraphBuilder,
+)
+from workflows.research.academic_lit_review.citation_graph.types import (
+    CitationEdge,
+    PaperNode,
+)
 from workflows.research.academic_lit_review.state import PaperMetadata
 
 

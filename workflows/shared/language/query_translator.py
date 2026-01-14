@@ -66,7 +66,9 @@ async def translate_query(
         result = await _do_query_translation(query, target_language_name)
 
         _query_cache[cache_key] = result
-        logger.debug(f"Translated query to {target_language_code}: {query[:30]}... -> {result[:30]}...")
+        logger.debug(
+            f"Translated query to {target_language_code}: {query[:30]}... -> {result[:30]}..."
+        )
         return result
 
 
@@ -77,10 +79,12 @@ async def _do_query_translation(query: str, target_language: str) -> str:
     user_prompt = f"Translate to {target_language}: {query}"
 
     try:
-        response = await llm.ainvoke([
-            {"role": "system", "content": QUERY_TRANSLATION_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ])
+        response = await llm.ainvoke(
+            [
+                {"role": "system", "content": QUERY_TRANSLATION_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
 
         return extract_response_content(response)
 
@@ -133,9 +137,13 @@ async def translate_queries(
 
         async def translate_with_semaphore(query: str) -> str:
             async with semaphore:
-                return await translate_query(query, target_language_code, target_language_name)
+                return await translate_query(
+                    query, target_language_code, target_language_name
+                )
 
-        translated = await asyncio.gather(*[translate_with_semaphore(q) for q in uncached_queries])
+        translated = await asyncio.gather(
+            *[translate_with_semaphore(q) for q in uncached_queries]
+        )
 
     # Merge results and update cache
     for i, idx in enumerate(uncached_indices):
@@ -164,7 +172,9 @@ async def _translate_queries_batched(
             system=QUERY_TRANSLATION_SYSTEM,
         )
 
-    logger.debug(f"Submitting batch of {len(queries)} queries for translation to {target_language_name}")
+    logger.debug(
+        f"Submitting batch of {len(queries)} queries for translation to {target_language_name}"
+    )
     results = await processor.execute_batch()
 
     translated = []
@@ -173,7 +183,9 @@ async def _translate_queries_batched(
         if result and result.success:
             translated.append(result.content.strip())
         else:
-            logger.warning(f"Translation failed for query '{query[:30]}...', using original")
+            logger.warning(
+                f"Translation failed for query '{query[:30]}...', using original"
+            )
             translated.append(query)
 
     return translated

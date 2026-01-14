@@ -51,7 +51,9 @@ async def _resolve_local_file(
 
     if suffix in PDF_EXTENSIONS:
         # PDF file: Convert via Marker
-        logger.info(f"Processing local PDF: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)")
+        logger.info(
+            f"Processing local PDF: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)"
+        )
 
         try:
             markdown = await process_pdf_file(
@@ -68,7 +70,9 @@ async def _resolve_local_file(
 
     elif suffix in EPUB_EXTENSIONS:
         # EPUB file: Convert via Marker (same pipeline as PDF - auto-detected)
-        logger.info(f"Processing local EPUB via Marker: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)")
+        logger.info(
+            f"Processing local EPUB via Marker: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)"
+        )
 
         try:
             markdown = await process_pdf_file(
@@ -91,7 +95,9 @@ async def _resolve_local_file(
 
     else:
         # Unknown file type: Try to read as text
-        logger.warning(f"Unknown file type '{suffix}', attempting to read as text: {source_path.name}")
+        logger.warning(
+            f"Unknown file type '{suffix}', attempting to read as text: {source_path.name}"
+        )
         try:
             markdown = source_path.read_text(encoding="utf-8")
             ocr_method = "direct_read:unknown_type"
@@ -148,9 +154,12 @@ async def resolve_input(state: dict) -> dict:
     logger.info(f"Resolving input source: {source[:100]}...")
 
     # Check if source is a local file path
-    source_path = Path(source)
-    if source_path.exists() and source_path.is_file():
-        return await _resolve_local_file(source_path, input_data, marker_input_dir)
+    # Guard: paths longer than 4096 chars can't be valid file paths (Linux limit)
+    # and attempting Path(source).exists() on very long strings causes ENAMETOOLONG
+    if len(source) < 4096:
+        source_path = Path(source)
+        if source_path.exists() and source_path.is_file():
+            return await _resolve_local_file(source_path, input_data, marker_input_dir)
 
     # Determine source type for URLs vs markdown text
     parsed_url = urlparse(source)
@@ -228,7 +237,9 @@ async def resolve_input(state: dict) -> dict:
             "ocr_method": "n/a",
         }
 
-        logger.info(f"Markdown text resolved: {len(markdown)} chars, {word_count} words")
+        logger.info(
+            f"Markdown text resolved: {len(markdown)} chars, {word_count} words"
+        )
 
         return {
             "source_type": source_type,

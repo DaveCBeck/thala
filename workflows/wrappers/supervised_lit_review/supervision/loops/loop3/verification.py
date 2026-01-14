@@ -30,7 +30,9 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
     max_iterations = state["max_iterations"]
 
     issue_analysis = state.get("issue_analysis", {})
-    original_issues_text = issue_analysis.get("overall_assessment", "No assessment available")
+    original_issues_text = issue_analysis.get(
+        "overall_assessment", "No assessment available"
+    )
 
     issues = issue_analysis.get("issues", [])
     if issues:
@@ -38,7 +40,9 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
             f"Issue {i.get('issue_id', '?')}: {i.get('issue_type', '?')} - {i.get('description', '')[:100]}"
             for i in issues
         ]
-        original_issues_text += "\n\nSpecific issues identified:\n- " + "\n- ".join(issue_descriptions)
+        original_issues_text += "\n\nSpecific issues identified:\n- " + "\n- ".join(
+            issue_descriptions
+        )
 
     rewrite_manifest = state.get("rewrite_manifest", {})
     changes_applied = state.get("changes_applied", [])
@@ -54,7 +58,9 @@ async def verify_architecture_node(state: dict) -> dict[str, Any]:
         applied_edits_text = "\n".join(f"- {c}" for c in changes_applied)
     else:
         applied_edits = state.get("applied_edits", [])
-        applied_edits_text = "\n".join(f"- {e}" for e in applied_edits) if applied_edits else "None"
+        applied_edits_text = (
+            "\n".join(f"- {e}" for e in applied_edits) if applied_edits else "None"
+        )
 
     user_prompt = LOOP3_VERIFIER_USER.format(
         original_issues=original_issues_text,

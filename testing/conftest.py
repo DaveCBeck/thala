@@ -59,6 +59,7 @@ def output_dir(tmp_path):
 def event_loop_policy():
     """Use default event loop policy for async tests."""
     import asyncio
+
     return asyncio.DefaultEventLoopPolicy()
 
 

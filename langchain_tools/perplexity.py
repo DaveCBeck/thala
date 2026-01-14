@@ -11,7 +11,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from langchain.tools import tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .utils import clamp_limit, output_dict
 
@@ -215,7 +215,9 @@ async def check_fact(
 
         # Build evidence summary from snippets
         evidence_summary = "\n".join(
-            f"- {r.title}: {r.snippet[:300]}..." if r.snippet and len(r.snippet) > 300 else f"- {r.title}: {r.snippet or 'No snippet'}"
+            f"- {r.title}: {r.snippet[:300]}..."
+            if r.snippet and len(r.snippet) > 300
+            else f"- {r.title}: {r.snippet or 'No snippet'}"
             for r in results[:5]
         )
 
@@ -233,7 +235,9 @@ Respond with ONLY valid JSON (no markdown):
   "explanation": "Brief explanation of the verdict based on evidence"
 }}"""
 
-        llm_response = await llm.ainvoke([{"role": "user", "content": synthesis_prompt}])
+        llm_response = await llm.ainvoke(
+            [{"role": "user", "content": synthesis_prompt}]
+        )
         content = llm_response.content.strip()
 
         # Parse JSON from response

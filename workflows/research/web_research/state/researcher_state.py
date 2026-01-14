@@ -23,7 +23,9 @@ class WebSearchResult(TypedDict):
     title: str
     description: Optional[str]
     content: Optional[str]  # Scraped content if fetched
-    source_metadata: Optional[dict]  # Structured metadata for academic sources (OpenAlex)
+    source_metadata: Optional[
+        dict
+    ]  # Structured metadata for academic sources (OpenAlex)
 
 
 class ResearchFinding(TypedDict):
@@ -34,7 +36,9 @@ class ResearchFinding(TypedDict):
     sources: list[WebSearchResult]  # Sources used
     confidence: float  # 0-1 confidence score
     gaps: list[str]  # What's still unclear
-    language_code: Optional[str]  # ISO 639-1 code (e.g., "es", "zh") or None for English
+    language_code: Optional[
+        str
+    ]  # ISO 639-1 code (e.g., "es", "zh") or None for English
 
 
 class ResearcherState(TypedDict):
@@ -46,7 +50,9 @@ class ResearcherState(TypedDict):
     scraped_content: list[str]  # Full page content
     thinking: Optional[str]  # Agent's reasoning
     finding: Optional[ResearchFinding]  # Final compressed finding
-    research_findings: Annotated[list[ResearchFinding], add]  # For aggregation to parent
+    research_findings: Annotated[
+        list[ResearchFinding], add
+    ]  # For aggregation to parent
 
     # Language configuration for multi-lingual support
     language_config: Optional[LanguageConfig]  # Language this researcher operates in

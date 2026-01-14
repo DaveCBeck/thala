@@ -1,6 +1,5 @@
 """Pydantic models for Zotero API operations."""
 
-from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field

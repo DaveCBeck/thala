@@ -56,8 +56,12 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
 
     if len(clusters) >= 5:
         return await _write_thematic_sections_batched(
-            clusters, analysis_lookup, paper_summaries, zotero_keys,
-            thematic_system, thematic_user_template
+            clusters,
+            analysis_lookup,
+            paper_summaries,
+            zotero_keys,
+            thematic_system,
+            thematic_user_template,
         )
 
     async def write_single_section(cluster):
@@ -74,10 +78,14 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             theme_name=cluster["label"],
             theme_description=cluster["description"],
             sub_themes=", ".join(cluster.get("sub_themes", [])) or "None identified",
-            key_debates="\n".join(f"- {d}" for d in cluster.get("conflicts", [])) or "None identified",
-            outstanding_questions="\n".join(f"- {q}" for q in cluster.get("gaps", [])) or "None identified",
+            key_debates="\n".join(f"- {d}" for d in cluster.get("conflicts", []))
+            or "None identified",
+            outstanding_questions="\n".join(f"- {q}" for q in cluster.get("gaps", []))
+            or "None identified",
             papers_with_keys=papers_text,
-            narrative_summary=analysis.get("narrative_summary", "No analysis available"),
+            narrative_summary=analysis.get(
+                "narrative_summary", "No analysis available"
+            ),
         )
 
         try:
@@ -89,7 +97,11 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
                 user_prompt=user_prompt,
             )
 
-            section_text = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+            section_text = (
+                response.content
+                if isinstance(response.content, str)
+                else response.content[0].get("text", "")
+            )
 
             return (cluster["label"], section_text)
 
@@ -144,10 +156,14 @@ async def _write_thematic_sections_batched(
             theme_name=cluster["label"],
             theme_description=cluster["description"],
             sub_themes=", ".join(cluster.get("sub_themes", [])) or "None identified",
-            key_debates="\n".join(f"- {d}" for d in cluster.get("conflicts", [])) or "None identified",
-            outstanding_questions="\n".join(f"- {q}" for q in cluster.get("gaps", [])) or "None identified",
+            key_debates="\n".join(f"- {d}" for d in cluster.get("conflicts", []))
+            or "None identified",
+            outstanding_questions="\n".join(f"- {q}" for q in cluster.get("gaps", []))
+            or "None identified",
             papers_with_keys=papers_text,
-            narrative_summary=analysis.get("narrative_summary", "No analysis available"),
+            narrative_summary=analysis.get(
+                "narrative_summary", "No analysis available"
+            ),
         )
 
         processor.add_request(

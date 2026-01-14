@@ -61,14 +61,16 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.warning("No paper summaries to integrate")
         return {
             "iteration": iteration + 1,
-            "supervision_expansions": [{
-                "iteration": iteration,
-                "topic": topic,
-                "issue_type": issue_type,
-                "research_query": issue.get("research_query", ""),
-                "papers_added": [],
-                "integration_summary": "No papers found to integrate",
-            }],
+            "supervision_expansions": [
+                {
+                    "iteration": iteration,
+                    "topic": topic,
+                    "issue_type": issue_type,
+                    "research_query": issue.get("research_query", ""),
+                    "papers_added": [],
+                    "integration_summary": "No papers found to integrate",
+                }
+            ],
         }
 
     # Format paper summaries for the integrator (with zotero keys inline)
@@ -110,7 +112,9 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         # Clean up any duplicate headers introduced during integration
         duplicates = detect_duplicate_headers(integrated_review)
         if duplicates:
-            logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
+            logger.info(
+                f"Removing {len(duplicates)} duplicate headers after Loop 1 integration"
+            )
             integrated_review = remove_duplicate_headers(integrated_review, duplicates)
 
         logger.info(
@@ -121,14 +125,16 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         return {
             "current_review": integrated_review,
             "iteration": iteration + 1,
-            "supervision_expansions": [{
-                "iteration": iteration,
-                "topic": topic,
-                "issue_type": issue_type,
-                "research_query": issue.get("research_query", ""),
-                "papers_added": processed_dois,
-                "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
-            }],
+            "supervision_expansions": [
+                {
+                    "iteration": iteration,
+                    "topic": topic,
+                    "issue_type": issue_type,
+                    "research_query": issue.get("research_query", ""),
+                    "papers_added": processed_dois,
+                    "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
+                }
+            ],
         }
 
     except Exception as e:
@@ -136,15 +142,17 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         # On error, keep current review but DON'T increment iteration
         return {
             "integration_failed": True,
-            "supervision_expansions": [{
-                "iteration": iteration,
-                "topic": topic,
-                "issue_type": issue_type,
-                "research_query": issue.get("research_query", ""),
-                "papers_added": [],
-                "integration_summary": f"Integration failed: {e}",
-                "failed": True,
-            }],
+            "supervision_expansions": [
+                {
+                    "iteration": iteration,
+                    "topic": topic,
+                    "issue_type": issue_type,
+                    "research_query": issue.get("research_query", ""),
+                    "papers_added": [],
+                    "integration_summary": f"Integration failed: {e}",
+                    "failed": True,
+                }
+            ],
             "loop_error": {
                 "loop_number": 1,
                 "iteration": iteration,

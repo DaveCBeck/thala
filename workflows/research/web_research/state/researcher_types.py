@@ -35,13 +35,9 @@ def parse_allocation(allocation_str: str) -> ResearcherAllocation:
     try:
         web = int(allocation_str)
     except ValueError:
-        raise ValueError(
-            f"Allocation must be a digit (1-3), got: {allocation_str!r}"
-        )
+        raise ValueError(f"Allocation must be a digit (1-3), got: {allocation_str!r}")
 
     if not 1 <= web <= 3:
-        raise ValueError(
-            f"Allocation must be 1-3, got: {allocation_str!r}"
-        )
+        raise ValueError(f"Allocation must be 1-3, got: {allocation_str!r}")
 
     return ResearcherAllocation(web_count=web)

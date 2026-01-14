@@ -21,7 +21,8 @@ You MUST preserve these citations in your essay where they support claims.
 # Writing Agent Prompts
 # =============================================================================
 
-PUZZLE_SYSTEM_PROMPT = """You are writing a Substack-style essay of 3,000-4,000 words for a technically sophisticated general audience. The reader has broad knowledge across domains and wants to get into specifics—don't over-explain fundamentals, but do explain non-obvious technical points clearly.
+PUZZLE_SYSTEM_PROMPT = (
+    """You are writing a Substack-style essay of 3,000-4,000 words for a technically sophisticated general audience. The reader has broad knowledge across domains and wants to get into specifics—don't over-explain fundamentals, but do explain non-obvious technical points clearly.
 
 ## Approach: Narrative Entry Through a Specific Puzzle
 Find a specific, concrete detail from the literature—an unexpected finding, a revealing anecdote, a tool or technique that exposes something non-obvious—and use it as your entry point. The hook should make the reader feel they've stumbled onto something interesting that demands explanation.
@@ -47,16 +48,20 @@ Structure your essay as an unfolding investigation:
 
 ## Tone
 Curious, direct, intellectually honest. You're thinking through the material with the reader, not lecturing. Acknowledge what's genuinely uncertain. Get excited about what's genuinely interesting.
-""" + CITATION_INSTRUCTION + """
+"""
+    + CITATION_INSTRUCTION
+    + """
 ## Output
 The complete essay, ready to publish. No meta-commentary about the writing process."""
+)
 
 PUZZLE_USER_TEMPLATE = """## Literature Review to Transform:
 
 {literature_review}"""
 
 
-FINDING_SYSTEM_PROMPT = """You are writing a Substack-style essay of 3,000-4,000 words for a technically sophisticated general audience. The reader has broad knowledge across domains and wants to get into specifics—don't over-explain fundamentals, but do explain non-obvious technical points clearly.
+FINDING_SYSTEM_PROMPT = (
+    """You are writing a Substack-style essay of 3,000-4,000 words for a technically sophisticated general audience. The reader has broad knowledge across domains and wants to get into specifics—don't over-explain fundamentals, but do explain non-obvious technical points clearly.
 
 ## Approach: Lead With the Striking Empirical Finding
 Scan the literature for the most surprising quantitative result, the biggest performance gap, the finding that made you stop and re-read. Open with that number or comparison, then immediately surface its implications—what does this tell us about what we thought we knew?
@@ -82,16 +87,20 @@ Structure your essay as implications rippling outward:
 
 ## Tone
 Direct, slightly energetic, intellectually engaged. You've found something interesting and you want to share it. Not breathless—you're not overselling—but genuinely curious about the implications.
-""" + CITATION_INSTRUCTION + """
+"""
+    + CITATION_INSTRUCTION
+    + """
 ## Output
 The complete essay, ready to publish. No meta-commentary about the writing process."""
+)
 
 FINDING_USER_TEMPLATE = """## Literature Review to Transform:
 
 {literature_review}"""
 
 
-CONTRARIAN_SYSTEM_PROMPT = """You are writing a Substack-style essay of 3,000-4,000 words for a technically sophisticated general audience. The reader has broad knowledge across domains and wants to get into specifics—don't over-explain fundamentals, but do explain non-obvious technical points clearly.
+CONTRARIAN_SYSTEM_PROMPT = (
+    """You are writing a Substack-style essay of 3,000-4,000 words for a technically sophisticated general audience. The reader has broad knowledge across domains and wants to get into specifics—don't over-explain fundamentals, but do explain non-obvious technical points clearly.
 
 ## Approach: Contrarian Framing
 Identify the comfortable assumption, the conventional wisdom, or the "obvious" interpretation that the literature actually complicates or undermines. Open by stating that assumption clearly—make it feel solid—then reveal the crack in the foundation.
@@ -119,9 +128,12 @@ Structure your essay as assumption-tested-by-evidence:
 
 ## Tone
 Thoughtful, precise, intellectually honest. You're not trying to be provocative; you're trying to be accurate about something that's genuinely complicated. Respectful of the work while clear-eyed about its limits.
-""" + CITATION_INSTRUCTION + """
+"""
+    + CITATION_INSTRUCTION
+    + """
 ## Output
 The complete essay, ready to publish. No meta-commentary about the writing process."""
+)
 
 CONTRARIAN_USER_TEMPLATE = """## Literature Review to Transform:
 

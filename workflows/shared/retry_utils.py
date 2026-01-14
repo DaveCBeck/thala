@@ -3,7 +3,7 @@
 import asyncio
 from typing import TypeVar, Callable, Awaitable, Type
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 async def with_retry(
@@ -21,6 +21,6 @@ async def with_retry(
         except retry_on as e:
             last_error = e
             if attempt < max_attempts - 1:
-                wait_time = backoff_factor ** attempt
+                wait_time = backoff_factor**attempt
                 await asyncio.sleep(wait_time)
     raise RuntimeError(error_message.format(attempts=max_attempts)) from last_error

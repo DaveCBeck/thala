@@ -48,7 +48,9 @@ async def run_web_research(
         return WorkflowResult(
             final_report=result.get("final_report"),
             source_count=result.get("source_count", 0),
-            status=result.get("status", "completed" if result.get("final_report") else "failed"),
+            status=result.get(
+                "status", "completed" if result.get("final_report") else "failed"
+            ),
             errors=result.get("errors", []),
         )
     except Exception as e:
@@ -99,7 +101,9 @@ async def run_academic_research(
         return WorkflowResult(
             final_report=result.get("final_report"),
             source_count=result.get("source_count", 0),
-            status=result.get("status", "completed" if result.get("final_report") else "failed"),
+            status=result.get(
+                "status", "completed" if result.get("final_report") else "failed"
+            ),
             errors=result.get("errors", []),
         )
     except Exception as e:
@@ -141,7 +145,9 @@ async def run_book_research(
         return WorkflowResult(
             final_report=result.get("final_report"),
             source_count=result.get("source_count", 0),
-            status=result.get("status", "completed" if result.get("final_report") else "failed"),
+            status=result.get(
+                "status", "completed" if result.get("final_report") else "failed"
+            ),
             errors=result.get("errors", []),
         )
     except Exception as e:

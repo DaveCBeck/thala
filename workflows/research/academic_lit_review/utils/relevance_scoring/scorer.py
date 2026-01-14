@@ -52,9 +52,7 @@ async def score_paper_relevance(
             prompt_name="lit_review_relevance_system",
         )
 
-    authors_str = ", ".join(
-        a.get("name", "") for a in paper.get("authors", [])[:5]
-    )
+    authors_str = ", ".join(a.get("name", "") for a in paper.get("authors", [])[:5])
     if len(paper.get("authors", [])) > 5:
         authors_str += " et al."
 
@@ -76,7 +74,11 @@ async def score_paper_relevance(
             user_prompt=user_prompt,
         )
 
-        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+        content = (
+            response.content
+            if isinstance(response.content, str)
+            else response.content[0].get("text", "")
+        )
         content = content.strip()
 
         if content.startswith("```"):
@@ -92,7 +94,9 @@ async def score_paper_relevance(
         return score, reasoning
 
     except Exception as e:
-        logger.warning(f"Failed to score relevance for {paper.get('title', 'Unknown')}: {e}")
+        logger.warning(
+            f"Failed to score relevance for {paper.get('title', 'Unknown')}: {e}"
+        )
         return 0.5, f"Scoring failed: {e}"
 
 
@@ -135,7 +139,9 @@ async def batch_score_relevance(
 
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def score_with_limit(paper: PaperMetadata) -> tuple[PaperMetadata, float, str]:
+    async def score_with_limit(
+        paper: PaperMetadata,
+    ) -> tuple[PaperMetadata, float, str]:
         async with semaphore:
             score, reasoning = await score_paper_relevance(
                 paper, topic, research_questions, language_config, tier
@@ -237,7 +243,9 @@ async def _batch_score_relevance_batched(
         result = results.get(custom_id)
         if not result or not result.success:
             error_msg = result.error if result else "No result returned"
-            logger.warning(f"Relevance scoring failed for chunk {custom_id}: {error_msg}")
+            logger.warning(
+                f"Relevance scoring failed for chunk {custom_id}: {error_msg}"
+            )
             for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
                 rejected.append(paper)
@@ -282,7 +290,9 @@ async def _batch_score_relevance_batched(
                     )
 
         except Exception as e:
-            logger.warning(f"Failed to parse relevance result for chunk {custom_id}: {e}")
+            logger.warning(
+                f"Failed to parse relevance result for chunk {custom_id}: {e}"
+            )
             for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
                 rejected.append(paper)

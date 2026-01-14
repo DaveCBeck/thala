@@ -9,7 +9,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from workflows.research.web_research.state import DeepResearchState, DraftReport, calculate_completeness
+from workflows.research.web_research.state import (
+    DeepResearchState,
+    DraftReport,
+    calculate_completeness,
+)
 from workflows.research.web_research.prompts import REFINE_DRAFT_SYSTEM, get_today_str
 from workflows.research.web_research.utils import load_prompts_with_translation
 from workflows.shared.llm_utils import ModelTier, get_llm
@@ -25,18 +29,18 @@ def _format_findings_for_draft(findings: list) -> str:
     formatted = []
     for f in findings:
         formatted.append(f"""
-### {f.get('question_id', 'Unknown Question')}
+### {f.get("question_id", "Unknown Question")}
 
-{f.get('finding', 'No finding')}
+{f.get("finding", "No finding")}
 
 **Sources:**
 """)
-        for s in f.get('sources', []):
+        for s in f.get("sources", []):
             formatted.append(f"- [{s.get('title', 'Untitled')}]({s.get('url', '')})")
 
         formatted.append(f"\n**Confidence:** {f.get('confidence', 0):.1f}")
 
-        if f.get('gaps'):
+        if f.get("gaps"):
             formatted.append(f"\n**Gaps:** {', '.join(f['gaps'])}")
 
     return "\n".join(formatted)

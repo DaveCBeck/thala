@@ -20,8 +20,6 @@ from workflows.wrappers.supervised_lit_review.supervision.types import (
     TodoResolution,
 )
 from workflows.wrappers.supervised_lit_review.supervision.prompts import (
-    LOOP4_SECTION_EDITOR_SYSTEM,
-    LOOP4_SECTION_EDITOR_USER,
     LOOP4_HOLISTIC_SYSTEM,
     LOOP4_HOLISTIC_USER,
     get_loop4_editor_prompts,
@@ -169,7 +167,9 @@ def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     else:
         all_sections = split_into_sections(current_review, max_tokens=5000)
         sections = [s for s in all_sections if s["section_id"] in flagged]
-        logger.info(f"Re-editing {len(sections)} flagged sections (iteration {iteration + 1})")
+        logger.info(
+            f"Re-editing {len(sections)} flagged sections (iteration {iteration + 1})"
+        )
 
     _log_section_info("split_sections", sections)
 
@@ -199,8 +199,8 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
             original_word_count = len(section_content.split())
 
             # Get type-aware word count constraints
-            section_category, tolerance, min_words, max_words = get_word_count_constraints(
-                section_type, original_word_count
+            section_category, tolerance, min_words, max_words = (
+                get_word_count_constraints(section_type, original_word_count)
             )
 
             todos = [
@@ -209,7 +209,9 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                 if "<!-- TODO:" in line
             ]
 
-            context_window = get_section_context_window(sections, section_idx, num_surrounding=1)
+            context_window = get_section_context_window(
+                sections, section_idx, num_surrounding=1
+            )
 
             # Get type-specific prompts
             system_prompt, user_prompt_template = get_loop4_editor_prompts(section_type)
@@ -243,7 +245,7 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                     context_window=context_window,
                     section_id=section_id,
                     section_content=section_content,
-                    todos_in_section="\n".join(todos) if todos else "None"
+                    todos_in_section="\n".join(todos) if todos else "None",
                 )
 
                 response = await get_structured_output(
@@ -258,7 +260,11 @@ async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
                 )
 
             # Word count validation - handle both absolute limits (abstracts) and tolerance-based (content)
-            if response.confidence > 0 and min_words is not None and max_words is not None:
+            if (
+                response.confidence > 0
+                and min_words is not None
+                and max_words is not None
+            ):
                 # Absolute word count limits (abstracts)
                 edited_word_count = len(response.edited_content.split())
                 is_within_limit = min_words <= edited_word_count <= max_words
@@ -298,11 +304,15 @@ Return a revised abstract within [{min_words}, {max_words}] words.
                     grace_max = int(max_words * 1.1)  # 10% grace (330 words)
 
                     if min_words <= retry_word_count <= max_words:
-                        logger.debug(f"Abstract '{section_id}': Retry succeeded ({retry_word_count} words)")
+                        logger.debug(
+                            f"Abstract '{section_id}': Retry succeeded ({retry_word_count} words)"
+                        )
                         response = retry_response
                     elif retry_word_count <= grace_max:
                         # Accept within 10% grace
-                        logger.debug(f"Abstract '{section_id}': Accepting at grace limit ({retry_word_count} words)")
+                        logger.debug(
+                            f"Abstract '{section_id}': Accepting at grace limit ({retry_word_count} words)"
+                        )
                         response = SectionEditResult(
                             section_id=section_id,
                             edited_content=retry_response.edited_content,
@@ -336,25 +346,29 @@ Return a revised abstract within [{min_words}, {max_words}] words.
                 if not is_within_limit:
                     logger.debug(
                         f"Section '{section_id}' ({section_category}): word count {growth:+.1%} exceeds "
-                        f"+/-{tolerance*100:.0f}%, retrying with compression"
+                        f"+/-{tolerance * 100:.0f}%, retrying with compression"
                     )
 
                     edited_word_count = len(response.edited_content.split())
                     min_allowed = int(original_word_count * (1 - tolerance))
                     max_allowed = int(original_word_count * (1 + tolerance))
                     is_over = growth > 0
-                    delta_needed = edited_word_count - max_allowed if is_over else min_allowed - edited_word_count
+                    delta_needed = (
+                        edited_word_count - max_allowed
+                        if is_over
+                        else min_allowed - edited_word_count
+                    )
 
-                    retry_prompt = f"""Your previous edit {'exceeded' if is_over else 'fell short of'} the word count limit.
+                    retry_prompt = f"""Your previous edit {"exceeded" if is_over else "fell short of"} the word count limit.
 
 ## STRICT REQUIREMENTS
 - Original: {original_word_count} words
 - Your edit: {edited_word_count} words
 - Allowed range: {min_allowed} to {max_allowed} words
-- Delta needed: {'reduce by ' + str(delta_needed) if is_over else 'add ' + str(delta_needed)} words
+- Delta needed: {"reduce by " + str(delta_needed) if is_over else "add " + str(delta_needed)} words
 
 ## STRATEGY
-{'COMPRESS: Remove redundant phrases, combine sentences, cut tangential details. Every sentence must earn its place.' if is_over else 'EXPAND: Add clarifying context, examples, or smooth transitions. Flesh out thin arguments.'}
+{"COMPRESS: Remove redundant phrases, combine sentences, cut tangential details. Every sentence must earn its place." if is_over else "EXPAND: Add clarifying context, examples, or smooth transitions. Flesh out thin arguments."}
 
 Return your revised edit within [{min_allowed}, {max_allowed}] words.
 If you cannot improve meaningfully within limits, return the original section unchanged.
@@ -362,7 +376,7 @@ If you cannot improve meaningfully within limits, return the original section un
 ## Original Section
 {section_content}
 
-## Your Previous Edit ({'too long' if is_over else 'too short'})
+## Your Previous Edit ({"too long" if is_over else "too short"})
 {response.edited_content}"""
 
                     retry_response = await get_structured_output(
@@ -375,28 +389,35 @@ If you cannot improve meaningfully within limits, return the original section un
 
                     # Check word count limits for retry
                     is_retry_within_limit, retry_growth = check_section_growth(
-                        section_content, retry_response.edited_content, tolerance=tolerance
+                        section_content,
+                        retry_response.edited_content,
+                        tolerance=tolerance,
                     )
 
                     if is_retry_within_limit:
-                        logger.debug(f"Section '{section_id}': Retry succeeded ({retry_growth:+.1%})")
+                        logger.debug(
+                            f"Section '{section_id}': Retry succeeded ({retry_growth:+.1%})"
+                        )
                         response = retry_response
                     else:
                         # Check if retry is "close enough" (within extended tolerance)
-                        extended_tolerance = tolerance + 0.05  # e.g., 20% -> 25%, 30% -> 35%
+                        extended_tolerance = (
+                            tolerance + 0.05
+                        )  # e.g., 20% -> 25%, 30% -> 35%
                         is_close_enough = abs(retry_growth) <= extended_tolerance
 
                         if is_close_enough:
                             logger.debug(
                                 f"Section '{section_id}': Accepting retry at {retry_growth:+.1%} "
-                                f"(within extended {extended_tolerance*100:.0f}% tolerance)"
+                                f"(within extended {extended_tolerance * 100:.0f}% tolerance)"
                             )
                             response = SectionEditResult(
                                 section_id=section_id,
                                 edited_content=retry_response.edited_content,
                                 notes=f"{retry_response.notes} [Accepted at extended tolerance: {retry_growth:+.1%}]",
                                 new_paper_todos=retry_response.new_paper_todos,
-                                confidence=retry_response.confidence * 0.85,  # Slight penalty
+                                confidence=retry_response.confidence
+                                * 0.85,  # Slight penalty
                             )
                         else:
                             logger.warning(
@@ -405,7 +426,7 @@ If you cannot improve meaningfully within limits, return the original section un
                             response = SectionEditResult(
                                 section_id=section_id,
                                 edited_content=section_content,
-                                notes=f"Edit rejected after retry: word count {retry_growth:+.1%} exceeds extended +/-{extended_tolerance*100:.0f}%",
+                                notes=f"Edit rejected after retry: word count {retry_growth:+.1%} exceeds extended +/-{extended_tolerance * 100:.0f}%",
                                 new_paper_todos=response.new_paper_todos,
                                 confidence=0.0,
                             )
@@ -453,7 +474,8 @@ If you cannot improve meaningfully within limits, return the original section un
 def extract_todo_markers(content: str) -> list[str]:
     """Extract all TODO markers from content."""
     import re
-    pattern = r'<!-- TODO:.*?-->'
+
+    pattern = r"<!-- TODO:.*?-->"
     return re.findall(pattern, content, re.DOTALL)
 
 
@@ -480,7 +502,9 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.debug("No TODO markers found in edited sections")
         return {"section_results": section_results}
 
-    logger.info(f"Resolving {total_todos} TODO markers across {len(section_results)} sections")
+    logger.info(
+        f"Resolving {total_todos} TODO markers across {len(section_results)} sections"
+    )
 
     # Setup tools
     store_query = SupervisionStoreQuery()
@@ -524,7 +548,9 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
                 )
 
                 if resolution.resolved and resolution.replacement:
-                    resolved_content = resolved_content.replace(todo, resolution.replacement)
+                    resolved_content = resolved_content.replace(
+                        todo, resolution.replacement
+                    )
                     resolved_count += 1
                     logger.debug(f"Resolved TODO in '{section_id}': {todo[:60]}...")
                 else:
@@ -544,7 +570,8 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Clean up any extra whitespace from removed TODOs
         import re
-        resolved_content = re.sub(r'\n{3,}', '\n\n', resolved_content)
+
+        resolved_content = re.sub(r"\n{3,}", "\n\n", resolved_content)
 
         updated_results[section_id] = SectionEditResult(
             section_id=section_id,
@@ -554,7 +581,9 @@ async def resolve_todos_node(state: dict[str, Any]) -> dict[str, Any]:
             confidence=result.confidence,
         )
 
-    logger.info(f"TODO resolution complete: {resolved_count} resolved, {unresolved_count} removed")
+    logger.info(
+        f"TODO resolution complete: {resolved_count} resolved, {unresolved_count} removed"
+    )
 
     return {"section_results": updated_results}
 
@@ -568,19 +597,19 @@ def detect_duplicate_abstracts(document: str) -> list[tuple[int, int, float]]:
     from difflib import SequenceMatcher
 
     # Split by major headers (# or ##)
-    sections = re.split(r'^#{1,2}\s+', document, flags=re.MULTILINE)
+    sections = re.split(r"^#{1,2}\s+", document, flags=re.MULTILINE)
     abstracts = []
 
     for i, section in enumerate(sections[:5]):  # Check first 5 sections
-        paragraphs = section.strip().split('\n\n')[:3]  # First 3 paragraphs
+        paragraphs = section.strip().split("\n\n")[:3]  # First 3 paragraphs
         if paragraphs:
-            combined = ' '.join(paragraphs)[:1000]
+            combined = " ".join(paragraphs)[:1000]
             if len(combined) > 100:  # Only check substantial content
                 abstracts.append((i, combined))
 
     duplicates = []
     for i, (idx1, text1) in enumerate(abstracts):
-        for idx2, text2 in abstracts[i + 1:]:
+        for idx2, text2 in abstracts[i + 1 :]:
             ratio = SequenceMatcher(None, text1, text2).ratio()
             if ratio > 0.75:  # 75% similarity threshold
                 duplicates.append((idx1, idx2, ratio))
@@ -600,7 +629,9 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
 
     duplicates = detect_duplicate_sections(sections)
     if duplicates:
-        logger.debug(f"Detected {len(duplicates)} duplicate section pairs: {duplicates}")
+        logger.debug(
+            f"Detected {len(duplicates)} duplicate section pairs: {duplicates}"
+        )
         section_results = merge_duplicate_edits(section_results, duplicates)
         logger.debug(f"After merge, section results: {list(section_results.keys())}")
 
@@ -619,7 +650,7 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
         sorted_sections = sorted(
             [s for s in sections if s["section_id"] in section_results],
             key=lambda s: s["start_line"],
-            reverse=True
+            reverse=True,
         )
 
         for section in sorted_sections:
@@ -633,20 +664,24 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
                 f"with {len(edited_lines)} lines"
             )
 
-            lines = lines[:start_line] + edited_lines + lines[end_line + 1:]
+            lines = lines[:start_line] + edited_lines + lines[end_line + 1 :]
 
         updated_review = "\n".join(lines)
 
     # Enhanced duplicate detection and removal after reassembly
     duplicate_headers = detect_duplicate_headers(updated_review)
     if duplicate_headers:
-        logger.info(f"Found {len(duplicate_headers)} duplicate headers during reassembly, cleaning up")
+        logger.info(
+            f"Found {len(duplicate_headers)} duplicate headers during reassembly, cleaning up"
+        )
         updated_review = remove_duplicate_headers(updated_review, duplicate_headers)
 
     duplicate_abstracts = detect_duplicate_abstracts(updated_review)
     if duplicate_abstracts:
         for idx1, idx2, similarity in duplicate_abstracts:
-            logger.warning(f"Duplicate abstract content in sections {idx1}, {idx2} (similarity: {similarity:.2f})")
+            logger.warning(
+                f"Duplicate abstract content in sections {idx1}, {idx2} (similarity: {similarity:.2f})"
+            )
 
     has_duplicates = bool(duplicate_headers or duplicate_abstracts)
 
@@ -695,10 +730,16 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
         valid_ids_json=valid_ids_json,
     )
 
-    def _filter_and_validate(raw_result: HolisticReviewResult) -> Optional[HolisticReviewResult]:
+    def _filter_and_validate(
+        raw_result: HolisticReviewResult,
+    ) -> Optional[HolisticReviewResult]:
         """Filter invalid IDs and return None if both lists end up empty."""
-        approved_valid = [sid for sid in raw_result.sections_approved if sid in valid_ids_set]
-        flagged_valid = [sid for sid in raw_result.sections_flagged if sid in valid_ids_set]
+        approved_valid = [
+            sid for sid in raw_result.sections_approved if sid in valid_ids_set
+        ]
+        flagged_valid = [
+            sid for sid in raw_result.sections_flagged if sid in valid_ids_set
+        ]
 
         invalid_approved = set(raw_result.sections_approved) - valid_ids_set
         invalid_flagged = set(raw_result.sections_flagged) - valid_ids_set
@@ -714,7 +755,11 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
         return HolisticReviewResult(
             sections_approved=approved_valid,
             sections_flagged=flagged_valid,
-            flagged_reasons={k: v for k, v in raw_result.flagged_reasons.items() if k in valid_ids_set},
+            flagged_reasons={
+                k: v
+                for k, v in raw_result.flagged_reasons.items()
+                if k in valid_ids_set
+            },
             overall_coherence_score=raw_result.overall_coherence_score,
         )
 
@@ -828,7 +873,9 @@ Do not paraphrase, abbreviate, or modify them in any way.
                 flagged_reasons={},
                 overall_coherence_score=0.5,
             )
-            logger.warning(f"All holistic review attempts failed, approving all {len(section_ids)} sections")
+            logger.warning(
+                f"All holistic review attempts failed, approving all {len(section_ids)} sections"
+            )
 
     logger.info(
         f"Holistic review complete: {len(result.sections_approved)} approved, "
@@ -866,7 +913,9 @@ def route_after_holistic(state: dict[str, Any]) -> str:
         )
 
     if has_flagged and can_continue:
-        logger.debug(f"Continuing to re-edit {len(holistic.sections_flagged)} flagged sections")
+        logger.debug(
+            f"Continuing to re-edit {len(holistic.sections_flagged)} flagged sections"
+        )
         return "split_sections"
     else:
         if not has_flagged:
@@ -890,7 +939,9 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
 
         remaining_duplicates = detect_duplicate_headers(document)
         if remaining_duplicates:
-            logger.warning(f"Still have {len(remaining_duplicates)} duplicate headers after cleanup")
+            logger.warning(
+                f"Still have {len(remaining_duplicates)} duplicate headers after cleanup"
+            )
     else:
         logger.debug("No duplicate headers detected")
 
@@ -922,7 +973,7 @@ def create_loop4_graph() -> StateGraph:
         {
             "split_sections": "split_sections",
             "finalize": "finalize",
-        }
+        },
     )
 
     builder.add_edge("finalize", END)
@@ -986,7 +1037,9 @@ async def run_loop4_standalone(
         coherence = holistic_result.overall_coherence_score
         changes_summary = f"Edited {sections_edited} sections over {iterations_used} iterations (coherence: {coherence:.2f})"
     else:
-        changes_summary = f"Edited {sections_edited} sections over {iterations_used} iterations"
+        changes_summary = (
+            f"Edited {sections_edited} sections over {iterations_used} iterations"
+        )
 
     # Save state for analysis (dev mode only)
     save_workflow_state(
@@ -1004,7 +1057,9 @@ async def run_loop4_standalone(
                 "sections_edited": sections_edited,
             },
             "final_state": {
-                "holistic_result": holistic_result.__dict__ if holistic_result else None,
+                "holistic_result": holistic_result.__dict__
+                if holistic_result
+                else None,
             },
         },
     )

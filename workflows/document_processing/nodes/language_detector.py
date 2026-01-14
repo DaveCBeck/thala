@@ -35,7 +35,9 @@ async def detect_document_language(state: DocumentProcessingState) -> dict[str, 
             return {
                 "original_language": "en",  # Default to English
                 "original_language_confidence": 0.0,
-                "errors": [{"node": "language_detector", "error": "No processing result"}],
+                "errors": [
+                    {"node": "language_detector", "error": "No processing result"}
+                ],
             }
 
         markdown = processing_result["markdown"]
@@ -53,7 +55,9 @@ async def detect_document_language(state: DocumentProcessingState) -> dict[str, 
                 "original_language_confidence": 0.0,
             }
 
-        logger.info(f"Detected language: {detected_lang} (confidence: {confidence:.2f})")
+        logger.info(
+            f"Detected language: {detected_lang} (confidence: {confidence:.2f})"
+        )
 
         # Update L0 record with detected language
         store_records = state.get("store_records", [])
@@ -65,7 +69,9 @@ async def detect_document_language(state: DocumentProcessingState) -> dict[str, 
                 {"language_code": detected_lang},
                 compression_level=0,
             )
-            logger.debug(f"Updated L0 record {record_id} with language_code={detected_lang}")
+            logger.debug(
+                f"Updated L0 record {record_id} with language_code={detected_lang}"
+            )
 
         return {
             "original_language": detected_lang,

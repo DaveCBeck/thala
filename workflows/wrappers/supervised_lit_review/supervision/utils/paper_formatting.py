@@ -7,7 +7,7 @@ Provides enhanced formatting that uses the best available data:
 4. Metadata fallback
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from workflows.research.academic_lit_review.state import PaperSummary
 
@@ -38,7 +38,9 @@ def format_paper_summary_enhanced(
         Formatted paper summary string
     """
     zotero_key = summary.get("zotero_key", doi.replace("/", "_")[:8])
-    lines = [f"[@{zotero_key}] {summary.get('title', 'Untitled')} ({summary.get('year', 'N/A')})"]
+    lines = [
+        f"[@{zotero_key}] {summary.get('title', 'Untitled')} ({summary.get('year', 'N/A')})"
+    ]
 
     # Authors
     authors = summary.get("authors", [])
@@ -147,7 +149,9 @@ def format_paper_summaries_with_budget(
         formatted = format_paper_summary_enhanced(doi, summary)
         if total_chars + len(formatted) > max_total_chars:
             # Add summary note about omitted papers
-            remaining = len(paper_summaries) - len(processed_dois) - len(formatted_papers)
+            remaining = (
+                len(paper_summaries) - len(processed_dois) - len(formatted_papers)
+            )
             if remaining > 0:
                 formatted_papers.append(
                     f"\n[{remaining} additional papers available but omitted due to context limits]"

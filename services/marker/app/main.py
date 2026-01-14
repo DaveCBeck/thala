@@ -187,25 +187,29 @@ async def list_jobs(limit: int = 100, offset: int = 0) -> dict[str, Any]:
 
     active = inspect.active() or {}
     reserved = inspect.reserved() or {}
-    scheduled = inspect.scheduled() or {}
+    _scheduled = inspect.scheduled() or {}  # noqa: F841 - kept for future use
 
     all_tasks = []
 
     for worker, tasks in active.items():
         for task in tasks:
-            all_tasks.append({
-                "job_id": task["id"],
-                "status": "processing",
-                "worker": worker,
-            })
+            all_tasks.append(
+                {
+                    "job_id": task["id"],
+                    "status": "processing",
+                    "worker": worker,
+                }
+            )
 
     for worker, tasks in reserved.items():
         for task in tasks:
-            all_tasks.append({
-                "job_id": task["id"],
-                "status": "pending",
-                "worker": worker,
-            })
+            all_tasks.append(
+                {
+                    "job_id": task["id"],
+                    "status": "pending",
+                    "worker": worker,
+                }
+            )
 
     return {
         "jobs": all_tasks[offset : offset + limit],

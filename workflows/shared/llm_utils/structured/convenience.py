@@ -48,7 +48,9 @@ async def get_structured_output_with_result(
             config=effective_config,
         )
 
-    return await with_retries(_invoke, effective_config, output_schema, selected_strategy)
+    return await with_retries(
+        _invoke, effective_config, output_schema, selected_strategy
+    )
 
 
 async def extract_from_text(

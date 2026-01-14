@@ -48,7 +48,9 @@ async def openalex_search(
     Returns:
         Academic works with titles, abstracts, authors, citations, and DOIs.
     """
-    cache_key = f"search:{query}:{limit}:{min_citations}:{from_year}:{to_year}:{language}"
+    cache_key = (
+        f"search:{query}:{limit}:{min_citations}:{from_year}:{to_year}:{language}"
+    )
 
     cached = get_cached(CACHE_TYPE, cache_key, ttl_days=CACHE_TTL_DAYS)
     if cached:

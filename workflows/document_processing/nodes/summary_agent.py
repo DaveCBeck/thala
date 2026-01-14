@@ -58,7 +58,9 @@ async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.info("Document is long, using first and last 10 pages for summary")
             first_pages = get_first_n_pages(markdown, 10)
             last_pages = get_last_n_pages(markdown, 10)
-            content = f"{first_pages}\n\n[... middle section omitted ...]\n\n{last_pages}"
+            content = (
+                f"{first_pages}\n\n[... middle section omitted ...]\n\n{last_pages}"
+            )
         else:
             content = markdown
 
@@ -103,7 +105,9 @@ Text:
         if original_language != "en":
             english_summary = await _translate_to_english(original_summary)
             result["short_summary_english"] = english_summary.strip()
-            logger.info(f"Generated English translation ({len(english_summary.split())} words)")
+            logger.info(
+                f"Generated English translation ({len(english_summary.split())} words)"
+            )
 
         return result
 

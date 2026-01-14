@@ -5,7 +5,7 @@ the review's perspective beyond the initial corpus.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
@@ -65,17 +65,21 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
     """Analyze review to identify missing literature base."""
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
-    logger.info(f"Loop 2 iteration {iteration + 1}/{max_iterations}: Analyzing for missing literature bases")
+    logger.info(
+        f"Loop 2 iteration {iteration + 1}/{max_iterations}: Analyzing for missing literature bases"
+    )
 
     input_data = state["input"]
-    explored_bases_text = "\n".join(
-        f"- {base}" for base in state.get("explored_bases", [])
-    ) or "None yet"
+    explored_bases_text = (
+        "\n".join(f"- {base}" for base in state.get("explored_bases", [])) or "None yet"
+    )
 
     user_prompt = LOOP2_ANALYZER_USER.format(
         review=state["current_review"],
         topic=input_data["topic"],
-        research_questions="\n".join(f"- {q}" for q in input_data["research_questions"]),
+        research_questions="\n".join(
+            f"- {q}" for q in input_data["research_questions"]
+        ),
         explored_bases=explored_bases_text,
         iteration=iteration + 1,
         max_iterations=max_iterations,
@@ -107,14 +111,17 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
                 "literature_base": None,
                 "reasoning": f"Analysis failed: {e}",
             },
-            "errors": errors + [{
-                "loop_number": 2,
-                "iteration": iteration,
-                "node_name": "analyze_for_bases",
-                "error_type": "analysis_error",
-                "error_message": str(e),
-                "recoverable": True,
-            }],
+            "errors": errors
+            + [
+                {
+                    "loop_number": 2,
+                    "iteration": iteration,
+                    "node_name": "analyze_for_bases",
+                    "error_type": "analysis_error",
+                    "error_message": str(e),
+                    "recoverable": True,
+                }
+            ],
         }
 
 
@@ -127,28 +134,36 @@ async def run_mini_review_node(state: Loop2State) -> dict:
         logger.warning("Mini-review node called without decision")
         return {
             "mini_review_failed": True,
-            "errors": errors + [{
-                "loop_number": 2,
-                "iteration": state.get("iteration", 0),
-                "node_name": "run_mini_review",
-                "error_type": "validation_error",
-                "error_message": "No decision provided",
-                "recoverable": False,
-            }],
+            "errors": errors
+            + [
+                {
+                    "loop_number": 2,
+                    "iteration": state.get("iteration", 0),
+                    "node_name": "run_mini_review",
+                    "error_type": "validation_error",
+                    "error_message": "No decision provided",
+                    "recoverable": False,
+                }
+            ],
         }
 
     if decision["action"] != "expand_base":
-        logger.warning(f"Mini-review node called with invalid action: {decision['action']}")
+        logger.warning(
+            f"Mini-review node called with invalid action: {decision['action']}"
+        )
         return {
             "mini_review_failed": True,
-            "errors": errors + [{
-                "loop_number": 2,
-                "iteration": state.get("iteration", 0),
-                "node_name": "run_mini_review",
-                "error_type": "validation_error",
-                "error_message": f"Expected expand_base action, got: {decision['action']}",
-                "recoverable": False,
-            }],
+            "errors": errors
+            + [
+                {
+                    "loop_number": 2,
+                    "iteration": state.get("iteration", 0),
+                    "node_name": "run_mini_review",
+                    "error_type": "validation_error",
+                    "error_message": f"Expected expand_base action, got: {decision['action']}",
+                    "recoverable": False,
+                }
+            ],
         }
 
     literature_base = LiteratureBase(**decision["literature_base"])
@@ -199,14 +214,17 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         if not decision or not decision.get("literature_base"):
             logger.error("Integration node called without valid decision")
             return {
-                "errors": errors + [{
-                    "loop_number": 2,
-                    "iteration": iteration,
-                    "node_name": "integrate_findings",
-                    "error_type": "validation_error",
-                    "error_message": "No valid decision with literature_base",
-                    "recoverable": False,
-                }],
+                "errors": errors
+                + [
+                    {
+                        "loop_number": 2,
+                        "iteration": iteration,
+                        "node_name": "integrate_findings",
+                        "error_type": "validation_error",
+                        "error_message": "No valid decision with literature_base",
+                        "recoverable": False,
+                    }
+                ],
                 "iterations_failed": iterations_failed + 1,
                 "integration_failed": True,
             }
@@ -222,17 +240,22 @@ async def integrate_findings_node(state: Loop2State) -> dict:
 
         # Validate mini-review before consuming iteration
         if not mini_review_text or len(mini_review_text.strip()) < 100:
-            logger.warning(f"Mini-review too short for base '{literature_base.name}' ({len(mini_review_text.strip())} chars)")
+            logger.warning(
+                f"Mini-review too short for base '{literature_base.name}' ({len(mini_review_text.strip())} chars)"
+            )
             return {
                 # DON'T increment iteration on failure
-                "errors": errors + [{
-                    "loop_number": 2,
-                    "iteration": iteration,
-                    "node_name": "integrate_findings",
-                    "error_type": "validation_error",
-                    "error_message": f"Mini-review failed or too short ({len(mini_review_text.strip()) if mini_review_text else 0} chars)",
-                    "recoverable": True,
-                }],
+                "errors": errors
+                + [
+                    {
+                        "loop_number": 2,
+                        "iteration": iteration,
+                        "node_name": "integrate_findings",
+                        "error_type": "validation_error",
+                        "error_message": f"Mini-review failed or too short ({len(mini_review_text.strip()) if mini_review_text else 0} chars)",
+                        "recoverable": True,
+                    }
+                ],
                 "iterations_failed": iterations_failed + 1,
                 "integration_failed": True,
             }
@@ -252,10 +275,12 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         )
 
         llm = get_llm(ModelTier.OPUS, max_tokens=16384)
-        response = await llm.ainvoke([
-            {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ])
+        response = await llm.ainvoke(
+            [
+                {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
 
         updated_review = response.content
 
@@ -289,14 +314,17 @@ async def integrate_findings_node(state: Loop2State) -> dict:
     except Exception as e:
         logger.error(f"Integration failed: {e}")
         return {
-            "errors": errors + [{
-                "loop_number": 2,
-                "iteration": iteration,
-                "node_name": "integrate_findings",
-                "error_type": "integration_error",
-                "error_message": str(e),
-                "recoverable": True,
-            }],
+            "errors": errors
+            + [
+                {
+                    "loop_number": 2,
+                    "iteration": iteration,
+                    "node_name": "integrate_findings",
+                    "error_type": "integration_error",
+                    "error_message": str(e),
+                    "recoverable": True,
+                }
+            ],
             "iterations_failed": iterations_failed + 1,
             "integration_failed": True,
         }

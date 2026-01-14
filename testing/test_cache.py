@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from pathlib import Path
 
 from core.config import configure_logging
 from workflows.shared.persistent_cache import (
@@ -36,7 +35,9 @@ async def test_openalex_cache():
     if work2:
         logger.info(f"Retrieved: {work2.title[:60]}...")
 
-    logger.info(f"Results match: {work1.title == work2.title if work1 and work2 else False}")
+    logger.info(
+        f"Results match: {work1.title == work2.title if work1 and work2 else False}"
+    )
 
 
 def test_manual_cache():
@@ -67,9 +68,7 @@ async def test_cache_stats():
     stats = get_cache_stats()
 
     for cache_type, info in stats.items():
-        logger.info(
-            f"{cache_type}: {info['files']} files, {info['size_mb']:.2f} MB"
-        )
+        logger.info(f"{cache_type}: {info['files']} files, {info['size_mb']:.2f} MB")
 
 
 async def main():

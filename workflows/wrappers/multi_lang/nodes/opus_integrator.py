@@ -64,7 +64,9 @@ async def _create_initial_synthesis(
     )
 
     # Use full_report to preserve citation keys like [@ABC123]
-    english_findings = english_result.get("full_report") or english_result["findings_summary"]
+    english_findings = (
+        english_result.get("full_report") or english_result["findings_summary"]
+    )
     user_prompt = INITIAL_SYNTHESIS_USER.format(
         topic=topic,
         research_questions=questions_formatted,
@@ -97,7 +99,9 @@ async def _integrate_language(
 
     system_prompt = INTEGRATION_SYSTEM.format(language_name=language_name)
     # Use full_report to preserve citation keys like [@ABC123]
-    language_findings = language_result.get("full_report") or language_result["findings_summary"]
+    language_findings = (
+        language_result.get("full_report") or language_result["findings_summary"]
+    )
     user_prompt = INTEGRATION_USER.format(
         current_document=current_document,
         language_name=language_name,
@@ -195,9 +199,7 @@ async def run_opus_integration(state: MultiLangState) -> dict:
         integration_priority = []
         if sonnet_analysis and sonnet_analysis.get("integration_priority"):
             integration_priority = [
-                code
-                for code in sonnet_analysis["integration_priority"]
-                if code != "en"
+                code for code in sonnet_analysis["integration_priority"] if code != "en"
             ]
 
         # Build language code -> result mapping
@@ -256,7 +258,9 @@ async def run_opus_integration(state: MultiLangState) -> dict:
             current_document, languages_integrated, workflows_used, integration_steps
         )
 
-        logger.info(f"Integration complete: {len(languages_integrated)} languages integrated")
+        logger.info(
+            f"Integration complete: {len(languages_integrated)} languages integrated"
+        )
 
         return {
             "integration_steps": integration_steps,

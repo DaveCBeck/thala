@@ -174,7 +174,10 @@ async def search_doi_by_title(
 
             # Check if one contains the other or high overlap
             shorter, longer = sorted([title_norm, match_norm], key=len)
-            if shorter in longer or len(set(shorter) & set(longer)) / len(shorter) > 0.8:
+            if (
+                shorter in longer
+                or len(set(shorter) & set(longer)) / len(shorter) > 0.8
+            ):
                 logger.debug(f"Found DOI via title search: {match_doi}")
                 return match_doi
 
@@ -185,14 +188,15 @@ async def search_doi_by_title(
                     for a in best_match.get("authorships", [])
                 ]
                 author_match = any(
-                    any(auth.lower() in ma for ma in match_authors)
-                    for auth in authors
+                    any(auth.lower() in ma for ma in match_authors) for auth in authors
                 )
                 if author_match:
                     logger.debug(f"Found DOI via title+author search: {match_doi}")
                     return match_doi
 
-            logger.debug(f"Title match too weak: '{title[:30]}' vs '{match_title[:30]}'")
+            logger.debug(
+                f"Title match too weak: '{title[:30]}' vs '{match_title[:30]}'"
+            )
             return None
 
         except httpx.TimeoutException:

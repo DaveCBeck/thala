@@ -175,7 +175,9 @@ async def process_documents_batch(
                 extra_metadata=doc_config.get("extra_metadata"),
             )
 
-    logger.info(f"Starting batch processing of {len(documents)} documents (concurrency: {concurrency})")
+    logger.info(
+        f"Starting batch processing of {len(documents)} documents (concurrency: {concurrency})"
+    )
 
     tasks = [process_with_limit(doc) for doc in documents]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -184,11 +186,13 @@ async def process_documents_batch(
     for i, (doc, result) in enumerate(zip(documents, results)):
         if isinstance(result, Exception):
             logger.warning(f"Document failed: {result}")
-            processed_results.append({
-                "input": doc,
-                "current_status": "failed",
-                "errors": [{"node": "batch_processor", "error": str(result)}],
-            })
+            processed_results.append(
+                {
+                    "input": doc,
+                    "current_status": "failed",
+                    "errors": [{"node": "batch_processor", "error": str(result)}],
+                }
+            )
         else:
             processed_results.append(result)
 

@@ -57,7 +57,9 @@ class BaseAsyncHttpClient(AsyncContextManager):
             self.base_url = base_url
         else:
             self.host = host or os.environ.get(host_env_var or "", host_default)
-            self.port = port or int(os.environ.get(port_env_var or "", str(port_default)))
+            self.port = port or int(
+                os.environ.get(port_env_var or "", str(port_default))
+            )
             self.base_url = f"http://{self.host}:{self.port}"
 
         self.timeout = timeout

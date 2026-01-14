@@ -110,7 +110,9 @@ def prune_message_history(
 
     pruned_count = len(messages) - len(preserved) - len(recent)
     if pruned_count > 0:
-        logger.debug(f"Pruned {pruned_count} messages from history (kept {len(kept_exchanges)} exchanges)")
+        logger.debug(
+            f"Pruned {pruned_count} messages from history (kept {len(kept_exchanges)} exchanges)"
+        )
 
     return preserved + recent
 
@@ -273,7 +275,9 @@ async def run_tool_agent(
 
         if not tool_calls:
             # No tool calls - remind LLM to use submit_result
-            logger.warning("Agent returned without tool calls, prompting for submit_result")
+            logger.warning(
+                "Agent returned without tool calls, prompting for submit_result"
+            )
             working_messages.append(
                 HumanMessage(
                     content="You must call the submit_result tool to provide your final output."
@@ -303,7 +307,9 @@ async def run_tool_agent(
                     # Add error and continue
                     working_messages.append(
                         ToolMessage(
-                            content=json.dumps({"error": f"Invalid output: {e}. Please try again."}),
+                            content=json.dumps(
+                                {"error": f"Invalid output: {e}. Please try again."}
+                            ),
                             tool_call_id=tool_id,
                             name=tool_name,
                         )
@@ -355,7 +361,9 @@ async def run_tool_agent(
 
     for attempt in range(MAX_RETRIES):
         try:
-            structured_llm = llm.with_structured_output(output_schema, method="json_schema")
+            structured_llm = llm.with_structured_output(
+                output_schema, method="json_schema"
+            )
             final_response = await structured_llm.ainvoke(working_messages)
             return final_response
         except Exception as e:

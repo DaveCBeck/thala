@@ -17,6 +17,5 @@ async def run_with_concurrency(
             return await coro
 
     return await asyncio.gather(
-        *[limited(t) for t in tasks],
-        return_exceptions=return_exceptions
+        *[limited(t) for t in tasks], return_exceptions=return_exceptions
     )

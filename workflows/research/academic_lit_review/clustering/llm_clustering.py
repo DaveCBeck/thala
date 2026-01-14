@@ -46,12 +46,15 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
 
     # Format all summaries for the prompt
     summaries_text = "\n\n---\n\n".join(
-        format_paper_for_llm(doi, summary)
-        for doi, summary in paper_summaries.items()
+        format_paper_for_llm(doi, summary) for doi, summary in paper_summaries.items()
     )
 
     # Format research questions
-    rq_text = "\n".join(f"- {q}" for q in research_questions) if research_questions else "None specified"
+    rq_text = (
+        "\n".join(f"- {q}" for q in research_questions)
+        if research_questions
+        else "None specified"
+    )
 
     # Translate user prompt template if needed
     user_template = LLM_CLUSTERING_USER_TEMPLATE
@@ -102,9 +105,7 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
             f"from {len(paper_summaries)} papers"
         )
         for t in themes[:5]:
-            logger.debug(
-                f"Theme '{t['name']}': {len(t['paper_dois'])} papers"
-            )
+            logger.debug(f"Theme '{t['name']}': {len(t['paper_dois'])} papers")
 
         return {
             "llm_topic_schema": llm_schema,

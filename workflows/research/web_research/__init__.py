@@ -15,7 +15,10 @@ import logging
 
 from workflows.research.web_research.graph import deep_research
 from workflows.research.web_research.state import DeepResearchState
-from workflows.research.web_research.graph.config import QUALITY_PRESETS, WebResearchQualitySettings
+from workflows.research.web_research.graph.config import (
+    QUALITY_PRESETS,
+    WebResearchQualitySettings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,4 +38,5 @@ async def cleanup_research_resources() -> None:
     that were lazily initialized during the workflow.
     """
     from core.utils.async_http_client import cleanup_all_clients
+
     await cleanup_all_clients()

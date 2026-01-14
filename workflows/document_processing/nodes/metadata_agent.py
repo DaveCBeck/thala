@@ -18,15 +18,20 @@ logger = logging.getLogger(__name__)
 
 class DocumentMetadata(BaseModel):
     """Extracted document metadata."""
+
     title: Optional[str] = Field(default=None, description="Full document title")
     authors: list[str] = Field(default_factory=list, description="List of author names")
-    date: Optional[str] = Field(default=None, description="Publication date (any format)")
+    date: Optional[str] = Field(
+        default=None, description="Publication date (any format)"
+    )
     publisher: Optional[str] = Field(default=None, description="Publisher name")
     isbn: Optional[str] = Field(default=None, description="ISBN if present")
-    is_multi_author: bool = Field(default=False, description="True if multi-author edited volume")
+    is_multi_author: bool = Field(
+        default=False, description="True if multi-author edited volume"
+    )
     chapter_authors: dict[str, str] = Field(
         default_factory=dict,
-        description="Mapping of chapter titles to author names (for multi-author books)"
+        description="Mapping of chapter titles to author names (for multi-author books)",
     )
 
 
@@ -81,7 +86,9 @@ async def check_metadata(state: DocumentProcessingState) -> dict[str, Any]:
         logger.info(f"Extracted metadata: {list(metadata.keys())}")
 
         # Clean up metadata - remove null values and empty defaults
-        cleaned = {k: v for k, v in metadata.items() if v is not None and v != [] and v != {}}
+        cleaned = {
+            k: v for k, v in metadata.items() if v is not None and v != [] and v != {}
+        }
 
         # Don't update current_status here - parallel nodes would conflict
         return {

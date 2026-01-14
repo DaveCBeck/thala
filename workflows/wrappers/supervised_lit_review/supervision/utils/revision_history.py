@@ -32,15 +32,24 @@ async def document_revision(
 
     diff = list(difflib.unified_diff(before_lines, after_lines, lineterm=""))
 
-    lines_added = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
-    lines_removed = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
+    lines_added = sum(
+        1 for line in diff if line.startswith("+") and not line.startswith("+++")
+    )
+    lines_removed = sum(
+        1 for line in diff if line.startswith("-") and not line.startswith("---")
+    )
 
     # Identify changed sections (look for markdown headers)
     changed_sections = _identify_changed_sections(before_text, after_text)
 
     # Generate summary using Haiku (async)
     summary = await _generate_change_summary(
-        before_text, after_text, loop_number, lines_added, lines_removed, changed_sections
+        before_text,
+        after_text,
+        loop_number,
+        lines_added,
+        lines_removed,
+        changed_sections,
     )
 
     return RevisionRecord(
@@ -100,15 +109,19 @@ async def _generate_change_summary(
 
     # Truncate texts if too long for context
     max_chars = 8000
-    before_truncated = before_text[:max_chars] + ("..." if len(before_text) > max_chars else "")
-    after_truncated = after_text[:max_chars] + ("..." if len(after_text) > max_chars else "")
+    before_truncated = before_text[:max_chars] + (
+        "..." if len(before_text) > max_chars else ""
+    )
+    after_truncated = after_text[:max_chars] + (
+        "..." if len(after_text) > max_chars else ""
+    )
 
     prompt = f"""Summarize the changes made to this academic literature review in Loop {loop_number}.
 
 Statistics:
 - Lines added: {lines_added}
 - Lines removed: {lines_removed}
-- Changed sections: {', '.join(changed_sections)}
+- Changed sections: {", ".join(changed_sections)}
 
 BEFORE:
 {before_truncated}

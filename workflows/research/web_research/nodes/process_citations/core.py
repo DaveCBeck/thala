@@ -42,7 +42,9 @@ async def _process_single_citation(
             # Check for existing Zotero item first
             existing_key = await _check_existing_zotero_item(url, store_manager)
             if existing_key:
-                logger.debug(f"Found existing Zotero item {existing_key} for: {url[:50]}...")
+                logger.debug(
+                    f"Found existing Zotero item {existing_key} for: {url[:50]}..."
+                )
                 return (url, existing_key)
 
             # Check if we have OpenAlex metadata for this URL
@@ -54,7 +56,8 @@ async def _process_single_citation(
                 enhanced_metadata = {
                     "title": citation.get("title") or source_metadata.get("title"),
                     "authors": [
-                        a.get("name") for a in source_metadata.get("authors", [])
+                        a.get("name")
+                        for a in source_metadata.get("authors", [])
                         if a.get("name")
                     ],
                     "date": source_metadata.get("publication_date"),
@@ -66,10 +69,14 @@ async def _process_single_citation(
 
                 # Use DOI for Zotero URL if available
                 zotero_url = source_metadata.get("doi") or url
-                zotero_key = await _create_zotero_item(zotero_url, enhanced_metadata, store_manager)
+                zotero_key = await _create_zotero_item(
+                    zotero_url, enhanced_metadata, store_manager
+                )
 
                 if zotero_key:
-                    logger.debug(f"Created Zotero item {zotero_key} (OpenAlex) for: {url[:50]}...")
+                    logger.debug(
+                        f"Created Zotero item {zotero_key} (OpenAlex) for: {url[:50]}..."
+                    )
                 else:
                     logger.warning(f"Failed to create Zotero item for: {url[:50]}...")
 
@@ -80,7 +87,9 @@ async def _process_single_citation(
             await asyncio.sleep(0.3)
 
             # Step 1: Get translation metadata
-            translation_result = await _get_translation_metadata(url, translation_client)
+            translation_result = await _get_translation_metadata(
+                url, translation_client
+            )
 
             # Step 2: Enhance with LLM (passing translation result including empty fields)
             scraped_content = scraped_content_map.get(url)
@@ -89,7 +98,9 @@ async def _process_single_citation(
             )
 
             # Step 3: Create Zotero item
-            zotero_key = await _create_zotero_item(url, enhanced_metadata, store_manager)
+            zotero_key = await _create_zotero_item(
+                url, enhanced_metadata, store_manager
+            )
 
             if zotero_key:
                 logger.debug(f"Created Zotero item {zotero_key} for: {url[:50]}...")
@@ -201,9 +212,7 @@ async def process_citations(state: DeepResearchState) -> dict[str, Any]:
             updated_citations.append(updated)
 
         # Replace citations in report
-        updated_report = _replace_citations_in_report(
-            report, url_to_key, citations
-        )
+        updated_report = _replace_citations_in_report(report, url_to_key, citations)
 
         logger.info(
             f"Processed {len(citations)} citations, "

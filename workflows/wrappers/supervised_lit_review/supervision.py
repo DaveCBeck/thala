@@ -100,7 +100,9 @@ async def supervision_phase_node(state: AcademicLitReviewState) -> dict[str, Any
 
     # Filter to only new papers (not in original corpus)
     new_papers = {doi: p for doi, p in added_papers.items() if doi not in paper_corpus}
-    new_summaries = {doi: s for doi, s in added_summaries.items() if doi not in paper_summaries}
+    new_summaries = {
+        doi: s for doi, s in added_summaries.items() if doi not in paper_summaries
+    }
 
     logger.info(
         f"Supervision complete: loops={loops_run}, "

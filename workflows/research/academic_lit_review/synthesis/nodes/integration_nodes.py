@@ -29,7 +29,9 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     ordered_sections = []
 
     for i, label in enumerate(cluster_order):
-        section_text = thematic_sections.get(label, f"[Section for {label} not available]")
+        section_text = thematic_sections.get(
+            label, f"[Section for {label} not available]"
+        )
         ordered_sections.append(f"### {i + 3}. {label}\n\n{section_text}")
 
     thematic_text = "\n\n".join(ordered_sections)
@@ -70,7 +72,11 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
         cache_ttl="1h",
     )
 
-    integrated = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+    integrated = (
+        response.content
+        if isinstance(response.content, str)
+        else response.content[0].get("text", "")
+    )
 
     # Validate citation preservation
     input_citations = extract_citations_from_text(thematic_text)
@@ -88,6 +94,8 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
             f"{len(input_citations)} -> {len(output_citations)} citations"
         )
 
-    logger.info(f"Integrated review: {len(integrated.split())} words, {len(output_citations)} citations preserved")
+    logger.info(
+        f"Integrated review: {len(integrated.split())} words, {len(output_citations)} citations preserved"
+    )
 
     return {"integrated_review": integrated}

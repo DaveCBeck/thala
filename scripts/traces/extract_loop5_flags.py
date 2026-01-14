@@ -3,12 +3,13 @@
 
 import json
 from pathlib import Path
-from typing import Any
 from collections import defaultdict
 
 
 def main():
-    trace_path = Path("/home/dave/thala/testing/traces/019ba18e-7124-7923-9dca-4565ead80738.json")
+    trace_path = Path(
+        "/home/dave/thala/testing/traces/019ba18e-7124-7923-9dca-4565ead80738.json"
+    )
     output_path = Path("/home/dave/thala/testing/traces/loop5_flagged_items.json")
 
     print(f"Reading trace file: {trace_path}")
@@ -32,7 +33,7 @@ def main():
     todos_raw = loop5_result.get("todo_items", [])
     human_review_raw = loop5_result.get("human_review_items", [])
 
-    print(f"\nRaw counts from loop5_result:")
+    print("\nRaw counts from loop5_result:")
     print(f"  Ambiguous claims: {len(ambiguous_claims_raw)}")
     print(f"  TODO items: {len(todos_raw)}")
     print(f"  Human review items: {len(human_review_raw)}")
@@ -60,10 +61,12 @@ def main():
     todos = []
     for i, todo_text in enumerate(todos_raw):
         if todo_text and isinstance(todo_text, str):
-            todos.append({
-                "todo_text": todo_text,
-                "index": i,
-            })
+            todos.append(
+                {
+                    "todo_text": todo_text,
+                    "index": i,
+                }
+            )
 
     # Process human review items
     human_review = []
@@ -76,7 +79,7 @@ def main():
             }
             human_review.append(review_entry)
 
-    print(f"\nProcessed counts:")
+    print("\nProcessed counts:")
     print(f"  Ambiguous claims: {len(ambiguous_claims)}")
     print(f"  TODO items: {len(todos)}")
     print(f"  Human review items: {len(human_review)}")
@@ -87,9 +90,9 @@ def main():
         review_by_type[review["type"]] += 1
 
     # Analyze patterns
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("ANALYSIS")
-    print("="*60)
+    print("=" * 60)
 
     print("\nReview items by type:")
     for review_type, count in sorted(review_by_type.items(), key=lambda x: -x[1]):
@@ -141,8 +144,10 @@ def main():
             "review_by_type": dict(review_by_type),
         },
         "analysis": {
-            "notes": generate_analysis_notes(ambiguous_claims, todos, human_review, review_by_type)
-        }
+            "notes": generate_analysis_notes(
+                ambiguous_claims, todos, human_review, review_by_type
+            )
+        },
     }
 
     print(f"\nWriting output to: {output_path}")
@@ -168,34 +173,66 @@ def categorize_review_item(item: str) -> str:
         return "other"
 
 
-def generate_analysis_notes(claims: list, todos: list, reviews: list, review_by_type: dict) -> list[str]:
+def generate_analysis_notes(
+    claims: list, todos: list, reviews: list, review_by_type: dict
+) -> list[str]:
     """Generate analysis notes about the flagged items."""
     notes = []
 
     # Count citation-related issues
-    citation_mentions = sum(1 for c in claims if "citation" in c["claim"].lower() or "[@" in c["claim"])
-    notes.append(f"Citation-related ambiguous claims: {citation_mentions}/{len(claims)} ({100*citation_mentions//len(claims) if claims else 0}%)")
+    citation_mentions = sum(
+        1 for c in claims if "citation" in c["claim"].lower() or "[@" in c["claim"]
+    )
+    notes.append(
+        f"Citation-related ambiguous claims: {citation_mentions}/{len(claims)} ({100 * citation_mentions // len(claims) if claims else 0}%)"
+    )
 
     # Check if claims about missing citations dominate
-    missing_citation_claims = sum(1 for c in claims if "cannot be verified" in c["claim"].lower() or "could not be found" in c["claim"].lower() or "not available" in c["claim"].lower())
-    notes.append(f"Claims about missing/unverifiable citations: {missing_citation_claims}/{len(claims)} ({100*missing_citation_claims//len(claims) if claims else 0}%)")
+    missing_citation_claims = sum(
+        1
+        for c in claims
+        if "cannot be verified" in c["claim"].lower()
+        or "could not be found" in c["claim"].lower()
+        or "not available" in c["claim"].lower()
+    )
+    notes.append(
+        f"Claims about missing/unverifiable citations: {missing_citation_claims}/{len(claims)} ({100 * missing_citation_claims // len(claims) if claims else 0}%)"
+    )
 
     # Check for claims about missing sources
-    no_source_claims = sum(1 for c in claims if "no source" in c["claim"].lower() or "no citation" in c["claim"].lower() or "requires citation" in c["claim"].lower())
-    notes.append(f"Claims flagged for missing sources: {no_source_claims}/{len(claims)} ({100*no_source_claims//len(claims) if claims else 0}%)")
+    no_source_claims = sum(
+        1
+        for c in claims
+        if "no source" in c["claim"].lower()
+        or "no citation" in c["claim"].lower()
+        or "requires citation" in c["claim"].lower()
+    )
+    notes.append(
+        f"Claims flagged for missing sources: {no_source_claims}/{len(claims)} ({100 * no_source_claims // len(claims) if claims else 0}%)"
+    )
 
     # Review item distribution
-    top_review_type = max(review_by_type.items(), key=lambda x: x[1]) if review_by_type else ("none", 0)
-    notes.append(f"Most common review item type: {top_review_type[0]} ({top_review_type[1]} items)")
+    top_review_type = (
+        max(review_by_type.items(), key=lambda x: x[1])
+        if review_by_type
+        else ("none", 0)
+    )
+    notes.append(
+        f"Most common review item type: {top_review_type[0]} ({top_review_type[1]} items)"
+    )
 
     # Check for overly aggressive flagging patterns
     if claims and missing_citation_claims / len(claims) > 0.7:
-        notes.append("PATTERN: High proportion of flags related to missing/unverifiable citations - may indicate corpus completeness issues rather than actual document problems")
+        notes.append(
+            "PATTERN: High proportion of flags related to missing/unverifiable citations - may indicate corpus completeness issues rather than actual document problems"
+        )
 
     if reviews:
         ambiguous_in_reviews = sum(1 for r in reviews if r["type"] == "ambiguous_claim")
         if ambiguous_in_reviews / len(reviews) > 0.5:
-            notes.append("PATTERN: Over 50% of human review items are ambiguous claims - may indicate overly aggressive ambiguity detection")
+            notes.append(
+                "PATTERN: Over 50% of human review items are ambiguous claims - may indicate overly aggressive ambiguity detection"
+            )
 
     return notes
 

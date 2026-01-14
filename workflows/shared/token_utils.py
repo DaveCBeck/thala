@@ -163,7 +163,10 @@ class TokenBudgetExceeded(Exception):
     ):
         self.estimated_tokens = estimated_tokens
         self.limit = limit
-        msg = message or f"Estimated {estimated_tokens:,} tokens exceeds safe limit {limit:,}"
+        msg = (
+            message
+            or f"Estimated {estimated_tokens:,} tokens exceeds safe limit {limit:,}"
+        )
         super().__init__(msg)
 
 
@@ -258,5 +261,3 @@ def select_model_for_context(
             f"({SONNET_1M_SAFE_LIMIT:,}), using sonnet_1m anyway"
         )
         return "sonnet_1m"
-
-

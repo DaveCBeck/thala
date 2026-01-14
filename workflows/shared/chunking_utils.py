@@ -71,13 +71,15 @@ def create_fallback_chunks(markdown: str, word_count: int, chunk_info_class):
         chunk_text = markdown[start_pos:end_pos]
         chunk_word_count = count_words(chunk_text)
 
-        chunks.append(chunk_info_class(
-            title=f"Section {i + 1}",
-            start_position=start_pos,
-            end_position=end_pos,
-            author=None,
-            word_count=chunk_word_count,
-        ))
+        chunks.append(
+            chunk_info_class(
+                title=f"Section {i + 1}",
+                start_position=start_pos,
+                end_position=end_pos,
+                author=None,
+                word_count=chunk_word_count,
+            )
+        )
 
         # Set up overlap for next chunk
         current_pos = end_pos
@@ -145,18 +147,20 @@ def create_heading_based_chapters(
                     end = len(markdown)
 
                 chapter_text = markdown[start:end]
-                chapters.append(chunk_info_class(
-                    title=heading["text"],
-                    start_position=start,
-                    end_position=end,
-                    author=None,
-                    word_count=count_words(chapter_text),
-                ))
+                chapters.append(
+                    chunk_info_class(
+                        title=heading["text"],
+                        start_position=start,
+                        end_position=end,
+                        author=None,
+                        word_count=count_words(chapter_text),
+                    )
+                )
             return chapters
 
     # No level has enough headings
     logger.debug(
         f"No heading level has >= {min_chapters} headings: "
-        f"{[(l, len(h)) for l, h in sorted(headings_by_level.items())]}"
+        f"{[(lvl, len(h)) for lvl, h in sorted(headings_by_level.items())]}"
     )
     return []

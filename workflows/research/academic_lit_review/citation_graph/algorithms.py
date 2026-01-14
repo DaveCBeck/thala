@@ -6,8 +6,9 @@ from typing import Optional
 
 import networkx as nx
 
-from workflows.research.academic_lit_review.citation_graph.builder import CitationGraphBuilder
-from workflows.research.academic_lit_review.state import PaperNode
+from workflows.research.academic_lit_review.citation_graph.builder import (
+    CitationGraphBuilder,
+)
 
 logger = logging.getLogger(__name__)
 

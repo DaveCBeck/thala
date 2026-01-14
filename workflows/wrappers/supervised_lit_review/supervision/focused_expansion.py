@@ -72,9 +72,7 @@ async def run_focused_expansion(
 
     # Build paper corpus from discovered papers
     paper_corpus = {
-        paper.get("doi"): paper
-        for paper in discovered_papers
-        if paper.get("doi")
+        paper.get("doi"): paper for paper in discovered_papers if paper.get("doi")
     }
 
     logger.info(f"Discovery found {len(keyword_dois)} papers")
@@ -103,12 +101,12 @@ async def run_focused_expansion(
 
     # Get filtered corpus from diffusion (respects max_papers limit)
     expanded_corpus = diffusion_result.get("paper_corpus", paper_corpus)
-    final_corpus_dois = diffusion_result.get("final_corpus_dois", list(expanded_corpus.keys()))
+    final_corpus_dois = diffusion_result.get(
+        "final_corpus_dois", list(expanded_corpus.keys())
+    )
 
     final_corpus = {
-        doi: expanded_corpus[doi]
-        for doi in final_corpus_dois
-        if doi in expanded_corpus
+        doi: expanded_corpus[doi] for doi in final_corpus_dois if doi in expanded_corpus
     }
 
     logger.info(

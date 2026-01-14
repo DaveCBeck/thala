@@ -11,7 +11,11 @@ from pydantic import BaseModel
 from ...caching import create_cached_messages
 from ...models import get_llm
 from ...response_parsing import extract_json_from_response, extract_response_content
-from ..types import StructuredOutputConfig, StructuredOutputResult, StructuredOutputStrategy
+from ..types import (
+    StructuredOutputConfig,
+    StructuredOutputResult,
+    StructuredOutputStrategy,
+)
 from .base import StrategyExecutor, coerce_to_schema
 
 T = TypeVar("T", bound=BaseModel)
@@ -34,12 +38,15 @@ class JSONPromptingExecutor(StrategyExecutor[T]):
 
         # Append JSON instruction
         schema_json = json.dumps(output_schema.model_json_schema(), indent=2)
-        augmented_system = (system_prompt or "") + f"""
+        augmented_system = (
+            (system_prompt or "")
+            + f"""
 
 You must respond with ONLY valid JSON matching this schema:
 {schema_json}
 
 Do not include any text outside the JSON object. Do not wrap in markdown code blocks."""
+        )
 
         if config.enable_prompt_cache:
             messages = create_cached_messages(

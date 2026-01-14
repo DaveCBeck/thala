@@ -7,6 +7,7 @@ from typing import Optional
 @dataclass
 class BatchDocumentRequest:
     """Request for batch document summarization."""
+
     document_id: str
     content: str
     title: Optional[str] = None
@@ -19,6 +20,7 @@ class BatchDocumentRequest:
 @dataclass
 class BatchDocumentResult:
     """Result from batch document processing."""
+
     document_id: str
     summary: Optional[str] = None
     metadata: Optional[dict] = None

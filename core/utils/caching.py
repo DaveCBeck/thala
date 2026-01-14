@@ -2,9 +2,8 @@
 
 import hashlib
 import logging
-import os
 from functools import wraps
-from typing import Callable, Optional, Any
+from typing import Callable, Optional
 
 from workflows.shared.persistent_cache import get_cached, set_cached, CACHE_DISABLED
 
@@ -29,6 +28,7 @@ def async_cached(namespace: str, ttl_days: int = 7, key_fn: Optional[Callable] =
         ttl_days: Time-to-live in days
         key_fn: Optional function to generate cache key from args/kwargs
     """
+
     def decorator(fn: Callable):
         @wraps(fn)
         async def wrapper(*args, **kwargs):
@@ -48,5 +48,7 @@ def async_cached(namespace: str, ttl_days: int = 7, key_fn: Optional[Callable] =
                 set_cached(namespace, cache_key, result)
 
             return result
+
         return wrapper
+
     return decorator

@@ -80,7 +80,8 @@ def add_language_argument(
         default: Default language code
     """
     parser.add_argument(
-        "--language", "-l",
+        "--language",
+        "-l",
         type=str,
         default=default,
         help=(
@@ -120,7 +121,8 @@ def add_research_questions_argument(parser: ArgumentParser) -> None:
         parser: ArgumentParser to modify
     """
     parser.add_argument(
-        "--questions", "-q",
+        "--questions",
+        "-q",
         type=str,
         nargs="+",
         default=None,
@@ -136,7 +138,8 @@ def add_translation_arguments(parser: ArgumentParser) -> None:
     """
     lang_group = parser.add_argument_group("Language Options")
     lang_group.add_argument(
-        "--translate-to", "-t",
+        "--translate-to",
+        "-t",
         type=str,
         default=None,
         help="Translate final report to this language (ISO 639-1 code)",

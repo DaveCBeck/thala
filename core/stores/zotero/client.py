@@ -273,14 +273,20 @@ class ZoteroStore(BaseAsyncHttpClient):
             limit=limit,
         )
 
-    async def search_by_tag(self, tag: str, limit: int = 100) -> list[ZoteroSearchResult]:
+    async def search_by_tag(
+        self, tag: str, limit: int = 100
+    ) -> list[ZoteroSearchResult]:
         """Convenience method to search by tag."""
         return await self.search(
-            conditions=[ZoteroSearchCondition(condition="tag", operator="is", value=tag)],
+            conditions=[
+                ZoteroSearchCondition(condition="tag", operator="is", value=tag)
+            ],
             limit=limit,
         )
 
-    async def quicksearch(self, query: str, limit: int = 100) -> list[ZoteroSearchResult]:
+    async def quicksearch(
+        self, query: str, limit: int = 100
+    ) -> list[ZoteroSearchResult]:
         """
         Quicksearch across all fields (like the Zotero search bar).
 

@@ -36,11 +36,13 @@ async def process_citations_node(state: SynthesisState) -> dict[str, Any]:
                 f"{summary.get('venue', 'Unknown venue')}."
             )
 
-            references.append(FormattedCitation(
-                doi=doi,
-                citation_text=citation_text,
-                zotero_key=key,
-            ))
+            references.append(
+                FormattedCitation(
+                    doi=doi,
+                    citation_text=citation_text,
+                    zotero_key=key,
+                )
+            )
 
     if references:
         references_text = "\n\n## References\n\n"

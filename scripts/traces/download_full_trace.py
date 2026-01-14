@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from langsmith import Client
@@ -49,9 +50,11 @@ def download_trace(run_id: str, output_file: str, truncate: bool = True):
     print(f"Trace ID: {main_run.trace_id}")
 
     # Get all child runs
-    child_runs = list(client.list_runs(
-        trace_id=str(main_run.trace_id),
-    ))
+    child_runs = list(
+        client.list_runs(
+            trace_id=str(main_run.trace_id),
+        )
+    )
 
     print(f"Found {len(child_runs)} child runs")
 
@@ -73,7 +76,7 @@ def download_trace(run_id: str, output_file: str, truncate: bool = True):
             "inputs": main_run.inputs,
             "outputs": main_run.outputs,
         },
-        "child_runs": []
+        "child_runs": [],
     }
 
     # Process child runs - organize by name for easier analysis
@@ -100,7 +103,7 @@ def download_trace(run_id: str, output_file: str, truncate: bool = True):
         trace_data["child_runs"].append(run_data)
 
     # Write to file
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(trace_data, f, indent=2, default=serialize_datetime)
 
     print(f"Wrote trace to {output_file}")

@@ -14,7 +14,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from workflows.research.web_research.state import DeepResearchState
-from workflows.research.web_research.prompts import ITERATE_PLAN_SYSTEM, ITERATE_PLAN_HUMAN, get_today_str
+from workflows.research.web_research.prompts import (
+    ITERATE_PLAN_SYSTEM,
+    ITERATE_PLAN_HUMAN,
+    get_today_str,
+)
 from workflows.research.web_research.utils import load_prompts_with_translation
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 
@@ -25,28 +29,23 @@ class IteratePlanResponse(BaseModel):
     """Structured output for customized research plan."""
 
     user_knows: list[str] = Field(
-        default_factory=list,
-        description="What the user already understands well"
+        default_factory=list, description="What the user already understands well"
     )
     knowledge_gaps: list[str] = Field(
-        default_factory=list,
-        description="Specific gaps to fill with research"
+        default_factory=list, description="Specific gaps to fill with research"
     )
     priority_questions: list[str] = Field(
-        default_factory=list,
-        description="Prioritized questions based on gaps"
+        default_factory=list, description="Prioritized questions based on gaps"
     )
     avoid_researching: list[str] = Field(
-        default_factory=list,
-        description="Topics the user already knows well"
+        default_factory=list, description="Topics the user already knows well"
     )
     potential_challenges: list[str] = Field(
         default_factory=list,
-        description="Areas where findings might challenge existing beliefs"
+        description="Areas where findings might challenge existing beliefs",
     )
     research_strategy: str = Field(
-        default="",
-        description="Overall approach given their existing knowledge"
+        default="", description="Overall approach given their existing knowledge"
     )
 
 

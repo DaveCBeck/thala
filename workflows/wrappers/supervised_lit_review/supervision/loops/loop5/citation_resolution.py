@@ -2,7 +2,6 @@
 
 import logging
 import re
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,15 +15,21 @@ logger = logging.getLogger(__name__)
 class CitationFix(BaseModel):
     """A fix for an invalid citation."""
 
-    original_text: str = Field(description="The exact text containing the invalid citation (50-150 chars for uniqueness)")
-    replacement_text: str = Field(description="The corrected text with valid citation, no citation, or rewritten claim")
+    original_text: str = Field(
+        description="The exact text containing the invalid citation (50-150 chars for uniqueness)"
+    )
+    replacement_text: str = Field(
+        description="The corrected text with valid citation, no citation, or rewritten claim"
+    )
     reasoning: str = Field(description="Brief explanation of the fix")
 
 
 class CitationResolutionResult(BaseModel):
     """Result of resolving invalid citations."""
 
-    fixes: list[CitationFix] = Field(default_factory=list, description="List of fixes to apply")
+    fixes: list[CitationFix] = Field(
+        default_factory=list, description="List of fixes to apply"
+    )
 
 
 CITATION_RESOLUTION_SYSTEM = """You are fixing invalid citations in an academic literature review.
@@ -100,7 +105,7 @@ async def resolve_invalid_citations(
     # Extract relevant excerpts containing invalid citations
     excerpts = []
     for key in invalid_keys:
-        pattern = rf'.{{0,200}}\[@{re.escape(key)}\].{{0,200}}'
+        pattern = rf".{{0,200}}\[@{re.escape(key)}\].{{0,200}}"
         matches = re.findall(pattern, document, re.DOTALL)
         excerpts.extend(matches)
 
@@ -139,16 +144,18 @@ async def resolve_invalid_citations(
                 fixes_applied += 1
                 logger.debug(f"Applied citation fix: {fix.reasoning[:50]}...")
             else:
-                logger.warning(f"Could not find text to fix: {fix.original_text[:50]}...")
+                logger.warning(
+                    f"Could not find text to fix: {fix.original_text[:50]}..."
+                )
 
         logger.info(f"Applied {fixes_applied}/{len(result.fixes)} citation fixes")
 
         # Fallback: strip any remaining invalid citations that weren't fixed
         for key in invalid_keys:
-            pattern = rf'\[@{re.escape(key)}\]'
+            pattern = rf"\[@{re.escape(key)}\]"
             if re.search(pattern, updated):
                 logger.warning(f"Stripping unfixed invalid citation [@{key}]")
-                updated = re.sub(pattern, '', updated)
+                updated = re.sub(pattern, "", updated)
 
         return updated
 

@@ -6,7 +6,7 @@ from typing import Any, Optional
 from workflows.shared.batch_processor import BatchProcessor, BatchResult
 
 from .job_manager import JobManager
-from .types import BatchDocumentRequest, BatchDocumentResult
+from .types import BatchDocumentResult
 
 logger = logging.getLogger(__name__)
 
@@ -134,11 +134,15 @@ class BatchDocumentProcessor:
                 if doc_result.chapter_summaries is None:
                     doc_result.chapter_summaries = []
 
-                doc_result.chapter_summaries.append({
-                    "title": chapter_info.get("title", f"Chapter {chapter_idx + 1}"),
-                    "author": chapter_info.get("author"),
-                    "summary": result.content,
-                })
+                doc_result.chapter_summaries.append(
+                    {
+                        "title": chapter_info.get(
+                            "title", f"Chapter {chapter_idx + 1}"
+                        ),
+                        "author": chapter_info.get("author"),
+                        "summary": result.content,
+                    }
+                )
 
         return results
 
@@ -165,7 +169,9 @@ class BatchDocumentProcessor:
         if not self.job_manager.pending_documents:
             return {}
 
-        logger.info(f"Starting batch processing for {len(self.job_manager.pending_documents)} documents")
+        logger.info(
+            f"Starting batch processing for {len(self.job_manager.pending_documents)} documents"
+        )
 
         # Queue all requests
         self.job_manager.queue_batch_requests()

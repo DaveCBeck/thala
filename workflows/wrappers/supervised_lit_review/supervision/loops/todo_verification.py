@@ -6,7 +6,6 @@ batches and applies aggressive filtering criteria.
 """
 
 import logging
-from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field
@@ -125,9 +124,7 @@ async def verify_todos(
         )
 
         # Format TODOs for the prompt
-        todos_formatted = "\n".join(
-            f"{j + 1}. {todo}" for j, todo in enumerate(batch)
-        )
+        todos_formatted = "\n".join(f"{j + 1}. {todo}" for j, todo in enumerate(batch))
 
         try:
             # Call the model
@@ -221,9 +218,7 @@ def _parse_verification_response(
     return results
 
 
-def _match_todo_to_original(
-    todo_text: str, original_todos: list[str]
-) -> int | None:
+def _match_todo_to_original(todo_text: str, original_todos: list[str]) -> int | None:
     """Match a TODO text from response to the original list.
 
     Uses fuzzy matching to handle minor variations.

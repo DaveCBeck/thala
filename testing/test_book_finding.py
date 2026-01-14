@@ -76,7 +76,9 @@ class BookFindingQualityAnalyzer(BaseQualityAnalyzer):
         metrics.workflow_specific["analogous_count"] = len(analogous)
         metrics.workflow_specific["inspiring_count"] = len(inspiring)
         metrics.workflow_specific["expressive_count"] = len(expressive)
-        metrics.workflow_specific["total_recommendations"] = len(analogous) + len(inspiring) + len(expressive)
+        metrics.workflow_specific["total_recommendations"] = (
+            len(analogous) + len(inspiring) + len(expressive)
+        )
 
         # Processing metrics
         processed = state.get("processed_books", []) if state else []
@@ -89,10 +91,14 @@ class BookFindingQualityAnalyzer(BaseQualityAnalyzer):
 
         total_recommended = metrics.workflow_specific["total_recommendations"]
         if total_recommended > 0 and search_results:
-            metrics.workflow_specific["search_success_rate"] = len(search_results) / total_recommended
+            metrics.workflow_specific["search_success_rate"] = (
+                len(search_results) / total_recommended
+            )
 
         if search_results:
-            metrics.workflow_specific["processing_success_rate"] = len(processed) / len(search_results)
+            metrics.workflow_specific["processing_success_rate"] = len(processed) / len(
+                search_results
+            )
 
     def _identify_issues(self, metrics: QualityMetrics) -> None:
         """Identify book-finding specific issues."""
@@ -120,9 +126,13 @@ class BookFindingQualityAnalyzer(BaseQualityAnalyzer):
             return
 
         if "search success rate" in str(metrics.issues).lower():
-            metrics.suggestions.append("Some recommended books may not be available - this is normal")
+            metrics.suggestions.append(
+                "Some recommended books may not be available - this is normal"
+            )
         if "processing success rate" in str(metrics.issues).lower():
-            metrics.suggestions.append("PDF processing can fail for various reasons - summaries still generated from recommendations")
+            metrics.suggestions.append(
+                "PDF processing can fail for various reasons - summaries still generated from recommendations"
+            )
 
 
 def print_result_summary(result: dict, theme: str) -> None:
@@ -143,7 +153,7 @@ def print_result_summary(result: dict, theme: str) -> None:
     inspiring = state.get("inspiring_recommendations", []) if state else []
     expressive = state.get("expressive_recommendations", []) if state else []
 
-    print(f"\n--- Recommendations ---")
+    print("\n--- Recommendations ---")
     print(f"Analogous Domain: {len(analogous)} books")
     for book in analogous:
         title = book.get("title", "Unknown")
@@ -167,7 +177,7 @@ def print_result_summary(result: dict, theme: str) -> None:
     failed = state.get("processing_failed", []) if state else []
     search_results = state.get("search_results", []) if state else []
 
-    print(f"\n--- Processing ---")
+    print("\n--- Processing ---")
     print(f"Books found in search: {len(search_results)}")
     print(f"Books successfully processed: {len(processed)}")
     print(f"Books failed to process: {len(failed)}")
@@ -192,7 +202,7 @@ def print_result_summary(result: dict, theme: str) -> None:
     # Final report preview
     final_report = result.get("final_report") or result.get("final_markdown", "")
     if final_report:
-        print(f"\n--- Final Output ---")
+        print("\n--- Final Output ---")
         word_count = len(final_report.split())
         print(f"Length: {len(final_report)} chars ({word_count} words)")
         print(safe_preview(final_report, 1000))
@@ -239,17 +249,18 @@ Examples:
   %(prog)s "creative leadership" standard           # Standard quality
   %(prog)s "digital transformation" comprehensive   # Comprehensive search
   %(prog)s "liderazgo creativo" quick --language es # Spanish output
-        """
+        """,
     )
 
     add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
     add_language_argument(parser)
 
     parser.add_argument(
-        "--brief", "-b",
+        "--brief",
+        "-b",
         type=str,
         default=None,
-        help="Additional context to guide recommendations"
+        help="Additional context to guide recommendations",
     )
 
     return parser.parse_args()

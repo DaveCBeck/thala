@@ -23,10 +23,11 @@ class ModelTier(Enum):
     SONNET_1M: Same as SONNET but with 1M token context window for long documents (Tier 4+)
     OPUS: Complex tasks requiring deep analysis (supports extended thinking)
     """
+
     HAIKU = "claude-haiku-4-5-20251001"
     SONNET = "claude-haiku-4-5-20251001"
     SONNET_1M = "claude-sonnet-4-5-20250929"  # Same model as SONNET, requires 1M context beta header
-    OPUS = "claude-haiku-4-5-20251001" # replace with claude-opus-4-5-20251101 for production
+    OPUS = "claude-haiku-4-5-20251001"  # replace with claude-opus-4-5-20251101 for production
 
 
 # Beta header for 1M context window (Sonnet 4/4.5 only, Tier 4+)

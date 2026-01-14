@@ -109,6 +109,7 @@ def create_parallel_clustering_subgraph() -> StateGraph:
 
     Uses a custom node to run both clustering methods concurrently.
     """
+
     async def parallel_clustering_node(state: ClusteringState) -> dict[str, Any]:
         """Run BERTopic and LLM clustering in parallel."""
         bertopic_task = asyncio.create_task(run_bertopic_clustering_node(state))

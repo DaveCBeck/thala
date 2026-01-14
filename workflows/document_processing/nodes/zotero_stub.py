@@ -34,7 +34,10 @@ async def create_zotero_stub(state: dict) -> dict:
             title = "Untitled Document"
 
     # Create Zotero item
-    tags = [ZoteroTag(tag=tag) for tag in input_data.get("extra_metadata", {}).get("tags", [])]
+    tags = [
+        ZoteroTag(tag=tag)
+        for tag in input_data.get("extra_metadata", {}).get("tags", [])
+    ]
     tags.append(ZoteroTag(tag="pending", type=1))  # Auto-tag
 
     zotero_item = ZoteroItemCreate(
@@ -74,11 +77,13 @@ async def create_zotero_stub(state: dict) -> dict:
 
     return {
         "zotero_key": zotero_key,
-        "store_records": [{
-            "id": str(record_id),
-            "compression_level": 0,
-            "content_preview": "",
-        }],
+        "store_records": [
+            {
+                "id": str(record_id),
+                "compression_level": 0,
+                "content_preview": "",
+            }
+        ],
         "started_at": datetime.now(timezone.utc),
         "current_status": "stub_created",
     }

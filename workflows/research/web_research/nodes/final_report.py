@@ -14,7 +14,10 @@ from workflows.research.web_research.prompts import (
     FINAL_REPORT_USER_TEMPLATE,
     get_today_str,
 )
-from workflows.research.web_research.utils import load_prompts_with_translation, extract_text_from_response
+from workflows.research.web_research.utils import (
+    load_prompts_with_translation,
+    extract_text_from_response,
+)
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
@@ -31,20 +34,20 @@ def _format_all_findings(findings: list) -> str:
 
     for f in findings:
         section = f"""
-## {f.get('question_id', 'Research Finding')}
+## {f.get("question_id", "Research Finding")}
 
-{f.get('finding', 'No finding')}
+{f.get("finding", "No finding")}
 
-**Confidence:** {f.get('confidence', 0):.0%}
+**Confidence:** {f.get("confidence", 0):.0%}
 """
         # Track sources
-        for s in f.get('sources', []):
-            url = s.get('url', '')
+        for s in f.get("sources", []):
+            url = s.get("url", "")
             if url and url not in sources_map:
                 sources_map[url] = source_index
                 source_index += 1
 
-        if f.get('gaps'):
+        if f.get("gaps"):
             section += f"\n**Remaining gaps:** {', '.join(f['gaps'])}"
 
         formatted.append(section)
@@ -56,9 +59,9 @@ def _format_all_findings(findings: list) -> str:
             # Find title for this URL
             title = url
             for f in findings:
-                for s in f.get('sources', []):
-                    if s.get('url') == url:
-                        title = s.get('title', url)
+                for s in f.get("sources", []):
+                    if s.get("url") == url:
+                        title = s.get("title", url)
                         break
             formatted.append(f"[{idx}] {title}: {url}")
 
@@ -91,8 +94,10 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
     # Build research brief text
     research_brief_text = (
         f"**Topic:** {brief.get('topic', 'Unknown')}\n\n"
-        f"**Objectives:**\n" + "\n".join([f"- {o}" for o in brief.get('objectives', [])]) +
-        f"\n\n**Key Questions:**\n" + "\n".join([f"- {q}" for q in brief.get('key_questions', [])])
+        f"**Objectives:**\n"
+        + "\n".join([f"- {o}" for o in brief.get("objectives", [])])
+        + "\n\n**Key Questions:**\n"
+        + "\n".join([f"- {q}" for q in brief.get("key_questions", [])])
     )
 
     system_prompt_template, user_prompt_template = await load_prompts_with_translation(
@@ -129,7 +134,9 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         # Extract citations from report
         citations = _extract_citations(report, findings)
 
-        logger.info(f"Generated final report: {len(report)} chars, {len(citations)} citations")
+        logger.info(
+            f"Generated final report: {len(report)} chars, {len(citations)} citations"
+        )
 
         return {
             "final_report": report,
@@ -141,7 +148,7 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         logger.error(f"Final report generation failed: {e}")
 
         # Fallback: use draft as report
-        fallback_report = f"""# Research Report: {brief.get('topic', 'Unknown Topic')}
+        fallback_report = f"""# Research Report: {brief.get("topic", "Unknown Topic")}
 
 ## Note
 Final report generation encountered an error. Below is the draft report.
@@ -171,10 +178,12 @@ def _extract_citations(report: str, findings: list) -> list[dict]:
             url = s.get("url", "")
             if url and url not in seen_urls:
                 seen_urls.add(url)
-                citations.append({
-                    "url": url,
-                    "title": s.get("title", "Unknown"),
-                    "relevance": s.get("relevance", s.get("description", "medium")),
-                })
+                citations.append(
+                    {
+                        "url": url,
+                        "title": s.get("title", "Unknown"),
+                        "relevance": s.get("relevance", s.get("description", "medium")),
+                    }
+                )
 
     return citations

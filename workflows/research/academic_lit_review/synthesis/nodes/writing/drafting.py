@@ -33,8 +33,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     date_range = input_data.get("date_range")
 
     themes_overview = "\n".join(
-        f"- {c['label']}: {c['description'][:100]}"
-        for c in clusters
+        f"- {c['label']}: {c['description'][:100]}" for c in clusters
     )
 
     years = [s.get("year", 0) for s in paper_summaries.values() if s.get("year")]
@@ -92,7 +91,11 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         user_prompt=intro_prompt,
     )
 
-    introduction = intro_response.content if isinstance(intro_response.content, str) else intro_response.content[0].get("text", "")
+    introduction = (
+        intro_response.content
+        if isinstance(intro_response.content, str)
+        else intro_response.content[0].get("text", "")
+    )
 
     total_papers = len(paper_summaries)
 
@@ -116,7 +119,11 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         user_prompt=method_prompt,
     )
 
-    methodology = method_response.content if isinstance(method_response.content, str) else method_response.content[0].get("text", "")
+    methodology = (
+        method_response.content
+        if isinstance(method_response.content, str)
+        else method_response.content[0].get("text", "")
+    )
 
     logger.info("Completed introduction and methodology sections")
 
@@ -136,11 +143,9 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
     research_questions = input_data.get("research_questions", [])
 
     themes_summary = "\n".join(
-        f"- {c['label']}: {c['description'][:150]}"
-        for c in clusters
+        f"- {c['label']}: {c['description'][:150]}" for c in clusters
     )
 
-    cross_cutting = []
     gaps = []
     for analysis in cluster_analyses:
         for question in analysis.get("outstanding_questions", []):
@@ -185,7 +190,8 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         research_questions="\n".join(f"- {q}" for q in research_questions),
         themes_summary=themes_summary,
         cross_cutting_findings="See thematic sections for detailed findings.",
-        research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
+        research_gaps="\n".join(f"- {g}" for g in gaps[:10])
+        or "None explicitly identified",
     )
 
     llm = get_llm(tier=ModelTier.SONNET, max_tokens=4096)
@@ -196,10 +202,14 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         user_prompt=discussion_prompt,
     )
 
-    discussion = discussion_response.content if isinstance(discussion_response.content, str) else discussion_response.content[0].get("text", "")
+    discussion = (
+        discussion_response.content
+        if isinstance(discussion_response.content, str)
+        else discussion_response.content[0].get("text", "")
+    )
 
     findings_summary = "\n".join(
-        f"Q{i+1}: {q}\n   Finding: Based on {len(clusters)} themes covering {sum(len(c['paper_dois']) for c in clusters)} papers"
+        f"Q{i + 1}: {q}\n   Finding: Based on {len(clusters)} themes covering {sum(len(c['paper_dois']) for c in clusters)} papers"
         for i, q in enumerate(research_questions)
     )
 
@@ -215,7 +225,11 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         user_prompt=conclusions_prompt,
     )
 
-    conclusions = conclusions_response.content if isinstance(conclusions_response.content, str) else conclusions_response.content[0].get("text", "")
+    conclusions = (
+        conclusions_response.content
+        if isinstance(conclusions_response.content, str)
+        else conclusions_response.content[0].get("text", "")
+    )
 
     logger.info("Completed discussion and conclusions sections")
 

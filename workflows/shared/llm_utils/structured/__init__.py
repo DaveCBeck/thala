@@ -39,7 +39,11 @@ Example - With tools (multi-turn agent):
     )
 """
 
-from .convenience import classify_content, extract_from_text, get_structured_output_with_result
+from .convenience import (
+    classify_content,
+    extract_from_text,
+    get_structured_output_with_result,
+)
 from .interface import get_structured_output
 from .types import (
     BatchResult,

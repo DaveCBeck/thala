@@ -5,7 +5,9 @@ from typing import Any
 from .errors import EmbeddingError
 
 
-async def generate_embedding(embedding_service: Any | None, content: str) -> tuple[list[float], str | None]:
+async def generate_embedding(
+    embedding_service: Any | None, content: str
+) -> tuple[list[float], str | None]:
     """Generate embedding and return (embedding, model_name)."""
     if not embedding_service:
         return None, None
@@ -13,7 +15,9 @@ async def generate_embedding(embedding_service: Any | None, content: str) -> tup
         embedding = await embedding_service.embed(content)
         return embedding, embedding_service.model
     except Exception as e:
-        raise EmbeddingError(str(e), embedding_service.provider_name if embedding_service else None)
+        raise EmbeddingError(
+            str(e), embedding_service.provider_name if embedding_service else None
+        )
 
 
 async def validate_embedding_available(embedding_service: Any | None) -> None:

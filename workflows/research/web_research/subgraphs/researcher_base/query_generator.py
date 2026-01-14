@@ -48,7 +48,9 @@ def create_generate_queries(researcher_type: str = "web"):
         language_config = state.get("language_config")
 
         # Get researcher-specific base prompt
-        base_prompt = RESEARCHER_QUERY_PROMPTS.get(researcher_type, GENERATE_WEB_QUERIES_SYSTEM)
+        base_prompt = RESEARCHER_QUERY_PROMPTS.get(
+            researcher_type, GENERATE_WEB_QUERIES_SYSTEM
+        )
 
         # Build language-aware prompt
         if language_config and language_config["code"] != "en":
@@ -58,12 +60,12 @@ def create_generate_queries(researcher_type: str = "web"):
 Generate queries in {lang_name} to find {lang_name}-language sources.
 Write queries naturally in {lang_name}.
 
-Question: {question['question']}
+Question: {question["question"]}
 """
         else:
             prompt = f"""{base_prompt}
 
-Question: {question['question']}
+Question: {question["question"]}
 """
 
         try:
@@ -76,9 +78,9 @@ Question: {question['question']}
             # Validate queries are relevant
             valid_queries = await validate_queries(
                 queries=result.queries,
-                research_question=question['question'],
-                research_brief=question.get('brief'),
-                draft_notes=question.get('context'),
+                research_question=question["question"],
+                research_brief=question.get("brief"),
+                draft_notes=question.get("context"),
             )
 
             if not valid_queries:

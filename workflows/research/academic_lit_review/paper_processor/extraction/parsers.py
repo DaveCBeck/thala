@@ -3,7 +3,6 @@
 import logging
 from uuid import UUID, uuid4
 
-from langchain_tools.base import get_store_manager
 from core.stores.schema import StoreRecord, SourceType
 from workflows.shared.text_utils import count_words
 
@@ -50,7 +49,9 @@ async def _generate_l2_from_l0(
 
         # Skip if document is too short (same threshold as document_processing)
         if word_count < 3000:
-            logger.info(f"Document too short ({word_count} words), skipping L2 generation")
+            logger.info(
+                f"Document too short ({word_count} words), skipping L2 generation"
+            )
             return None
 
         # Create fallback chunks (simpler than full chapter detection for papers)
@@ -65,7 +66,7 @@ async def _generate_l2_from_l0(
         chunk_summaries = []
         for i, chunk in enumerate(chunks):
             # ChapterInfo is a TypedDict, so use dict access
-            chunk_content = l0_content[chunk["start_position"]:chunk["end_position"]]
+            chunk_content = l0_content[chunk["start_position"] : chunk["end_position"]]
             target_words = max(50, chunk["word_count"] // 10)  # 10:1 compression
 
             # Handle very large chunks by sub-chunking
@@ -131,7 +132,9 @@ async def _generate_l2_from_l0(
         return None
 
 
-async def _fetch_content_for_extraction(store_manager, es_record_id: str, doi: str) -> str | None:
+async def _fetch_content_for_extraction(
+    store_manager, es_record_id: str, doi: str
+) -> str | None:
     """Fetch content for extraction, preferring L2 (10:1 summary) over L0 (original).
 
     L2 is preferred because:

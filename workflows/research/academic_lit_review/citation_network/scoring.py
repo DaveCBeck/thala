@@ -47,10 +47,7 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
     if language_config and language_config.get("code") != "en":
         target_lang = language_config["code"]
         pre_filter_count = len(all_results)
-        all_results = [
-            r for r in all_results
-            if r.get("language") == target_lang
-        ]
+        all_results = [r for r in all_results if r.get("language") == target_lang]
         filtered_count = pre_filter_count - len(all_results)
         if filtered_count > 0:
             logger.info(
@@ -90,7 +87,9 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
             "new_edges": citation_edges,
         }
 
-    logger.info(f"Merged {len(all_results)} raw results to {len(papers)} unique new papers")
+    logger.info(
+        f"Merged {len(all_results)} raw results to {len(papers)} unique new papers"
+    )
 
     # language_config already fetched above for early filtering
     if language_config is None:
@@ -113,7 +112,8 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
     valid_dois = discovered_doi_set | seed_dois_set
 
     filtered_edges = [
-        edge for edge in citation_edges
+        edge
+        for edge in citation_edges
         if edge.get("citing_doi") in valid_dois or edge.get("cited_doi") in valid_dois
     ]
 

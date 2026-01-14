@@ -153,9 +153,15 @@ class ChromaStore:
 
         return {
             "id": UUID(results["ids"][0]),
-            "embedding": results["embeddings"][0] if results["embeddings"] is not None and len(results["embeddings"]) > 0 else None,
-            "metadata": results["metadatas"][0] if results["metadatas"] is not None and len(results["metadatas"]) > 0 else None,
-            "document": results["documents"][0] if results["documents"] is not None and len(results["documents"]) > 0 else None,
+            "embedding": results["embeddings"][0]
+            if results["embeddings"] is not None and len(results["embeddings"]) > 0
+            else None,
+            "metadata": results["metadatas"][0]
+            if results["metadatas"] is not None and len(results["metadatas"]) > 0
+            else None,
+            "document": results["documents"][0]
+            if results["documents"] is not None and len(results["documents"]) > 0
+            else None,
         }
 
     async def search(

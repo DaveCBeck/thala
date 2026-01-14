@@ -31,7 +31,9 @@ async def fetch_forward_citations_node(state: CitationNetworkState) -> dict[str,
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
-    async def fetch_single_forward(seed_doi: str) -> tuple[list[dict], list[CitationEdge]]:
+    async def fetch_single_forward(
+        seed_doi: str,
+    ) -> tuple[list[dict], list[CitationEdge]]:
         """Fetch forward citations for a single seed DOI."""
         async with semaphore:
             try:
@@ -45,11 +47,17 @@ async def fetch_forward_citations_node(state: CitationNetworkState) -> dict[str,
                 edges = []
 
                 for work in result.results:
-                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    work_dict = (
+                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    )
                     papers.append(work_dict)
 
                     if work_dict.get("doi"):
-                        citing_doi = work_dict["doi"].replace("https://doi.org/", "").replace("http://doi.org/", "")
+                        citing_doi = (
+                            work_dict["doi"]
+                            .replace("https://doi.org/", "")
+                            .replace("http://doi.org/", "")
+                        )
                         edges.append(
                             CitationEdge(
                                 citing_doi=citing_doi,
@@ -106,7 +114,9 @@ async def fetch_backward_citations_node(state: CitationNetworkState) -> dict[str
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
-    async def fetch_single_backward(seed_doi: str) -> tuple[list[dict], list[CitationEdge]]:
+    async def fetch_single_backward(
+        seed_doi: str,
+    ) -> tuple[list[dict], list[CitationEdge]]:
         """Fetch backward citations for a single seed DOI."""
         async with semaphore:
             try:
@@ -119,11 +129,17 @@ async def fetch_backward_citations_node(state: CitationNetworkState) -> dict[str
                 edges = []
 
                 for work in result.results:
-                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    work_dict = (
+                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    )
                     papers.append(work_dict)
 
                     if work_dict.get("doi"):
-                        cited_doi = work_dict["doi"].replace("https://doi.org/", "").replace("http://doi.org/", "")
+                        cited_doi = (
+                            work_dict["doi"]
+                            .replace("https://doi.org/", "")
+                            .replace("http://doi.org/", "")
+                        )
                         edges.append(
                             CitationEdge(
                                 citing_doi=seed_doi,
@@ -138,7 +154,9 @@ async def fetch_backward_citations_node(state: CitationNetworkState) -> dict[str
                 return papers, edges
 
             except Exception as e:
-                logger.warning(f"Failed to fetch backward citations for {seed_doi}: {e}")
+                logger.warning(
+                    f"Failed to fetch backward citations for {seed_doi}: {e}"
+                )
                 return [], []
 
     tasks = [fetch_single_backward(doi) for doi in seed_dois]

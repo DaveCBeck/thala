@@ -58,8 +58,7 @@ async def invoke_workflow(
     valid_tiers = get_quality_tiers()
     if quality not in valid_tiers:
         raise KeyError(
-            f"Unknown quality tier: {quality}. "
-            f"Valid tiers: {', '.join(valid_tiers)}"
+            f"Unknown quality tier: {quality}. Valid tiers: {', '.join(valid_tiers)}"
         )
 
     # Use quality tier directly (unified across all workflows)

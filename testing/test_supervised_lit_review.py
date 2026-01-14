@@ -89,7 +89,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Supervision Status
     supervision = state.get("supervision", {}) if state else {}
     if supervision:
-        print(f"\n--- Supervision ---")
+        print("\n--- Supervision ---")
         loops_run = supervision.get("loops_run", [])
         print(f"Loops run: {', '.join(loops_run) if loops_run else 'None'}")
         completion_reason = supervision.get("completion_reason", "N/A")
@@ -120,7 +120,7 @@ def print_result_summary(result: dict, topic: str) -> None:
 
     # Paper Corpus
     paper_corpus = state.get("paper_corpus", {}) if state else {}
-    print(f"\n--- Paper Corpus ---")
+    print("\n--- Paper Corpus ---")
     print(f"Total papers discovered: {len(paper_corpus)}")
 
     if paper_corpus:
@@ -136,14 +136,16 @@ def print_result_summary(result: dict, topic: str) -> None:
 
     # Paper Summaries
     paper_summaries = state.get("paper_summaries", {}) if state else {}
-    print(f"\n--- Paper Summaries ---")
+    print("\n--- Paper Summaries ---")
     print(f"Papers processed: {len(paper_summaries)}")
 
     # Diffusion State
     diffusion = state.get("diffusion", {}) if state else {}
     if diffusion:
-        print(f"\n--- Diffusion Algorithm ---")
-        print(f"Stages completed: {diffusion.get('current_stage', 0)}/{diffusion.get('max_stages', 'N/A')}")
+        print("\n--- Diffusion Algorithm ---")
+        print(
+            f"Stages completed: {diffusion.get('current_stage', 0)}/{diffusion.get('max_stages', 'N/A')}"
+        )
         print(f"Is saturated: {diffusion.get('is_saturated', False)}")
         print(f"Total discovered: {diffusion.get('total_papers_discovered', 0)}")
         print(f"Total relevant: {diffusion.get('total_papers_relevant', 0)}")
@@ -170,7 +172,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Original Review (v1)
     final_review = result.get("final_review", "")
     if final_review:
-        print(f"\n--- Original Review (v1) ---")
+        print("\n--- Original Review (v1) ---")
         word_count = len(final_review.split())
         print(f"Length: {len(final_review)} chars ({word_count} words)")
 
@@ -192,20 +194,24 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Supervised Review (v2)
     final_review_v2 = state.get("final_review_v2", "") if state else ""
     if final_review_v2:
-        print(f"\n--- Supervised Review (v2) ---")
+        print("\n--- Supervised Review (v2) ---")
         word_count = len(final_review_v2.split())
         print(f"Length: {len(final_review_v2)} chars ({word_count} words)")
         print(safe_preview(final_review_v2, 1500))
     elif final_review:
-        print(f"\n--- Final Review (no supervision applied) ---")
+        print("\n--- Final Review (no supervision applied) ---")
         word_count = len(final_review.split())
         print(f"Length: {len(final_review)} chars ({word_count} words)")
         print(safe_preview(final_review, 1500))
 
     # Standardized final_report field
     final_report = result.get("final_report", "")
-    if final_report and final_report != final_review_v2 and final_report != final_review:
-        print(f"\n--- Final Report (standardized) ---")
+    if (
+        final_report
+        and final_report != final_review_v2
+        and final_report != final_review
+    ):
+        print("\n--- Final Report (standardized) ---")
         word_count = len(final_report.split())
         print(f"Length: {len(final_report)} chars ({word_count} words)")
 
@@ -222,7 +228,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # PRISMA Documentation
     prisma = state.get("prisma_documentation", "") if state else ""
     if prisma:
-        print(f"\n--- PRISMA Documentation ---")
+        print("\n--- PRISMA Documentation ---")
         print(safe_preview(prisma, 500))
 
     # Storage and Tracing
@@ -230,7 +236,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     es_ids = state.get("elasticsearch_ids", {}) if state else {}
     langsmith_run_id = result.get("langsmith_run_id")
 
-    print(f"\n--- Storage & Tracing ---")
+    print("\n--- Storage & Tracing ---")
     if zotero_keys:
         print(f"Zotero items created: {len(zotero_keys)}")
     if es_ids:
@@ -295,7 +301,9 @@ def analyze_quality(result: dict) -> dict:
         analysis["metrics"]["loops_completed"] = len(loops_run)
         analysis["metrics"]["loops_list"] = loops_run
         analysis["metrics"]["new_papers_added"] = supervision.get("new_papers_added", 0)
-        analysis["metrics"]["completion_reason"] = supervision.get("completion_reason", "unknown")
+        analysis["metrics"]["completion_reason"] = supervision.get(
+            "completion_reason", "unknown"
+        )
 
         if supervision.get("error"):
             analysis["issues"].append(f"Supervision error: {supervision['error']}")
@@ -306,7 +314,9 @@ def analyze_quality(result: dict) -> dict:
     human_review = state.get("human_review_items", []) if state else []
     analysis["metrics"]["human_review_items"] = len(human_review)
     if len(human_review) > 10:
-        analysis["issues"].append(f"Many items flagged for human review ({len(human_review)})")
+        analysis["issues"].append(
+            f"Many items flagged for human review ({len(human_review)})"
+        )
 
     # Paper coverage
     paper_corpus = state.get("paper_corpus", {}) if state else {}
@@ -360,16 +370,26 @@ def analyze_quality(result: dict) -> dict:
 
     # Generate suggestions
     if not analysis["issues"]:
-        analysis["suggestions"].append("Supervised literature review appears comprehensive")
+        analysis["suggestions"].append(
+            "Supervised literature review appears comprehensive"
+        )
     else:
         if "Low paper count" in str(analysis["issues"]):
-            analysis["suggestions"].append("Consider broadening search terms or using higher quality setting")
+            analysis["suggestions"].append(
+                "Consider broadening search terms or using higher quality setting"
+            )
         if "Few clusters" in str(analysis["issues"]):
-            analysis["suggestions"].append("More papers needed for meaningful clustering")
+            analysis["suggestions"].append(
+                "More papers needed for meaningful clustering"
+            )
         if not analysis["metrics"].get("supervision_applied"):
-            analysis["suggestions"].append("Check supervision configuration; no supervision was applied")
+            analysis["suggestions"].append(
+                "Check supervision configuration; no supervision was applied"
+            )
         if "Many items flagged" in str(analysis["issues"]):
-            analysis["suggestions"].append("Review flagged items to improve review quality")
+            analysis["suggestions"].append(
+                "Review flagged items to improve review quality"
+            )
 
     return analysis
 
@@ -425,7 +445,7 @@ Supervision loops:
   three  - Citation + structural + fact-checking
   four   - Citation + structural + fact-checking + gap analysis
   all    - All supervision loops (default)
-        """
+        """,
     )
 
     add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
@@ -438,7 +458,7 @@ Supervision loops:
         type=str,
         choices=VALID_LOOPS,
         default=DEFAULT_LOOPS,
-        help=f"Supervision loops to run (default: {DEFAULT_LOOPS})"
+        help=f"Supervision loops to run (default: {DEFAULT_LOOPS})",
     )
 
     return parser.parse_args()
@@ -475,7 +495,7 @@ async def main():
     print(f"Quality: {quality}")
     print(f"Language: {language}")
     print(f"Supervision loops: {supervision_loops}")
-    print(f"Research Questions:")
+    print("Research Questions:")
     for q in research_questions:
         print(f"  - {q}")
     if date_range:
@@ -573,7 +593,9 @@ async def main():
         # Save human review items if any
         human_review = state.get("human_review_items", []) if state else []
         if human_review:
-            review_file = save_json_result(human_review, "supervised_lit_review_human_items")
+            review_file = save_json_result(
+                human_review, "supervised_lit_review_human_items"
+            )
             logger.info(f"Human review items saved to: {review_file}")
 
         # Save PRISMA documentation
@@ -594,6 +616,7 @@ async def main():
     finally:
         # Clean up HTTP clients to avoid "Unclosed client session" warnings
         from core.utils.async_http_client import cleanup_all_clients
+
         await cleanup_all_clients()
 
 

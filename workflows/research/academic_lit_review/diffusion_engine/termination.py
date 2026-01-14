@@ -73,7 +73,6 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
 async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     """Finalize diffusion and filter to top papers by relevance."""
     paper_corpus = state.get("paper_corpus", {})
-    diffusion = state["diffusion"]
     saturation_reason = state.get("saturation_reason", "Unknown")
     max_papers = _get_effective_max_papers(state)
 

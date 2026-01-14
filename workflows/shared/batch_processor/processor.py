@@ -77,16 +77,18 @@ class BatchProcessor:
             tools: Optional list of tool definitions for structured output
             tool_choice: Optional tool choice config (e.g., {"type": "tool", "name": "..."})
         """
-        self.pending_requests.append(BatchRequest(
-            custom_id=custom_id,
-            prompt=prompt,
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            thinking_budget=thinking_budget,
-            tools=tools,
-            tool_choice=tool_choice,
-        ))
+        self.pending_requests.append(
+            BatchRequest(
+                custom_id=custom_id,
+                prompt=prompt,
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                thinking_budget=thinking_budget,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+        )
         # Track if 1M context is needed for this batch
         if model == ModelTier.SONNET_1M:
             self._needs_1m_context = True
@@ -110,7 +112,9 @@ class BatchProcessor:
         if not self.pending_requests:
             return {}
 
-        batch_requests = self._request_builder.build_batch_requests(self.pending_requests)
+        batch_requests = self._request_builder.build_batch_requests(
+            self.pending_requests
+        )
         logger.info(f"Submitting batch with {len(batch_requests)} requests")
 
         # Create the batch - use beta API if 1M context is needed
@@ -175,7 +179,9 @@ class BatchProcessor:
         if not self.pending_requests:
             return {}
 
-        batch_requests = self._request_builder.build_batch_requests(self.pending_requests)
+        batch_requests = self._request_builder.build_batch_requests(
+            self.pending_requests
+        )
 
         # Create the batch - use beta API if 1M context is needed
         if self._needs_1m_context:

@@ -61,7 +61,11 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    rq_formatted = "\n".join(f"- {q}" for q in research_questions) if research_questions else "None specified"
+    rq_formatted = (
+        "\n".join(f"- {q}" for q in research_questions)
+        if research_questions
+        else "None specified"
+    )
 
     if issues_explored:
         explored_formatted = "\n".join(f"- {issue}" for issue in issues_explored)
@@ -124,5 +128,3 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
                 "recoverable": True,
             },
         }
-
-

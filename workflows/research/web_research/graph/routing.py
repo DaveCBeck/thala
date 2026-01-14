@@ -1,7 +1,6 @@
 """Routing functions for deep research graph."""
 
 import logging
-from typing import Literal
 
 from langgraph.types import Send
 
@@ -48,16 +47,21 @@ def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
         max_concurrent = 3
         sends = []
         for q in pending[:max_concurrent]:
-            sends.append(Send("web_researcher", ResearcherState(
-                question=q,
-                search_queries=[],
-                search_results=[],
-                scraped_content=[],
-                thinking=None,
-                finding=None,
-                research_findings=[],
-                language_config=language_config,
-            )))
+            sends.append(
+                Send(
+                    "web_researcher",
+                    ResearcherState(
+                        question=q,
+                        search_queries=[],
+                        search_results=[],
+                        scraped_content=[],
+                        thinking=None,
+                        finding=None,
+                        research_findings=[],
+                        language_config=language_config,
+                    ),
+                )
+            )
 
         if not sends:
             return "final_report"

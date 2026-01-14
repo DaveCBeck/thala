@@ -22,8 +22,12 @@ from typing import Optional
 
 from core.stores.retrieve_academic import RetrieveAcademicClient
 from workflows.research.academic_lit_review.state import PaperMetadata
-from workflows.research.academic_lit_review.paper_processor.cache import check_document_exists_by_doi
-from workflows.research.academic_lit_review.paper_processor.document_processing import process_single_document
+from workflows.research.academic_lit_review.paper_processor.cache import (
+    check_document_exists_by_doi,
+)
+from workflows.research.academic_lit_review.paper_processor.document_processing import (
+    process_single_document,
+)
 from workflows.research.academic_lit_review.paper_processor.types import (
     ACQUISITION_DELAY,
     ACQUISITION_TIMEOUT,
@@ -161,7 +165,9 @@ async def run_paper_pipeline(
     """
     async with RetrieveAcademicClient() as client:
         if not await client.health_check():
-            logger.warning("Retrieve-academic service unavailable, skipping full-text acquisition")
+            logger.warning(
+                "Retrieve-academic service unavailable, skipping full-text acquisition"
+            )
             return {}, {}, [p.get("doi") for p in papers], []
 
         output_dir = Path("/tmp/thala_papers")
@@ -241,13 +247,19 @@ async def run_paper_pipeline(
 
                     # Try OA download first if URL available
                     if oa_url:
-                        source, is_markdown = await try_oa_download(oa_url, local_path, doi)
+                        source, is_markdown = await try_oa_download(
+                            oa_url, local_path, doi
+                        )
                         if source:
                             oa_acquired_count += 1
                             return doi, None, source, is_markdown
 
                     # Fall back to retrieve-academic
-                    authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
+                    authors = [
+                        a.get("name")
+                        for a in paper.get("authors", [])[:5]
+                        if a.get("name")
+                    ]
                     job = await client.retrieve(
                         doi=doi,
                         title=title,
@@ -262,7 +274,9 @@ async def run_paper_pipeline(
                 submit_tasks = [
                     try_acquire_single(p, i) for i, p in enumerate(papers_to_acquire)
                 ]
-                submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
+                submit_results = await asyncio.gather(
+                    *submit_tasks, return_exceptions=True
+                )
 
                 # Process results: OA successes go directly to queue, others need polling
                 valid_jobs = []
@@ -280,7 +294,9 @@ async def run_paper_pipeline(
                             logger.debug(
                                 f"[{acquired_count}/{total_to_acquire}] Acquired via OA: {doi}"
                             )
-                            await processing_queue.put((doi, source, papers_by_doi[doi], is_markdown))
+                            await processing_queue.put(
+                                (doi, source, papers_by_doi[doi], is_markdown)
+                            )
                         else:
                             # Needs retrieve-academic polling
                             valid_jobs.append((doi, job_id, source))
@@ -292,7 +308,11 @@ async def run_paper_pipeline(
 
                 # Poll retrieve-academic jobs for completions
                 if valid_jobs:
-                    async for doi, local_path, result in client.poll_jobs_until_complete(
+                    async for (
+                        doi,
+                        local_path,
+                        result,
+                    ) in client.poll_jobs_until_complete(
                         valid_jobs,
                         poll_interval=2.0,
                         timeout=ACQUISITION_TIMEOUT,
@@ -306,7 +326,9 @@ async def run_paper_pipeline(
                             logger.debug(
                                 f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}"
                             )
-                            await processing_queue.put((doi, local_path, papers_by_doi[doi], False))
+                            await processing_queue.put(
+                                (doi, local_path, papers_by_doi[doi], False)
+                            )
 
             finally:
                 # Always signal end of acquisitions
@@ -326,7 +348,9 @@ async def run_paper_pipeline(
                 nonlocal processed_count
                 async with process_semaphore:
                     try:
-                        result = await process_single_document(doi, source, paper, is_markdown, use_batch_api)
+                        result = await process_single_document(
+                            doi, source, paper, is_markdown, use_batch_api
+                        )
                         processed_count += 1
                         title = paper.get("title", "Unknown")[:50]
 
@@ -356,7 +380,9 @@ async def run_paper_pipeline(
                 doi, source, paper, is_markdown = item
 
                 # Create processing task
-                task = asyncio.create_task(process_item(doi, source, paper, is_markdown))
+                task = asyncio.create_task(
+                    process_item(doi, source, paper, is_markdown)
+                )
                 active_tasks.add(task)
                 task.add_done_callback(active_tasks.discard)
 

@@ -288,7 +288,9 @@ class ScraperService:
             markdown = await scraper.scrape(url)
         except PDFDownloadDetected as e:
             # URL was a PDF - convert to markdown using Marker
-            logger.info(f"Playwright detected PDF download ({len(e.content)} bytes), converting via Marker")
+            logger.info(
+                f"Playwright detected PDF download ({len(e.content)} bytes), converting via Marker"
+            )
             from .pdf import process_pdf_bytes
 
             try:
@@ -342,7 +344,7 @@ class ScraperService:
         # === Tier 1: Local Firecrawl ===
         if clients.config.local_available:
             try:
-                logger.debug(f"Trying local Firecrawl")
+                logger.debug("Trying local Firecrawl")
                 return await _with_retry(
                     self._scrape_local, url, include_links=include_links
                 )
@@ -353,7 +355,9 @@ class ScraperService:
 
             except SiteBlockedError:
                 # Site blocked locally - try cloud stealth
-                logger.debug(f"Local Firecrawl got blocked response, trying cloud stealth")
+                logger.debug(
+                    "Local Firecrawl got blocked response, trying cloud stealth"
+                )
 
             except Exception as e:
                 logger.debug(f"Local Firecrawl failed: {e}")
@@ -361,7 +365,7 @@ class ScraperService:
         # === Tier 2: Cloud Firecrawl Stealth ===
         if clients.config.cloud_available:
             try:
-                logger.debug(f"Trying cloud Firecrawl stealth")
+                logger.debug("Trying cloud Firecrawl stealth")
                 return await _with_retry(
                     self._scrape_cloud_stealth, url, include_links=include_links
                 )
@@ -377,7 +381,7 @@ class ScraperService:
                 logger.debug(f"Cloud stealth failed: {e}")
 
         # === Tier 3: Playwright Fallback ===
-        logger.debug(f"Falling back to Playwright")
+        logger.debug("Falling back to Playwright")
         try:
             return await _with_retry(self._scrape_playwright, url, include_links)
         except Exception as e:

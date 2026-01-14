@@ -27,6 +27,7 @@ async def check_cohesion(document: str) -> CohesionCheckResult:
         CohesionCheckResult with needs_restructuring bool and reasoning
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     prompt = LOOP4_5_COHESION_PROMPT.format(document=document)

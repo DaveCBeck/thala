@@ -5,13 +5,10 @@ Compresses raw research findings from researcher agents into structured findings
 This node is typically called after researcher agents complete their work.
 """
 
-import json
 import logging
 from typing import Any
 
-from workflows.research.web_research.state import DeepResearchState, ResearchFinding, WebSearchResult
-from workflows.research.web_research.prompts import COMPRESS_RESEARCH_SYSTEM, get_today_str
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.research.web_research.state import DeepResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +37,9 @@ async def compress_research(state: DeepResearchState) -> dict[str, Any]:
         logger.debug(f"All {len(findings)} findings have adequate confidence")
         return {"current_status": "supervising"}
 
-    logger.debug(f"Re-compressing {len(low_confidence_findings)} low-confidence findings")
+    logger.debug(
+        f"Re-compressing {len(low_confidence_findings)} low-confidence findings"
+    )
 
     # For now, just pass through - re-compression logic can be added later
     return {"current_status": "supervising"}

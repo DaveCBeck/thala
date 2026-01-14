@@ -63,9 +63,7 @@ def calculate_completeness(
 
     # 2. Findings coverage (30% weight)
     total_questions = max(len(key_questions), 1)
-    high_confidence_findings = sum(
-        1 for f in findings if f.get("confidence", 0) > 0.5
-    )
+    high_confidence_findings = sum(1 for f in findings if f.get("confidence", 0) > 0.5)
     coverage_score = min(high_confidence_findings / total_questions, 1.0)
 
     # 3. Average confidence (20% weight)

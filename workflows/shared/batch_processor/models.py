@@ -18,6 +18,7 @@ def sanitize_custom_id(identifier: str) -> str:
 @dataclass
 class BatchRequest:
     """A single request to be included in a batch."""
+
     custom_id: str
     prompt: str
     model: any  # ModelTier
@@ -31,6 +32,7 @@ class BatchRequest:
 @dataclass
 class BatchResult:
     """Result from a single batch request."""
+
     custom_id: str
     success: bool
     content: Optional[str] = None

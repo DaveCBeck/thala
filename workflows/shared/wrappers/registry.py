@@ -96,7 +96,8 @@ def register_workflow(
         default_enabled=default_enabled,
         requires_questions=requires_questions,
         supports_date_range=supports_date_range,
-        quality_tiers=quality_tiers or ["test", "quick", "standard", "comprehensive", "high_quality"],
+        quality_tiers=quality_tiers
+        or ["test", "quick", "standard", "comprehensive", "high_quality"],
         description=description,
     )
     logger.debug(f"Registered workflow: {key} ({name})")

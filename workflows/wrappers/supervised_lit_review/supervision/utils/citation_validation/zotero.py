@@ -57,7 +57,9 @@ async def validate_citations_against_zotero(
     if not keys_to_verify:
         return all_keys, set()
 
-    verification_results = await verify_zotero_citations_batch(keys_to_verify, zotero_client)
+    verification_results = await verify_zotero_citations_batch(
+        keys_to_verify, zotero_client
+    )
 
     valid_keys = known_valid.copy()
     invalid_keys = set()

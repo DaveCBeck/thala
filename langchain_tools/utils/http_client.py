@@ -39,9 +39,7 @@ def create_lazy_client(
             elif api_key_env:
                 api_key = os.environ.get(api_key_env)
                 if not api_key:
-                    raise ValueError(
-                        f"{api_key_env} environment variable is required"
-                    )
+                    raise ValueError(f"{api_key_env} environment variable is required")
                 headers["Authorization"] = f"Bearer {api_key}"
                 headers["Content-Type"] = "application/json"
 

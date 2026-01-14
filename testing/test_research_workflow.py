@@ -87,7 +87,9 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
         # Confidence scores
         confidence_scores = [f.get("confidence", 0) for f in findings]
         if confidence_scores:
-            metrics.workflow_specific["avg_confidence"] = sum(confidence_scores) / len(confidence_scores)
+            metrics.workflow_specific["avg_confidence"] = sum(confidence_scores) / len(
+                confidence_scores
+            )
 
         # Gaps
         all_gaps = []
@@ -98,11 +100,19 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
         # Diffusion metrics
         diffusion = state.get("diffusion", {}) if state else {}
         if diffusion:
-            metrics.workflow_specific["completeness_score"] = diffusion.get("completeness_score", 0)
+            metrics.workflow_specific["completeness_score"] = diffusion.get(
+                "completeness_score", 0
+            )
             metrics.workflow_specific["iterations_used"] = diffusion.get("iteration", 0)
-            metrics.workflow_specific["max_iterations"] = diffusion.get("max_iterations", 0)
-            metrics.workflow_specific["areas_explored"] = len(diffusion.get("areas_explored", []))
-            metrics.workflow_specific["areas_remaining"] = len(diffusion.get("areas_to_explore", []))
+            metrics.workflow_specific["max_iterations"] = diffusion.get(
+                "max_iterations", 0
+            )
+            metrics.workflow_specific["areas_explored"] = len(
+                diffusion.get("areas_explored", [])
+            )
+            metrics.workflow_specific["areas_remaining"] = len(
+                diffusion.get("areas_to_explore", [])
+            )
 
         # Translation
         translated_report = state.get("translated_report") if state else None
@@ -136,17 +146,27 @@ class ResearchQualityAnalyzer(BaseQualityAnalyzer):
     def _generate_suggestions(self, metrics: QualityMetrics) -> None:
         """Generate research-specific suggestions."""
         if not metrics.issues:
-            metrics.suggestions.append("Research appears comprehensive - no major issues detected")
+            metrics.suggestions.append(
+                "Research appears comprehensive - no major issues detected"
+            )
             return
 
         if "source count" in str(metrics.issues).lower():
-            metrics.suggestions.append("Consider increasing max_sources or adding more search sources")
+            metrics.suggestions.append(
+                "Consider increasing max_sources or adding more search sources"
+            )
         if "confidence" in str(metrics.issues).lower():
-            metrics.suggestions.append("Improve source quality filtering or add domain-specific sources")
+            metrics.suggestions.append(
+                "Improve source quality filtering or add domain-specific sources"
+            )
         if "completeness" in str(metrics.issues).lower():
-            metrics.suggestions.append("Consider increasing max_iterations for more thorough research")
+            metrics.suggestions.append(
+                "Consider increasing max_iterations for more thorough research"
+            )
         if "Unexplored" in str(metrics.issues):
-            metrics.suggestions.append("Diffusion algorithm may need tuning for better coverage")
+            metrics.suggestions.append(
+                "Diffusion algorithm may need tuning for better coverage"
+            )
 
 
 def print_result_summary(result: dict, topic: str) -> None:
@@ -168,7 +188,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Research Brief
     brief = state.get("research_brief") if state else None
     if brief:
-        print(f"\n--- Research Brief ---")
+        print("\n--- Research Brief ---")
         print_key_value("Topic", brief.get("topic", "N/A"))
         print_key_value("Scope", brief.get("scope", "N/A"))
         print_list_preview(
@@ -185,20 +205,22 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Memory Context
     memory_context = state.get("memory_context") if state else None
     if memory_context:
-        print(f"\n--- Memory Context ---")
+        print("\n--- Memory Context ---")
         print(safe_preview(memory_context, 500))
 
     # Research Plan
     research_plan = result.get("research_plan")
     if research_plan:
-        print(f"\n--- Research Plan ---")
+        print("\n--- Research Plan ---")
         print(safe_preview(research_plan, 800))
 
     # Diffusion State
     diffusion = state.get("diffusion") if state else None
     if diffusion:
-        print(f"\n--- Diffusion Algorithm ---")
-        print(f"Iterations: {diffusion.get('iteration', 0)}/{diffusion.get('max_iterations', 'N/A')}")
+        print("\n--- Diffusion Algorithm ---")
+        print(
+            f"Iterations: {diffusion.get('iteration', 0)}/{diffusion.get('max_iterations', 'N/A')}"
+        )
         print(f"Completeness Score: {diffusion.get('completeness_score', 0):.1%}")
         print_list_preview(
             diffusion.get("areas_explored", []),
@@ -236,7 +258,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Final Report
     final_report = result.get("final_report")
     if final_report:
-        print(f"\n--- Final Report ---")
+        print("\n--- Final Report ---")
         print(f"Length: {len(final_report)} chars ({len(final_report.split())} words)")
         print(safe_preview(final_report, 1000))
 
@@ -257,7 +279,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     zotero_key = result.get("zotero_key")
     langsmith_run_id = result.get("langsmith_run_id")
     if store_id or zotero_key or langsmith_run_id:
-        print(f"\n--- Storage ---")
+        print("\n--- Storage ---")
         if store_id:
             print(f"Store Record ID: {store_id}")
         if zotero_key:
@@ -270,12 +292,14 @@ def print_result_summary(result: dict, topic: str) -> None:
     translated_report = state.get("translated_report") if state else None
 
     if primary_lang and primary_lang != "en":
-        print(f"\n--- Language Settings ---")
+        print("\n--- Language Settings ---")
         print(f"Primary Language: {primary_lang}")
 
     if translated_report:
-        print(f"\n--- Translated Report ---")
-        print(f"Length: {len(translated_report)} chars ({len(translated_report.split())} words)")
+        print("\n--- Translated Report ---")
+        print(
+            f"Length: {len(translated_report)} chars ({len(translated_report.split())} words)"
+        )
         print(safe_preview(translated_report, 800))
 
     # Errors
@@ -318,7 +342,9 @@ async def run_research(
             result = {**full_state, **result}
             logger.info(f"Loaded full state from state store for run {run_id}")
         else:
-            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
+            logger.warning(
+                f"Could not load state for run {run_id} - detailed metrics unavailable"
+            )
 
     return result
 
@@ -334,7 +360,7 @@ Examples:
   %(prog)s "AI agents"                          # Standard English research
   %(prog)s "AI agents" quick                    # Quick research
   %(prog)s "AI agents" --language es            # Research in Spanish
-        """
+        """,
     )
 
     add_quality_argument(parser, choices=VALID_DEPTHS, default=DEFAULT_DEPTH)
@@ -399,6 +425,7 @@ async def main():
     finally:
         # Clean up resources
         from workflows.research.web_research import cleanup_research_resources
+
         try:
             logger.info("Cleaning up research resources...")
             await cleanup_research_resources()

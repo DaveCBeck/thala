@@ -11,7 +11,9 @@ from .types import DiffusionEngineState, COCITATION_THRESHOLD
 logger = logging.getLogger(__name__)
 
 
-async def check_cocitation_relevance_node(state: DiffusionEngineState) -> dict[str, Any]:
+async def check_cocitation_relevance_node(
+    state: DiffusionEngineState,
+) -> dict[str, Any]:
     """Two-stage relevance: Stage 1 - auto-include papers co-cited with 3+ corpus papers."""
     candidates = state.get("current_stage_candidates", [])
     citation_graph = state.get("citation_graph")
@@ -63,7 +65,9 @@ async def check_cocitation_relevance_node(state: DiffusionEngineState) -> dict[s
 
         if is_cocited:
             cocitation_included.append(doi)
-            logger.debug(f"Auto-included via co-citation: {candidate.get('title', 'Unknown')[:50]}")
+            logger.debug(
+                f"Auto-included via co-citation: {candidate.get('title', 'Unknown')[:50]}"
+            )
         else:
             remaining_candidates.append(candidate)
 

@@ -44,15 +44,13 @@ async def extract_paper_summary(
     Returns:
         PaperSummary with extracted fields
     """
-    authors_str = ", ".join(
-        a.get("name", "") for a in paper.get("authors", [])[:5]
-    )
+    authors_str = ", ".join(a.get("name", "") for a in paper.get("authors", [])[:5])
     if len(paper.get("authors", [])) > 5:
         authors_str += " et al."
 
-    user_prompt = f"""Paper: {paper.get('title', 'Unknown')} ({paper.get('year', 'Unknown')})
+    user_prompt = f"""Paper: {paper.get("title", "Unknown")} ({paper.get("year", "Unknown")})
 Authors: {authors_str}
-Venue: {paper.get('venue', 'Unknown')}
+Venue: {paper.get("venue", "Unknown")}
 
 Content:
 {content}
@@ -140,13 +138,13 @@ async def extract_summary_from_metadata(
     if len(authors) > 5:
         authors_str += " et al."
 
-    user_prompt = f"""Paper: {title} ({paper.get('year', 'Unknown')})
+    user_prompt = f"""Paper: {title} ({paper.get("year", "Unknown")})
 Authors: {authors_str}
-Venue: {paper.get('venue', 'Unknown')}
-Citations: {paper.get('cited_by_count', 0)}
+Venue: {paper.get("venue", "Unknown")}
+Citations: {paper.get("cited_by_count", 0)}
 
 Abstract:
-{abstract if abstract else 'No abstract available'}
+{abstract if abstract else "No abstract available"}
 
 Extract structured information based on this metadata."""
 
@@ -164,7 +162,9 @@ Extract structured information based on this metadata."""
 
         # Use existing short_summary from document processing if available,
         # otherwise fall back to abstract
-        short_summary = existing_short_summary or (abstract[:500] if abstract else f"Study on {title}")
+        short_summary = existing_short_summary or (
+            abstract[:500] if abstract else f"Study on {title}"
+        )
 
         return PaperSummary(
             doi=doi,
@@ -188,7 +188,9 @@ Extract structured information based on this metadata."""
     except Exception as e:
         logger.warning(f"Failed to extract metadata summary for {doi}: {e}")
         # Use existing short_summary from document processing if available
-        fallback_summary = existing_short_summary or (abstract[:500] if abstract else title)
+        fallback_summary = existing_short_summary or (
+            abstract[:500] if abstract else title
+        )
         return PaperSummary(
             doi=doi,
             title=title,
@@ -247,14 +249,18 @@ async def extract_all_summaries(
     completed_count = 0
     total_to_extract = len(processing_results)
 
-    async def extract_single_summary(doi: str, result: dict) -> tuple[str, Any, str, str, str]:
+    async def extract_single_summary(
+        doi: str, result: dict
+    ) -> tuple[str, Any, str, str, str]:
         """Returns (doi, summary, es_record_id, zotero_key, failure_reason)."""
         nonlocal completed_count
         async with semaphore:
             # Skip papers that were removed (e.g., by language verification)
             paper = papers_by_doi.get(doi)
             if paper is None:
-                logger.debug(f"Skipping {doi}: not in papers_by_doi (likely filtered out)")
+                logger.debug(
+                    f"Skipping {doi}: not in papers_by_doi (likely filtered out)"
+                )
                 return doi, None, None, None, "filtered_out"
             es_record_id = result.get("es_record_id")
             zotero_key = result.get("zotero_key")
@@ -269,7 +275,9 @@ async def extract_all_summaries(
                     store_manager, es_record_id, doi
                 )
                 if not content:
-                    logger.warning(f"Could not fetch content for {doi}, will need fallback")
+                    logger.warning(
+                        f"Could not fetch content for {doi}, will need fallback"
+                    )
                     return doi, None, None, None, "content_fetch_failed"
 
                 summary = await extract_paper_summary(
@@ -282,7 +290,9 @@ async def extract_all_summaries(
 
                 completed_count += 1
                 title = paper.get("title", "Unknown")[:50]
-                logger.debug(f"[{completed_count}/{total_to_extract}] Extracted summary: {title}")
+                logger.debug(
+                    f"[{completed_count}/{total_to_extract}] Extracted summary: {title}"
+                )
 
                 return doi, summary, es_record_id, zotero_key, None
 
@@ -290,7 +300,10 @@ async def extract_all_summaries(
                 logger.error(f"Failed to extract summary for {doi}: {e}")
                 return doi, None, None, None, f"extraction_error: {e}"
 
-    tasks = [extract_single_summary(doi, result) for doi, result in processing_results.items()]
+    tasks = [
+        extract_single_summary(doi, result)
+        for doi, result in processing_results.items()
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:
@@ -305,7 +318,9 @@ async def extract_all_summaries(
         elif failure_reason:
             failed_dois.add(doi)
 
-    logger.info(f"Extracted summaries for {len(summaries)} papers, {len(failed_dois)} failed")
+    logger.info(
+        f"Extracted summaries for {len(summaries)} papers, {len(failed_dois)} failed"
+    )
     return summaries, es_ids, zotero_keys, failed_dois
 
 
@@ -370,15 +385,13 @@ async def _extract_all_summaries_batched(
         paper = data["paper"]
         content = data["content"]
 
-        authors_str = ", ".join(
-            a.get("name", "") for a in paper.get("authors", [])[:5]
-        )
+        authors_str = ", ".join(a.get("name", "") for a in paper.get("authors", [])[:5])
         if len(paper.get("authors", [])) > 5:
             authors_str += " et al."
 
-        user_prompt = f"""Paper: {paper.get('title', 'Unknown')} ({paper.get('year', 'Unknown')})
+        user_prompt = f"""Paper: {paper.get("title", "Unknown")} ({paper.get("year", "Unknown")})
 Authors: {authors_str}
-Venue: {paper.get('venue', 'Unknown')}
+Venue: {paper.get("venue", "Unknown")}
 
 Content:
 {content}
@@ -413,7 +426,9 @@ Extract structured information from this paper."""
         all_results.update(haiku_results.results)
 
     if sonnet_1m_requests:
-        logger.debug(f"Submitting batch of {len(sonnet_1m_requests)} papers (SONNET_1M)")
+        logger.debug(
+            f"Submitting batch of {len(sonnet_1m_requests)} papers (SONNET_1M)"
+        )
         sonnet_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=sonnet_1m_requests,
@@ -465,5 +480,7 @@ Extract structured information from this paper."""
             logger.warning(f"Summary extraction failed for {doi}: {error_msg}")
             failed_dois.add(doi)
 
-    logger.info(f"Extracted {len(summaries)} summaries (batch), {len(failed_dois)} failed")
+    logger.info(
+        f"Extracted {len(summaries)} summaries (batch), {len(failed_dois)} failed"
+    )
     return summaries, es_ids, zotero_keys, failed_dois

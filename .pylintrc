@@ -1,0 +1,22 @@
+[MAIN]
+# Ignore import errors for modules that work at runtime but pylint can't resolve
+ignore-patterns=test_*.py
+
+[MESSAGES CONTROL]
+# Disable import-error and no-name-in-module for packages with complex import structures
+# These are false positives in workflows.wrappers.supervised_lit_review.supervision
+disable=
+    import-error,
+    no-name-in-module,
+    no-member,
+    # Pydantic models trigger false positives
+    not-an-iterable,
+    # Too noisy for this codebase
+    missing-docstring,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-locals,
+    line-too-long
+
+[FORMAT]
+max-line-length=120

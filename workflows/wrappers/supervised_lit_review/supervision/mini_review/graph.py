@@ -72,8 +72,7 @@ async def run_mini_review(
     discovered_papers = keyword_result.get("discovered_papers", [])
 
     filtered_papers = [
-        p for p in discovered_papers
-        if p.get("doi") and p["doi"] not in exclude_dois
+        p for p in discovered_papers if p.get("doi") and p["doi"] not in exclude_dois
     ]
     logger.debug(
         f"Keyword search: {len(discovered_papers)} found, "
@@ -91,9 +90,7 @@ async def run_mini_review(
             "references": [],
         }
 
-    initial_corpus: dict[str, PaperMetadata] = {
-        p["doi"]: p for p in filtered_papers
-    }
+    initial_corpus: dict[str, PaperMetadata] = {p["doi"]: p for p in filtered_papers}
     seed_dois = list(initial_corpus.keys())
 
     diffusion_result = await run_diffusion(

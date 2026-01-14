@@ -3,7 +3,6 @@
 import logging
 import re
 from difflib import SequenceMatcher
-from typing import Any
 
 from workflows.wrappers.supervised_lit_review.supervision.types import SectionEditResult
 from workflows.wrappers.supervised_lit_review.supervision.utils import SectionInfo
@@ -15,11 +14,9 @@ def detect_duplicate_sections(sections: list[SectionInfo]) -> list[tuple[str, st
     """Detect sections with overlapping content that may cause duplicates."""
     duplicates = []
     for i, s1 in enumerate(sections):
-        for s2 in sections[i + 1:]:
+        for s2 in sections[i + 1 :]:
             ratio = SequenceMatcher(
-                None,
-                s1["section_content"][:500],
-                s2["section_content"][:500]
+                None, s1["section_content"][:500], s2["section_content"][:500]
             ).ratio()
             if ratio > 0.7:
                 duplicates.append((s1["section_id"], s2["section_id"]))
@@ -51,7 +48,9 @@ def detect_duplicate_headers(document: str) -> list[tuple[int, int, str]]:
     return duplicates
 
 
-def remove_duplicate_headers(document: str, duplicates: list[tuple[int, int, str]]) -> str:
+def remove_duplicate_headers(
+    document: str, duplicates: list[tuple[int, int, str]]
+) -> str:
     """Remove duplicate section headers from document."""
     if not duplicates:
         return document
@@ -73,8 +72,8 @@ def remove_duplicate_headers(document: str, duplicates: list[tuple[int, int, str
         content_start2 = line2 + 1
         content_end2 = end_line
 
-        content1 = "\n".join(lines[content_start1:content_end1 + 1]).strip()[:500]
-        content2 = "\n".join(lines[content_start2:content_end2 + 1]).strip()[:500]
+        content1 = "\n".join(lines[content_start1 : content_end1 + 1]).strip()[:500]
+        content2 = "\n".join(lines[content_start2 : content_end2 + 1]).strip()[:500]
 
         similarity = SequenceMatcher(None, content1, content2).ratio()
 
@@ -83,7 +82,7 @@ def remove_duplicate_headers(document: str, duplicates: list[tuple[int, int, str
                 f"Removing duplicate section at lines {line2 + 1}-{end_line + 1} "
                 f"(similarity: {similarity:.2f})"
             )
-            lines = lines[:line2] + lines[end_line + 1:]
+            lines = lines[:line2] + lines[end_line + 1 :]
         else:
             # Low similarity means different content - remove header only,
             # content will flow under the previous section's header
@@ -91,7 +90,7 @@ def remove_duplicate_headers(document: str, duplicates: list[tuple[int, int, str
                 f"Merging content at line {line2 + 1} under previous section "
                 f"(removing duplicate header, content similarity: {similarity:.2f})"
             )
-            lines = lines[:line2] + lines[line2 + 1:]
+            lines = lines[:line2] + lines[line2 + 1 :]
 
     return "\n".join(lines)
 

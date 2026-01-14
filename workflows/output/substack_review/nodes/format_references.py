@@ -80,9 +80,7 @@ async def format_references_node(state: SubstackReviewState) -> dict[str, Any]:
     if not selected_angle:
         return {
             "status": "failed",
-            "errors": [
-                {"node": "format_references", "error": "No essay selected"}
-            ],
+            "errors": [{"node": "format_references", "error": "No essay selected"}],
         }
 
     # Get winning essay

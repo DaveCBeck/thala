@@ -106,7 +106,10 @@ async def language_verification_node(state: PaperProcessingState) -> dict[str, A
 
         by_detected_language[detected_lang] += 1
 
-        if detected_lang == target_language and confidence >= LANGUAGE_CONFIDENCE_THRESHOLD:
+        if (
+            detected_lang == target_language
+            and confidence >= LANGUAGE_CONFIDENCE_THRESHOLD
+        ):
             verified_dois.append(doi)
             logger.debug(f"Verified {doi}: {detected_lang} ({confidence:.2f})")
         else:
@@ -118,7 +121,8 @@ async def language_verification_node(state: PaperProcessingState) -> dict[str, A
 
     # Filter papers_to_process to only verified DOIs
     verified_papers = [
-        p for p in papers_to_process
+        p
+        for p in papers_to_process
         if p.get("doi") in verified_dois or p.get("doi") not in processing_results
     ]
 

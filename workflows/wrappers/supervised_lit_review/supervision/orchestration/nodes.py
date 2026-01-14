@@ -4,6 +4,8 @@ import logging
 import uuid
 from typing import Any
 
+import langsmith as ls
+
 from .types import OrchestrationState
 from ..graph import run_loop1_standalone
 from ..loops.loop2 import run_loop2_standalone
@@ -27,18 +29,19 @@ async def run_loop1_node(state: OrchestrationState) -> dict[str, Any]:
     topic = input_data.get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
 
-    result = await run_loop1_standalone(
-        review=state["current_review"],
-        topic=input_data.get("topic", ""),
-        research_questions=input_data.get("research_questions", []),
-        max_iterations=max_iterations,
-        source_count=len(state["paper_corpus"]),
-        quality_settings=state["quality_settings"],
-        config={
-            "run_id": loop_run_id,
-            "run_name": f"loop1_theory:{topic}",
-        },
-    )
+    with ls.tracing_context(enabled=True):
+        result = await run_loop1_standalone(
+            review=state["current_review"],
+            topic=input_data.get("topic", ""),
+            research_questions=input_data.get("research_questions", []),
+            max_iterations=max_iterations,
+            source_count=len(state["paper_corpus"]),
+            quality_settings=state["quality_settings"],
+            config={
+                "run_id": loop_run_id,
+                "run_name": f"loop1_theory:{topic}",
+            },
+        )
 
     after_text = result.current_review
     iterations_used = len(result.issues_explored)
@@ -78,16 +81,17 @@ async def run_loop2_node(state: OrchestrationState) -> dict[str, Any]:
     topic = input_data.get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
 
-    result = await run_loop2_standalone(
-        review=state["current_review"],
-        topic=input_data.get("topic", ""),
-        research_questions=input_data.get("research_questions", []),
-        quality_settings=state["quality_settings"],
-        config={
-            "run_id": loop_run_id,
-            "run_name": f"loop2_literature:{topic}",
-        },
-    )
+    with ls.tracing_context(enabled=True):
+        result = await run_loop2_standalone(
+            review=state["current_review"],
+            topic=input_data.get("topic", ""),
+            research_questions=input_data.get("research_questions", []),
+            quality_settings=state["quality_settings"],
+            config={
+                "run_id": loop_run_id,
+                "run_name": f"loop2_literature:{topic}",
+            },
+        )
 
     after_text = result.current_review
     iterations_used = len(result.explored_bases)
@@ -127,15 +131,16 @@ async def run_loop3_node(state: OrchestrationState) -> dict[str, Any]:
     topic = input_data.get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
 
-    result = await run_loop3_standalone(
-        review=state["current_review"],
-        topic=input_data.get("topic", ""),
-        quality_settings=state["quality_settings"],
-        config={
-            "run_id": loop_run_id,
-            "run_name": f"loop3_structure:{topic}",
-        },
-    )
+    with ls.tracing_context(enabled=True):
+        result = await run_loop3_standalone(
+            review=state["current_review"],
+            topic=input_data.get("topic", ""),
+            quality_settings=state["quality_settings"],
+            config={
+                "run_id": loop_run_id,
+                "run_name": f"loop3_structure:{topic}",
+            },
+        )
 
     after_text = result.current_review
     iterations_used = result.iterations_used
@@ -178,15 +183,16 @@ async def run_loop4_node(state: OrchestrationState) -> dict[str, Any]:
     topic = input_data.get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
 
-    result = await run_loop4_standalone(
-        review=state["current_review"],
-        topic=input_data.get("topic", ""),
-        quality_settings=state["quality_settings"],
-        config={
-            "run_id": loop_run_id,
-            "run_name": f"loop4_editing:{topic}",
-        },
-    )
+    with ls.tracing_context(enabled=True):
+        result = await run_loop4_standalone(
+            review=state["current_review"],
+            topic=input_data.get("topic", ""),
+            quality_settings=state["quality_settings"],
+            config={
+                "run_id": loop_run_id,
+                "run_name": f"loop4_editing:{topic}",
+            },
+        )
 
     after_text = result.current_review
     iterations_used = result.iterations_used
@@ -220,11 +226,10 @@ async def run_loop4_5_node(state: OrchestrationState) -> dict[str, Any]:
     """Run Loop 4.5: Cohesion check."""
     logger.info("Running Loop 4.5: Cohesion check")
 
-    result = await check_cohesion(state["current_review"])
+    with ls.tracing_context(enabled=True):
+        result = await check_cohesion(state["current_review"])
 
-    logger.info(
-        f"Loop 4.5 complete: needs_restructuring={result.needs_restructuring}"
-    )
+    logger.info(f"Loop 4.5 complete: needs_restructuring={result.needs_restructuring}")
 
     return {
         "loop4_5_result": {
@@ -246,15 +251,16 @@ async def run_loop5_node(state: OrchestrationState) -> dict[str, Any]:
     topic = input_data.get("topic", "")[:20]
     loop_run_id = uuid.uuid4()
 
-    result = await run_loop5_standalone(
-        review=state["current_review"],
-        topic=input_data.get("topic", ""),
-        quality_settings=state["quality_settings"],
-        config={
-            "run_id": loop_run_id,
-            "run_name": f"loop5_factcheck:{topic}",
-        },
-    )
+    with ls.tracing_context(enabled=True):
+        result = await run_loop5_standalone(
+            review=state["current_review"],
+            topic=input_data.get("topic", ""),
+            quality_settings=state["quality_settings"],
+            config={
+                "run_id": loop_run_id,
+                "run_name": f"loop5_factcheck:{topic}",
+            },
+        )
 
     after_text = result.current_review
 

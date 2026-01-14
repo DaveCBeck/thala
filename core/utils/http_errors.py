@@ -42,12 +42,8 @@ async def safe_http_request(
         logger.error(f"Request timeout for {client.base_url}{path}: {e}")
         raise error_class(f"Request timeout: {e}")
     except httpx.HTTPStatusError as e:
-        logger.error(
-            f"HTTP {e.response.status_code} error for {client.base_url}{path}"
-        )
-        raise error_class(
-            f"HTTP {e.response.status_code}: {e.response.text}"
-        )
+        logger.error(f"HTTP {e.response.status_code} error for {client.base_url}{path}")
+        raise error_class(f"HTTP {e.response.status_code}: {e.response.text}")
     except Exception as e:
         logger.error(f"Unexpected error for {client.base_url}{path}: {e}")
         raise error_class(f"Request failed: {e}")

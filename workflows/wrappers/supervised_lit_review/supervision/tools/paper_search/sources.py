@@ -42,13 +42,15 @@ async def semantic_search(
             seen_keys.add(zotero_key)
             similarity = 1 - r.get("distance", 1)  # Convert distance to similarity
 
-            search_results.append({
-                "zotero_key": zotero_key,
-                "score": similarity,
-                "title": metadata.get("title", "Unknown"),
-                "year": metadata.get("year", 0),
-                "authors": metadata.get("authors", []),
-            })
+            search_results.append(
+                {
+                    "zotero_key": zotero_key,
+                    "score": similarity,
+                    "title": metadata.get("title", "Unknown"),
+                    "year": metadata.get("year", 0),
+                    "authors": metadata.get("authors", []),
+                }
+            )
 
         return search_results[:limit]
 
@@ -89,13 +91,15 @@ async def keyword_search(
 
             # Get metadata from record
             metadata = r.metadata or {}
-            search_results.append({
-                "zotero_key": r.zotero_key,
-                "score": score,
-                "title": metadata.get("title", "Unknown"),
-                "year": metadata.get("year", 0),
-                "authors": metadata.get("authors", []),
-            })
+            search_results.append(
+                {
+                    "zotero_key": r.zotero_key,
+                    "score": score,
+                    "title": metadata.get("title", "Unknown"),
+                    "year": metadata.get("year", 0),
+                    "authors": metadata.get("authors", []),
+                }
+            )
 
         return search_results[:limit]
 

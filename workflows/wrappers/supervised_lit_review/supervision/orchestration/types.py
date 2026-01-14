@@ -1,14 +1,8 @@
 """Types for orchestration state."""
+
 from typing import Optional, Any
 from typing_extensions import TypedDict
 
-from ..types import (
-    LiteratureBaseDecision,
-    EditManifest,
-    HolisticReviewResult,
-    CohesionCheckResult,
-    DocumentEdits,
-)
 from workflows.research.academic_lit_review.state import (
     LitReviewInput,
     QualitySettings,

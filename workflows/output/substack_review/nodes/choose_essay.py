@@ -31,9 +31,7 @@ async def choose_essay_node(state: SubstackReviewState) -> dict[str, Any]:
         logger.error(f"Missing essays for angles: {missing}")
         return {
             "status": "failed",
-            "errors": [
-                {"node": "choose_essay", "error": f"Missing essays: {missing}"}
-            ],
+            "errors": [{"node": "choose_essay", "error": f"Missing essays: {missing}"}],
         }
 
     user_prompt = CHOOSING_USER_TEMPLATE.format(

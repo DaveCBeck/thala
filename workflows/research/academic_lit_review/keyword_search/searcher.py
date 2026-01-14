@@ -42,14 +42,16 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
     async def search_single_query(query: str) -> list[OpenAlexWork]:
         """Search OpenAlex for a single query."""
         try:
-            result = await openalex_search.ainvoke({
-                "query": query,
-                "limit": MAX_RESULTS_PER_QUERY,
-                "min_citations": min_citations,
-                "from_year": from_year,
-                "to_year": to_year,
-                "language": language_code,
-            })
+            result = await openalex_search.ainvoke(
+                {
+                    "query": query,
+                    "limit": MAX_RESULTS_PER_QUERY,
+                    "min_citations": min_citations,
+                    "from_year": from_year,
+                    "to_year": to_year,
+                    "language": language_code,
+                }
+            )
 
             works = []
             for r in result.get("results", []):

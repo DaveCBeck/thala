@@ -42,7 +42,9 @@ async def _process_single_book(
     try:
         # Only process PDFs for now
         if book["format"].lower() != "pdf":
-            logger.debug(f"Skipping non-PDF: '{book['title']}' (format: {book['format']})")
+            logger.debug(
+                f"Skipping non-PDF: '{book['title']}' (format: {book['format']})"
+            )
             return None, book["title"]
 
         # Download via VPN and convert via Marker
@@ -59,7 +61,9 @@ async def _process_single_book(
         # Truncate content for summary generation based on quality settings
         max_content = quality_settings["max_content_for_summary"]
         content_truncated = content[:max_content]
-        logger.debug(f"Extracted {len(content)} chars from '{book['title']}', using {len(content_truncated)} for summary")
+        logger.debug(
+            f"Extracted {len(content)} chars from '{book['title']}', using {len(content_truncated)} for summary"
+        )
 
         # Generate theme-relevant summary using Sonnet
         summary_tokens = quality_settings["summary_max_tokens"]
@@ -72,7 +76,11 @@ async def _process_single_book(
         )
 
         response = await llm.ainvoke([{"role": "user", "content": summary_prompt}])
-        summary = response.content if isinstance(response.content, str) else str(response.content)
+        summary = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         summary = summary.strip()
 
         # Create updated book with summary
@@ -111,7 +119,9 @@ async def process_books(state: dict) -> dict[str, Any]:
         logger.warning("No books to process")
         return {"processed_books": [], "processing_failed": []}
 
-    logger.debug(f"Processing {len(books)} books with max_concurrent={quality_settings['max_concurrent_downloads']}")
+    logger.debug(
+        f"Processing {len(books)} books with max_concurrent={quality_settings['max_concurrent_downloads']}"
+    )
 
     # Get translated summary prompt if needed
     summary_prompt_template = await get_summary_prompt(language_config)
@@ -122,7 +132,9 @@ async def process_books(state: dict) -> dict[str, Any]:
 
     async def process_with_semaphore(book: BookResult):
         async with semaphore:
-            return await _process_single_book(book, theme, quality_settings, summary_prompt_template)
+            return await _process_single_book(
+                book, theme, quality_settings, summary_prompt_template
+            )
 
     tasks = [process_with_semaphore(book) for book in books]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -141,7 +153,9 @@ async def process_books(state: dict) -> dict[str, Any]:
         elif failed_title:
             failed.append(failed_title)
 
-    logger.info(f"Book processing complete: {len(processed)} processed, {len(failed)} failed/skipped")
+    logger.info(
+        f"Book processing complete: {len(processed)} processed, {len(failed)} failed/skipped"
+    )
 
     return {
         "processed_books": processed,

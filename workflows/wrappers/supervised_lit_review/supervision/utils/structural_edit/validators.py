@@ -45,7 +45,12 @@ def validate_structural_edits(
             error = f"source_paragraph {edit.source_paragraph} does not exist (max: {max_para})"
 
         # Check target exists (if required)
-        elif edit.edit_type in ("reorder_sections", "merge_sections", "add_transition", "move_content"):
+        elif edit.edit_type in (
+            "reorder_sections",
+            "merge_sections",
+            "add_transition",
+            "move_content",
+        ):
             if edit.target_paragraph is None:
                 error = f"{edit.edit_type} requires target_paragraph"
             elif edit.target_paragraph not in paragraph_mapping:
@@ -62,14 +67,18 @@ def validate_structural_edits(
         elif edit.edit_type == "split_section":
             if not edit.replacement_text:
                 needs_retry = True
-                error = f"split_section requires replacement_text with ---SPLIT--- delimiter"
+                error = (
+                    "split_section requires replacement_text with ---SPLIT--- delimiter"
+                )
             elif "---SPLIT---" not in edit.replacement_text:
-                error = f"split_section replacement_text must contain ---SPLIT--- delimiter"
+                error = (
+                    "split_section replacement_text must contain ---SPLIT--- delimiter"
+                )
 
         elif edit.edit_type == "add_structural_content":
             if not edit.replacement_text:
                 needs_retry = True
-                error = f"add_structural_content requires replacement_text with the structural content to add"
+                error = "add_structural_content requires replacement_text with the structural content to add"
 
         if error:
             if needs_retry:
@@ -121,9 +130,8 @@ def verify_edits_applied(
             # Check both paragraphs' content appears
             src_text = original_mapping.get(edit.source_paragraph, "")[:30]
             tgt_text = original_mapping.get(edit.target_paragraph or 0, "")[:30]
-            verifications[key] = (
-                (src_text in new_text if src_text else True)
-                and (tgt_text in new_text if tgt_text else True)
+            verifications[key] = (src_text in new_text if src_text else True) and (
+                tgt_text in new_text if tgt_text else True
             )
 
         elif edit.edit_type == "add_transition":

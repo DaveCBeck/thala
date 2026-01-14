@@ -9,8 +9,15 @@ import logging
 from typing import Any
 
 from workflows.research.web_research.state import DeepResearchState, ResearchBrief
-from workflows.research.web_research.prompts import CREATE_BRIEF_SYSTEM, CREATE_BRIEF_HUMAN, get_today_str
-from workflows.research.web_research.utils import load_prompts_with_translation, extract_json_from_llm_response
+from workflows.research.web_research.prompts import (
+    CREATE_BRIEF_SYSTEM,
+    CREATE_BRIEF_HUMAN,
+    get_today_str,
+)
+from workflows.research.web_research.utils import (
+    load_prompts_with_translation,
+    extract_json_from_llm_response,
+)
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
@@ -44,10 +51,12 @@ async def create_brief(state: DeepResearchState) -> dict[str, Any]:
     llm = get_llm(ModelTier.SONNET)
 
     try:
-        response = await llm.ainvoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": human_prompt},
-        ])
+        response = await llm.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": human_prompt},
+            ]
+        )
 
         brief_data = extract_json_from_llm_response(response.content)
 

@@ -5,9 +5,7 @@ from workflows.research.academic_lit_review.state import PaperMetadata
 
 def format_paper_for_batch(paper: PaperMetadata) -> str:
     """Format a single paper for inclusion in batch relevance scoring prompt."""
-    authors_str = ", ".join(
-        a.get("name", "") for a in paper.get("authors", [])[:5]
-    )
+    authors_str = ", ".join(a.get("name", "") for a in paper.get("authors", [])[:5])
     if len(paper.get("authors", [])) > 5:
         authors_str += " et al."
 

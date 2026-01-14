@@ -1,7 +1,6 @@
 """JSON parsing utilities."""
 
 import json
-import re
 
 
 def extract_json_from_llm_response(content: str) -> dict:
@@ -70,5 +69,5 @@ def extract_json_from_llm_response(content: str) -> dict:
     if depth != 0:
         raise json.JSONDecodeError("Unbalanced braces in JSON", content, len(content))
 
-    json_str = content[start_idx:end_idx + 1]
+    json_str = content[start_idx : end_idx + 1]
     return json.loads(json_str)

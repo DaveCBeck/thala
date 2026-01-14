@@ -13,7 +13,7 @@ Key advantages:
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_llm, get_structured_output
+from workflows.shared.llm_utils import ModelTier, get_llm
 from workflows.wrappers.supervised_lit_review.supervision.types import (
     StructuralIssue,
     SectionRewriteResult,
@@ -25,7 +25,6 @@ from workflows.wrappers.supervised_lit_review.supervision.prompts import (
     SECTION_REWRITE_SUMMARY_SYSTEM,
     SECTION_REWRITE_SUMMARY_USER,
 )
-from workflows.wrappers.supervised_lit_review.supervision.utils import number_paragraphs
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +122,9 @@ async def rewrite_section_for_issue(
     )
 
     if not section_content:
-        logger.warning(f"Issue {issue_id}: No content found for paragraphs {affected_paragraphs}")
+        logger.warning(
+            f"Issue {issue_id}: No content found for paragraphs {affected_paragraphs}"
+        )
         return None, f"no_content_for_paragraphs_{affected_paragraphs}"
 
     user_prompt = SECTION_REWRITE_USER.format(
@@ -149,7 +150,9 @@ async def rewrite_section_for_issue(
 
         if not rewritten_content or len(rewritten_content) < 50:
             actual_len = len(rewritten_content) if rewritten_content else 0
-            logger.warning(f"Issue {issue_id}: Rewrite too short ({actual_len} < 50 chars)")
+            logger.warning(
+                f"Issue {issue_id}: Rewrite too short ({actual_len} < 50 chars)"
+            )
             return None, f"rewrite_too_short_{actual_len}_chars"
 
         changes_summary = await generate_change_summary(
@@ -225,7 +228,6 @@ def apply_rewrite_to_document(
 
     new_mapping[start_para] = rewrite.rewritten_content
 
-    old_range_size = end_para - start_para + 1
     new_para_num = start_para + 1
 
     for p in sorted(paragraph_mapping.keys()):
@@ -238,10 +240,7 @@ def apply_rewrite_to_document(
 
 def rebuild_document_from_mapping(paragraph_mapping: dict[int, str]) -> str:
     """Rebuild document text from paragraph mapping."""
-    paragraphs = [
-        paragraph_mapping[p]
-        for p in sorted(paragraph_mapping.keys())
-    ]
+    paragraphs = [paragraph_mapping[p] for p in sorted(paragraph_mapping.keys())]
     return "\n\n".join(paragraphs)
 
 

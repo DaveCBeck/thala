@@ -3,6 +3,8 @@
 import logging
 import uuid
 
+import langsmith as ls
+
 from .types import OrchestrationState
 from .builder import create_orchestration_graph
 from ..graph import run_loop1_standalone
@@ -105,7 +107,9 @@ async def run_supervision_orchestration(
     graph = create_orchestration_graph()
     topic = input_data.get("topic", "")[:20]
     orch_run_id = uuid.uuid4()
-    logger.info(f"Starting supervision orchestration for '{topic}' (run_id: {orch_run_id})")
+    logger.info(
+        f"Starting supervision orchestration for '{topic}' (run_id: {orch_run_id})"
+    )
     final_state = await graph.ainvoke(
         initial_state,
         config={
@@ -114,7 +118,9 @@ async def run_supervision_orchestration(
         },
     )
 
-    logger.info(f"Orchestration complete: {final_state.get('completion_reason', 'Unknown')}")
+    logger.info(
+        f"Orchestration complete: {final_state.get('completion_reason', 'Unknown')}"
+    )
 
     return {
         "final_review": final_state.get("final_review", review),
@@ -215,18 +221,19 @@ async def run_supervision_configurable(
         loops_run.append("loop1")
         loop1_run_id = uuid.uuid4()
 
-        loop1_result = await run_loop1_standalone(
-            review=current_review,
-            topic=input_data.get("topic", ""),
-            research_questions=input_data.get("research_questions", []),
-            max_iterations=max_iterations_per_loop,
-            source_count=len(current_corpus),
-            quality_settings=quality_settings,
-            config={
-                "run_id": loop1_run_id,
-                "run_name": f"loop1_theory:{topic}",
-            },
-        )
+        with ls.tracing_context(enabled=True):
+            loop1_result = await run_loop1_standalone(
+                review=current_review,
+                topic=input_data.get("topic", ""),
+                research_questions=input_data.get("research_questions", []),
+                max_iterations=max_iterations_per_loop,
+                source_count=len(current_corpus),
+                quality_settings=quality_settings,
+                config={
+                    "run_id": loop1_run_id,
+                    "run_name": f"loop1_theory:{topic}",
+                },
+            )
 
         current_review = loop1_result.current_review
         review_loop1 = current_review
@@ -240,16 +247,17 @@ async def run_supervision_configurable(
         loops_run.append("loop2")
         loop2_run_id = uuid.uuid4()
 
-        loop2_result = await run_loop2_standalone(
-            review=current_review,
-            topic=input_data.get("topic", ""),
-            research_questions=input_data.get("research_questions", []),
-            quality_settings=quality_settings,
-            config={
-                "run_id": loop2_run_id,
-                "run_name": f"loop2_literature:{topic}",
-            },
-        )
+        with ls.tracing_context(enabled=True):
+            loop2_result = await run_loop2_standalone(
+                review=current_review,
+                topic=input_data.get("topic", ""),
+                research_questions=input_data.get("research_questions", []),
+                quality_settings=quality_settings,
+                config={
+                    "run_id": loop2_run_id,
+                    "run_name": f"loop2_literature:{topic}",
+                },
+            )
 
         current_review = loop2_result.current_review
         review_loop2 = current_review
@@ -263,15 +271,16 @@ async def run_supervision_configurable(
         loops_run.append("loop3")
         loop3_run_id = uuid.uuid4()
 
-        loop3_result = await run_loop3_standalone(
-            review=current_review,
-            topic=input_data.get("topic", ""),
-            quality_settings=quality_settings,
-            config={
-                "run_id": loop3_run_id,
-                "run_name": f"loop3_structure:{topic}",
-            },
-        )
+        with ls.tracing_context(enabled=True):
+            loop3_result = await run_loop3_standalone(
+                review=current_review,
+                topic=input_data.get("topic", ""),
+                quality_settings=quality_settings,
+                config={
+                    "run_id": loop3_run_id,
+                    "run_name": f"loop3_structure:{topic}",
+                },
+            )
 
         current_review = loop3_result.current_review
         review_loop3 = current_review
@@ -285,15 +294,16 @@ async def run_supervision_configurable(
         loops_run.append("loop4")
         loop4_run_id = uuid.uuid4()
 
-        loop4_result = await run_loop4_standalone(
-            review=current_review,
-            topic=input_data.get("topic", ""),
-            quality_settings=quality_settings,
-            config={
-                "run_id": loop4_run_id,
-                "run_name": f"loop4_editing:{topic}",
-            },
-        )
+        with ls.tracing_context(enabled=True):
+            loop4_result = await run_loop4_standalone(
+                review=current_review,
+                topic=input_data.get("topic", ""),
+                quality_settings=quality_settings,
+                config={
+                    "run_id": loop4_run_id,
+                    "run_name": f"loop4_editing:{topic}",
+                },
+            )
 
         current_review = loop4_result.current_review
         review_loop4 = current_review
@@ -305,7 +315,8 @@ async def run_supervision_configurable(
         logger.info("Running Loop 4.5: Cohesion check")
         loops_run.append("loop4_5")
 
-        cohesion_result = await check_cohesion(current_review)
+        with ls.tracing_context(enabled=True):
+            cohesion_result = await check_cohesion(current_review)
         all_results["loop4_5_result"] = {
             "needs_restructuring": cohesion_result.needs_restructuring,
             "reasoning": cohesion_result.reasoning,
@@ -316,15 +327,16 @@ async def run_supervision_configurable(
             loop3_repeat_run_id = uuid.uuid4()
             # Use reduced quality settings for repeat (max 2 iterations)
             repeat_quality = {**quality_settings, "max_stages": 1}
-            loop3_repeat = await run_loop3_standalone(
-                review=current_review,
-                topic=input_data.get("topic", ""),
-                quality_settings=repeat_quality,
-                config={
-                    "run_id": loop3_repeat_run_id,
-                    "run_name": f"loop3_repeat:{topic}",
-                },
-            )
+            with ls.tracing_context(enabled=True):
+                loop3_repeat = await run_loop3_standalone(
+                    review=current_review,
+                    topic=input_data.get("topic", ""),
+                    quality_settings=repeat_quality,
+                    config={
+                        "run_id": loop3_repeat_run_id,
+                        "run_name": f"loop3_repeat:{topic}",
+                    },
+                )
             current_review = loop3_repeat.current_review
             review_loop3 = current_review
 

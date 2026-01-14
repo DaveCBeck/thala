@@ -74,11 +74,11 @@ def format_paper_for_llm(doi: str, summary: PaperSummary) -> str:
     findings_str = "; ".join(key_findings[:3]) if key_findings else "Not extracted"
 
     return f"""DOI: {doi}
-Title: {summary.get('title', 'Untitled')}
+Title: {summary.get("title", "Untitled")}
 Authors: {authors_str}
-Year: {summary.get('year', 'Unknown')}
-Venue: {summary.get('venue', 'Unknown')}
-Summary: {summary.get('short_summary', 'No summary available')[:500]}
+Year: {summary.get("year", "Unknown")}
+Venue: {summary.get("venue", "Unknown")}
+Summary: {summary.get("short_summary", "No summary available")[:500]}
 Key Findings: {findings_str}
-Methodology: {summary.get('methodology', 'Not specified')[:200]}
-Themes: {', '.join(summary.get('themes', [])[:5])}"""
+Methodology: {summary.get("methodology", "Not specified")[:200]}
+Themes: {", ".join(summary.get("themes", [])[:5])}"""

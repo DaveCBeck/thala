@@ -1,0 +1,27 @@
+# Ruff configuration for Thala project
+
+# Line length - 120 is common for modern codebases
+line-length = 120
+
+[lint]
+# Default rules plus some useful additions
+select = ["E", "F", "W"]
+# Ignore line-too-long - formatter handles this better
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Entry points that need load_dotenv() before imports
+"langchain_tools/base.py" = ["E402"]
+"mcp_server/server.py" = ["E402"]
+"services/retrieve-academic/app/main.py" = ["E402"]
+
+# Files with configure_langsmith() before imports
+"workflows/document_processing/graph.py" = ["E402"]
+"workflows/research/academic_lit_review/graph/__init__.py" = ["E402"]
+"workflows/research/academic_lit_review/paper_processor/nodes.py" = ["E402"]
+"workflows/research/web_research/graph/api.py" = ["E402"]
+"workflows/shared/llm_utils/models.py" = ["E402"]
+"workflows/wrappers/multi_lang/__init__.py" = ["E402"]
+
+# Scripts with environment setup
+"scripts/traces/*.py" = ["E402"]

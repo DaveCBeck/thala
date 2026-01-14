@@ -58,11 +58,13 @@ class PlaywrightScraper:
         self._timeout = timeout or int(
             os.environ.get("SCRAPER_PLAYWRIGHT_TIMEOUT", "60000")
         )
-        self._delay = delay or float(
-            os.environ.get("SCRAPER_PLAYWRIGHT_DELAY", "1.5")
-        )
-        self._headless = headless if headless is not None else (
-            os.environ.get("SCRAPER_PLAYWRIGHT_HEADLESS", "true").lower() == "true"
+        self._delay = delay or float(os.environ.get("SCRAPER_PLAYWRIGHT_DELAY", "1.5"))
+        self._headless = (
+            headless
+            if headless is not None
+            else (
+                os.environ.get("SCRAPER_PLAYWRIGHT_HEADLESS", "true").lower() == "true"
+            )
         )
 
         self._last_request: float = 0
@@ -144,7 +146,9 @@ class PlaywrightScraper:
                     download_path = tmp.name
                 await download.save_as(download_path)
                 download_content = Path(download_path).read_bytes()
-                logger.debug(f"Playwright captured download: {len(download_content)} bytes")
+                logger.debug(
+                    f"Playwright captured download: {len(download_content)} bytes"
+                )
             except Exception as e:
                 logger.warning(f"Failed to capture download: {e}")
 
@@ -161,10 +165,12 @@ class PlaywrightScraper:
                     timeout=self._timeout,
                     wait_until="domcontentloaded",
                 )
-            except Exception as nav_error:
+            except Exception:
                 # Check if we captured a download (PDF URL case)
                 if download_content:
-                    logger.debug("Navigation failed but download captured - likely PDF URL")
+                    logger.debug(
+                        "Navigation failed but download captured - likely PDF URL"
+                    )
                     raise PDFDownloadDetected(download_content, url)
                 raise
 
@@ -177,7 +183,9 @@ class PlaywrightScraper:
 
             # Wait for network to settle
             try:
-                await page.wait_for_load_state("networkidle", timeout=self._timeout // 2)
+                await page.wait_for_load_state(
+                    "networkidle", timeout=self._timeout // 2
+                )
             except Exception:
                 # If networkidle times out, proceed with what we have
                 logger.debug("networkidle timeout, proceeding with current content")

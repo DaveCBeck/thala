@@ -21,9 +21,9 @@ async def analyze_for_bases_node(state: dict) -> dict:
 
     topic = state["topic"]
     research_questions = state["research_questions"]
-    explored_bases_text = "\n".join(
-        f"- {base}" for base in state.get("explored_bases", [])
-    ) or "None yet"
+    explored_bases_text = (
+        "\n".join(f"- {base}" for base in state.get("explored_bases", [])) or "None yet"
+    )
 
     user_prompt = LOOP2_ANALYZER_USER.format(
         review=state["current_review"],
@@ -60,12 +60,15 @@ async def analyze_for_bases_node(state: dict) -> dict:
                 "literature_base": None,
                 "reasoning": f"Analysis failed: {e}",
             },
-            "errors": errors + [{
-                "loop_number": 2,
-                "iteration": iteration,
-                "node_name": "analyze_for_bases",
-                "error_type": "analysis_error",
-                "error_message": str(e),
-                "recoverable": True,
-            }],
+            "errors": errors
+            + [
+                {
+                    "loop_number": 2,
+                    "iteration": iteration,
+                    "node_name": "analyze_for_bases",
+                    "error_type": "analysis_error",
+                    "error_message": str(e),
+                    "recoverable": True,
+                }
+            ],
         }

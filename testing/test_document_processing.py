@@ -14,7 +14,6 @@ Usage:
 
 import asyncio
 import sys
-from pathlib import Path
 
 import logging
 
@@ -56,11 +55,11 @@ def print_result_summary(result: dict, test_name: str) -> None:
     # Processing result
     proc_result = result.get("processing_result", {})
     if proc_result:
-        print(f"\nProcessing Result:")
+        print("\nProcessing Result:")
         print(f"  - Word count: {proc_result.get('word_count', 'N/A')}")
         print(f"  - Page count: {proc_result.get('page_count', 'N/A')}")
         print(f"  - Chunks: {len(proc_result.get('chunks', []))}")
-        if proc_result.get('ocr_method'):
+        if proc_result.get("ocr_method"):
             print(f"  - OCR method: {proc_result.get('ocr_method')}")
 
     # Summary
@@ -92,7 +91,7 @@ def print_result_summary(result: dict, test_name: str) -> None:
     # Metadata
     metadata = result.get("metadata_updates", {})
     if metadata:
-        print(f"\nExtracted Metadata:")
+        print("\nExtracted Metadata:")
         for key, value in metadata.items():
             if value and key not in ("abstractNote",):
                 print(f"  - {key}: {value}")
@@ -122,10 +121,12 @@ async def test_markdown() -> dict:
         title="How to Do Great Work",
         item_type="blogPost",
         extra_metadata={
-            "creators": [{"creatorType": "author", "firstName": "Paul", "lastName": "Graham"}],
+            "creators": [
+                {"creatorType": "author", "firstName": "Paul", "lastName": "Graham"}
+            ],
             "date": "2023-07",
             "url": "https://paulgraham.com/greatwork.html",
-        }
+        },
     )
 
     print_result_summary(result, "Markdown - Paul Graham Essay")
@@ -147,10 +148,12 @@ async def test_pdf() -> dict:
         item_type="book",
         quality="balanced",
         extra_metadata={
-            "creators": [{"creatorType": "author", "firstName": "H.G.", "lastName": "Wells"}],
+            "creators": [
+                {"creatorType": "author", "firstName": "H.G.", "lastName": "Wells"}
+            ],
             "date": "1898",
             "publisher": "Project Gutenberg",
-        }
+        },
     )
 
     print_result_summary(result, "PDF - War of the Worlds")

@@ -70,4 +70,6 @@ class DeepResearchState(TypedDict):
 
     # Language support
     primary_language: Optional[str]  # ISO 639-1 code (default: "en")
-    primary_language_config: Optional[LanguageConfig]  # Full config for primary language
+    primary_language_config: Optional[
+        LanguageConfig
+    ]  # Full config for primary language

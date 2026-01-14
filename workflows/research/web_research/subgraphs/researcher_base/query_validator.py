@@ -33,13 +33,15 @@ async def validate_queries(
     context_parts = [f"Research Question: {research_question}"]
     if research_brief:
         context_parts.append(f"Topic: {research_brief.get('topic', '')}")
-        if research_brief.get('objectives'):
-            context_parts.append(f"Objectives: {', '.join(research_brief['objectives'][:3])}")
+        if research_brief.get("objectives"):
+            context_parts.append(
+                f"Objectives: {', '.join(research_brief['objectives'][:3])}"
+            )
     if draft_notes:
         context_parts.append(f"Current Notes: {draft_notes[:500]}...")
 
     context = "\n".join(context_parts)
-    queries_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(queries))
+    queries_list = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(queries))
 
     prompt = f"""Validate whether these search queries are relevant to the research task.
 
@@ -69,7 +71,9 @@ Accept queries that would help find information about the research topic.
             if validation.is_relevant:
                 valid_queries.append(query)
             else:
-                logger.warning(f"Query rejected: {query[:50]}... Reason: {validation.reason}")
+                logger.warning(
+                    f"Query rejected: {query[:50]}... Reason: {validation.reason}"
+                )
 
         return valid_queries
 

@@ -32,7 +32,9 @@ async def execute_batch_concurrent(
     results: dict[str, StructuredOutputResult[T]] = {}
     completed = 0
 
-    async def process_one(req: StructuredRequest) -> tuple[str, StructuredOutputResult[T]]:
+    async def process_one(
+        req: StructuredRequest,
+    ) -> tuple[str, StructuredOutputResult[T]]:
         nonlocal completed
         try:
             result = await executor.execute(

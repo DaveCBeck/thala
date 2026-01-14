@@ -1,7 +1,5 @@
 """Base class for async context managers."""
 
-from typing import Optional
-
 
 class AsyncContextManager:
     """Base class for async context managers with close() method."""

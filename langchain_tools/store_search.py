@@ -109,17 +109,21 @@ async def search_store(
     try:
         records = await store_manager.es_stores.store.search(query=es_query, size=limit)
         for r in records:
-            results.append(StoreSearchResult(
-                id=str(r.id),
-                content=r.content,
-                language_code=r.language_code,
-                zotero_key=r.zotero_key,
-                metadata={
-                    "type": r.metadata.get("type"),
-                    "compression_level": r.compression_level,
-                    "source_type": r.source_type.value if hasattr(r.source_type, "value") else str(r.source_type),
-                },
-            ))
+            results.append(
+                StoreSearchResult(
+                    id=str(r.id),
+                    content=r.content,
+                    language_code=r.language_code,
+                    zotero_key=r.zotero_key,
+                    metadata={
+                        "type": r.metadata.get("type"),
+                        "compression_level": r.compression_level,
+                        "source_type": r.source_type.value
+                        if hasattr(r.source_type, "value")
+                        else str(r.source_type),
+                    },
+                )
+            )
     except Exception as e:
         logger.warning(f"store search failed: {e}")
 
@@ -165,19 +169,23 @@ async def search_coherence(
 
     results = []
     try:
-        records = await store_manager.es_stores.coherence.search(query=es_query, size=limit)
+        records = await store_manager.es_stores.coherence.search(
+            query=es_query, size=limit
+        )
         for r in records:
             confidence = r.confidence if hasattr(r, "confidence") else None
-            results.append(StoreSearchResult(
-                id=str(r.id),
-                content=r.content,
-                score=confidence,
-                language_code=getattr(r, "language_code", None),
-                metadata={
-                    "category": r.category if hasattr(r, "category") else None,
-                    "confidence": confidence,
-                },
-            ))
+            results.append(
+                StoreSearchResult(
+                    id=str(r.id),
+                    content=r.content,
+                    score=confidence,
+                    language_code=getattr(r, "language_code", None),
+                    metadata={
+                        "category": r.category if hasattr(r, "category") else None,
+                        "confidence": confidence,
+                    },
+                )
+            )
     except ESNotFoundError:
         # Index doesn't exist yet - this is expected when coherence store hasn't been set up
         logger.debug("coherence index not found - returning empty results")
@@ -239,14 +247,16 @@ async def search_top_of_mind(
                 continue
 
             metadata = r.get("metadata") or {}
-            results.append(StoreSearchResult(
-                id=str(r["id"]),
-                content=r["document"] or "",
-                score=similarity,
-                language_code=metadata.get("language_code"),
-                zotero_key=metadata.get("zotero_key"),
-                metadata=metadata,
-            ))
+            results.append(
+                StoreSearchResult(
+                    id=str(r["id"]),
+                    content=r["document"] or "",
+                    score=similarity,
+                    language_code=metadata.get("language_code"),
+                    zotero_key=metadata.get("zotero_key"),
+                    metadata=metadata,
+                )
+            )
     except Exception as e:
         logger.warning(f"top_of_mind search failed: {e}")
 
@@ -285,24 +295,32 @@ async def search_history(
     if original_store:
         filters.append({"term": {"original_store": original_store}})
 
-    es_query = {"bool": {"must": must, "filter": filters}} if filters else {"match": {"previous_data.content": query}}
+    es_query = (
+        {"bool": {"must": must, "filter": filters}}
+        if filters
+        else {"match": {"previous_data.content": query}}
+    )
 
     results = []
     try:
-        records = await store_manager.es_stores.who_i_was.search(query=es_query, size=limit)
+        records = await store_manager.es_stores.who_i_was.search(
+            query=es_query, size=limit
+        )
         for r in records:
             prev_data = r.previous_data or {}
-            results.append(StoreSearchResult(
-                id=str(r.id),
-                content=prev_data.get("content", ""),
-                language_code=prev_data.get("language_code"),
-                zotero_key=prev_data.get("zotero_key"),
-                metadata={
-                    "supersedes": str(r.supersedes),
-                    "reason": r.reason,
-                    "original_store": r.original_store,
-                },
-            ))
+            results.append(
+                StoreSearchResult(
+                    id=str(r.id),
+                    content=prev_data.get("content", ""),
+                    language_code=prev_data.get("language_code"),
+                    zotero_key=prev_data.get("zotero_key"),
+                    metadata={
+                        "supersedes": str(r.supersedes),
+                        "reason": r.reason,
+                        "original_store": r.original_store,
+                    },
+                )
+            )
     except Exception as e:
         logger.warning(f"who_i_was search failed: {e}")
 
@@ -344,23 +362,33 @@ async def search_forgotten(
     if forgotten_reason:
         filters.append({"match": {"forgotten_reason": forgotten_reason}})
 
-    es_query = {"bool": {"must": must, "filter": filters}} if filters else {"match": {"content": query}}
+    es_query = (
+        {"bool": {"must": must, "filter": filters}}
+        if filters
+        else {"match": {"content": query}}
+    )
 
     results = []
     try:
-        records = await store_manager.es_stores.forgotten.search(query=es_query, size=limit)
+        records = await store_manager.es_stores.forgotten.search(
+            query=es_query, size=limit
+        )
         for r in records:
-            results.append(StoreSearchResult(
-                id=str(r.id),
-                content=r.content,
-                language_code=getattr(r, "language_code", None),
-                zotero_key=r.zotero_key,
-                metadata={
-                    "forgotten_reason": r.forgotten_reason,
-                    "forgotten_at": r.forgotten_at.isoformat() if r.forgotten_at else None,
-                    "original_store": r.original_store,
-                },
-            ))
+            results.append(
+                StoreSearchResult(
+                    id=str(r.id),
+                    content=r.content,
+                    language_code=getattr(r, "language_code", None),
+                    zotero_key=r.zotero_key,
+                    metadata={
+                        "forgotten_reason": r.forgotten_reason,
+                        "forgotten_at": r.forgotten_at.isoformat()
+                        if r.forgotten_at
+                        else None,
+                        "original_store": r.original_store,
+                    },
+                )
+            )
     except Exception as e:
         logger.warning(f"forgotten search failed: {e}")
 

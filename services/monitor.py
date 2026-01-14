@@ -19,7 +19,6 @@ import asyncio
 import json
 import os
 import subprocess
-import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -499,11 +498,17 @@ class ServiceMonitor:
         for name, m in metrics.items():
             running_containers = [c for c in m.containers if c.running]
             output["services"][name] = {
-                "status": "up" if running_containers else ("n/a" if m.skip_reason else "down"),
+                "status": "up"
+                if running_containers
+                else ("n/a" if m.skip_reason else "down"),
                 "cpu_avg": round(m.cpu_stats.avg(), 2) if m.cpu_stats.avg() else None,
                 "mem_bytes": sum(c.mem_usage_bytes or 0 for c in running_containers),
-                "latency_avg_ms": round(m.latency_stats.avg(), 1) if m.latency_stats.avg() else None,
-                "latency_p90_ms": round(m.latency_stats.percentile(90), 1) if m.latency_stats.percentile(90) else None,
+                "latency_avg_ms": round(m.latency_stats.avg(), 1)
+                if m.latency_stats.avg()
+                else None,
+                "latency_p90_ms": round(m.latency_stats.percentile(90), 1)
+                if m.latency_stats.percentile(90)
+                else None,
                 "error": m.health_error,
             }
         return json.dumps(output)

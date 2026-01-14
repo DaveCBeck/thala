@@ -3,7 +3,10 @@
 import logging
 from typing import Any
 
-from workflows.research.web_research.state import DeepResearchState, calculate_completeness
+from workflows.research.web_research.state import (
+    DeepResearchState,
+    calculate_completeness,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +32,9 @@ def aggregate_researcher_findings(state: DeepResearchState) -> dict[str, Any]:
         gaps_remaining=draft.get("gaps_remaining", []) if draft else [],
     )
 
-    logger.debug(f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}")
+    logger.debug(
+        f"Aggregated {len(findings)} research findings, completeness: {new_completeness:.0%}"
+    )
 
     return {
         "pending_questions": [],

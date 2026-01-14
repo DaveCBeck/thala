@@ -22,7 +22,6 @@ __all__ = [
     "Loop1State",
     "Loop1Result",
     "run_focused_expansion",
-
     # Types and schemas
     "IdentifiedIssue",
     "SupervisorDecision",

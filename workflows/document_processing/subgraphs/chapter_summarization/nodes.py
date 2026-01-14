@@ -131,7 +131,9 @@ async def _summarize_single_chapter(
                 # Combine chunk summaries
                 summary = "\n\n".join(chunk_summaries)
 
-            logger.info(f"Summarized chapter '{chapter['title']}' to {len(summary.split())} words")
+            logger.info(
+                f"Summarized chapter '{chapter['title']}' to {len(summary.split())} words"
+            )
 
             return {
                 "title": chapter["title"],
@@ -178,13 +180,17 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
             tasks = [
                 _summarize_single_chapter(
                     chapter=chapter,
-                    chapter_content=markdown[chapter["start_position"]:chapter["end_position"]],
+                    chapter_content=markdown[
+                        chapter["start_position"] : chapter["end_position"]
+                    ],
                     target_words=max(50, chapter["word_count"] // 10),
                     semaphore=semaphore,
                 )
                 for chapter in chapters
             ]
-            logger.info(f"Starting concurrent summarization of {len(chapters)} chapters")
+            logger.info(
+                f"Starting concurrent summarization of {len(chapters)} chapters"
+            )
             chapter_summaries = await asyncio.gather(*tasks)
 
         logger.info(f"Completed summarization of {len(chapter_summaries)} chapters")
@@ -220,21 +226,23 @@ async def _summarize_chapters_batched(
     chapter_data = []  # Store chapter info for result mapping
 
     for i, chapter in enumerate(chapters):
-        chapter_content = markdown[chapter["start_position"]:chapter["end_position"]]
+        chapter_content = markdown[chapter["start_position"] : chapter["end_position"]]
         target_words = max(50, chapter["word_count"] // 10)
 
         chapter_context = f"Chapter: {chapter['title']}"
         if chapter.get("author"):
             chapter_context += f" (by {chapter['author']})"
 
-        chapter_data.append({
-            "index": i,
-            "title": chapter["title"],
-            "author": chapter.get("author"),
-            "content": chapter_content,
-            "target_words": target_words,
-            "context": chapter_context,
-        })
+        chapter_data.append(
+            {
+                "index": i,
+                "title": chapter["title"],
+                "author": chapter.get("author"),
+                "content": chapter_content,
+                "target_words": target_words,
+                "context": chapter_context,
+            }
+        )
 
         if len(chapter_content) > MAX_CHAPTER_CHARS:
             large_indices.append(i)
@@ -299,20 +307,28 @@ Chapter content:
             if result and result.success:
                 summary = result.content
                 if result.thinking:
-                    logger.debug(f"Thinking for '{chapter_info['title']}': {result.thinking[:200]}...")
-                chapter_summaries.append({
-                    "title": chapter_info["title"],
-                    "author": chapter_info["author"],
-                    "summary": summary,
-                })
+                    logger.debug(
+                        f"Thinking for '{chapter_info['title']}': {result.thinking[:200]}..."
+                    )
+                chapter_summaries.append(
+                    {
+                        "title": chapter_info["title"],
+                        "author": chapter_info["author"],
+                        "summary": summary,
+                    }
+                )
             else:
                 error_msg = result.error if result else "No result returned"
-                logger.error(f"Failed to summarize chapter '{chapter_info['title']}': {error_msg}")
-                chapter_summaries.append({
-                    "title": chapter_info["title"],
-                    "author": chapter_info["author"],
-                    "summary": f"[Error: {error_msg}]",
-                })
+                logger.error(
+                    f"Failed to summarize chapter '{chapter_info['title']}': {error_msg}"
+                )
+                chapter_summaries.append(
+                    {
+                        "title": chapter_info["title"],
+                        "author": chapter_info["author"],
+                        "summary": f"[Error: {error_msg}]",
+                    }
+                )
 
     return chapter_summaries
 
@@ -353,7 +369,9 @@ async def aggregate_summaries(state: DocumentProcessingState) -> dict[str, Any]:
 
         tenth_summary = "\n\n".join(parts)
 
-        logger.info(f"Aggregated {len(chapter_summaries)} chapter summaries into tenth summary")
+        logger.info(
+            f"Aggregated {len(chapter_summaries)} chapter summaries into tenth summary"
+        )
 
         result = {
             "tenth_summary": tenth_summary,  # Backward compatibility
@@ -365,7 +383,9 @@ async def aggregate_summaries(state: DocumentProcessingState) -> dict[str, Any]:
         if original_language != "en":
             english_summary = await _translate_to_english(tenth_summary)
             result["tenth_summary_english"] = english_summary
-            logger.info(f"Generated English translation of tenth summary ({len(english_summary.split())} words)")
+            logger.info(
+                f"Generated English translation of tenth summary ({len(english_summary.split())} words)"
+            )
 
         return result
 

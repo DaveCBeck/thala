@@ -139,7 +139,9 @@ async def _search_books_internal(
 
 
 @tool
-async def book_search(query: str, limit: int = 10, language: Optional[str] = None) -> dict:
+async def book_search(
+    query: str, limit: int = 10, language: Optional[str] = None
+) -> dict:
     """Search for books by title, author, ISBN, or topic.
 
     Use this to find books, textbooks, and other long-form written content.

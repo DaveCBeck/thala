@@ -21,20 +21,22 @@ logger = logging.getLogger(__name__)
 
 class HeadingAnalysis(BaseModel):
     """Analysis of a single heading."""
+
     heading: str = Field(description="Exact heading text")
     is_chapter: bool = Field(description="Whether this is a chapter boundary")
-    chapter_author: Optional[str] = Field(default=None, description="Author name if multi-author book")
+    chapter_author: Optional[str] = Field(
+        default=None, description="Author name if multi-author book"
+    )
 
 
 class HeadingAnalysisResult(BaseModel):
     """Result of heading structure analysis."""
+
     headings: list[HeadingAnalysis] = Field(description="Analysis of each heading")
 
 
 def _build_chapter_boundaries(
-    markdown: str,
-    headings: list[dict],
-    analysis: list[dict]
+    markdown: str, headings: list[dict], analysis: list[dict]
 ) -> list[ChapterInfo]:
     """
     Build ChapterInfo list from heading analysis.
@@ -53,31 +55,41 @@ def _build_chapter_boundaries(
 
     for heading in headings:
         heading_text = heading["text"]
-        if heading_text in analysis_map and analysis_map[heading_text].get("is_chapter"):
+        if heading_text in analysis_map and analysis_map[heading_text].get(
+            "is_chapter"
+        ):
             author = analysis_map[heading_text].get("chapter_author")
-            chapter_headings.append({
-                "title": heading_text,
-                "position": heading["position"],
-                "author": author,
-            })
+            chapter_headings.append(
+                {
+                    "title": heading_text,
+                    "position": heading["position"],
+                    "author": author,
+                }
+            )
 
     # Build chapter boundaries
     chapters = []
     for i, chapter in enumerate(chapter_headings):
         start = chapter["position"]
         # End is start of next chapter, or end of document
-        end = chapter_headings[i + 1]["position"] if i + 1 < len(chapter_headings) else len(markdown)
+        end = (
+            chapter_headings[i + 1]["position"]
+            if i + 1 < len(chapter_headings)
+            else len(markdown)
+        )
 
         chapter_text = markdown[start:end]
         word_count = count_words(chapter_text)
 
-        chapters.append(ChapterInfo(
-            title=chapter["title"],
-            start_position=start,
-            end_position=end,
-            author=chapter["author"],
-            word_count=word_count,
-        ))
+        chapters.append(
+            ChapterInfo(
+                title=chapter["title"],
+                start_position=start,
+                end_position=end,
+                author=chapter["author"],
+                word_count=word_count,
+            )
+        )
 
     return chapters
 
@@ -105,7 +117,9 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                 "chapters": [],
                 "needs_tenth_summary": False,
                 "current_status": "chapter_detection_failed",
-                "errors": [{"node": "detect_chapters", "error": "No processing result"}],
+                "errors": [
+                    {"node": "detect_chapters", "error": "No processing result"}
+                ],
             }
 
         markdown = processing_result["markdown"]
@@ -113,7 +127,9 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
 
         # Only run 10:1 summary for documents with substantial content
         if word_count < 3000:
-            logger.info(f"Document too short ({word_count} words), skipping 10:1 summary")
+            logger.info(
+                f"Document too short ({word_count} words), skipping 10:1 summary"
+            )
             return {
                 "chapters": [],
                 "needs_tenth_summary": False,
@@ -131,7 +147,7 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                 heading_counts[level] = heading_counts.get(level, 0) + 1
             logger.debug(
                 f"Found {len(headings)} headings: "
-                f"{', '.join(f'H{l}={c}' for l, c in sorted(heading_counts.items()))}"
+                f"{', '.join(f'H{lvl}={cnt}' for lvl, cnt in sorted(heading_counts.items()))}"
             )
 
         # If no headings, use fallback chunking
@@ -149,10 +165,7 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         is_multi_author = metadata_updates.get("multi_author", False)
 
         # Prepare heading list for LLM
-        heading_list = "\n".join([
-            f"{'#' * h['level']} {h['text']}"
-            for h in headings
-        ])
+        heading_list = "\n".join([f"{'#' * h['level']} {h['text']}" for h in headings])
 
         # Build prompt
         system_prompt = """Analyze document headings and identify which ones represent major section divisions.
@@ -186,11 +199,17 @@ Guidelines:
 
             # If no chapters identified, try using top-level headings as fallback
             if not chapters:
-                logger.warning("No chapters identified by LLM, trying top-level heading fallback")
-                chapters = create_heading_based_chapters(markdown, headings, ChapterInfo)
+                logger.warning(
+                    "No chapters identified by LLM, trying top-level heading fallback"
+                )
+                chapters = create_heading_based_chapters(
+                    markdown, headings, ChapterInfo
+                )
 
                 if chapters:
-                    logger.info(f"Created {len(chapters)} chapters from top-level headings")
+                    logger.info(
+                        f"Created {len(chapters)} chapters from top-level headings"
+                    )
                     return {
                         "chapters": chapters,
                         "needs_tenth_summary": True,
@@ -215,7 +234,9 @@ Guidelines:
 
         except Exception as e:
             # Graceful fallback: chunk document into ~30k word sections
-            logger.warning(f"Chapter detection via LLM failed: {e}. Using fallback chunking.")
+            logger.warning(
+                f"Chapter detection via LLM failed: {e}. Using fallback chunking."
+            )
             chapters = create_fallback_chunks(markdown, word_count, ChapterInfo)
 
             return {

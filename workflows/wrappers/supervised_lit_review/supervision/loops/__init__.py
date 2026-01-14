@@ -10,7 +10,12 @@ This module contains supervision loop types:
 
 from .loop2 import create_loop2_graph, run_loop2_standalone, Loop2State, Loop2Result
 from .loop3 import create_loop3_graph, run_loop3_standalone, Loop3State, Loop3Result
-from .loop4_editing import create_loop4_graph, run_loop4_standalone, Loop4State, Loop4Result
+from .loop4_editing import (
+    create_loop4_graph,
+    run_loop4_standalone,
+    Loop4State,
+    Loop4Result,
+)
 from .loop4_5_cohesion import check_cohesion, run_loop4_5_standalone
 from .loop5_factcheck import create_loop5_graph, run_loop5_standalone, Loop5State
 

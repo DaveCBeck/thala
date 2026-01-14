@@ -59,21 +59,21 @@ class StoreManager:
         self._chroma_host = chroma_host or os.environ.get(
             "THALA_CHROMA_HOST", "localhost"
         )
-        self._chroma_port = chroma_port or int(os.environ.get(
-            "THALA_CHROMA_PORT", "8000"
-        ))
+        self._chroma_port = chroma_port or int(
+            os.environ.get("THALA_CHROMA_PORT", "8000")
+        )
         self._zotero_host = zotero_host or os.environ.get(
             "THALA_ZOTERO_HOST", "localhost"
         )
-        self._zotero_port = zotero_port or int(os.environ.get(
-            "THALA_ZOTERO_PORT", "23119"
-        ))
+        self._zotero_port = zotero_port or int(
+            os.environ.get("THALA_ZOTERO_PORT", "23119")
+        )
         self._translation_host = translation_host or os.environ.get(
             "THALA_TRANSLATION_HOST", "localhost"
         )
-        self._translation_port = translation_port or int(os.environ.get(
-            "THALA_TRANSLATION_PORT", "1969"
-        ))
+        self._translation_port = translation_port or int(
+            os.environ.get("THALA_TRANSLATION_PORT", "1969")
+        )
 
     @property
     def es_stores(self) -> ElasticsearchStores:

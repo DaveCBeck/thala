@@ -63,8 +63,7 @@ class CoherenceStore(BaseElasticsearchStore):
         )
 
         logger.debug(
-            f"Updated coherence record {record_id}, "
-            f"version saved as {who_i_was.id}"
+            f"Updated coherence record {record_id}, version saved as {who_i_was.id}"
         )
         return True
 

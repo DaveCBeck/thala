@@ -33,7 +33,8 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
     }
 
     missing_cocited_dois = [
-        doi for doi in cocitation_included
+        doi
+        for doi in cocitation_included
         if doi not in candidate_lookup and doi not in all_candidates_lookup
     ]
 
@@ -46,7 +47,9 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
             fetched_works = await get_works_by_dois(missing_cocited_dois)
             for work in fetched_works:
                 if work.doi:
-                    doi_clean = work.doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+                    doi_clean = work.doi.replace("https://doi.org/", "").replace(
+                        "http://doi.org/", ""
+                    )
                     paper = convert_to_paper_metadata(
                         work.model_dump(),
                         discovery_stage=diffusion["current_stage"],
@@ -54,7 +57,9 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
                     )
                     if paper:
                         fallback_papers[doi_clean] = paper
-                        logger.debug(f"Recovered co-cited paper via DOI: {work.title[:50]}...")
+                        logger.debug(
+                            f"Recovered co-cited paper via DOI: {work.title[:50]}..."
+                        )
 
             still_missing = set(missing_cocited_dois) - set(fallback_papers.keys())
             if still_missing:
@@ -87,7 +92,9 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
             )
 
     total_candidates = len(cocitation_included) + len(llm_relevant) + len(llm_rejected)
-    coverage_delta = len(all_relevant_dois) / total_candidates if total_candidates > 0 else 0.0
+    coverage_delta = (
+        len(all_relevant_dois) / total_candidates if total_candidates > 0 else 0.0
+    )
 
     current_stage = diffusion["current_stage"]
     stages = diffusion["stages"]
@@ -107,8 +114,10 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
         **diffusion,
         "stages": stages,
         "consecutive_low_coverage": new_consecutive_low,
-        "total_papers_discovered": diffusion["total_papers_discovered"] + total_candidates,
-        "total_papers_relevant": diffusion["total_papers_relevant"] + len(all_relevant_dois),
+        "total_papers_discovered": diffusion["total_papers_discovered"]
+        + total_candidates,
+        "total_papers_relevant": diffusion["total_papers_relevant"]
+        + len(all_relevant_dois),
         "total_papers_rejected": diffusion["total_papers_rejected"] + len(llm_rejected),
     }
 

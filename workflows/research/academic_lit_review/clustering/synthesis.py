@@ -55,14 +55,18 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
         # BERTopic only available
         if bertopic_good:
             logger.info("Using BERTopic clusters only (LLM failed)")
-            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+            return _convert_bertopic_to_final_clusters(
+                bertopic_clusters, paper_summaries
+            )
         else:
             # BERTopic is poor quality and LLM failed - return what we have with warning
             logger.warning(
                 f"Using poor-quality BERTopic clusters (LLM failed). "
                 f"Reason: {bertopic_reason}"
             )
-            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+            return _convert_bertopic_to_final_clusters(
+                bertopic_clusters, paper_summaries
+            )
 
     # Both succeeded - check if we should skip synthesis and use LLM directly
     if not bertopic_good:
@@ -220,7 +224,11 @@ def _convert_bertopic_to_final_clusters(
         key_papers = _identify_key_papers(cluster_dois, paper_summaries)
 
         # Generate label from topic words
-        label = " & ".join(btc["topic_words"][:3]).title() if btc["topic_words"] else f"Cluster {i}"
+        label = (
+            " & ".join(btc["topic_words"][:3]).title()
+            if btc["topic_words"]
+            else f"Cluster {i}"
+        )
 
         cluster = ThematicCluster(
             cluster_id=i,

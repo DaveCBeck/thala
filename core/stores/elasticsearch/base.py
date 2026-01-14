@@ -49,7 +49,9 @@ class BaseElasticsearchStore:
         except NotFoundError:
             return None
 
-    async def update(self, record_id: UUID, updates: dict[str, Any], index: Optional[str] = None) -> bool:
+    async def update(
+        self, record_id: UUID, updates: dict[str, Any], index: Optional[str] = None
+    ) -> bool:
         """
         Partially update a record.
 

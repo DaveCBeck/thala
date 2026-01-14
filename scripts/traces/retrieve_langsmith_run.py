@@ -14,7 +14,6 @@ Displays:
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -96,13 +95,15 @@ def extract_researcher_findings(runs: list) -> list[dict]:
             outputs = run.outputs
             if "research_findings" in outputs:
                 for finding in outputs.get("research_findings", []):
-                    findings.append({
-                        "question_id": finding.get("question_id"),
-                        "confidence": finding.get("confidence"),
-                        "finding_preview": finding.get("finding", "")[:200] + "...",
-                        "source_count": len(finding.get("sources", [])),
-                        "gaps": finding.get("gaps", []),
-                    })
+                    findings.append(
+                        {
+                            "question_id": finding.get("question_id"),
+                            "confidence": finding.get("confidence"),
+                            "finding_preview": finding.get("finding", "")[:200] + "...",
+                            "source_count": len(finding.get("sources", [])),
+                            "gaps": finding.get("gaps", []),
+                        }
+                    )
 
     return findings
 
@@ -134,9 +135,11 @@ def analyze_run(run_id: str, verbose: bool = False) -> dict:
         result["outputs"] = run.outputs
 
     # Get child runs for detailed analysis
-    child_runs = list(client.list_runs(
-        trace_id=str(run.trace_id),
-    ))
+    child_runs = list(
+        client.list_runs(
+            trace_id=str(run.trace_id),
+        )
+    )
 
     result["child_run_count"] = len(child_runs)
 
@@ -152,7 +155,9 @@ def analyze_run(run_id: str, verbose: bool = False) -> dict:
     result["metrics"] = {
         "total_iterations": len(decisions),
         "total_findings": len(findings),
-        "avg_confidence": sum(f.get("confidence", 0) for f in findings) / len(findings) if findings else 0,
+        "avg_confidence": sum(f.get("confidence", 0) for f in findings) / len(findings)
+        if findings
+        else 0,
         "total_gaps": sum(len(f.get("gaps", [])) for f in findings),
     }
 
@@ -182,42 +187,46 @@ def print_analysis(analysis: dict, verbose: bool = False):
     print(f"Status: {analysis['status']}")
     print(f"Duration: {analysis['duration']}")
     print(f"Total Tokens: {analysis.get('total_tokens', 'N/A')}")
-    if analysis.get('error'):
+    if analysis.get("error"):
         print(f"Error: {analysis['error']}")
     print()
 
     # Supervisor decisions
-    decisions = analysis.get('supervisor_decisions', [])
+    decisions = analysis.get("supervisor_decisions", [])
     if decisions:
         print("-" * 40)
         print(f"SUPERVISOR DECISIONS ({len(decisions)})")
         print("-" * 40)
         for i, d in enumerate(decisions, 1):
-            print(f"\n[{i}] {d.get('action', 'unknown')} (iteration {d.get('iteration', '?')})")
-            if d.get('completeness') is not None:
-                print(f"    Completeness: {d['completeness']*100:.0f}%")
-            if d.get('questions'):
+            print(
+                f"\n[{i}] {d.get('action', 'unknown')} (iteration {d.get('iteration', '?')})"
+            )
+            if d.get("completeness") is not None:
+                print(f"    Completeness: {d['completeness'] * 100:.0f}%")
+            if d.get("questions"):
                 print(f"    Questions ({len(d['questions'])}):")
-                for q in d['questions']:
+                for q in d["questions"]:
                     # Truncate long questions
                     q_display = q[:100] + "..." if len(q) > 100 else q
                     print(f"      - {q_display}")
         print()
 
     # Research findings summary
-    findings = analysis.get('research_findings', [])
+    findings = analysis.get("research_findings", [])
     if findings:
         print("-" * 40)
         print(f"RESEARCH FINDINGS ({len(findings)})")
         print("-" * 40)
         for i, f in enumerate(findings, 1):
-            print(f"\n[{i}] {f.get('question_id', 'Q?')}: confidence={f.get('confidence', 0):.2f}, sources={f.get('source_count', 0)}")
-            if f.get('gaps'):
+            print(
+                f"\n[{i}] {f.get('question_id', 'Q?')}: confidence={f.get('confidence', 0):.2f}, sources={f.get('source_count', 0)}"
+            )
+            if f.get("gaps"):
                 print(f"    Gaps: {len(f['gaps'])}")
         print()
 
     # Metrics
-    metrics = analysis.get('metrics', {})
+    metrics = analysis.get("metrics", {})
     if metrics:
         print("-" * 40)
         print("QUALITY METRICS")
@@ -229,11 +238,11 @@ def print_analysis(analysis: dict, verbose: bool = False):
         print()
 
     # Verbose: all child runs
-    if verbose and analysis.get('all_child_runs'):
+    if verbose and analysis.get("all_child_runs"):
         print("-" * 40)
         print(f"ALL CHILD RUNS ({analysis['child_run_count']})")
         print("-" * 40)
-        for r in analysis['all_child_runs']:
+        for r in analysis["all_child_runs"]:
             print(f"  {r['name']}: {r['run_type']} - {r['status']} ({r['duration']})")
         print()
 
@@ -249,10 +258,12 @@ Examples:
     python retrieve_langsmith_run.py 019b4588-7b30-7830-b101-ffcd285875e7
     python retrieve_langsmith_run.py 019b4588-7b30-7830-b101-ffcd285875e7 -v
     python retrieve_langsmith_run.py 019b4588-7b30-7830-b101-ffcd285875e7 --json
-        """
+        """,
     )
     parser.add_argument("run_id", help="LangSmith run ID to analyze")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Show all child runs")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show all child runs"
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()

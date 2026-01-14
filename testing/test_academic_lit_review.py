@@ -67,14 +67,18 @@ class AcademicLitReviewQualityAnalyzer(BaseQualityAnalyzer):
 
     def _count_sources(self, metrics: QualityMetrics) -> None:
         """Count sources from paper corpus and references."""
-        state = load_workflow_state("academic_lit_review", self.result["langsmith_run_id"])
+        state = load_workflow_state(
+            "academic_lit_review", self.result["langsmith_run_id"]
+        )
         paper_corpus = state.get("paper_corpus", {}) if state else {}
         references = state.get("references", []) if state else []
         metrics.source_count = max(len(paper_corpus), len(references))
 
     def _analyze_workflow_specific(self, metrics: QualityMetrics) -> None:
         """Analyze academic lit review specific metrics."""
-        state = load_workflow_state("academic_lit_review", self.result["langsmith_run_id"])
+        state = load_workflow_state(
+            "academic_lit_review", self.result["langsmith_run_id"]
+        )
 
         # Paper metrics
         paper_corpus = state.get("paper_corpus", {}) if state else {}
@@ -84,7 +88,9 @@ class AcademicLitReviewQualityAnalyzer(BaseQualityAnalyzer):
         metrics.workflow_specific["papers_processed"] = len(paper_summaries)
 
         if paper_corpus:
-            metrics.workflow_specific["processing_rate"] = len(paper_summaries) / len(paper_corpus)
+            metrics.workflow_specific["processing_rate"] = len(paper_summaries) / len(
+                paper_corpus
+            )
 
         # Clustering metrics
         clusters = state.get("clusters", []) if state else []
@@ -93,14 +99,22 @@ class AcademicLitReviewQualityAnalyzer(BaseQualityAnalyzer):
         if clusters:
             papers_clustered = sum(len(c.get("paper_dois", [])) for c in clusters)
             metrics.workflow_specific["papers_clustered"] = papers_clustered
-            metrics.workflow_specific["gaps_identified"] = sum(len(c.get("gaps", [])) for c in clusters)
-            metrics.workflow_specific["conflicts_identified"] = sum(len(c.get("conflicts", [])) for c in clusters)
+            metrics.workflow_specific["gaps_identified"] = sum(
+                len(c.get("gaps", [])) for c in clusters
+            )
+            metrics.workflow_specific["conflicts_identified"] = sum(
+                len(c.get("conflicts", [])) for c in clusters
+            )
 
         # Diffusion metrics
         diffusion = state.get("diffusion", {}) if state else {}
         if diffusion:
-            metrics.workflow_specific["diffusion_stages"] = diffusion.get("current_stage", 0)
-            metrics.workflow_specific["saturation_reached"] = diffusion.get("is_saturated", False)
+            metrics.workflow_specific["diffusion_stages"] = diffusion.get(
+                "current_stage", 0
+            )
+            metrics.workflow_specific["saturation_reached"] = diffusion.get(
+                "is_saturated", False
+            )
 
         # References
         references = state.get("references", []) if state else []
@@ -133,7 +147,9 @@ class AcademicLitReviewQualityAnalyzer(BaseQualityAnalyzer):
             return
 
         if "paper count" in str(metrics.issues).lower():
-            metrics.suggestions.append("Consider broadening search terms or using higher quality setting")
+            metrics.suggestions.append(
+                "Consider broadening search terms or using higher quality setting"
+            )
         if "clusters" in str(metrics.issues).lower():
             metrics.suggestions.append("More papers needed for meaningful clustering")
         if "short" in str(metrics.issues).lower():
@@ -156,7 +172,7 @@ def print_result_summary(result: dict, topic: str) -> None:
 
     # Paper Corpus
     paper_corpus = state.get("paper_corpus", {}) if state else {}
-    print(f"\n--- Paper Corpus ---")
+    print("\n--- Paper Corpus ---")
     print(f"Total papers discovered: {len(paper_corpus)}")
 
     if paper_corpus:
@@ -172,14 +188,16 @@ def print_result_summary(result: dict, topic: str) -> None:
 
     # Paper Summaries
     paper_summaries = state.get("paper_summaries", {}) if state else {}
-    print(f"\n--- Paper Summaries ---")
+    print("\n--- Paper Summaries ---")
     print(f"Papers processed: {len(paper_summaries)}")
 
     # Diffusion State
     diffusion = state.get("diffusion", {}) if state else {}
     if diffusion:
-        print(f"\n--- Diffusion Algorithm ---")
-        print(f"Stages completed: {diffusion.get('current_stage', 0)}/{diffusion.get('max_stages', 'N/A')}")
+        print("\n--- Diffusion Algorithm ---")
+        print(
+            f"Stages completed: {diffusion.get('current_stage', 0)}/{diffusion.get('max_stages', 'N/A')}"
+        )
         print(f"Is saturated: {diffusion.get('is_saturated', False)}")
         print(f"Total discovered: {diffusion.get('total_papers_discovered', 0)}")
         print(f"Total relevant: {diffusion.get('total_papers_relevant', 0)}")
@@ -206,7 +224,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # Final Review
     final_review = result.get("final_review", "")
     if final_review:
-        print(f"\n--- Final Review ---")
+        print("\n--- Final Review ---")
         word_count = len(final_review.split())
         print(f"Length: {len(final_review)} chars ({word_count} words)")
         print(safe_preview(final_review, 1500))
@@ -224,7 +242,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     # PRISMA Documentation
     prisma = state.get("prisma_documentation", "") if state else ""
     if prisma:
-        print(f"\n--- PRISMA Documentation ---")
+        print("\n--- PRISMA Documentation ---")
         print(safe_preview(prisma, 500))
 
     # Storage and Tracing
@@ -232,7 +250,7 @@ def print_result_summary(result: dict, topic: str) -> None:
     es_ids = state.get("elasticsearch_ids", {}) if state else {}
     langsmith_run_id = result.get("langsmith_run_id")
 
-    print(f"\n--- Storage & Tracing ---")
+    print("\n--- Storage & Tracing ---")
     if zotero_keys:
         print(f"Zotero items created: {len(zotero_keys)}")
     if es_ids:
@@ -279,7 +297,9 @@ async def run_literature_review(
             result = {**full_state, **result}
             logger.info(f"Loaded full state from state store for run {run_id}")
         else:
-            logger.warning(f"Could not load state for run {run_id} - detailed metrics unavailable")
+            logger.warning(
+                f"Could not load state for run {run_id} - detailed metrics unavailable"
+            )
 
     return result
 
@@ -296,7 +316,7 @@ Examples:
   %(prog)s "transformer architectures" standard     # Standard review
   %(prog)s "AI in drug discovery" comprehensive     # Comprehensive review
   %(prog)s "topic" quick --language es              # Spanish language review
-        """
+        """,
     )
 
     add_quality_argument(parser, choices=VALID_QUALITIES, default=DEFAULT_QUALITY)
@@ -336,7 +356,7 @@ async def main():
     print(f"\nTopic: {topic}")
     print(f"Quality: {quality}")
     print(f"Language: {language}")
-    print(f"Research Questions:")
+    print("Research Questions:")
     for q in research_questions:
         print(f"  - {q}")
     if date_range:
@@ -387,7 +407,7 @@ async def main():
                 title=f"Literature Review (Supervised): {topic}",
                 metadata={"quality": quality, "language": language},
             )
-            logger.info(f"Review (v2) saved to: {report_file}")
+            logger.info(f"Review (v2) saved to: {report_v2_file}")
 
         # Save PRISMA documentation
         if result.get("prisma_documentation"):

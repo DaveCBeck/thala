@@ -86,8 +86,7 @@ async def scrape_pages(
 
     # Create scraping tasks for parallel execution
     scraping_tasks = [
-        scrape_single_url(result, i)
-        for i, result in enumerate(results[:max_scrapes])
+        scrape_single_url(result, i) for i, result in enumerate(results[:max_scrapes])
     ]
 
     # Execute all scrapes concurrently

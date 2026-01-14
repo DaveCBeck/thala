@@ -10,18 +10,20 @@ def extract_headings(markdown: str) -> list[dict]:
     Returns list of {level, text, position} dicts.
     """
     headings = []
-    heading_pattern = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
+    heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 
     for match in heading_pattern.finditer(markdown):
         level = len(match.group(1))
         text = match.group(2).strip()
         position = match.start()
 
-        headings.append({
-            "level": level,
-            "text": text,
-            "position": position,
-        })
+        headings.append(
+            {
+                "level": level,
+                "text": text,
+                "position": position,
+            }
+        )
 
     return headings
 

@@ -12,7 +12,7 @@ from uuid import UUID
 
 from elasticsearch import NotFoundError as ESNotFoundError
 from langchain.tools import tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .base import get_store_manager
 
@@ -20,12 +20,11 @@ logger = logging.getLogger(__name__)
 
 # UUID regex pattern
 UUID_PATTERN = re.compile(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    re.IGNORECASE
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
 )
 
 # Zotero key pattern: exactly 8 alphanumeric characters
-ZOTERO_KEY_PATTERN = re.compile(r'^[A-Za-z0-9]{8}$')
+ZOTERO_KEY_PATTERN = re.compile(r"^[A-Za-z0-9]{8}$")
 
 
 class ExpandedContext(BaseModel):
@@ -307,14 +306,10 @@ async def expand_context(
     )
 
     if detected_type == "uuid":
-        await _expand_by_uuid(
-            reference, result, include_zotero, include_history
-        )
+        await _expand_by_uuid(reference, result, include_zotero, include_history)
     elif detected_type == "zotero_key":
         await _expand_by_zotero_key(reference, result)
     elif detected_type == "content":
-        await _expand_by_content(
-            reference, result, include_zotero, include_history
-        )
+        await _expand_by_content(reference, result, include_zotero, include_history)
 
     return result.model_dump(mode="json")

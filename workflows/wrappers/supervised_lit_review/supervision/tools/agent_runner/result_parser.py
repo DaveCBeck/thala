@@ -16,6 +16,7 @@ def create_submit_tool(output_schema: Type[BaseModel]) -> StructuredTool:
     This tool is used by the agent to provide its final structured output.
     Using a tool ensures Anthropic's schema validation is applied.
     """
+
     def submit_result(**kwargs) -> str:
         """Submit the final result. Call this when you have completed your analysis."""
         return json.dumps({"status": "submitted"})

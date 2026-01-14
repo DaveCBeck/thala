@@ -33,7 +33,7 @@ from core.stores.elasticsearch import ElasticsearchStores
 from core.stores.zotero import ZoteroStore
 
 from core.embedding import EmbeddingService
-from .errors import NotFoundError, StoreConnectionError, ToolError
+from .errors import ToolError
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +54,20 @@ async def init_stores():
     # Initialize embedding service first
     try:
         _embedding_service = EmbeddingService()
-        logger.info(f"Embedding service initialized: {_embedding_service.provider_name}/{_embedding_service.model}")
+        logger.info(
+            f"Embedding service initialized: {_embedding_service.provider_name}/{_embedding_service.model}"
+        )
     except Exception as e:
         logger.warning(f"Embedding service initialization failed: {e}")
         _embedding_service = None
 
     # Initialize Elasticsearch stores
-    es_coherence_host = os.environ.get("THALA_ES_COHERENCE_HOST", "http://localhost:9201")
-    es_forgotten_host = os.environ.get("THALA_ES_FORGOTTEN_HOST", "http://localhost:9200")
+    es_coherence_host = os.environ.get(
+        "THALA_ES_COHERENCE_HOST", "http://localhost:9201"
+    )
+    es_forgotten_host = os.environ.get(
+        "THALA_ES_FORGOTTEN_HOST", "http://localhost:9200"
+    )
 
     try:
         es_stores = ElasticsearchStores(
@@ -173,28 +179,38 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         elif name.startswith("zotero."):
             result = await zotero.handle(name, arguments, _stores)
         elif name.startswith("coherence."):
-            result = await coherence.handle(name, arguments, _stores, _embedding_service)
+            result = await coherence.handle(
+                name, arguments, _stores, _embedding_service
+            )
         elif name.startswith("store."):
             result = await store.handle(name, arguments, _stores, _embedding_service)
         elif name.startswith("top_of_mind."):
-            result = await top_of_mind.handle(name, arguments, _stores, _embedding_service)
+            result = await top_of_mind.handle(
+                name, arguments, _stores, _embedding_service
+            )
         else:
-            raise ToolError(f"Unknown tool: {name}. Use health.check to see available tools.")
+            raise ToolError(
+                f"Unknown tool: {name}. Use health.check to see available tools."
+            )
 
         return [TextContent(type="text", text=json.dumps(result, default=str))]
 
     except ToolError as e:
         # Return execution error with actionable message
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": e.message, "details": e.details}),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"error": e.message, "details": e.details}),
+            )
+        ]
     except Exception as e:
         logger.exception(f"Unexpected error in tool {name}")
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": f"Internal error: {str(e)}"}),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"error": f"Internal error: {str(e)}"}),
+            )
+        ]
 
 
 async def main():

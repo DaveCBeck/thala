@@ -11,7 +11,10 @@ from typing import Any, Optional
 from workflows.research.academic_lit_review.graph.api import academic_lit_review
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
 from workflows.shared.quality_config import QualityTier
-from workflows.shared.workflow_state_store import load_workflow_state, save_workflow_state
+from workflows.shared.workflow_state_store import (
+    load_workflow_state,
+    save_workflow_state,
+)
 from workflows.wrappers.supervised_lit_review.supervision.orchestration import (
     run_supervision_configurable,
 )
@@ -68,7 +71,9 @@ async def supervised_lit_review(
         if result.get('final_review_v2'):
             print(f"Supervised review: {len(result['final_review_v2'].split())} words")
     """
-    logger.info(f"Starting supervised literature review for '{topic}' with {supervision_loops} loops")
+    logger.info(
+        f"Starting supervised literature review for '{topic}' with {supervision_loops} loops"
+    )
 
     # Step 1: Run the core literature review (without supervision)
     lit_review_result = await academic_lit_review(
@@ -82,7 +87,9 @@ async def supervised_lit_review(
     # Check for errors in lit review
     has_errors = bool(lit_review_result.get("errors"))
     if has_errors:
-        logger.warning(f"Base literature review completed with {len(lit_review_result['errors'])} errors")
+        logger.warning(
+            f"Base literature review completed with {len(lit_review_result['errors'])} errors"
+        )
 
     final_review = lit_review_result.get("final_report", "")
 
@@ -100,7 +107,9 @@ async def supervised_lit_review(
         if has_errors and not has_valid_review:
             status = "failed"
         else:
-            status = lit_review_result.get("status", "success" if has_valid_review else "failed")
+            status = lit_review_result.get(
+                "status", "success" if has_valid_review else "failed"
+            )
         return {
             "final_report": lit_review_result.get("final_report", final_review),
             "status": status,
@@ -132,16 +141,24 @@ async def supervised_lit_review(
     try:
         # Load full state from state store (required for supervision)
         run_id = lit_review_result.get("langsmith_run_id")
-        full_state = load_workflow_state("academic_lit_review", run_id) if run_id else None
+        full_state = (
+            load_workflow_state("academic_lit_review", run_id) if run_id else None
+        )
 
         if not full_state:
-            logger.error(f"Cannot load state for run {run_id} - supervision requires state store (THALA_MODE=dev)")
+            logger.error(
+                f"Cannot load state for run {run_id} - supervision requires state store (THALA_MODE=dev)"
+            )
             return {
                 "final_report": lit_review_result.get("final_report", final_review),
                 "status": "partial",
                 "langsmith_run_id": run_id,
-                "errors": lit_review_result.get("errors", []) + [
-                    {"phase": "supervision", "error": "State store not available - run with THALA_MODE=dev"}
+                "errors": lit_review_result.get("errors", [])
+                + [
+                    {
+                        "phase": "supervision",
+                        "error": "State store not available - run with THALA_MODE=dev",
+                    }
                 ],
                 "source_count": lit_review_result.get("source_count", 0),
                 "started_at": lit_review_result.get("started_at"),
@@ -207,7 +224,9 @@ async def supervised_lit_review(
             workflow_name="supervised_lit_review",
             run_id=run_id,
             state={
-                "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
+                "input": dict(input_data)
+                if hasattr(input_data, "_asdict")
+                else input_data,
                 "base_run_id": run_id,
                 "final_review_v2": final_review_v2,
                 "review_loop1": supervision_result.get("review_loop1"),
@@ -245,7 +264,8 @@ async def supervised_lit_review(
             "final_report": lit_review_result.get("final_report", final_review),
             "status": "partial",
             "langsmith_run_id": run_id,
-            "errors": lit_review_result.get("errors", []) + [{"phase": "supervision", "error": str(e)}],
+            "errors": lit_review_result.get("errors", [])
+            + [{"phase": "supervision", "error": str(e)}],
             "source_count": lit_review_result.get("source_count", 0),
             "started_at": lit_review_result.get("started_at"),
             "completed_at": datetime.utcnow(),

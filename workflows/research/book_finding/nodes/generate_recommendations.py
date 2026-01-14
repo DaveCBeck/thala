@@ -49,7 +49,11 @@ async def _generate_recommendations(
         List of BookRecommendation objects
     """
     # Select model based on quality settings
-    model_tier = ModelTier.OPUS if quality_settings["use_opus_for_recommendations"] else ModelTier.SONNET
+    model_tier = (
+        ModelTier.OPUS
+        if quality_settings["use_opus_for_recommendations"]
+        else ModelTier.SONNET
+    )
     max_tokens = quality_settings["recommendation_max_tokens"]
     max_recs = quality_settings["recommendations_per_category"]
 
@@ -58,14 +62,22 @@ async def _generate_recommendations(
     brief_section = _format_brief_section(brief)
     user_prompt = user_template.format(theme=theme, brief_section=brief_section)
 
-    logger.debug(f"Generating {category} recommendations with {model_tier.name} (max_recs={max_recs})")
+    logger.debug(
+        f"Generating {category} recommendations with {model_tier.name} (max_recs={max_recs})"
+    )
 
     try:
-        response = await llm.ainvoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ])
-        content = response.content if isinstance(response.content, str) else str(response.content)
+        response = await llm.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        content = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
 
         # Extract JSON from response (handle code blocks)
         if "```json" in content:
@@ -109,7 +121,9 @@ async def generate_analogous_recommendations(state: dict) -> dict[str, Any]:
     quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
-    system_prompt, user_template = await get_recommendation_prompts("analogous", language_config)
+    system_prompt, user_template = await get_recommendation_prompts(
+        "analogous", language_config
+    )
 
     recs = await _generate_recommendations(
         theme=theme,
@@ -134,7 +148,9 @@ async def generate_inspiring_recommendations(state: dict) -> dict[str, Any]:
     quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
-    system_prompt, user_template = await get_recommendation_prompts("inspiring", language_config)
+    system_prompt, user_template = await get_recommendation_prompts(
+        "inspiring", language_config
+    )
 
     recs = await _generate_recommendations(
         theme=theme,
@@ -159,7 +175,9 @@ async def generate_expressive_recommendations(state: dict) -> dict[str, Any]:
     quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
-    system_prompt, user_template = await get_recommendation_prompts("expressive", language_config)
+    system_prompt, user_template = await get_recommendation_prompts(
+        "expressive", language_config
+    )
 
     recs = await _generate_recommendations(
         theme=theme,

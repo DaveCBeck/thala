@@ -7,7 +7,9 @@ import tiktoken
 
 
 # Section type classification for type-aware editing
-SectionType = Literal["abstract", "introduction", "methodology", "conclusion", "content"]
+SectionType = Literal[
+    "abstract", "introduction", "methodology", "conclusion", "content"
+]
 
 
 class SectionInfo(TypedDict):
@@ -57,8 +59,12 @@ def detect_section_type(section_id: str, heading_level: int) -> SectionType:
         return "methodology"
 
     # Conclusion detection
-    if sid_lower in ("conclusion", "conclusions", "summary_and_conclusions",
-                     "discussion_and_conclusion"):
+    if sid_lower in (
+        "conclusion",
+        "conclusions",
+        "summary_and_conclusions",
+        "discussion_and_conclusion",
+    ):
         return "conclusion"
     if "conclusion" in sid_lower:
         return "conclusion"
@@ -203,7 +209,9 @@ def _split_large_section(
         content = "\n".join(section_lines[line_offset : end_offset + 1])
 
         # Generate unique section_id with uniqueness tracking
-        base_section_id = f"{parent_id}_{re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')}"
+        base_section_id = (
+            f"{parent_id}_{re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')}"
+        )
         if base_section_id in used_section_ids:
             used_section_ids[base_section_id] += 1
             section_id = f"{base_section_id}_{used_section_ids[base_section_id]}"

@@ -66,31 +66,47 @@ def apply_structural_edits(
         if src_idx < len(paragraphs):
             if edit.replacement_text:
                 paragraphs[src_idx] = edit.replacement_text
-                applied.append(f"Trimmed P{edit.source_paragraph}: {edit.notes[:50]}...")
+                applied.append(
+                    f"Trimmed P{edit.source_paragraph}: {edit.notes[:50]}..."
+                )
             elif fallback_missing_replacement:
                 # Fallback: add TODO marker instead
-                paragraphs[src_idx] = f"<!-- TODO: Trim redundancy - {edit.notes} -->\n{paragraphs[src_idx]}"
-                applied.append(f"Added TODO for P{edit.source_paragraph} (missing replacement_text)")
+                paragraphs[src_idx] = (
+                    f"<!-- TODO: Trim redundancy - {edit.notes} -->\n{paragraphs[src_idx]}"
+                )
+                applied.append(
+                    f"Added TODO for P{edit.source_paragraph} (missing replacement_text)"
+                )
             else:
-                logger.warning(f"Skipping trim_redundancy for P{edit.source_paragraph}: no replacement_text")
+                logger.warning(
+                    f"Skipping trim_redundancy for P{edit.source_paragraph}: no replacement_text"
+                )
 
     # Apply split_section (expands paragraphs)
     # Process in reverse order to maintain indices
-    split_edits_sorted = sorted(split_edits, key=lambda e: e.source_paragraph, reverse=True)
+    split_edits_sorted = sorted(
+        split_edits, key=lambda e: e.source_paragraph, reverse=True
+    )
     for edit in split_edits_sorted:
         src_idx = edit.source_paragraph - 1
         if src_idx < len(paragraphs) and edit.replacement_text:
             split_parts = edit.replacement_text.split("---SPLIT---")
             split_parts = [p.strip() for p in split_parts if p.strip()]
             if split_parts:
-                paragraphs = paragraphs[:src_idx] + split_parts + paragraphs[src_idx + 1:]
-                applied.append(f"Split P{edit.source_paragraph} into {len(split_parts)} parts")
+                paragraphs = (
+                    paragraphs[:src_idx] + split_parts + paragraphs[src_idx + 1 :]
+                )
+                applied.append(
+                    f"Split P{edit.source_paragraph} into {len(split_parts)} parts"
+                )
 
     # Apply add_structural_content (inserts new structural content)
     # This adds introductions, conclusions, discussions, or framing paragraphs
     # Content is inserted AFTER the source_paragraph, unless "before" is in notes
     # Process in reverse order to maintain indices
-    structural_edits_sorted = sorted(structural_edits, key=lambda e: e.source_paragraph, reverse=True)
+    structural_edits_sorted = sorted(
+        structural_edits, key=lambda e: e.source_paragraph, reverse=True
+    )
     for edit in structural_edits_sorted:
         src_idx = edit.source_paragraph - 1
         if edit.replacement_text and src_idx < len(paragraphs):
@@ -98,11 +114,15 @@ def apply_structural_edits(
             if src_idx == 0 and "before" in edit.notes.lower():
                 # Insert at the very beginning of the document
                 paragraphs.insert(0, edit.replacement_text)
-                applied.append(f"Added structural content before P1: {edit.notes[:50]}...")
+                applied.append(
+                    f"Added structural content before P1: {edit.notes[:50]}..."
+                )
             else:
                 # Insert the new structural content after the source paragraph
                 paragraphs.insert(src_idx + 1, edit.replacement_text)
-                applied.append(f"Added structural content after P{edit.source_paragraph}: {edit.notes[:50]}...")
+                applied.append(
+                    f"Added structural content after P{edit.source_paragraph}: {edit.notes[:50]}..."
+                )
 
     # Apply add_transition (inserts marker, adjusts indices)
     # Sort by position, process in reverse to maintain indices
@@ -118,15 +138,23 @@ def apply_structural_edits(
         if insert_pos < len(paragraphs):
             transition = f"<!-- TRANSITION NEEDED between P{edit.source_paragraph} and P{edit.target_paragraph}: {edit.notes} -->"
             paragraphs.insert(insert_pos + 1, transition)
-            applied.append(f"Added transition marker between P{edit.source_paragraph} and P{edit.target_paragraph}")
+            applied.append(
+                f"Added transition marker between P{edit.source_paragraph} and P{edit.target_paragraph}"
+            )
 
     # Apply move_content (relocate from source to target)
     # Process in reverse order by source_paragraph to maintain indices
-    move_edits_sorted = sorted(move_edits, key=lambda e: e.source_paragraph, reverse=True)
+    move_edits_sorted = sorted(
+        move_edits, key=lambda e: e.source_paragraph, reverse=True
+    )
     for edit in move_edits_sorted:
         src_idx = edit.source_paragraph - 1
         tgt_idx = (edit.target_paragraph or 0) - 1
-        if src_idx < len(paragraphs) and tgt_idx < len(paragraphs) and src_idx != tgt_idx:
+        if (
+            src_idx < len(paragraphs)
+            and tgt_idx < len(paragraphs)
+            and src_idx != tgt_idx
+        ):
             # Get content to move (either specific content or whole paragraph)
             content_to_move = edit.content_to_preserve or paragraphs[src_idx]
             # Append to target
@@ -134,16 +162,22 @@ def apply_structural_edits(
             # Clear or remove source
             if edit.content_to_preserve:
                 # Only moved part of the content, leave rest in place
-                paragraphs[src_idx] = paragraphs[src_idx].replace(edit.content_to_preserve, "").strip()
+                paragraphs[src_idx] = (
+                    paragraphs[src_idx].replace(edit.content_to_preserve, "").strip()
+                )
                 if not paragraphs[src_idx]:
                     paragraphs[src_idx] = ""  # Mark for cleanup
             else:
                 paragraphs[src_idx] = ""  # Mark for cleanup
-            applied.append(f"Moved content from P{edit.source_paragraph} to P{edit.target_paragraph}")
+            applied.append(
+                f"Moved content from P{edit.source_paragraph} to P{edit.target_paragraph}"
+            )
 
     # Apply delete_paragraph (removes paragraphs)
     # Process in reverse order by source_paragraph to maintain indices
-    delete_edits_sorted = sorted(delete_edits, key=lambda e: e.source_paragraph, reverse=True)
+    delete_edits_sorted = sorted(
+        delete_edits, key=lambda e: e.source_paragraph, reverse=True
+    )
     for edit in delete_edits_sorted:
         src_idx = edit.source_paragraph - 1
         if src_idx < len(paragraphs):
@@ -153,17 +187,25 @@ def apply_structural_edits(
 
     # Apply merge_sections (removes paragraphs)
     # Process in reverse order by source_paragraph to maintain indices
-    merge_edits_sorted = sorted(merge_edits, key=lambda e: e.source_paragraph, reverse=True)
+    merge_edits_sorted = sorted(
+        merge_edits, key=lambda e: e.source_paragraph, reverse=True
+    )
     for edit in merge_edits_sorted:
         src_idx = edit.source_paragraph - 1
         tgt_idx = (edit.target_paragraph or 0) - 1
-        if src_idx < len(paragraphs) and tgt_idx < len(paragraphs) and src_idx != tgt_idx:
+        if (
+            src_idx < len(paragraphs)
+            and tgt_idx < len(paragraphs)
+            and src_idx != tgt_idx
+        ):
             source_text = paragraphs[src_idx]
             # Append source to target
             paragraphs[tgt_idx] = f"{paragraphs[tgt_idx]}\n\n{source_text}"
             # Remove source
             paragraphs.pop(src_idx)
-            applied.append(f"Merged P{edit.source_paragraph} into P{edit.target_paragraph}")
+            applied.append(
+                f"Merged P{edit.source_paragraph} into P{edit.target_paragraph}"
+            )
 
     # Apply reorder_sections
     # This is complex because each reorder affects subsequent indices
@@ -179,7 +221,9 @@ def apply_structural_edits(
             # Adjust target index if source was before target
             insert_idx = tgt_idx if src_idx > tgt_idx else tgt_idx - 1
             paragraphs.insert(insert_idx, para)
-            applied.append(f"Moved P{edit.source_paragraph} to position near P{edit.target_paragraph}")
+            applied.append(
+                f"Moved P{edit.source_paragraph} to position near P{edit.target_paragraph}"
+            )
 
     # Clean up empty paragraphs from move operations
     paragraphs = [p for p in paragraphs if p.strip()]

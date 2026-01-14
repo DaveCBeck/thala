@@ -58,24 +58,25 @@ async def update_zotero(state: DocumentProcessingState) -> dict[str, Any]:
                 # Parse name (simple approach: assume "First Last" format)
                 parts = author_name.strip().split(" ", 1)
                 if len(parts) == 2:
-                    creators.append(ZoteroCreator(
-                        firstName=parts[0],
-                        lastName=parts[1],
-                        creatorType="author"
-                    ))
+                    creators.append(
+                        ZoteroCreator(
+                            firstName=parts[0], lastName=parts[1], creatorType="author"
+                        )
+                    )
                 else:
                     # Single name or complex format
-                    creators.append(ZoteroCreator(
-                        name=author_name,
-                        creatorType="author"
-                    ))
+                    creators.append(
+                        ZoteroCreator(name=author_name, creatorType="author")
+                    )
             update.creators = creators
 
         # Update tags: remove "pending", add "processed"
         # First, get current item to preserve other tags
         current_item = await store_manager.zotero.get(zotero_key)
         if current_item:
-            current_tags = [tag.get("tag", "") for tag in current_item.tags if isinstance(tag, dict)]
+            current_tags = [
+                tag.get("tag", "") for tag in current_item.tags if isinstance(tag, dict)
+            ]
             # Remove "pending", add "processed"
             new_tags = [t for t in current_tags if t.lower() != "pending"]
             if "processed" not in [t.lower() for t in new_tags]:

@@ -70,8 +70,7 @@ def finalize_node(state: dict) -> dict[str, Any]:
 
     rewrite_manifest = state.get("rewrite_manifest")
     did_rewrites = (
-        rewrite_manifest is not None and
-        len(rewrite_manifest.get("rewrites", [])) > 0
+        rewrite_manifest is not None and len(rewrite_manifest.get("rewrites", [])) > 0
     )
 
     did_work = phase_a_complete or did_rewrites

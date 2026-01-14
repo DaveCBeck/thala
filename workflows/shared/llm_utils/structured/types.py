@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Generic, Optional, Type, TypeVar
+from typing import Generic, Optional, Type, TypeVar
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel

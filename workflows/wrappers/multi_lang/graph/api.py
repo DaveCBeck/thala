@@ -6,7 +6,7 @@ Provides the main function for running multi-language research.
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from workflows.shared.quality_config import QualityTier
 from workflows.wrappers.multi_lang.state import (

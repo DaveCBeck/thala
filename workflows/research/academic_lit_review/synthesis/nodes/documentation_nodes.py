@@ -20,7 +20,7 @@ async def generate_prisma_docs_node(state: SynthesisState) -> dict[str, Any]:
 ## Search Information
 
 **Topic**: {topic}
-**Date of Search**: {datetime.utcnow().strftime('%Y-%m-%d')}
+**Date of Search**: {datetime.utcnow().strftime("%Y-%m-%d")}
 **Databases Searched**: OpenAlex
 
 ## Identification

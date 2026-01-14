@@ -62,7 +62,9 @@ async def diffusion_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
     )
 
     final_corpus = diffusion_result.get("paper_corpus", paper_corpus)
-    final_corpus_dois = diffusion_result.get("final_corpus_dois", list(final_corpus.keys()))
+    final_corpus_dois = diffusion_result.get(
+        "final_corpus_dois", list(final_corpus.keys())
+    )
     diffusion_state = diffusion_result.get("diffusion", {})
     saturation_reason = diffusion_result.get("saturation_reason", "Unknown")
 

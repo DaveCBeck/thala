@@ -49,16 +49,20 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
 
     for query in queries:
         try:
-            result = await search_memory.ainvoke({
-                "query": query,
-                "limit": MAX_RESULTS_PER_QUERY,
-                "stores": ["top_of_mind", "coherence", "store"],
-            })
+            result = await search_memory.ainvoke(
+                {
+                    "query": query,
+                    "limit": MAX_RESULTS_PER_QUERY,
+                    "stores": ["top_of_mind", "coherence", "store"],
+                }
+            )
 
             results_list = result.get("results", [])
             all_results.extend(results_list)
 
-            logger.debug(f"Memory search for '{query[:30]}...': {len(results_list)} results")
+            logger.debug(
+                f"Memory search for '{query[:30]}...': {len(results_list)} results"
+            )
 
         except Exception as e:
             logger.warning(f"Memory search failed for '{query[:30]}...': {e}")
@@ -78,14 +82,16 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
     # Summarize memory findings
     if unique_results:
         # Include score info for debugging
-        findings_text = "\n\n".join([
-            f"[{r.get('source_store', 'unknown')}] (score: {r.get('score', 'N/A')})\n{r.get('content', '')[:500]}"
-            for r in unique_results
-        ])
+        findings_text = "\n\n".join(
+            [
+                f"[{r.get('source_store', 'unknown')}] (score: {r.get('score', 'N/A')})\n{r.get('content', '')[:500]}"
+                for r in unique_results
+            ]
+        )
 
         try:
             llm = get_llm(tier=ModelTier.HAIKU)
-            prompt = f"""Summarize in approximately 300 words what the user already knows about: {brief['topic']}.
+            prompt = f"""Summarize in approximately 300 words what the user already knows about: {brief["topic"]}.
 If none of the content is relevant to this topic, say so clearly.
 
 Content:

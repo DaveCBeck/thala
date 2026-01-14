@@ -43,7 +43,9 @@ def validate_edits_node(state: dict) -> dict[str, Any]:
 
     if result["needs_retry_edits"]:
         for edit in result["needs_retry_edits"]:
-            logger.debug(f"Edit needs retry (missing replacement_text): P{edit.source_paragraph}")
+            logger.debug(
+                f"Edit needs retry (missing replacement_text): P{edit.source_paragraph}"
+            )
 
     return {
         "valid_edits": [e.model_dump() for e in result["valid_edits"]],

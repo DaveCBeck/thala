@@ -27,7 +27,9 @@ async def handle_conduct_research(
 ) -> dict:
     """Handle conduct_research action."""
     questions = []
-    for i, q in enumerate(action_data.get("questions", [])[:MAX_CONCURRENT_RESEARCHERS]):
+    for i, q in enumerate(
+        action_data.get("questions", [])[:MAX_CONCURRENT_RESEARCHERS]
+    ):
         if isinstance(q, dict):
             question_text = q.get("question", q.get("research_topic", str(q)))
             context = q.get("context", "")
@@ -72,7 +74,8 @@ async def handle_conduct_research(
         "diffusion": {
             **diffusion,
             "iteration": iteration + 1,
-            "areas_explored": diffusion["areas_explored"] + [q["question"][:50] for q in questions],
+            "areas_explored": diffusion["areas_explored"]
+            + [q["question"][:50] for q in questions],
             "completeness_score": new_completeness,
             "last_decision": "conduct_research",
         },
@@ -130,32 +133,34 @@ async def handle_check_fact(action_data: dict, diffusion: dict, brief: dict) -> 
         logger.debug(f"Fact-checking claim: '{claim[:50]}...'")
 
         try:
-            fact_result = await check_fact.ainvoke({
-                "claim": claim,
-                "context": brief.get("topic", ""),
-            })
+            fact_result = await check_fact.ainvoke(
+                {
+                    "claim": claim,
+                    "context": brief.get("topic", ""),
+                }
+            )
 
             verdict = fact_result.get("verdict", "unverifiable")
             confidence = fact_result.get("confidence", 0.0)
             explanation = fact_result.get("explanation", "")
 
-            logger.info(
-                f"Fact-check result: {verdict} (confidence: {confidence:.2f})"
-            )
+            logger.info(f"Fact-check result: {verdict} (confidence: {confidence:.2f})")
 
             # Continue with research, incorporating the fact-check result
             # The fact-check adds context but doesn't change the flow
             return {
                 "diffusion": {**diffusion, "last_decision": "check_fact"},
                 "current_status": "fact_checked",
-                "errors": [{
-                    "node": "supervisor",
-                    "type": "fact_check",
-                    "claim": claim,
-                    "verdict": verdict,
-                    "confidence": confidence,
-                    "explanation": explanation,
-                }],
+                "errors": [
+                    {
+                        "node": "supervisor",
+                        "type": "fact_check",
+                        "claim": claim,
+                        "verdict": verdict,
+                        "confidence": confidence,
+                        "explanation": explanation,
+                    }
+                ],
             }
         except Exception as fact_error:
             logger.warning(f"Fact-check failed: {fact_error}")

@@ -33,7 +33,9 @@ async def fetch_citations_raw(
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
-    async def fetch_single_paper(seed_doi: str) -> tuple[list[dict], list[dict], list[CitationEdge]]:
+    async def fetch_single_paper(
+        seed_doi: str,
+    ) -> tuple[list[dict], list[dict], list[CitationEdge]]:
         """Fetch both forward and backward citations for a single seed DOI."""
         async with semaphore:
             forward_papers = []
@@ -49,11 +51,17 @@ async def fetch_citations_raw(
                 )
 
                 for work in forward_result.results:
-                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    work_dict = (
+                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    )
                     forward_papers.append(work_dict)
 
                     if work_dict.get("doi"):
-                        citing_doi = work_dict["doi"].replace("https://doi.org/", "").replace("http://doi.org/", "")
+                        citing_doi = (
+                            work_dict["doi"]
+                            .replace("https://doi.org/", "")
+                            .replace("http://doi.org/", "")
+                        )
                         edges.append(
                             CitationEdge(
                                 citing_doi=citing_doi,
@@ -74,11 +82,17 @@ async def fetch_citations_raw(
                 )
 
                 for work in backward_result.results:
-                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    work_dict = (
+                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    )
                     backward_papers.append(work_dict)
 
                     if work_dict.get("doi"):
-                        cited_doi = work_dict["doi"].replace("https://doi.org/", "").replace("http://doi.org/", "")
+                        cited_doi = (
+                            work_dict["doi"]
+                            .replace("https://doi.org/", "")
+                            .replace("http://doi.org/", "")
+                        )
                         edges.append(
                             CitationEdge(
                                 citing_doi=seed_doi,
@@ -89,7 +103,9 @@ async def fetch_citations_raw(
                         )
 
             except Exception as e:
-                logger.warning(f"Failed to fetch backward citations for {seed_doi}: {e}")
+                logger.warning(
+                    f"Failed to fetch backward citations for {seed_doi}: {e}"
+                )
 
             logger.debug(
                 f"Fetched {len(forward_papers)} forward, {len(backward_papers)} backward "

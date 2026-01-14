@@ -78,7 +78,9 @@ async def validate_edit_citations_with_zotero(
         # Verify ALL citations against Zotero - Zotero is source of truth
         # If a citation exists in Zotero, it's valid regardless of corpus_keys
         citations_to_verify = edited_citations
-        logger.info(f"Verifying all {len(citations_to_verify)} citations against Zotero")
+        logger.info(
+            f"Verifying all {len(citations_to_verify)} citations against Zotero"
+        )
 
         if citations_to_verify:
             verification_results = await verify_zotero_citations_batch(
@@ -93,13 +95,17 @@ async def validate_edit_citations_with_zotero(
                     # Only mark as invalid if not in corpus_keys either
                     if key not in all_corpus_keys:
                         invalid_citations.append(f"{key} (not found in Zotero)")
-                        logger.warning(f"Citation [@{key}] not found in Zotero or corpus")
+                        logger.warning(
+                            f"Citation [@{key}] not found in Zotero or corpus"
+                        )
                     else:
                         # In corpus but not in Zotero - trust the corpus
                         verified_keys.add(key)
                         logger.debug(f"Citation [@{key}] in corpus but not in Zotero")
 
-        logger.info(f"Zotero verification: {len(verified_keys)} valid, {len(invalid_citations)} invalid")
+        logger.info(
+            f"Zotero verification: {len(verified_keys)} valid, {len(invalid_citations)} invalid"
+        )
 
     else:
         # Original behavior: only verify NEW citations not in corpus

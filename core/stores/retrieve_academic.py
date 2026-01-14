@@ -18,10 +18,9 @@ Endpoints:
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional
 
-import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.utils import BaseAsyncHttpClient
 
@@ -258,7 +257,9 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                 # Check timeout
                 elapsed = asyncio.get_event_loop().time() - start_times[job_id]
                 if elapsed > timeout:
-                    logger.warning(f"Retrieval job for {doi} timed out after {timeout}s")
+                    logger.warning(
+                        f"Retrieval job for {doi} timed out after {timeout}s"
+                    )
                     completed_this_round.append(
                         (doi, local_path, asyncio.TimeoutError(f"Timeout: {doi}"))
                     )
@@ -363,9 +364,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         result = await self.wait_for_completion(job.job_id, timeout=timeout)
 
         if result.status != "completed":
-            raise Exception(
-                f"Retrieval failed: {result.error_code} - {result.error}"
-            )
+            raise Exception(f"Retrieval failed: {result.error_code} - {result.error}")
 
         # Download file
         saved_path = await self.download_file(job.job_id, local_path)

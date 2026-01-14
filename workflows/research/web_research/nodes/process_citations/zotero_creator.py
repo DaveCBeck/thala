@@ -34,16 +34,20 @@ async def _create_zotero_item(
         if isinstance(author, str) and author.strip():
             parts = author.strip().split(" ", 1)
             if len(parts) == 2:
-                creators.append(ZoteroCreator(
-                    firstName=parts[0],
-                    lastName=parts[1],
-                    creatorType="author",
-                ))
+                creators.append(
+                    ZoteroCreator(
+                        firstName=parts[0],
+                        lastName=parts[1],
+                        creatorType="author",
+                    )
+                )
             else:
-                creators.append(ZoteroCreator(
-                    name=author,
-                    creatorType="author",
-                ))
+                creators.append(
+                    ZoteroCreator(
+                        name=author,
+                        creatorType="author",
+                    )
+                )
 
     # Map item types to Zotero types
     item_type = metadata.get("item_type", "webpage")

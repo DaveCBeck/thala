@@ -44,7 +44,10 @@ async def run_diffusion(
     if not quality_settings:
         logger.warning("Empty quality_settings received, using defaults")
         quality_settings = {"max_stages": 3, "saturation_threshold": 0.12}
-    elif "max_stages" not in quality_settings or "saturation_threshold" not in quality_settings:
+    elif (
+        "max_stages" not in quality_settings
+        or "saturation_threshold" not in quality_settings
+    ):
         logger.warning(
             f"Incomplete quality_settings (keys: {list(quality_settings.keys())}), "
             "missing keys will use defaults"

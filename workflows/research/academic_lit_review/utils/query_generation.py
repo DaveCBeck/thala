@@ -8,7 +8,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.shared.language import LanguageConfig, get_translated_prompt
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,9 @@ async def generate_search_queries(
         # terms + the language filter (applied in keyword_search.py:118) for best
         # results. See: research/openalex-language-search.md
 
-        logger.info(f"Generated {len(queries)} search queries for topic: {topic[:50]}...")
+        logger.info(
+            f"Generated {len(queries)} search queries for topic: {topic[:50]}..."
+        )
         return queries
 
     except Exception as e:

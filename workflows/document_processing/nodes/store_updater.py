@@ -59,11 +59,13 @@ async def update_store(state: dict) -> dict:
     )
 
     # Return updated store records info
-    updated_store_records = [{
-        "id": str(record_id),
-        "compression_level": 0,
-        "content_preview": processing_result["markdown"][:200],
-    }]
+    updated_store_records = [
+        {
+            "id": str(record_id),
+            "compression_level": 0,
+            "content_preview": processing_result["markdown"][:200],
+        }
+    ]
 
     return {
         "store_records": updated_store_records,

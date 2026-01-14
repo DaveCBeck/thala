@@ -114,7 +114,9 @@ async def academic_lit_review(
             workflow_name="academic_lit_review",
             run_id=initial_state["langsmith_run_id"],
             state={
-                "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
+                "input": dict(input_data)
+                if hasattr(input_data, "_asdict")
+                else input_data,
                 "paper_corpus": result.get("paper_corpus", {}),
                 "paper_summaries": result.get("paper_summaries", {}),
                 "clusters": result.get("clusters", []),

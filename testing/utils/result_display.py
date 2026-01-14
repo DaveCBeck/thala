@@ -153,7 +153,7 @@ def print_storage_info(
     if not any([store_id, zotero_key, zotero_keys, es_ids, langsmith_run_id]):
         return
 
-    print(f"\n--- Storage & Tracing ---")
+    print("\n--- Storage & Tracing ---")
     if store_id:
         print(f"Store Record ID: {store_id}")
     if zotero_key:

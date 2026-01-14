@@ -10,8 +10,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from workflows.research.web_research.state import DeepResearchState, ClarificationQuestion
-from workflows.research.web_research.prompts import CLARIFY_INTENT_SYSTEM, CLARIFY_INTENT_HUMAN, get_today_str
+from workflows.research.web_research.state import (
+    DeepResearchState,
+    ClarificationQuestion,
+)
+from workflows.research.web_research.prompts import (
+    CLARIFY_INTENT_SYSTEM,
+    CLARIFY_INTENT_HUMAN,
+    get_today_str,
+)
 from workflows.research.web_research.utils import load_prompts_with_translation
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 
@@ -32,8 +39,7 @@ class ClarificationResponse(BaseModel):
         description="Whether the request needs clarification"
     )
     questions: list[ClarificationQuestionModel] = Field(
-        default_factory=list,
-        description="List of clarifying questions if needed"
+        default_factory=list, description="List of clarifying questions if needed"
     )
 
 

@@ -89,7 +89,9 @@ async def deep_research(
 
     # Determine primary language
     primary_lang = language or "en"
-    primary_lang_config = get_language_config(primary_lang) if primary_lang != "en" else None
+    primary_lang_config = (
+        get_language_config(primary_lang) if primary_lang != "en" else None
+    )
 
     initial_state: DeepResearchState = {
         "input": {
@@ -111,7 +113,8 @@ async def deep_research(
         "supervisor_messages": [],
         "diffusion": DiffusionState(
             iteration=0,
-            max_iterations=max_iterations or {
+            max_iterations=max_iterations
+            or {
                 "test": 1,
                 "quick": 2,
                 "standard": 4,
@@ -134,7 +137,6 @@ async def deep_research(
         "current_status": "starting",
         "status": None,  # Will be set on completion
         "langsmith_run_id": str(run_id),
-
         # Language support
         "primary_language": primary_lang,
         "primary_language_config": primary_lang_config,
@@ -142,7 +144,9 @@ async def deep_research(
 
     recursion_limit = RECURSION_LIMITS.get(quality, 100)
     lang_info = f", language={primary_lang}" if primary_lang != "en" else ""
-    logger.info(f"Starting deep research: query='{query[:50]}...', quality={quality}{lang_info}, recursion_limit={recursion_limit}, run_id={run_id}")
+    logger.info(
+        f"Starting deep research: query='{query[:50]}...', quality={quality}{lang_info}, recursion_limit={recursion_limit}, run_id={run_id}"
+    )
 
     result = await deep_research_graph.ainvoke(
         initial_state,

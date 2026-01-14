@@ -22,6 +22,7 @@ class QualityMetrics:
         suggestions: List of improvement suggestions
         workflow_specific: Dict for workflow-specific metrics
     """
+
     completed: bool = False
     output_length: int = 0
     word_count: int = 0
@@ -167,7 +168,9 @@ class BaseQualityAnalyzer:
         elif metrics.word_count < self.min_word_count:
             metrics.issues.append(f"Output is short ({metrics.word_count} words)")
         elif metrics.word_count > self.max_word_count:
-            metrics.issues.append(f"Output may be too long ({metrics.word_count} words)")
+            metrics.issues.append(
+                f"Output may be too long ({metrics.word_count} words)"
+            )
 
         if metrics.source_count < self.min_source_count:
             metrics.issues.append(f"Low source count ({metrics.source_count})")
@@ -178,14 +181,18 @@ class BaseQualityAnalyzer:
     def _generate_suggestions(self, metrics: QualityMetrics) -> None:
         """Generate improvement suggestions based on issues."""
         if not metrics.issues:
-            metrics.suggestions.append("Workflow completed successfully - no major issues detected")
+            metrics.suggestions.append(
+                "Workflow completed successfully - no major issues detected"
+            )
             return
 
         if "short" in str(metrics.issues).lower():
             metrics.suggestions.append("Consider using a higher quality setting")
 
         if "source count" in str(metrics.issues).lower():
-            metrics.suggestions.append("Consider broadening search terms or using more sources")
+            metrics.suggestions.append(
+                "Consider broadening search terms or using more sources"
+            )
 
         if "errors" in str(metrics.issues).lower():
             metrics.suggestions.append("Review error logs for specific failures")
@@ -228,7 +235,7 @@ def print_quality_analysis(metrics: QualityMetrics | dict) -> None:
     # Suggestions
     suggestions = data.get("suggestions", [])
     if suggestions:
-        print(f"\n--- Suggestions ---")
+        print("\n--- Suggestions ---")
         for suggestion in suggestions:
             print(f"  - {suggestion}")
 

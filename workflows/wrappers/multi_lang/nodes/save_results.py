@@ -146,7 +146,9 @@ async def save_multi_lang_results(state: MultiLangState) -> dict[str, Any]:
                     "languages_analyzed": languages_analyzed,
                     "mode": mode,
                     "universal_themes": sonnet_analysis.get("universal_themes", []),
-                    "coverage_gaps_in_english": sonnet_analysis.get("coverage_gaps_in_english", []),
+                    "coverage_gaps_in_english": sonnet_analysis.get(
+                        "coverage_gaps_in_english", []
+                    ),
                 },
                 embedding_model=store_manager.embedding.model,
             )

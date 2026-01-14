@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from core.stores.zotero import ZoteroStore
-from ...types import Edit
 from ...utils import (
     split_into_sections,
     validate_edits,
@@ -77,7 +76,9 @@ async def apply_edits_node(state: dict[str, Any]) -> dict[str, Any]:
             known_valid_keys=set(),  # Verify all keys fresh
         )
 
-        logger.info(f"Citation verification: {len(valid_keys)} valid, {len(invalid_keys)} invalid")
+        logger.info(
+            f"Citation verification: {len(valid_keys)} valid, {len(invalid_keys)} invalid"
+        )
 
         if invalid_keys:
             # Use LLM to resolve invalid citations
@@ -102,17 +103,30 @@ def filter_ambiguous_claims(
     discarded = []
 
     methodological_indicators = [
-        "we used", "we employed", "we selected", "we chose",
-        "this study used", "the approach", "methodology",
-        "research design", "data collection", "sample size",
-        "we analyzed", "we examined", "we investigated",
-        "the authors", "researchers typically", "standard practice",
+        "we used",
+        "we employed",
+        "we selected",
+        "we chose",
+        "this study used",
+        "the approach",
+        "methodology",
+        "research design",
+        "data collection",
+        "sample size",
+        "we analyzed",
+        "we examined",
+        "we investigated",
+        "the authors",
+        "researchers typically",
+        "standard practice",
     ]
 
     for claim in claims:
         claim_lower = claim.lower()
 
-        is_corpus_gap = any(pattern in claim_lower for pattern in false_positive_patterns)
+        is_corpus_gap = any(
+            pattern in claim_lower for pattern in false_positive_patterns
+        )
         if is_corpus_gap:
             discarded.append(f"Pre-filtered (corpus gap): {claim}")
             logger.debug(f"Filtered corpus-gap claim: {claim[:80]}...")
@@ -190,7 +204,9 @@ async def flag_issues_node(state: dict[str, Any]) -> dict[str, Any]:
 
     for todo in unaddressed_todos:
         todo_lower = todo.lower()
-        is_corpus_gap = any(pattern in todo_lower for pattern in FALSE_POSITIVE_PATTERNS)
+        is_corpus_gap = any(
+            pattern in todo_lower for pattern in FALSE_POSITIVE_PATTERNS
+        )
         if is_corpus_gap:
             discarded_todos.append(f"Pre-filtered TODO (corpus gap): {todo}")
             logger.debug(f"Filtered corpus-gap TODO: {todo[:80]}...")
@@ -227,7 +243,7 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
 
     current_review = state["current_review"]
 
-    todo_pattern = r'<!-- TODO:.*?-->'
+    todo_pattern = r"<!-- TODO:.*?-->"
     todos = re.findall(todo_pattern, current_review, re.DOTALL)
 
     todos_stripped = 0
@@ -251,8 +267,8 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
 
             todos_stripped += 1
 
-        current_review = re.sub(todo_pattern, '', current_review, flags=re.DOTALL)
-        current_review = re.sub(r'\n{3,}', '\n\n', current_review)
+        current_review = re.sub(todo_pattern, "", current_review, flags=re.DOTALL)
+        current_review = re.sub(r"\n{3,}", "\n\n", current_review)
 
         logger.debug(f"Stripped {todos_stripped} TODO markers from final document")
 

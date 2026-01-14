@@ -23,7 +23,9 @@ async def check_gpu() -> tuple[bool, Optional[str]]:
     return False, None
 
 
-async def check_http_health(url: str, timeout: float = 5.0) -> tuple[bool, Optional[float]]:
+async def check_http_health(
+    url: str, timeout: float = 5.0
+) -> tuple[bool, Optional[float]]:
     """Check HTTP endpoint health, return (healthy, response_time_ms)."""
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:

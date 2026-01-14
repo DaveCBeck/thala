@@ -1,12 +1,15 @@
 """Main paper search logic and tool creation."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
-from langchain_tools.base import get_store_manager
-from core.stores import ZoteroStore
+if TYPE_CHECKING:
+    from workflows.wrappers.supervised_lit_review.supervision.store_query import (
+        SupervisionStoreQuery,
+    )
+
 from .sources import semantic_search, keyword_search, merge_search_results
 
 logger = logging.getLogger(__name__)
@@ -76,13 +79,15 @@ def create_paper_tools(store_query: "SupervisionStoreQuery") -> list:
         # Build output with paper metadata
         papers: list[dict[str, Any]] = []
         for result in merged:
-            papers.append({
-                "zotero_key": result["zotero_key"],
-                "title": result.get("title", "Unknown")[:100],
-                "year": result.get("year", 0),
-                "authors": format_authors(result.get("authors", [])),
-                "relevance": round(result["score"], 3),
-            })
+            papers.append(
+                {
+                    "zotero_key": result["zotero_key"],
+                    "title": result.get("title", "Unknown")[:100],
+                    "year": result.get("year", 0),
+                    "authors": format_authors(result.get("authors", [])),
+                    "relevance": round(result["score"], 3),
+                }
+            )
 
         logger.info(f"search_papers('{query[:30]}...'): {len(papers)} results")
 
@@ -122,7 +127,7 @@ def create_paper_tools(store_query: "SupervisionStoreQuery") -> list:
                 return {
                     "zotero_key": zotero_key,
                     "title": zotero_metadata.get("title", "Unknown"),
-                    "content": f"No detailed content available in store. Paper exists in Zotero library.",
+                    "content": "No detailed content available in store. Paper exists in Zotero library.",
                     "truncated": False,
                 }
             return {

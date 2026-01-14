@@ -57,9 +57,7 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
             content = response.content
 
             if not validate_pdf_bytes(content):
-                raise MarkerProcessingError(
-                    f"Downloaded content is not a valid PDF"
-                )
+                raise MarkerProcessingError("Downloaded content is not a valid PDF")
 
             return content
 
@@ -68,7 +66,7 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
                 f"HTTP error downloading PDF: {e.response.status_code}"
             ) from e
         except httpx.TimeoutException as e:
-            raise MarkerProcessingError(f"Timeout downloading PDF") from e
+            raise MarkerProcessingError("Timeout downloading PDF") from e
         except MarkerProcessingError:
             raise
         except Exception as e:
@@ -142,12 +140,16 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
         page.on("response", handle_response)
 
         # Navigate to the PDF URL
-        logger.debug(f"Playwright navigating to PDF URL")
-        response = await page.goto(url, timeout=int(timeout * 1000), wait_until="networkidle")
+        logger.debug("Playwright navigating to PDF URL")
+        response = await page.goto(
+            url, timeout=int(timeout * 1000), wait_until="networkidle"
+        )
 
         # Check if we captured the PDF via response interception
         if content and validate_pdf_bytes(content):
-            logger.debug(f"Playwright captured PDF via response: {len(content) / 1024:.1f} KB")
+            logger.debug(
+                f"Playwright captured PDF via response: {len(content) / 1024:.1f} KB"
+            )
             return content
 
         # If not captured via response, check if browser downloaded it
@@ -157,11 +159,13 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
             if "application/pdf" in content_type:
                 content = await response.body()
                 if validate_pdf_bytes(content):
-                    logger.debug(f"Playwright got PDF from response: {len(content) / 1024:.1f} KB")
+                    logger.debug(
+                        f"Playwright got PDF from response: {len(content) / 1024:.1f} KB"
+                    )
                     return content
 
         raise MarkerProcessingError(
-            f"Playwright could not download PDF (got non-PDF content)"
+            "Playwright could not download PDF (got non-PDF content)"
         )
 
     except MarkerProcessingError:
@@ -195,11 +199,14 @@ async def _download_pdf(url: str, timeout: float = 60.0) -> bytes:
         # - Non-PDF responses (HTML login pages)
         # - HTTP 4xx errors (anti-bot blocking: 403, 418, 429, etc.)
         # - Timeout errors (slow sites may work with browser)
-        if any(pattern in error_str for pattern in [
-            "not a valid PDF",
-            "HTTP error",
-            "Timeout",
-        ]):
+        if any(
+            pattern in error_str
+            for pattern in [
+                "not a valid PDF",
+                "HTTP error",
+                "Timeout",
+            ]
+        ):
             logger.debug(f"httpx failed ({e}), trying Playwright fallback")
         else:
             raise
@@ -327,7 +334,7 @@ async def process_pdf_url(
     Raises:
         MarkerProcessingError: If download or processing fails
     """
-    logger.debug(f"Processing PDF URL")
+    logger.debug("Processing PDF URL")
 
     # Download PDF (download timeout separate from Marker processing)
     content = await _download_pdf(url, timeout=60.0)

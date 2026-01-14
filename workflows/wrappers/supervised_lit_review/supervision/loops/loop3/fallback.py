@@ -25,7 +25,7 @@ async def retry_analyze_node(state: dict) -> dict[str, Any]:
     input_data = state["input"]
     topic = input_data.get("topic", "")
 
-    retry_prompt = f"""The previous analysis identified edits that require replacement_text but it was missing.
+    retry_prompt = """The previous analysis identified edits that require replacement_text but it was missing.
 
 Please provide the replacement_text for these specific edits:
 

@@ -33,7 +33,10 @@ def get_tools() -> list[Tool]:
                             "properties": {
                                 "firstName": {"type": "string"},
                                 "lastName": {"type": "string"},
-                                "name": {"type": "string", "description": "For single-field names"},
+                                "name": {
+                                    "type": "string",
+                                    "description": "For single-field names",
+                                },
                                 "creatorType": {"type": "string", "default": "author"},
                             },
                         },
@@ -203,12 +206,14 @@ async def handle(
     if name == "zotero.add":
         creators = []
         for c in arguments.get("creators", []):
-            creators.append(ZoteroCreator(
-                firstName=c.get("firstName"),
-                lastName=c.get("lastName"),
-                name=c.get("name"),
-                creatorType=c.get("creatorType", "author"),
-            ))
+            creators.append(
+                ZoteroCreator(
+                    firstName=c.get("firstName"),
+                    lastName=c.get("lastName"),
+                    name=c.get("name"),
+                    creatorType=c.get("creatorType", "author"),
+                )
+            )
 
         item = ZoteroItemCreate(
             itemType=arguments["itemType"],

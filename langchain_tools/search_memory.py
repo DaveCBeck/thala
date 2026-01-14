@@ -49,7 +49,9 @@ class SearchMemoryOutput(BaseModel):
 async def search_memory(
     query: str,
     limit: int = 10,
-    stores: Optional[list[Literal["top_of_mind", "coherence", "who_i_was", "store"]]] = None,
+    stores: Optional[
+        list[Literal["top_of_mind", "coherence", "who_i_was", "store"]]
+    ] = None,
     include_historical: bool = False,
 ) -> dict:
     """Search across the memory system for relevant information.
@@ -99,14 +101,18 @@ async def search_memory(
                     )
                     continue
 
-                results.append(MemorySearchResult(
-                    id=str(r["id"]),
-                    source_store="top_of_mind",
-                    content=r["document"] or "",
-                    score=similarity,
-                    zotero_key=r["metadata"].get("zotero_key") if r["metadata"] else None,
-                    metadata=r["metadata"] or {},
-                ))
+                results.append(
+                    MemorySearchResult(
+                        id=str(r["id"]),
+                        source_store="top_of_mind",
+                        content=r["document"] or "",
+                        score=similarity,
+                        zotero_key=r["metadata"].get("zotero_key")
+                        if r["metadata"]
+                        else None,
+                        metadata=r["metadata"] or {},
+                    )
+                )
 
             accepted = len(chroma_results) - filtered_count
             logger.debug(
@@ -125,7 +131,7 @@ async def search_memory(
             filtered_count = 0
             for r in coherence_results:
                 # Filter by confidence if available
-                confidence = r.confidence if hasattr(r, 'confidence') else None
+                confidence = r.confidence if hasattr(r, "confidence") else None
                 if confidence is not None and confidence < MIN_COHERENCE_CONFIDENCE:
                     filtered_count += 1
                     logger.debug(
@@ -133,17 +139,19 @@ async def search_memory(
                     )
                     continue
 
-                results.append(MemorySearchResult(
-                    id=str(r.id),
-                    source_store="coherence",
-                    content=r.content,
-                    score=confidence,  # Use confidence as score for coherence records
-                    zotero_key=r.zotero_key,
-                    metadata={
-                        "category": r.category,
-                        "confidence": confidence,
-                    },
-                ))
+                results.append(
+                    MemorySearchResult(
+                        id=str(r.id),
+                        source_store="coherence",
+                        content=r.content,
+                        score=confidence,  # Use confidence as score for coherence records
+                        zotero_key=r.zotero_key,
+                        metadata={
+                            "category": r.category,
+                            "confidence": confidence,
+                        },
+                    )
+                )
 
             accepted = len(coherence_results) - filtered_count
             logger.debug(
@@ -163,17 +171,21 @@ async def search_memory(
                 size=limit,
             )
             for r in store_results:
-                results.append(MemorySearchResult(
-                    id=str(r.id),
-                    source_store="store",
-                    content=r.content,
-                    score=None,
-                    zotero_key=r.zotero_key,
-                    metadata={
-                        "compression_level": r.compression_level,
-                        "source_type": r.source_type.value if hasattr(r.source_type, 'value') else str(r.source_type),
-                    },
-                ))
+                results.append(
+                    MemorySearchResult(
+                        id=str(r.id),
+                        source_store="store",
+                        content=r.content,
+                        score=None,
+                        zotero_key=r.zotero_key,
+                        metadata={
+                            "compression_level": r.compression_level,
+                            "source_type": r.source_type.value
+                            if hasattr(r.source_type, "value")
+                            else str(r.source_type),
+                        },
+                    )
+                )
             logger.debug(f"store returned {len(store_results)} results")
         except Exception as e:
             logger.warning(f"store search failed: {e}")
@@ -186,18 +198,24 @@ async def search_memory(
                 size=limit,
             )
             for r in history_results:
-                results.append(MemorySearchResult(
-                    id=str(r.id),
-                    source_store="who_i_was",
-                    content=r.previous_data.get("content", "") if r.previous_data else "",
-                    score=None,
-                    zotero_key=r.previous_data.get("zotero_key") if r.previous_data else None,
-                    metadata={
-                        "supersedes": str(r.supersedes),
-                        "reason": r.reason,
-                        "original_store": r.original_store,
-                    },
-                ))
+                results.append(
+                    MemorySearchResult(
+                        id=str(r.id),
+                        source_store="who_i_was",
+                        content=r.previous_data.get("content", "")
+                        if r.previous_data
+                        else "",
+                        score=None,
+                        zotero_key=r.previous_data.get("zotero_key")
+                        if r.previous_data
+                        else None,
+                        metadata={
+                            "supersedes": str(r.supersedes),
+                            "reason": r.reason,
+                            "original_store": r.original_store,
+                        },
+                    )
+                )
             logger.debug(f"who_i_was returned {len(history_results)} results")
         except Exception as e:
             logger.warning(f"who_i_was search failed: {e}")

@@ -83,7 +83,7 @@ async def classify_content(
     """
     # Fast path: heuristic detection for obvious cases
     if _quick_paywall_check(markdown):
-        logger.debug(f"Quick paywall detection")
+        logger.debug("Quick paywall detection")
         return ClassificationResult(
             classification="paywall",
             confidence=0.95,
@@ -101,11 +101,13 @@ async def classify_content(
         )
 
     # LLM classification for ambiguous cases
-    logger.debug(f"Classifying content via Haiku")
+    logger.debug("Classifying content via Haiku")
 
     # Truncate content for classification
     content_preview = markdown[:15000] if len(markdown) > 15000 else markdown
-    links_text = "\n".join(f"- {link}" for link in links[:30]) if links else "(no links found)"
+    links_text = (
+        "\n".join(f"- {link}" for link in links[:30]) if links else "(no links found)"
+    )
 
     user_prompt = CLASSIFICATION_USER_TEMPLATE.format(
         url=url,
@@ -131,7 +133,12 @@ async def classify_content(
                         "properties": {
                             "classification": {
                                 "type": "string",
-                                "enum": ["full_text", "abstract_with_pdf", "paywall", "non_academic"],
+                                "enum": [
+                                    "full_text",
+                                    "abstract_with_pdf",
+                                    "paywall",
+                                    "non_academic",
+                                ],
                                 "description": "The classification of the content",
                             },
                             "confidence": {
@@ -177,7 +184,7 @@ async def classify_content(
                 return result
 
         # Fallback if no tool call in response
-        logger.warning(f"No tool call in classification response")
+        logger.warning("No tool call in classification response")
         return ClassificationResult(
             classification="full_text",
             confidence=0.5,

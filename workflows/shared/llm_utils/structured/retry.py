@@ -6,7 +6,11 @@ from typing import Awaitable, Callable, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
-from .types import StructuredOutputConfig, StructuredOutputResult, StructuredOutputStrategy
+from .types import (
+    StructuredOutputConfig,
+    StructuredOutputResult,
+    StructuredOutputStrategy,
+)
 
 logger = logging.getLogger(__name__)
 

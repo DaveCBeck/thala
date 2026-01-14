@@ -1,7 +1,7 @@
 """Abstract base class for structured output strategy executors."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Optional, Type, TypeVar, get_args, get_origin
+from typing import Any, Generic, Optional, Type, TypeVar, get_origin
 
 from pydantic import BaseModel
 

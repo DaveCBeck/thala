@@ -94,8 +94,7 @@ def finalize_loop1_node(state: dict[str, Any]) -> dict[str, Any]:
         completion_reason = f"Reached maximum iterations ({max_iterations})"
 
     logger.info(
-        f"Finalizing Loop 1 after {iteration} iterations. "
-        f"Reason: {completion_reason}"
+        f"Finalizing Loop 1 after {iteration} iterations. Reason: {completion_reason}"
     )
 
     return {
@@ -216,7 +215,9 @@ async def run_loop1_standalone(
     # Build changes summary
     if expansions:
         topics_explored = [exp.get("topic", "unknown") for exp in expansions]
-        changes_summary = f"Explored {len(expansions)} theoretical gaps: {', '.join(topics_explored)}"
+        changes_summary = (
+            f"Explored {len(expansions)} theoretical gaps: {', '.join(topics_explored)}"
+        )
     else:
         changes_summary = "No theoretical gaps identified"
 

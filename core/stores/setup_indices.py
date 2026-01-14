@@ -127,7 +127,9 @@ async def show_status() -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Setup Elasticsearch indices")
-    parser.add_argument("--reset", action="store_true", help="Delete and recreate indices")
+    parser.add_argument(
+        "--reset", action="store_true", help="Delete and recreate indices"
+    )
     parser.add_argument("--status", action="store_true", help="Show index status")
     args = parser.parse_args()
 

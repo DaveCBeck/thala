@@ -70,7 +70,9 @@ async def translate_prompt(
             result = await _do_translation(english_prompt, target_language)
 
             _prompt_cache[cache_key] = result
-            logger.debug(f"Translated and cached prompt: {cache_key} ({len(result)} chars)")
+            logger.debug(
+                f"Translated and cached prompt: {cache_key} ({len(result)} chars)"
+            )
             return result
     else:
         return await _do_translation(english_prompt, target_language)
@@ -85,10 +87,12 @@ async def _do_translation(english_prompt: str, target_language: str) -> str:
 {english_prompt}"""
 
     async def _invoke():
-        response = await llm.ainvoke([
-            {"role": "system", "content": PROMPT_TRANSLATION_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ])
+        response = await llm.ainvoke(
+            [
+                {"role": "system", "content": PROMPT_TRANSLATION_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
         return extract_response_content(response)
 
     try:

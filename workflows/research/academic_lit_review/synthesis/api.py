@@ -44,7 +44,8 @@ async def run_synthesis(
         )
 
     missing_keys = [
-        doi for doi in paper_summaries.keys()
+        doi
+        for doi in paper_summaries.keys()
         if doi not in zotero_keys or not zotero_keys[doi]
     ]
     if missing_keys:

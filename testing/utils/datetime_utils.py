@@ -34,7 +34,7 @@ def make_naive(dt: datetime) -> datetime:
     Returns:
         Naive datetime (no timezone info)
     """
-    if hasattr(dt, 'replace') and dt.tzinfo is not None:
+    if hasattr(dt, "replace") and dt.tzinfo is not None:
         return dt.replace(tzinfo=None)
     return dt
 

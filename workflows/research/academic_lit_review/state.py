@@ -11,7 +11,10 @@ from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
 from workflows.shared.language import LanguageConfig
-from workflows.research.academic_lit_review.reducers import merge_dicts, merge_paper_summaries
+from workflows.research.academic_lit_review.reducers import (
+    merge_dicts,
+    merge_paper_summaries,
+)
 from workflows.research.academic_lit_review.quality_presets import QualitySettings
 
 
@@ -253,7 +256,9 @@ class MultiLoopProgress(TypedDict):
     """Progress tracking across all supervision loops."""
 
     current_loop: int  # 1-5
-    loop_iterations: dict[str, int]  # "loop_1" -> iterations used (string keys for TypedDict)
+    loop_iterations: dict[
+        str, int
+    ]  # "loop_1" -> iterations used (string keys for TypedDict)
     max_iterations_per_loop: int  # Budget per loop (not shared across loops)
     revision_history: list[RevisionRecord]
     loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max 1)
@@ -265,9 +270,9 @@ class SupervisionState(TypedDict):
     iteration: int
     max_iterations: int
     supervision_depth: int  # Prevents recursive supervision (max: 2)
-    current_review: str     # Evolving review text
+    current_review: str  # Evolving review text
     issues_explored: list[str]  # Topics already explored (prevent re-exploration)
-    is_complete: bool       # True when pass_through or max iterations reached
+    is_complete: bool  # True when pass_through or max iterations reached
     loop_progress: MultiLoopProgress
     human_review_items: list[str]
 

@@ -29,9 +29,16 @@ def route_after_validation(state: SubstackReviewState) -> list[Send] | str:
     # Fan out to 3 parallel writing agents
     lit_review = state["input"]["literature_review"]
     return [
-        Send("write_puzzle", {"literature_review": lit_review, "input": state["input"]}),
-        Send("write_finding", {"literature_review": lit_review, "input": state["input"]}),
-        Send("write_contrarian", {"literature_review": lit_review, "input": state["input"]}),
+        Send(
+            "write_puzzle", {"literature_review": lit_review, "input": state["input"]}
+        ),
+        Send(
+            "write_finding", {"literature_review": lit_review, "input": state["input"]}
+        ),
+        Send(
+            "write_contrarian",
+            {"literature_review": lit_review, "input": state["input"]},
+        ),
     ]
 
 

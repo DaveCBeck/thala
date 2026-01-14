@@ -36,11 +36,13 @@ async def run_substack_review(input_file: Path, output_dir: Path) -> Path:
 
     # Run workflow
     logger.info("Starting substack_review workflow...")
-    logger.info("This will generate 3 essays in parallel with OPUS, then select the best one")
+    logger.info(
+        "This will generate 3 essays in parallel with OPUS, then select the best one"
+    )
 
-    result = await substack_review_graph.ainvoke({
-        "input": {"literature_review": literature_review}
-    })
+    result = await substack_review_graph.ainvoke(
+        {"input": {"literature_review": literature_review}}
+    )
 
     # Log results
     logger.info(f"Workflow completed with status: {result.get('status')}")
@@ -64,8 +66,8 @@ async def run_substack_review(input_file: Path, output_dir: Path) -> Path:
         header = f"""---
 source: {input_file.name}
 generated: {datetime.now().isoformat()}
-selected_angle: {result.get('selected_angle')}
-status: {result.get('status')}
+selected_angle: {result.get("selected_angle")}
+status: {result.get("status")}
 ---
 
 """
@@ -89,7 +91,9 @@ status: {result.get('status')}
         for draft in essay_drafts:
             draft_file = drafts_dir / f"{draft['angle']}_essay.md"
             draft_file.write_text(draft["content"])
-            logger.info(f"Draft ({draft['angle']}): {draft['word_count']} words -> {draft_file}")
+            logger.info(
+                f"Draft ({draft['angle']}): {draft['word_count']} words -> {draft_file}"
+            )
 
     # Write evaluations
     evaluations = result.get("essay_evaluations")
@@ -100,12 +104,14 @@ status: {result.get('status')}
             eval_lines.append(f"\n=== {angle.upper()} ===")
             eval_lines.append(f"Primary strength: {eval_data.get('primary_strength')}")
             eval_lines.append(f"Primary weakness: {eval_data.get('primary_weakness')}")
-            eval_lines.append(f"Scores: hook={eval_data.get('hook_strength')}, "
-                            f"momentum={eval_data.get('structural_momentum')}, "
-                            f"payoff={eval_data.get('technical_payoff')}, "
-                            f"tone={eval_data.get('tonal_calibration')}, "
-                            f"complexity={eval_data.get('honest_complexity')}, "
-                            f"fit={eval_data.get('subject_fit')}")
+            eval_lines.append(
+                f"Scores: hook={eval_data.get('hook_strength')}, "
+                f"momentum={eval_data.get('structural_momentum')}, "
+                f"payoff={eval_data.get('technical_payoff')}, "
+                f"tone={eval_data.get('tonal_calibration')}, "
+                f"complexity={eval_data.get('honest_complexity')}, "
+                f"fit={eval_data.get('subject_fit')}"
+            )
         eval_file.write_text("\n".join(eval_lines))
         logger.info(f"Evaluations written to {eval_file}")
 
@@ -114,7 +120,9 @@ status: {result.get('status')}
 
 async def main():
     """Main entry point."""
-    input_file = Path("/home/dave/thala/testing/test_data/lit_review_20260113_130154.md")
+    input_file = Path(
+        "/home/dave/thala/testing/test_data/lit_review_20260113_130154.md"
+    )
     output_dir = Path("/home/dave/thala/testing/test_data")
 
     if not input_file.exists():

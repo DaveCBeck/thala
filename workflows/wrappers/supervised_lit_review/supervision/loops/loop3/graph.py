@@ -185,7 +185,9 @@ async def run_loop3_standalone(
     if changes_applied:
         changes_summary = f"Resolved {len(changes_applied)} structural issues"
     elif rewrite_manifest and rewrite_manifest.get("rewrites"):
-        changes_summary = f"Applied {len(rewrite_manifest['rewrites'])} section rewrites"
+        changes_summary = (
+            f"Applied {len(rewrite_manifest['rewrites'])} section rewrites"
+        )
     else:
         changes_summary = "No structural changes needed"
 
@@ -206,7 +208,9 @@ async def run_loop3_standalone(
             "final_state": {
                 "rewrite_manifest": rewrite_manifest,
                 "changes_applied": changes_applied,
-                "architecture_verification": final_state.get("architecture_verification"),
+                "architecture_verification": final_state.get(
+                    "architecture_verification"
+                ),
             },
         },
     )

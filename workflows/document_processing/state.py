@@ -4,9 +4,8 @@ State schema for document processing workflow.
 
 from datetime import datetime
 from operator import add
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
-from uuid import UUID
 
 
 def merge_metadata(existing: dict, new: dict) -> dict:
@@ -16,6 +15,7 @@ def merge_metadata(existing: dict, new: dict) -> dict:
 
 class DocumentInput(TypedDict, total=False):
     """Input specification for document processing."""
+
     source: str
     title: Optional[str]
     item_type: str
@@ -26,6 +26,7 @@ class DocumentInput(TypedDict, total=False):
 
 class ChapterInfo(TypedDict):
     """Chapter metadata for 10:1 summarization."""
+
     title: str
     start_position: int
     end_position: int
@@ -35,6 +36,7 @@ class ChapterInfo(TypedDict):
 
 class ProcessingResult(TypedDict):
     """Output from Marker or chunker."""
+
     markdown: str
     chunks: list[dict]
     page_count: int
@@ -44,6 +46,7 @@ class ProcessingResult(TypedDict):
 
 class StoreRecordRef(TypedDict, total=False):
     """Reference to created store record."""
+
     id: str
     compression_level: int
     content_preview: str
@@ -52,6 +55,7 @@ class StoreRecordRef(TypedDict, total=False):
 
 class DocumentProcessingState(TypedDict):
     """Main workflow state."""
+
     # Input
     input: DocumentInput
 
@@ -101,6 +105,7 @@ class DocumentProcessingState(TypedDict):
 
 class ChapterSummaryState(TypedDict):
     """State for chapter summarization subgraph."""
+
     chapter: ChapterInfo
     chapter_content: str
     target_words: int
