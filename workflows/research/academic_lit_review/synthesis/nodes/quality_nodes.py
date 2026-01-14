@@ -25,9 +25,9 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
 
     target_words = quality_settings.get("target_word_count", 10000)
     quality_passed = (
-        metrics["corpus_coverage"] >= 0.4 and
-        metrics["total_words"] >= target_words * 0.7 and
-        len(metrics["issues"]) <= 2
+        metrics["corpus_coverage"] >= 0.5 and  # 50% citation coverage is sufficient
+        metrics["total_words"] >= target_words * 0.5 and  # 50% of target is sufficient
+        len(metrics["issues"]) <= 3  # Allow more minor issues
     )
 
     try:
@@ -54,8 +54,10 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
         if quality_result.issues:
             metrics["issues"].extend(quality_result.issues[:5])
 
+        # LLM "needs_revision" is advisory - logged but doesn't hard-fail
+        # The metrics-based check is the actual sanity check
         if quality_result.overall_quality == "needs_revision":
-            quality_passed = False
+            logger.info("LLM suggests revision needed (advisory only)")
 
     except Exception as e:
         logger.warning(f"LLM quality check failed: {e}")

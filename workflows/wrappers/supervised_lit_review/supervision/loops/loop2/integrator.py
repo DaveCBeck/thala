@@ -9,6 +9,7 @@ from workflows.research.academic_lit_review.graph.api import academic_lit_review
 from ...types import LiteratureBase
 from workflows.research.academic_lit_review.quality_presets import QualitySettings
 from ...prompts import LOOP2_INTEGRATOR_SYSTEM, LOOP2_INTEGRATOR_USER
+from ...utils.duplicate_handling import detect_duplicate_headers, remove_duplicate_headers
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,13 @@ async def integrate_findings_node(state: dict) -> dict:
         ])
 
         updated_review = response.content
+
+        # Clean up any duplicate headers introduced during integration
+        duplicates = detect_duplicate_headers(updated_review)
+        if duplicates:
+            logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 2 integration")
+            updated_review = remove_duplicate_headers(updated_review, duplicates)
+
         explored_bases = state.get("explored_bases", []) + [literature_base.name]
 
         logger.info(

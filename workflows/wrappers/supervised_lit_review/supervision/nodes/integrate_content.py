@@ -8,6 +8,10 @@ from workflows.wrappers.supervised_lit_review.supervision.prompts import (
     INTEGRATOR_SYSTEM,
     INTEGRATOR_USER,
 )
+from workflows.wrappers.supervised_lit_review.supervision.utils.duplicate_handling import (
+    detect_duplicate_headers,
+    remove_duplicate_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +106,12 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Extract the integrated review from response
         integrated_review = _extract_review_content(response)
+
+        # Clean up any duplicate headers introduced during integration
+        duplicates = detect_duplicate_headers(integrated_review)
+        if duplicates:
+            logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
+            integrated_review = remove_duplicate_headers(integrated_review, duplicates)
 
         logger.info(
             f"Integration complete for '{topic}': "

@@ -120,12 +120,26 @@ class SupervisionStoreQuery:
         try:
             item = await self.zotero_client.get(zotero_key)
             if item:
+                # Extract author names from creator dicts
+                authors = []
+                for c in item.creators or []:
+                    if c.get("name"):
+                        authors.append(c["name"])
+                    elif c.get("lastName"):
+                        first = c.get("firstName", "")
+                        last = c.get("lastName", "")
+                        authors.append(f"{first} {last}".strip())
+
+                # Extract year from date field (format varies: "2024", "2024-01-15", etc.)
+                date_str = item.fields.get("date", "")
+                year = date_str[:4] if date_str and len(date_str) >= 4 else None
+
                 return {
-                    "title": item.title,
-                    "authors": [c.name for c in (item.creators or [])],
-                    "year": item.year,
-                    "doi": item.doi,
-                    "item_type": item.item_type,
+                    "title": item.fields.get("title"),
+                    "authors": authors,
+                    "year": year,
+                    "doi": item.fields.get("DOI"),
+                    "item_type": item.itemType,
                 }
             return None
         except Exception as e:

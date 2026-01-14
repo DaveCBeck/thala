@@ -637,11 +637,11 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
 
         updated_review = "\n".join(lines)
 
-    # Enhanced duplicate detection after reassembly
+    # Enhanced duplicate detection and removal after reassembly
     duplicate_headers = detect_duplicate_headers(updated_review)
     if duplicate_headers:
-        for line1, line2, header_text in duplicate_headers:
-            logger.warning(f"Duplicate header detected: '{header_text}' at lines {line1 + 1}, {line2 + 1}")
+        logger.info(f"Found {len(duplicate_headers)} duplicate headers during reassembly, cleaning up")
+        updated_review = remove_duplicate_headers(updated_review, duplicate_headers)
 
     duplicate_abstracts = detect_duplicate_abstracts(updated_review)
     if duplicate_abstracts:

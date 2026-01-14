@@ -85,9 +85,11 @@ def remove_duplicate_headers(document: str, duplicates: list[tuple[int, int, str
             )
             lines = lines[:line2] + lines[end_line + 1:]
         else:
+            # Low similarity means different content - remove header only,
+            # content will flow under the previous section's header
             logger.info(
-                f"Removing only duplicate header at line {line2 + 1} "
-                f"(content similarity too low: {similarity:.2f})"
+                f"Merging content at line {line2 + 1} under previous section "
+                f"(removing duplicate header, content similarity: {similarity:.2f})"
             )
             lines = lines[:line2] + lines[line2 + 1:]
 
