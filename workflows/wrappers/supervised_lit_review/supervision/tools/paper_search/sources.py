@@ -12,9 +12,9 @@ async def semantic_search(
     query: str,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Semantic search using embeddings.
+    """Semantic search using ES KNN vector search.
 
-    Searches entire corpus without filtering.
+    Searches L1/L2 indices which have embeddings stored.
 
     Returns list of dicts with zotero_key, similarity score, and metadata.
     """
@@ -23,29 +23,28 @@ async def semantic_search(
     try:
         query_embedding = await store_manager.embedding.embed(query)
 
-        # Search Chroma for semantically similar content
-        results = await store_manager.chroma.search(
-            query_embedding=query_embedding,
-            n_results=limit * 2,  # Get extra to allow for deduplication
-            where=None,  # No filter - search all
+        # Use ES KNN search on L2 summaries (papers have embeddings there)
+        results = await store_manager.es_stores.store.knn_search(
+            embedding=query_embedding,
+            k=limit * 2,  # Get extra to allow for deduplication
+            compression_level=2,  # L2 has paper summaries with embeddings
         )
 
         search_results: list[dict[str, Any]] = []
         seen_keys: set[str] = set()
 
-        for r in results:
-            metadata = r.get("metadata", {})
-            zotero_key = metadata.get("zotero_key")
+        for record, score in results:
+            zotero_key = record.zotero_key
             if not zotero_key or zotero_key in seen_keys:
                 continue
 
             seen_keys.add(zotero_key)
-            similarity = 1 - r.get("distance", 1)  # Convert distance to similarity
+            metadata = record.metadata or {}
 
             search_results.append(
                 {
                     "zotero_key": zotero_key,
-                    "score": similarity,
+                    "score": score,  # KNN score is already similarity
                     "title": metadata.get("title", "Unknown"),
                     "year": metadata.get("year", 0),
                     "authors": metadata.get("authors", []),

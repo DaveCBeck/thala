@@ -2,10 +2,11 @@
 Chapter detection node for 10:1 summarization.
 """
 
+import json
 import logging
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from workflows.document_processing.state import ChapterInfo, DocumentProcessingState
 from workflows.shared.chunking_utils import (
@@ -33,6 +34,24 @@ class HeadingAnalysisResult(BaseModel):
     """Result of heading structure analysis."""
 
     headings: list[HeadingAnalysis] = Field(description="Analysis of each heading")
+
+    @field_validator("headings", mode="before")
+    @classmethod
+    def parse_json_string(cls, v: Any) -> list:
+        """Handle LLM returning JSON string instead of list.
+
+        This addresses a known issue where Claude's structured output sometimes
+        returns arrays as stringified JSON rather than proper array structures.
+        """
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            raise ValueError(f"headings must be a list, got unparseable string: {v[:100]}...")
+        return v if v is not None else []
 
 
 def _build_chapter_boundaries(
@@ -185,12 +204,15 @@ Guidelines:
         try:
             # Use structured extraction for guaranteed valid JSON
             # No max_tokens limit - large docs can have many headings
+            # use_json_schema_method=True for stricter validation, combined with
+            # field validator to handle edge case of JSON strings in list fields
             result = await get_structured_output(
                 output_schema=HeadingAnalysisResult,
                 user_prompt=heading_list,
                 system_prompt=system_prompt,
                 tier=ModelTier.SONNET,
                 max_tokens=16384,
+                use_json_schema_method=True,
             )
             analysis = [h.model_dump() for h in result.headings]
 

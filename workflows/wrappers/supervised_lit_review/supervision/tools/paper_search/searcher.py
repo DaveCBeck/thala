@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 
 # Minimum relevance score for search results to be returned
 # Papers below this threshold are filtered out to prevent citation drift
-MINIMUM_RELEVANCE_THRESHOLD = 0.5
+# NOTE: RRF scoring with k=60 gives scores in the 0.01-0.03 range for top results
+# A paper ranked #1 in BOTH searches gets: 2 * (1/61) ≈ 0.033
+# A paper ranked #1 in ONE search gets: 1/61 ≈ 0.016
+# Threshold of 0.008 requires appearing in top ~60 of at least one source
+MINIMUM_RELEVANCE_THRESHOLD = 0.008
 
 
 def format_authors(authors: list[str]) -> str:
