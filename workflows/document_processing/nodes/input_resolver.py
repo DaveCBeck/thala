@@ -2,7 +2,7 @@
 Resolve input source to markdown content.
 
 Uses get_url() for URLs (handles PDF/HTML → markdown automatically).
-Handles local file paths (PDF → Marker, text → direct read).
+Handles local file paths (PDF → Marker, EPUB → extraction, text → direct read).
 Handles raw markdown text input directly.
 """
 
@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from core.scraping import get_url, GetUrlOptions
+from core.scraping.epub import process_epub_file
 from core.scraping.pdf import process_pdf_file
 from workflows.shared.text_utils import chunk_by_headings, count_words, estimate_pages
 
@@ -24,6 +25,9 @@ MAX_FILENAME_BASE = 100
 
 # File extensions that indicate PDF content
 PDF_EXTENSIONS = {".pdf"}
+
+# File extensions that indicate EPUB content
+EPUB_EXTENSIONS = {".epub"}
 
 # File extensions that can be read as text/markdown directly
 TEXT_EXTENSIONS = {".md", ".txt", ".markdown", ".rst", ".html", ".htm"}
@@ -62,6 +66,19 @@ async def _resolve_local_file(
             # Return minimal result so workflow can continue with metadata
             markdown = f"[PDF processing failed: {source_path.name}]"
             ocr_method = "marker:failed"
+
+    elif suffix in EPUB_EXTENSIONS:
+        # EPUB file: Extract content and convert to markdown
+        logger.info(f"Processing local EPUB: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)")
+
+        try:
+            markdown = process_epub_file(str(source_path))
+            ocr_method = "epub:extracted"
+        except Exception as e:
+            logger.error(f"EPUB processing failed: {e}")
+            # Return minimal result so workflow can continue with metadata
+            markdown = f"[EPUB processing failed: {source_path.name}]"
+            ocr_method = "epub:failed"
 
     elif suffix in TEXT_EXTENSIONS:
         # Text file: Read directly
