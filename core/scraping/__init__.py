@@ -54,9 +54,6 @@ from .unified import get_url
 # PDF processing
 from .pdf import process_pdf_by_md5
 
-# EPUB processing
-from .epub import process_epub_bytes, process_epub_file
-
 __all__ = [
     # Primary interface (unified URL retrieval)
     "get_url",
@@ -67,9 +64,6 @@ __all__ = [
     "DoiInfo",
     # PDF processing
     "process_pdf_by_md5",
-    # EPUB processing
-    "process_epub_bytes",
-    "process_epub_file",
     # Low-level scraping service
     "ScraperService",
     "ScrapeResult",
