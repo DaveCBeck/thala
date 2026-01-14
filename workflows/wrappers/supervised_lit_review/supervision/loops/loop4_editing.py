@@ -417,7 +417,7 @@ If you cannot improve meaningfully within limits, return the original section un
                     f"no word limit applied"
                 )
 
-            # Final logging - handle abstract case (no detailed_content variable)
+            # Final logging
             if section_type == "abstract":
                 logger.debug(
                     f"Completed editing abstract '{section_id}' (confidence: {response.confidence:.2f})"
@@ -425,7 +425,7 @@ If you cannot improve meaningfully within limits, return the original section un
             else:
                 logger.debug(
                     f"Edited section '{section_id}' (confidence: {response.confidence:.2f}, "
-                    f"category: {section_category}, papers_with_detail: {len(detailed_content)})"
+                    f"category: {section_category})"
                 )
             return section_id, response
 

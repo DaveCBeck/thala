@@ -5,6 +5,8 @@
 # Note: stealth proxy is cloud-only (requires Fire-engine).
 #
 # The code automatically falls back to cloud stealth when local fails.
+#
+# Updated Jan 2026: New architecture requires postgres + rabbitmq
 
 services:
   firecrawl-api:
@@ -18,37 +20,32 @@ services:
       - REDIS_URL=redis://redis:6379
       - REDIS_RATE_LIMIT_URL=redis://redis:6379
       - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
+      - NUQ_RABBITMQ_URL=amqp://rabbitmq:5672
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_HOST=nuq-postgres
+      - POSTGRES_PORT=5432
+      - ENV=local
       # Search backend (optional - uses Google by default)
       # Uncomment to use SearXNG for fully local search
       # - SEARXNG_ENDPOINT=http://searxng:8080
     depends_on:
       redis:
-        condition: service_healthy
+        condition: service_started
       playwright-service:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      nuq-postgres:
+        condition: service_started
+    command: ["node", "dist/src/harness.js", "--start-docker"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-  firecrawl-worker:
-    image: ghcr.io/firecrawl/firecrawl:latest
-    environment:
-      - PORT=3002
-      - HOST=0.0.0.0
-      - USE_DB_AUTHENTICATION=false
-      - REDIS_URL=redis://redis:6379
-      - REDIS_RATE_LIMIT_URL=redis://redis:6379
-      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
-    depends_on:
-      redis:
-        condition: service_healthy
-      playwright-service:
-        condition: service_started
-    command: ["pnpm", "run", "workers"]
+      start_period: 60s
     restart: unless-stopped
 
   playwright-service:
@@ -58,14 +55,32 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
+    command: redis-server --bind 0.0.0.0
     volumes:
       - firecrawl-redis:/data
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    command: rabbitmq-server
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
       timeout: 5s
       retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  nuq-postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - firecrawl-postgres:/var/lib/postgresql/data
+      - ./nuq-init.sql:/docker-entrypoint-initdb.d/010-nuq.sql:ro
     restart: unless-stopped
 
   # Optional: SearXNG for fully local search
@@ -80,3 +95,4 @@ services:
 
 volumes:
   firecrawl-redis:
+  firecrawl-postgres:

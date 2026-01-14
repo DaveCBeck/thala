@@ -171,11 +171,13 @@ Guidelines:
 
         try:
             # Use structured extraction for guaranteed valid JSON
+            # No max_tokens limit - large docs can have many headings
             result = await get_structured_output(
                 output_schema=HeadingAnalysisResult,
                 user_prompt=heading_list,
                 system_prompt=system_prompt,
                 tier=ModelTier.SONNET,
+                max_tokens=16384,
             )
             analysis = [h.model_dump() for h in result.headings]
 

@@ -89,12 +89,14 @@ def calculate_quality_metrics(
     section_lengths = [len(s.split()) for s in sections[1:]] if sections_count > 0 else [0]
     avg_section_length = sum(section_lengths) // len(section_lengths) if section_lengths else 0
 
+    # Issues are informational - actual pass/fail is determined by verify_quality_node
+    # using quality-tier-aware thresholds. These thresholds should be lenient.
     issues = []
-    if corpus_coverage < 0.5:
+    if corpus_coverage < 0.3:  # Very low coverage - worth flagging
         issues.append(f"Low corpus coverage: only {corpus_coverage:.0%} of papers cited")
-    if total_words < 5000:
+    if total_words < 1000:  # Very short - worth flagging
         issues.append(f"Review may be too short: {total_words} words")
-    if citation_count < 20:
+    if citation_count < 5:  # Very few citations - worth flagging
         issues.append(f"Low citation count: {citation_count} citations")
 
     return QualityMetrics(

@@ -5,7 +5,7 @@ from typing import Any
 
 from workflows.research.academic_lit_review.state import BERTopicCluster
 
-from .constants import MIN_CLUSTER_SIZE
+from .constants import MIN_CLUSTER_SIZE, MIN_PAPERS_FOR_BERTOPIC
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +23,14 @@ async def run_bertopic_clustering_node(state: dict) -> dict[str, Any]:
     document_texts = state.get("document_texts", [])
     document_dois = state.get("document_dois", [])
 
-    if len(document_texts) < MIN_CLUSTER_SIZE:
-        logger.warning(
-            f"Too few documents for BERTopic clustering: {len(document_texts)}"
+    if len(document_texts) < MIN_PAPERS_FOR_BERTOPIC:
+        logger.info(
+            f"Skipping BERTopic for small corpus ({len(document_texts)} papers < {MIN_PAPERS_FOR_BERTOPIC}), "
+            "will rely on LLM clustering only"
         )
         return {
             "bertopic_clusters": [],
-            "bertopic_error": "Too few documents for statistical clustering",
+            "bertopic_error": None,  # Not an error, just skipped for small corpus
         }
 
     try:

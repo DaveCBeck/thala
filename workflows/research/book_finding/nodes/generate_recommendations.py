@@ -13,7 +13,7 @@ from workflows.shared.llm_utils import ModelTier, get_llm
 from workflows.research.book_finding.state import (
     BookRecommendation,
     BookFindingQualitySettings,
-    BOOK_QUALITY_PRESETS,
+    QUALITY_PRESETS,
 )
 from workflows.research.book_finding.prompts import get_recommendation_prompts
 
@@ -106,7 +106,7 @@ async def generate_analogous_recommendations(state: dict) -> dict[str, Any]:
     # Handle both direct state (from Send) and nested input
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
-    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
     system_prompt, user_template = await get_recommendation_prompts("analogous", language_config)
@@ -131,7 +131,7 @@ async def generate_inspiring_recommendations(state: dict) -> dict[str, Any]:
     """
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
-    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
     system_prompt, user_template = await get_recommendation_prompts("inspiring", language_config)
@@ -156,7 +156,7 @@ async def generate_expressive_recommendations(state: dict) -> dict[str, Any]:
     """
     theme = state.get("theme") or state.get("input", {}).get("theme", "")
     brief = state.get("brief") or state.get("input", {}).get("brief")
-    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
     system_prompt, user_template = await get_recommendation_prompts("expressive", language_config)

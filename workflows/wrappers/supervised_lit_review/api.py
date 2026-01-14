@@ -84,7 +84,7 @@ async def supervised_lit_review(
     if has_errors:
         logger.warning(f"Base literature review completed with {len(lit_review_result['errors'])} errors")
 
-    final_review = lit_review_result.get("final_review", "")
+    final_review = lit_review_result.get("final_report", "")
 
     # A valid review should be substantial (at least 500 chars)
     # If we have errors and a tiny "review", it's not a real review

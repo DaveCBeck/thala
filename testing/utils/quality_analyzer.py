@@ -114,12 +114,22 @@ class BaseQualityAnalyzer:
     def _check_completion(self, metrics: QualityMetrics) -> None:
         """Check if workflow completed successfully."""
         output = self._get_output()
-        # Check for failure indicators
-        if output and not output.startswith(("Failed", "Error", "# ") or "failed" in output[:100].lower()):
+
+        # Check for failure indicators in output
+        if output:
+            starts_with_error = output.startswith(("Failed", "Error"))
+            contains_failed = "failed" in output[:100].lower()
+            if not (starts_with_error or contains_failed):
+                metrics.completed = True
+
+        # Check status fields (API returns "status" with success/partial/failed)
+        status = self.result.get("status", "")
+        if status in ("success", "partial"):
             metrics.completed = True
 
-        status = self.result.get("current_status", "")
-        if status == "completed":
+        # Also check current_status for legacy compatibility
+        current_status = self.result.get("current_status", "")
+        if current_status == "completed":
             metrics.completed = True
 
     def _analyze_output(self, metrics: QualityMetrics) -> None:

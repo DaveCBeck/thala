@@ -46,8 +46,9 @@ async def run_academic_review_for_base(
     logger.info(f"Academic review complete: {papers_processed} papers processed")
 
     # Return only what's needed for integration (the mini-review text and citation keys)
+    # Note: academic_lit_review returns "final_report", not "final_review"
     return {
-        "mini_review_text": result.get("final_review", ""),
+        "mini_review_text": result.get("final_report", ""),
         "zotero_keys": result.get("zotero_keys", {}),
     }
 

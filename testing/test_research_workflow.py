@@ -6,16 +6,15 @@ Runs a comprehensive research workflow on a given topic with LangSmith tracing
 enabled for quality analysis.
 
 Usage:
-    python test_research_workflow.py "your research topic here" [depth] [options]
+    python test_research_workflow.py "your research topic here" [quality] [options]
     python test_research_workflow.py "AI agents" quick
     python test_research_workflow.py "AI agents" comprehensive
-    python test_research_workflow.py  # Uses default topic and standard depth
+    python test_research_workflow.py  # Uses default topic and standard quality
 
     # Language options:
     python test_research_workflow.py "topic" standard --language es
-    python test_research_workflow.py "topic" standard --language es --translate-to en
 
-Valid depths: quick, standard, comprehensive (default: standard)
+Valid quality tiers: quick, standard, comprehensive (default: standard)
 
 Environment:
     Set THALA_MODE=dev in .env to enable LangSmith tracing
@@ -47,7 +46,6 @@ from testing.utils import (
     create_test_parser,
     add_quality_argument,
     add_language_argument,
-    add_translation_arguments,
 )
 from workflows.shared.workflow_state_store import load_workflow_state
 
@@ -288,43 +286,28 @@ def print_result_summary(result: dict, topic: str) -> None:
 
 async def run_research(
     topic: str,
-    depth: str = "standard",
+    quality: str = "standard",
     language: str = None,
-    translate_to: str = None,
-    preserve_quotes: bool = True,
-    researcher_allocation: str = None,
 ) -> dict:
     """Run the research workflow on a topic.
 
     Args:
         topic: Research question or topic
-        depth: Research depth (quick, standard, comprehensive)
+        quality: Research quality tier (quick, standard, comprehensive)
         language: Single language mode (ISO 639-1 code, e.g., "es", "zh")
-        translate_to: Translate final report to this language
-        preserve_quotes: Keep direct quotes in original language when translating
-        researcher_allocation: Number of parallel web researchers ("1"-"3")
     """
     from workflows.research.web_research import deep_research
 
     logger.info(f"Starting research on: {topic}")
-    logger.info(f"Depth: {depth}")
+    logger.info(f"Quality: {quality}")
     if language:
         logger.info(f"Language: {language}")
-    if translate_to:
-        logger.info(f"Translate to: {translate_to}")
-    if researcher_allocation:
-        logger.info(f"Researcher allocation: {researcher_allocation}")
-    else:
-        logger.info("Researcher allocation: LLM-decided")
     logger.info(f"LangSmith tracing: {os.environ.get('LANGSMITH_TRACING', 'false')}")
 
     result = await deep_research(
         query=topic,
-        depth=depth,
+        quality=quality,
         language=language,
-        translate_to=translate_to,
-        preserve_quotes=preserve_quotes,
-        researcher_allocation=researcher_allocation,
     )
 
     # Load full state from state store for detailed analysis
@@ -351,25 +334,11 @@ Examples:
   %(prog)s "AI agents"                          # Standard English research
   %(prog)s "AI agents" quick                    # Quick research
   %(prog)s "AI agents" --language es            # Research in Spanish
-  %(prog)s "impacto de IA" --language es --translate-to en
         """
     )
 
     add_quality_argument(parser, choices=VALID_DEPTHS, default=DEFAULT_DEPTH)
     add_language_argument(parser)
-    add_translation_arguments(parser)
-
-    # Researcher allocation options
-    alloc_group = parser.add_argument_group("Researcher Allocation")
-    alloc_group.add_argument(
-        "--allocation", "-a",
-        type=str,
-        default=None,
-        help=(
-            "Number of parallel web researchers ('1'-'3'). "
-            "If not specified, LLM supervisor decides based on topic."
-        )
-    )
 
     return parser.parse_args()
 
@@ -379,19 +348,13 @@ async def main():
     args = parse_args()
 
     topic = args.topic
-    depth = args.quality  # Note: quality arg is used as depth here
+    quality = args.quality
 
     print_section_header("RESEARCH WORKFLOW TEST")
     print(f"\nTopic: {topic}")
-    print(f"Depth: {depth}")
+    print(f"Quality: {quality}")
     if args.language:
         print(f"Language: {args.language}")
-    if args.translate_to:
-        print(f"Translate To: {args.translate_to}")
-    if args.allocation:
-        print(f"Allocation: {args.allocation} web researchers")
-    else:
-        print("Allocation: LLM-decided (based on topic)")
     print(f"LangSmith Project: {os.environ.get('LANGSMITH_PROJECT', 'thala-dev')}")
     print(f"\nStarting at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
@@ -399,11 +362,8 @@ async def main():
     try:
         result = await run_research(
             topic=topic,
-            depth=depth,
+            quality=quality,
             language=args.language,
-            translate_to=args.translate_to,
-            preserve_quotes=args.preserve_quotes,
-            researcher_allocation=args.allocation,
         )
 
         # Print detailed result summary

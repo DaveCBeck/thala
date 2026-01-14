@@ -303,7 +303,7 @@ async def process_pdf_url(
     url: str,
     quality: str = "balanced",
     langs: Optional[list[str]] = None,
-    timeout: float = 120.0,
+    timeout: Optional[float] = None,
 ) -> str:
     """Download PDF from URL and convert to markdown via Marker.
 
@@ -311,7 +311,7 @@ async def process_pdf_url(
         url: URL to PDF file
         quality: Quality preset (fast, balanced, quality)
         langs: Languages for OCR
-        timeout: Maximum time for entire operation
+        timeout: Maximum time for Marker processing (None = no limit)
 
     Returns:
         Markdown content
@@ -321,11 +321,11 @@ async def process_pdf_url(
     """
     logger.debug(f"Processing PDF URL")
 
-    # Download PDF
-    content = await _download_pdf(url, timeout=min(timeout, 60.0))
+    # Download PDF (download timeout separate from Marker processing)
+    content = await _download_pdf(url, timeout=60.0)
     logger.debug(f"Downloaded PDF: {len(content) / 1024:.1f} KB")
 
-    # Process via Marker
+    # Process via Marker (no timeout - large PDFs can take a long time)
     return await process_pdf_bytes(
         content,
         quality=quality,
@@ -338,7 +338,7 @@ async def process_pdf_bytes(
     content: bytes,
     quality: str = "balanced",
     langs: Optional[list[str]] = None,
-    timeout: float = 120.0,
+    timeout: Optional[float] = None,
     filename: Optional[str] = None,
 ) -> str:
     """Convert PDF bytes to markdown via Marker.
@@ -347,7 +347,7 @@ async def process_pdf_bytes(
         content: PDF content bytes
         quality: Quality preset (fast, balanced, quality)
         langs: Languages for OCR
-        timeout: Maximum time for processing
+        timeout: Maximum time for processing (None = no limit, uses Marker queue)
         filename: Optional filename for saved file
 
     Returns:
@@ -377,7 +377,7 @@ async def process_pdf_file(
     file_path: str,
     quality: str = "balanced",
     langs: Optional[list[str]] = None,
-    timeout: float = 120.0,
+    timeout: Optional[float] = None,
 ) -> str:
     """Convert PDF file to markdown via Marker.
 
@@ -385,7 +385,7 @@ async def process_pdf_file(
         file_path: Path to PDF file
         quality: Quality preset (fast, balanced, quality)
         langs: Languages for OCR
-        timeout: Maximum time for processing
+        timeout: Maximum time for processing (None = no limit, uses Marker queue)
 
     Returns:
         Markdown content
@@ -414,7 +414,8 @@ async def process_pdf_by_md5(
     identifier: Optional[str] = None,
     quality: str = "fast",
     langs: Optional[list[str]] = None,
-    timeout: float = 120.0,
+    download_timeout: float = 120.0,
+    marker_timeout: Optional[float] = None,
 ) -> Optional[str]:
     """Download PDF via MD5 hash (Anna's Archive pattern) and convert via Marker.
 
@@ -426,7 +427,8 @@ async def process_pdf_by_md5(
         identifier: Identifier for logging (e.g., book title)
         quality: Quality preset (fast, balanced, quality). Defaults to "fast".
         langs: Languages for OCR
-        timeout: Download timeout in seconds
+        download_timeout: Download timeout in seconds (for retrieve-academic)
+        marker_timeout: Marker processing timeout (None = no limit, uses Marker queue)
 
     Returns:
         Markdown content or None if failed.
@@ -450,15 +452,15 @@ async def process_pdf_by_md5(
                     md5=md5,
                     local_path=tmp_path,
                     identifier=identifier or md5,
-                    timeout=timeout,
+                    timeout=download_timeout,
                 )
 
-                # Convert via Marker
+                # Convert via Marker (no timeout - uses Marker's native queue)
                 return await process_pdf_file(
                     tmp_path,
                     quality=quality,
                     langs=langs,
-                    timeout=timeout,
+                    timeout=marker_timeout,
                 )
             finally:
                 # Cleanup temp file

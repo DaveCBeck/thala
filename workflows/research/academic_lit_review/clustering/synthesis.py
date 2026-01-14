@@ -47,8 +47,8 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
         logger.warning(f"BERTopic quality issue: {bertopic_reason}")
 
     if not bertopic_clusters:
-        # Use LLM clusters directly
-        logger.info("Using LLM clusters only (BERTopic failed)")
+        # Use LLM clusters directly (BERTopic either failed or was skipped for small corpus)
+        logger.info("Using LLM clusters only (BERTopic unavailable)")
         return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
 
     if not llm_schema:

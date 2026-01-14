@@ -12,6 +12,7 @@ Individual search tools for each store with appropriate filters:
 import logging
 from typing import Literal, Optional
 
+from elasticsearch import NotFoundError as ESNotFoundError
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -177,6 +178,9 @@ async def search_coherence(
                     "confidence": confidence,
                 },
             ))
+    except ESNotFoundError:
+        # Index doesn't exist yet - this is expected when coherence store hasn't been set up
+        logger.debug("coherence index not found - returning empty results")
     except Exception as e:
         logger.warning(f"coherence search failed: {e}")
 

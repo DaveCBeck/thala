@@ -24,7 +24,6 @@ from workflows.research.book_finding.state import (
     BookResult,
     BookFindingQualitySettings,
     QUALITY_PRESETS,
-    BOOK_QUALITY_PRESETS,  # Backwards compat alias
 )
 from workflows.research.book_finding.graph import (
     book_finding_graph,
@@ -40,7 +39,6 @@ __all__ = [
     # Quality settings
     "BookFindingQualitySettings",
     "QUALITY_PRESETS",
-    "BOOK_QUALITY_PRESETS",
     # Graph and API
     "book_finding_graph",
     "book_finding",

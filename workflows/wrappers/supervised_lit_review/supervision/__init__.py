@@ -5,7 +5,7 @@ a completed literature review for theoretical gaps, runs focused expansions
 on identified topics, and integrates findings back into the review.
 """
 
-from .graph import run_supervision, supervision_subgraph
+from .graph import loop1_graph, run_loop1_standalone, Loop1State, Loop1Result
 from .types import (
     IdentifiedIssue,
     SupervisorDecision,
@@ -16,9 +16,11 @@ from .types import (
 from .focused_expansion import run_focused_expansion
 
 __all__ = [
-    # Main API
-    "run_supervision",
-    "supervision_subgraph",
+    # Main API - Loop 1 (theoretical depth)
+    "loop1_graph",
+    "run_loop1_standalone",
+    "Loop1State",
+    "Loop1Result",
     "run_focused_expansion",
 
     # Types and schemas

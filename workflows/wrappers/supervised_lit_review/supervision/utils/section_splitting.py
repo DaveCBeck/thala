@@ -86,6 +86,9 @@ def split_into_sections(doc: str, max_tokens: int = 5000) -> list[SectionInfo]:
     lines = doc.split("\n")
     sections = []
 
+    # Track used section_ids to ensure uniqueness
+    used_section_ids: dict[str, int] = {}
+
     # First pass: identify all heading boundaries
     heading_positions = []
     for i, line in enumerate(lines):
@@ -119,8 +122,15 @@ def split_into_sections(doc: str, max_tokens: int = 5000) -> list[SectionInfo]:
         section_content = "\n".join(lines[line_num : end_line + 1])
         token_count = len(encoding.encode(section_content))
 
-        # Generate section_id from title
-        section_id = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+        # Generate section_id from title with uniqueness check
+        base_section_id = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+        if base_section_id in used_section_ids:
+            # Duplicate found - append counter to make unique
+            used_section_ids[base_section_id] += 1
+            section_id = f"{base_section_id}_{used_section_ids[base_section_id]}"
+        else:
+            used_section_ids[base_section_id] = 1
+            section_id = base_section_id
 
         # If section is too large and not a level 3 heading, try to split further
         if token_count > max_tokens and level < 3:
@@ -132,6 +142,7 @@ def split_into_sections(doc: str, max_tokens: int = 5000) -> list[SectionInfo]:
                 level,
                 max_tokens,
                 encoding,
+                used_section_ids,
             )
             sections.extend(subsections)
         else:
@@ -156,6 +167,7 @@ def _split_large_section(
     parent_level: int,
     max_tokens: int,
     encoding,
+    used_section_ids: dict[str, int],
 ) -> list[SectionInfo]:
     """Split a large section by its subheadings."""
     subsections = []
@@ -189,7 +201,15 @@ def _split_large_section(
             end_offset = len(section_lines) - 1
 
         content = "\n".join(section_lines[line_offset : end_offset + 1])
-        section_id = f"{parent_id}_{re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')}"
+
+        # Generate unique section_id with uniqueness tracking
+        base_section_id = f"{parent_id}_{re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')}"
+        if base_section_id in used_section_ids:
+            used_section_ids[base_section_id] += 1
+            section_id = f"{base_section_id}_{used_section_ids[base_section_id]}"
+        else:
+            used_section_ids[base_section_id] = 1
+            section_id = base_section_id
 
         subsections.append(
             SectionInfo(

@@ -10,6 +10,7 @@ import re
 from typing import Literal, Optional
 from uuid import UUID
 
+from elasticsearch import NotFoundError as ESNotFoundError
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -190,6 +191,9 @@ async def _expand_by_content(
             if best_score < 0.5:  # Only if semantic match is weak
                 best_match = coherence_results[0]
                 best_source = "coherence"
+    except ESNotFoundError:
+        # Index doesn't exist yet - this is expected when coherence store hasn't been set up
+        logger.debug("coherence index not found - skipping")
     except Exception as e:
         logger.warning(f"coherence search failed: {e}")
 

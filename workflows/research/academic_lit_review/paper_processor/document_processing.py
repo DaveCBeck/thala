@@ -59,7 +59,6 @@ async def process_single_document(
             source=source,
             title=paper.get("title", "Unknown"),
             item_type="journalArticle",
-            quality="fast",
             extra_metadata=extra_metadata,
             use_batch_api=use_batch_api,
         )

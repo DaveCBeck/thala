@@ -11,12 +11,43 @@ import json
 import logging
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from workflows.research.web_research.state import DeepResearchState
 from workflows.research.web_research.prompts import ITERATE_PLAN_SYSTEM, ITERATE_PLAN_HUMAN, get_today_str
-from workflows.research.web_research.utils import load_prompts_with_translation, extract_json_from_llm_response
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.research.web_research.utils import load_prompts_with_translation
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 logger = logging.getLogger(__name__)
+
+
+class IteratePlanResponse(BaseModel):
+    """Structured output for customized research plan."""
+
+    user_knows: list[str] = Field(
+        default_factory=list,
+        description="What the user already understands well"
+    )
+    knowledge_gaps: list[str] = Field(
+        default_factory=list,
+        description="Specific gaps to fill with research"
+    )
+    priority_questions: list[str] = Field(
+        default_factory=list,
+        description="Prioritized questions based on gaps"
+    )
+    avoid_researching: list[str] = Field(
+        default_factory=list,
+        description="Topics the user already knows well"
+    )
+    potential_challenges: list[str] = Field(
+        default_factory=list,
+        description="Areas where findings might challenge existing beliefs"
+    )
+    research_strategy: str = Field(
+        default="",
+        description="Overall approach given their existing knowledge"
+    )
 
 
 async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
@@ -58,50 +89,45 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
         research_brief=json.dumps(brief, indent=2),
     )
 
-    llm = get_llm(ModelTier.OPUS)
-
     try:
-        response = await llm.ainvoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": human_prompt_template},
-        ])
+        result: IteratePlanResponse = await get_structured_output(
+            output_schema=IteratePlanResponse,
+            user_prompt=human_prompt_template,
+            system_prompt=system_prompt,
+            tier=ModelTier.OPUS,
+        )
 
-        plan_data = extract_json_from_llm_response(response.content)
-
-        # Build structured plan
+        # Build structured plan from response
         plan_parts = []
 
-        if plan_data.get("user_knows"):
+        if result.user_knows:
             plan_parts.append("**What you already know:**")
-            for item in plan_data["user_knows"]:
+            for item in result.user_knows:
                 plan_parts.append(f"- {item}")
 
-        if plan_data.get("knowledge_gaps"):
+        if result.knowledge_gaps:
             plan_parts.append("\n**Knowledge gaps to fill:**")
-            for item in plan_data["knowledge_gaps"]:
+            for item in result.knowledge_gaps:
                 plan_parts.append(f"- {item}")
 
-        if plan_data.get("avoid_researching"):
+        if result.avoid_researching:
             plan_parts.append("\n**Areas to skip (already well understood):**")
-            for item in plan_data["avoid_researching"]:
+            for item in result.avoid_researching:
                 plan_parts.append(f"- {item}")
 
-        if plan_data.get("potential_challenges"):
+        if result.potential_challenges:
             plan_parts.append("\n**Potential challenges to existing beliefs:**")
-            for item in plan_data["potential_challenges"]:
+            for item in result.potential_challenges:
                 plan_parts.append(f"- {item}")
 
-        if plan_data.get("research_strategy"):
-            plan_parts.append(f"\n**Strategy:** {plan_data['research_strategy']}")
+        if result.research_strategy:
+            plan_parts.append(f"\n**Strategy:** {result.research_strategy}")
 
         research_plan = "\n".join(plan_parts)
 
-        # Extract priority questions for initial research
-        priority_questions = plan_data.get("priority_questions", [])
-
         logger.debug(
-            f"Customized research plan: {len(plan_data.get('knowledge_gaps', []))} gaps, "
-            f"{len(priority_questions)} priority questions"
+            f"Customized research plan: {len(result.knowledge_gaps)} gaps, "
+            f"{len(result.priority_questions)} priority questions"
         )
 
         return {

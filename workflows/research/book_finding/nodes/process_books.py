@@ -13,7 +13,7 @@ from core.scraping import process_pdf_by_md5
 from workflows.research.book_finding.state import (
     BookResult,
     BookFindingQualitySettings,
-    BOOK_QUALITY_PRESETS,
+    QUALITY_PRESETS,
 )
 from workflows.research.book_finding.prompts import get_summary_prompt
 from workflows.shared.llm_utils import ModelTier, get_llm
@@ -104,7 +104,7 @@ async def process_books(state: dict) -> dict[str, Any]:
     """
     books = state.get("search_results", [])
     theme = state.get("input", {}).get("theme", "")
-    quality_settings = state.get("quality_settings") or BOOK_QUALITY_PRESETS["standard"]
+    quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
     language_config = state.get("language_config")
 
     if not books:

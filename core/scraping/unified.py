@@ -97,17 +97,29 @@ async def get_url(
             fallback_chain.append("doi_url_fallback")
 
     # Step 2: PDF Detection
-    if is_pdf_url(resolved_url):
+    is_pdf = is_pdf_url(resolved_url)
+    if is_pdf:
         fallback_chain.append("pdf_direct")
         logger.debug(f"PDF URL detected")
 
         result = await _handle_pdf_url(resolved_url, doi_info, opts, fallback_chain)
         if result:
             return result
-        # Fall through to retrieve-academic if PDF download failed
-        logger.warning(f"PDF download failed, will try other methods")
+        # PDF download failed - skip web scraping (won't work for PDFs) and go to retrieve-academic
+        logger.warning(f"PDF download failed, skipping web scraping for PDF URL")
+        # Jump directly to retrieve-academic fallback (Step 5)
+        if opts.allow_retrieve_academic and doi_info:
+            fallback_chain.append("retrieve_academic")
+            result = await try_retrieve_academic(doi_info.doi, opts, fallback_chain)
+            if result:
+                return result
+        # All methods failed for PDF
+        error_msg = f"Failed to retrieve PDF from {resolved_url}"
+        if fallback_chain:
+            error_msg += f" (attempted: {' -> '.join(fallback_chain)})"
+        raise Exception(error_msg)
 
-    # Step 3: Web Scraping
+    # Step 3: Web Scraping (only for non-PDF URLs)
     fallback_chain.append("scraper_service")
     scraper = get_scraper_service()
 

@@ -7,6 +7,7 @@ Searches across: top_of_mind, coherence, who_i_was, store
 import logging
 from typing import Literal, Optional
 
+from elasticsearch import NotFoundError as ESNotFoundError
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -148,6 +149,9 @@ async def search_memory(
             logger.debug(
                 f"coherence: {accepted}/{len(coherence_results)} results passed confidence filter (>= {MIN_COHERENCE_CONFIDENCE})"
             )
+        except ESNotFoundError:
+            # Index doesn't exist yet - this is expected when coherence store hasn't been set up
+            logger.debug("coherence index not found - skipping")
         except Exception as e:
             logger.warning(f"coherence search failed: {e}")
 

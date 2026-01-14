@@ -9,6 +9,7 @@ from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.llm_utils.response_parsing import extract_response_content
 from workflows.shared.batch_processor import BatchProcessor
 from workflows.shared.retry_utils import with_retry
+from workflows.shared.token_utils import estimate_tokens_fast, HAIKU_SAFE_LIMIT
 
 from .chunking import chunk_large_content, MAX_CHAPTER_CHARS
 from .prompts import CHAPTER_SUMMARIZATION_SYSTEM, TRANSLATION_SYSTEM
@@ -37,9 +38,22 @@ Context: {chapter_context}{chunk_info}
 Content:
 {content}"""
 
+    # Estimate tokens to select appropriate model
+    # Use SONNET_1M for large content to avoid token limit errors
+    estimated_tokens = estimate_tokens_fast(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
+
+    if estimated_tokens > HAIKU_SAFE_LIMIT:
+        logger.info(
+            f"Content exceeds Haiku safe limit ({estimated_tokens:,} > {HAIKU_SAFE_LIMIT:,} tokens), "
+            f"using SONNET_1M"
+        )
+        model_tier = ModelTier.SONNET_1M
+    else:
+        model_tier = ModelTier.HAIKU
+
     # TODO: Upgrade to ModelTier.OPUS before production
     llm = get_llm(
-        tier=ModelTier.HAIKU,
+        tier=model_tier,
         thinking_budget=8000,
         max_tokens=8000 + 4096,
     )
