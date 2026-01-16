@@ -4,15 +4,28 @@ LangGraph-based research and knowledge workflows. Each workflow uses composable 
 
 ## Available Workflows
 
-| Workflow | Purpose | Entry Point |
-|----------|---------|-------------|
-| `academic_lit_review` | PhD-equivalent literature reviews | `academic_lit_review()` |
-| `supervised_lit_review` | Multi-loop supervision with editing | `run_supervised_lit_review()` |
-| `web_research` | Web research with supervisor/researcher agents | `web_research()` |
-| `book_finding` | Book discovery across three categories | `book_finding()` |
-| `document_processing` | PDF/document extraction and summarization | `process_document()` |
-| `multi_lang` | Cross-language research with synthesis | `multi_lang_research()` |
-| `wrapped` | Orchestrates web + academic + books | `wrapped_research()` |
+| Workflow | Purpose | Entry Point | Docs |
+|----------|---------|-------------|------|
+| `academic_lit_review` | PhD-equivalent literature reviews | `academic_lit_review()` | [README](research/academic_lit_review/README.md) |
+| `web_research` | Web research with supervisor/researcher agents | `web_research()` | [README](research/web_research/README.md) |
+| `book_finding` | Book discovery across three categories | `book_finding()` | [README](research/book_finding/README.md) |
+| `document_processing` | PDF/document extraction and summarization | `process_document()` | [README](document_processing/README.md) |
+| `substack_review` | Essay generation from literature reviews | `substack_review()` | [README](output/substack_review/README.md) |
+| `enhance` | Two-phase document enhancement | `enhance()` | [README](enhance/README.md) |
+| `multi_lang` | Cross-language research with synthesis | `multi_lang_research()` | — |
+
+### Enhancement Subworkflows
+
+| Subworkflow | Purpose | Docs |
+|-------------|---------|------|
+| `enhance.supervision` | Multi-loop paper corpus expansion | [README](enhance/supervision/README.md) |
+| `enhance.editing` | Structural editing with fact-checking | [README](enhance/editing/README.md) |
+
+### Utilities
+
+| Module | Purpose | Docs |
+|--------|---------|------|
+| `shared` | LLM utils, caching, batch processing, language support | [README](shared/README.md) |
 
 ## Quality Tiers
 
@@ -36,35 +49,6 @@ result = await academic_lit_review(
 )
 ```
 
-## Academic Literature Review
-
-Produces comprehensive literature reviews through:
-1. **Keyword Search** - Multi-strategy paper discovery
-2. **Citation Network** - Forward/backward expansion
-3. **Diffusion Engine** - Citation network with saturation detection
-4. **Paper Processing** - Structured summaries
-5. **Clustering** - Thematic grouping (BERTopic + LLM)
-6. **Synthesis** - Coherent narrative with citations
-
-Supports 30+ languages via ISO 639-1 codes.
-
-## Web Research
-
-Self-Balancing Diffusion Algorithm:
-1. Clarify intent with user
-2. Search memory stores
-3. Create research brief
-4. Supervisor coordinates parallel researchers
-5. Iterative web research with query validation
-6. Final report synthesis
-7. Save findings to stores
-
-## Book Finding
-
-Discovers books in three categories:
-- **Analogous domain** - Theme from different fields
-- **Inspiring action** - Change-oriented books
-- **Expressive fiction** - Theme-capturing narrative
 
 ## Shared Utilities (`shared/`)
 
