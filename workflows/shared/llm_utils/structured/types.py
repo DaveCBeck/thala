@@ -90,6 +90,7 @@ class StructuredOutputConfig:
     # Retry behavior
     max_retries: int = 2
     retry_backoff: float = 2.0
+    enable_context_fallback: bool = True  # Auto-upgrade to SONNET_1M on context limit errors
 
     # Caching
     enable_prompt_cache: bool = True

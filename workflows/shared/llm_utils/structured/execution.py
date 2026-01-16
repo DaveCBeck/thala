@@ -38,30 +38,41 @@ async def execute_single(
     When selected_strategy is BATCH_TOOL_CALL (e.g., prefer_batch_api=True),
     wraps the single request as a batch for 50% cost savings.
     """
-    if selected_strategy == StructuredOutputStrategy.BATCH_TOOL_CALL:
-        executor = BatchToolCallExecutor()
 
-        async def _invoke() -> StructuredOutputResult[T]:
-            results = await executor.execute_batch(
-                output_schema=output_schema,
-                requests=[StructuredRequest(id="_single", user_prompt=user_prompt)],
-                default_system=system_prompt,
-                config=config,
-            )
-            return results["_single"]
+    def make_invoke_fn(cfg: StructuredOutputConfig):
+        """Factory to create invoke function with given config."""
+        if selected_strategy == StructuredOutputStrategy.BATCH_TOOL_CALL:
+            executor = BatchToolCallExecutor()
 
-    else:
-        executor = executors[selected_strategy]
+            async def _invoke() -> StructuredOutputResult[T]:
+                results = await executor.execute_batch(
+                    output_schema=output_schema,
+                    requests=[StructuredRequest(id="_single", user_prompt=user_prompt)],
+                    default_system=system_prompt,
+                    config=cfg,
+                )
+                return results["_single"]
 
-        async def _invoke() -> StructuredOutputResult[T]:
-            return await executor.execute(
-                output_schema=output_schema,
-                user_prompt=user_prompt,
-                system_prompt=system_prompt,
-                config=config,
-            )
+        else:
+            executor = executors[selected_strategy]
 
-    result = await with_retries(_invoke, config, output_schema, selected_strategy)
+            async def _invoke() -> StructuredOutputResult[T]:
+                return await executor.execute(
+                    output_schema=output_schema,
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    config=cfg,
+                )
+
+        return _invoke
+
+    result = await with_retries(
+        make_invoke_fn(config),
+        config,
+        output_schema,
+        selected_strategy,
+        fallback_fn_factory=make_invoke_fn,
+    )
 
     if not result.success:
         raise StructuredOutputError(
