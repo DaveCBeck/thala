@@ -1,5 +1,6 @@
 """Main paper search logic and tool creation."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,74 @@ if TYPE_CHECKING:
 from .sources import semantic_search, keyword_search, merge_search_results
 
 logger = logging.getLogger(__name__)
+
+
+async def enrich_with_zotero_metadata(
+    results: list[dict[str, Any]],
+    store_query: "SupervisionStoreQuery",
+) -> list[dict[str, Any]]:
+    """Enrich search results with Zotero metadata for papers missing titles.
+
+    ES records often don't have metadata populated. This function fetches
+    title/authors/year from Zotero for papers with "Unknown" title.
+
+    Args:
+        results: List of search results with zotero_key, title, year, authors
+        store_query: SupervisionStoreQuery instance for Zotero access
+
+    Returns:
+        Enriched results with metadata from Zotero where available
+    """
+    # Find papers needing enrichment
+    needs_enrichment = [
+        r for r in results
+        if r.get("title") in ("Unknown", None, "") or r.get("year") in (0, None)
+    ]
+
+    if not needs_enrichment:
+        return results
+
+    # Fetch Zotero metadata in parallel (up to 10 concurrent)
+    async def fetch_one(result: dict) -> tuple[str, dict | None]:
+        zotero_key = result["zotero_key"]
+        try:
+            metadata = await store_query.get_zotero_metadata(zotero_key)
+            return zotero_key, metadata
+        except Exception as e:
+            logger.debug(f"Failed to fetch Zotero metadata for {zotero_key}: {e}")
+            return zotero_key, None
+
+    # Limit concurrent requests
+    semaphore = asyncio.Semaphore(10)
+
+    async def fetch_with_semaphore(result: dict) -> tuple[str, dict | None]:
+        async with semaphore:
+            return await fetch_one(result)
+
+    tasks = [fetch_with_semaphore(r) for r in needs_enrichment]
+    fetched = await asyncio.gather(*tasks)
+
+    # Build lookup and enrich results
+    zotero_metadata = {key: meta for key, meta in fetched if meta is not None}
+
+    enriched_count = 0
+    for result in results:
+        zotero_key = result["zotero_key"]
+        if zotero_key in zotero_metadata:
+            meta = zotero_metadata[zotero_key]
+            if result.get("title") in ("Unknown", None, ""):
+                result["title"] = meta.get("title", "Unknown")
+            if result.get("year") in (0, None):
+                year_str = meta.get("year")
+                result["year"] = int(year_str) if year_str and year_str.isdigit() else 0
+            if not result.get("authors"):
+                result["authors"] = meta.get("authors", [])
+            enriched_count += 1
+
+    if enriched_count > 0:
+        logger.debug(f"Enriched {enriched_count} papers with Zotero metadata")
+
+    return results
 
 # Minimum relevance score for search results to be returned
 # Papers below this threshold are filtered out to prevent citation drift
@@ -79,6 +148,10 @@ def create_paper_tools(store_query: "SupervisionStoreQuery") -> list:
 
         # Filter by minimum relevance threshold to prevent citation drift
         merged = [r for r in merged if r["score"] >= MINIMUM_RELEVANCE_THRESHOLD]
+
+        # Enrich with Zotero metadata for papers missing title/year/authors
+        # This fetches metadata from Zotero when ES records don't have it
+        merged = await enrich_with_zotero_metadata(merged, store_query)
 
         # Build output with paper metadata
         papers: list[dict[str, Any]] = []

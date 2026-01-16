@@ -61,6 +61,7 @@ from .detection import (
     extract_detection_sample,
     DEFAULT_CONFIDENCE_THRESHOLD,
 )
+from .content_filter import filter_by_content_language
 
 __all__ = [
     # Types
@@ -90,4 +91,6 @@ __all__ = [
     "verify_language_match",
     "extract_detection_sample",
     "DEFAULT_CONFIDENCE_THRESHOLD",
+    # Content filtering
+    "filter_by_content_language",
 ]

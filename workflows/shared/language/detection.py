@@ -14,6 +14,14 @@ MIN_TEXT_LENGTH = 50
 # Default confidence threshold for accepting a detection
 DEFAULT_CONFIDENCE_THRESHOLD = 0.7
 
+# Language code normalization map (langdetect variants -> standard ISO 639-1)
+# langdetect returns regional variants for some languages
+LANGUAGE_CODE_NORMALIZATION = {
+    "zh-cn": "zh",  # Chinese Simplified -> Chinese
+    "zh-tw": "zh",  # Chinese Traditional -> Chinese
+    "zh-hk": "zh",  # Chinese Hong Kong -> Chinese
+}
+
 
 def detect_language(
     text: str,
@@ -53,7 +61,11 @@ def detect_language(
         results = detect_langs(text)
         if results:
             top_result = results[0]
-            return top_result.lang, top_result.prob
+            # Normalize language code (e.g., zh-cn -> zh)
+            lang_code = LANGUAGE_CODE_NORMALIZATION.get(
+                top_result.lang, top_result.lang
+            )
+            return lang_code, top_result.prob
         return None, 0.0
 
     except LangDetectException as e:

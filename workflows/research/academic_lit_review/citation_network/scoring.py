@@ -9,6 +9,7 @@ from workflows.research.academic_lit_review.utils import (
     batch_score_relevance,
 )
 from workflows.shared.llm_utils import ModelTier
+from workflows.shared.language import filter_by_content_language
 
 from .types import CitationNetworkState
 
@@ -41,18 +42,21 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
             "new_edges": citation_edges,
         }
 
-    # Filter by language early (before expensive relevance scoring)
-    # For non-English workflows, only keep papers in the target language
+    # Filter by content language early (before expensive relevance scoring)
+    # Uses abstract text detection instead of unreliable metadata
     language_config = state.get("language_config")
     if language_config and language_config.get("code") != "en":
         target_lang = language_config["code"]
         pre_filter_count = len(all_results)
-        all_results = [r for r in all_results if r.get("language") == target_lang]
-        filtered_count = pre_filter_count - len(all_results)
-        if filtered_count > 0:
+        all_results, lang_rejected = filter_by_content_language(
+            all_results,
+            target_language=target_lang,
+            text_fields=["abstract", "title"],
+        )
+        if lang_rejected:
             logger.info(
-                f"Language filter ({target_lang}): kept {len(all_results)}/{pre_filter_count} "
-                f"citations (filtered {filtered_count} non-{target_lang} papers)"
+                f"Content language filter ({target_lang}): kept {len(all_results)}/{pre_filter_count} "
+                f"citations (rejected {len(lang_rejected)} with non-{target_lang} abstracts)"
             )
 
         if not all_results:

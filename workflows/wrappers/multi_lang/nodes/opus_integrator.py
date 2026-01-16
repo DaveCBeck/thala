@@ -78,7 +78,6 @@ async def _create_initial_synthesis(
         user_prompt=user_prompt,
         system_prompt=INITIAL_SYNTHESIS_SYSTEM,
         tier=ModelTier.OPUS,
-        max_tokens=16384,
     )
 
     return result.synthesis_document
@@ -114,7 +113,6 @@ async def _integrate_language(
         user_prompt=user_prompt,
         system_prompt=system_prompt,
         tier=ModelTier.OPUS,
-        max_tokens=64000,  # Must be > thinking_budget, and <= 64000 for model compatibility
         thinking_budget=24000,
     )
 
@@ -158,7 +156,6 @@ async def _finalize_synthesis(
         user_prompt=user_prompt,
         system_prompt=FINAL_ENHANCEMENT_SYSTEM,
         tier=ModelTier.OPUS,
-        max_tokens=16384,
     )
 
     return result.finalized_document

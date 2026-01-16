@@ -31,6 +31,12 @@ from workflows.wrappers.supervised_lit_review.supervision.utils import (
     split_into_sections,
     SectionInfo,
     check_section_growth,
+    strip_document_metadata,
+    restore_document_metadata,
+    validate_section_edit,
+    replace_section_by_anchor,
+    build_stable_section_map,
+    get_section_heading,
 )
 from workflows.wrappers.supervised_lit_review.supervision.utils.duplicate_handling import (
     detect_duplicate_sections,
@@ -69,6 +75,11 @@ class Loop4State(TypedDict, total=False):
     sections: list[SectionInfo]
     section_results: dict[str, SectionEditResult]
     editor_notes: list[str]
+
+    # Stable section tracking (prevents duplication from re-parsing)
+    original_sections: list[SectionInfo]  # Set once at iteration 0, never re-parsed
+    section_map: dict[str, SectionInfo]  # section_id -> SectionInfo for quick lookup
+    stripped_metadata: str  # Document metadata stripped before processing
 
     # Holistic review (internal)
     holistic_result: Optional[HolisticReviewResult]
@@ -154,7 +165,17 @@ def get_word_count_constraints(
 
 
 def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Split document into sections for parallel editing."""
+    """Split document into sections for parallel editing.
+
+    On iteration 0:
+    - Strips document metadata to prevent duplication issues
+    - Splits into sections and stores as original_sections
+    - Creates section_map for stable lookups
+
+    On subsequent iterations:
+    - Uses original_sections for flagged section lookup (no re-parsing)
+    - This prevents section ID drift and duplication
+    """
     current_review = state.get("current_review", "")
     iteration = state.get("iteration", 0)
     flagged = state.get("flagged_sections", [])
@@ -162,18 +183,61 @@ def split_sections_node(state: dict[str, Any]) -> dict[str, Any]:
     logger.debug(f"Splitting document ({len(current_review)} chars) into sections")
 
     if iteration == 0:
-        sections = split_into_sections(current_review, max_tokens=5000)
+        # Strip metadata before processing to prevent duplication
+        stripped_doc, metadata = strip_document_metadata(current_review)
+        if metadata:
+            logger.info(f"Stripped document metadata ({len(metadata)} chars)")
+
+        # Split the stripped document into sections
+        sections = split_into_sections(stripped_doc, max_tokens=5000)
+        section_map = build_stable_section_map(sections)
+
         logger.info(f"Split document into {len(sections)} sections for initial editing")
+        _log_section_info("split_sections", sections)
+
+        return {
+            "sections": sections,
+            "original_sections": sections,  # Store for future iterations
+            "section_map": section_map,
+            "stripped_metadata": metadata,
+            "current_review": stripped_doc,  # Work with stripped document
+        }
     else:
-        all_sections = split_into_sections(current_review, max_tokens=5000)
-        sections = [s for s in all_sections if s["section_id"] in flagged]
+        # Use original_sections for stable section lookup (no re-parsing!)
+        original_sections = state.get("original_sections", [])
+        section_map = state.get("section_map", {})
+
+        if not original_sections:
+            logger.warning("No original_sections in state, falling back to re-parsing")
+            sections = split_into_sections(current_review, max_tokens=5000)
+            sections = [s for s in sections if s["section_id"] in flagged]
+        else:
+            # Filter to flagged sections from original structure
+            sections = [s for s in original_sections if s["section_id"] in flagged]
+
+            # Update section content from current document using anchor matching
+            # This ensures we have the latest content while keeping stable IDs
+            for section in sections:
+                heading = get_section_heading(section)
+                if heading:
+                    from workflows.wrappers.supervised_lit_review.supervision.utils.loop4_helpers import (
+                        find_section_by_heading,
+                    )
+                    start, end = find_section_by_heading(
+                        current_review, heading, section["heading_level"]
+                    )
+                    if start >= 0:
+                        lines = current_review.split("\n")
+                        section["section_content"] = "\n".join(lines[start:end + 1])
+                        section["start_line"] = start
+                        section["end_line"] = end
+
         logger.info(
             f"Re-editing {len(sections)} flagged sections (iteration {iteration + 1})"
         )
+        _log_section_info("split_sections", sections)
 
-    _log_section_info("split_sections", sections)
-
-    return {"sections": sections}
+        return {"sections": sections}
 
 
 async def parallel_edit_sections_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +502,22 @@ If you cannot improve meaningfully within limits, return the original section un
                     f"no word limit applied"
                 )
 
+            # Validate edit for placeholder/error content
+            is_valid, rejection_reason = validate_section_edit(
+                section_content, response.edited_content, section_id
+            )
+
+            if not is_valid:
+                logger.warning(f"Section edit rejected: {rejection_reason}")
+                # Revert to original content
+                response = SectionEditResult(
+                    section_id=section_id,
+                    edited_content=section_content,
+                    notes=f"Edit rejected: {rejection_reason}",
+                    new_paper_todos=response.new_paper_todos,
+                    confidence=0.0,
+                )
+
             # Final logging
             if section_type == "abstract":
                 logger.debug(
@@ -618,11 +698,16 @@ def detect_duplicate_abstracts(document: str) -> list[tuple[int, int, float]]:
 
 
 def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Reassemble document from edited sections."""
+    """Reassemble document from edited sections.
+
+    For iteration 0: Join all sections with double newlines
+    For iteration 1+: Use anchor-based replacement to avoid line drift issues
+    """
     current_review = state.get("current_review", "")
     sections = state.get("sections", [])
     section_results = state.get("section_results", {})
     iteration = state.get("iteration", 0)
+    original_sections = state.get("original_sections", [])
 
     _log_section_info("reassemble_input", sections)
     logger.debug(f"Section results available for: {list(section_results.keys())}")
@@ -636,6 +721,7 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.debug(f"After merge, section results: {list(section_results.keys())}")
 
     if iteration == 0:
+        # First iteration: join all sections
         edited_content = []
         for section in sections:
             section_id = section["section_id"]
@@ -645,28 +731,47 @@ def reassemble_document_node(state: dict[str, Any]) -> dict[str, Any]:
                 edited_content.append(section["section_content"])
         updated_review = "\n\n".join(edited_content)
     else:
-        lines = current_review.split("\n")
+        # Subsequent iterations: use anchor-based replacement
+        # This prevents duplication from line number drift
+        updated_review = current_review
 
-        sorted_sections = sorted(
-            [s for s in sections if s["section_id"] in section_results],
-            key=lambda s: s["start_line"],
-            reverse=True,
-        )
+        # Use original_sections for stable anchor matching
+        sections_to_replace = original_sections if original_sections else sections
 
-        for section in sorted_sections:
+        for section in sections_to_replace:
             section_id = section["section_id"]
-            start_line = section["start_line"]
-            end_line = section["end_line"]
-            edited_lines = section_results[section_id].edited_content.split("\n")
+            if section_id not in section_results:
+                continue
 
-            logger.debug(
-                f"Replacing section '{section_id}' at lines {start_line}-{end_line} "
-                f"with {len(edited_lines)} lines"
+            new_content = section_results[section_id].edited_content
+
+            # Use anchor-based replacement
+            updated_review, success = replace_section_by_anchor(
+                updated_review, section, new_content
             )
 
-            lines = lines[:start_line] + edited_lines + lines[end_line + 1 :]
+            if not success:
+                logger.warning(
+                    f"Anchor-based replacement failed for section '{section_id}', "
+                    "attempting line-based fallback"
+                )
+                # Fallback to line-based replacement as last resort
+                lines = updated_review.split("\n")
+                start_line = section["start_line"]
+                end_line = section["end_line"]
 
-        updated_review = "\n".join(lines)
+                if 0 <= start_line < len(lines) and end_line < len(lines):
+                    edited_lines = new_content.split("\n")
+                    lines = lines[:start_line] + edited_lines + lines[end_line + 1:]
+                    updated_review = "\n".join(lines)
+                    logger.debug(
+                        f"Fallback replacement of '{section_id}' at lines {start_line}-{end_line}"
+                    )
+                else:
+                    logger.error(
+                        f"Cannot replace section '{section_id}': "
+                        f"line range {start_line}-{end_line} out of bounds"
+                    )
 
     # Enhanced duplicate detection and removal after reassembly
     duplicate_headers = detect_duplicate_headers(updated_review)
@@ -710,7 +815,18 @@ async def holistic_review_node(state: dict[str, Any]) -> dict[str, Any]:
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 3)
 
-    all_sections = split_into_sections(document, max_tokens=5000)
+    # Use original_sections for stable section IDs (prevents duplication from re-parsing)
+    original_sections = state.get("original_sections", [])
+
+    if original_sections:
+        # Use stable section IDs from original split
+        all_sections = original_sections
+        logger.debug("Using original_sections for holistic review (stable IDs)")
+    else:
+        # Fallback to re-parsing if original_sections not available
+        logger.warning("No original_sections in state, falling back to re-parsing")
+        all_sections = split_into_sections(document, max_tokens=5000)
+
     section_ids = [s["section_id"] for s in all_sections]
     section_id_list = _format_section_id_list(all_sections)
     valid_ids_json = json.dumps(section_ids, indent=2)
@@ -926,11 +1042,13 @@ def route_after_holistic(state: dict[str, Any]) -> str:
 
 
 def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Finalize Loop 4 editing with duplicate cleanup."""
+    """Finalize Loop 4 editing with duplicate cleanup and metadata restoration."""
     document = state.get("current_review", "")
+    stripped_metadata = state.get("stripped_metadata", "")
 
     logger.debug(f"Finalizing Loop 4 ({len(document)} chars)")
 
+    # Clean up duplicates
     duplicates = detect_duplicate_headers(document)
     if duplicates:
         logger.info(f"Found {len(duplicates)} duplicate headers, cleaning up")
@@ -944,6 +1062,11 @@ def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
             )
     else:
         logger.debug("No duplicate headers detected")
+
+    # Restore document metadata that was stripped at start
+    if stripped_metadata:
+        document = restore_document_metadata(document, stripped_metadata)
+        logger.debug(f"Restored document metadata ({len(stripped_metadata)} chars)")
 
     logger.info("Loop 4 editing complete")
     return {"current_review": document, "is_complete": True}

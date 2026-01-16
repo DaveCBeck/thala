@@ -30,6 +30,23 @@ from .citation_validation import (
     CITATION_SOURCE_LOOP4,
     CITATION_SOURCE_LOOP5,
 )
+from .loop4_helpers import (
+    # Content-hash-based stable references (best practice pattern)
+    compute_content_hash,
+    validate_content_unchanged,
+    create_section_reference,
+    # Metadata handling
+    strip_document_metadata,
+    restore_document_metadata,
+    # Placeholder detection
+    detect_placeholder_content,
+    validate_section_edit,
+    # Anchor-based section operations
+    find_section_by_heading,
+    replace_section_by_anchor,
+    build_stable_section_map,
+    get_section_heading,
+)
 
 __all__ = [
     "number_paragraphs",
@@ -60,4 +77,19 @@ __all__ = [
     "CITATION_SOURCE_LOOP2",
     "CITATION_SOURCE_LOOP4",
     "CITATION_SOURCE_LOOP5",
+    # Loop 4 helpers - content hash stable references
+    "compute_content_hash",
+    "validate_content_unchanged",
+    "create_section_reference",
+    # Loop 4 helpers - metadata handling
+    "strip_document_metadata",
+    "restore_document_metadata",
+    # Loop 4 helpers - placeholder detection
+    "detect_placeholder_content",
+    "validate_section_edit",
+    # Loop 4 helpers - anchor-based operations
+    "find_section_by_heading",
+    "replace_section_by_anchor",
+    "build_stable_section_map",
+    "get_section_heading",
 ]

@@ -74,7 +74,8 @@ class SupervisionStoreQuery:
 
         try:
             # Query ES by zotero_key at specified compression level
-            query = {"term": {"zotero_key": zotero_key}}
+            # Use .keyword for exact match since zotero_key is a text field
+            query = {"term": {"zotero_key.keyword": zotero_key}}
             records = await store.search(
                 query=query,
                 size=1,

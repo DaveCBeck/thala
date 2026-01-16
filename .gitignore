@@ -10,6 +10,7 @@ logs/
 testing/test_data/
 testing/logs/
 testing/traces/
+**/claude.md
 
 # Environment variables
 .env

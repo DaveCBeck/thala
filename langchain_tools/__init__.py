@@ -17,6 +17,8 @@ Tools provided:
 - openalex_search: Academic literature search (OpenAlex)
 - book_search: Book search for books, textbooks, and publications
 - process_document: Document extraction and summarization pipeline
+- search_papers: Hybrid search for papers in the corpus
+- get_paper_content: Fetch detailed paper content by Zotero key
 """
 
 from .base import StoreManager, get_store_manager
@@ -69,6 +71,13 @@ from .document_processing import (
     process_document,
     DocumentProcessingOutput,
 )
+from .paper_corpus import (
+    search_papers,
+    get_paper_content,
+    PaperResult,
+    PaperSearchOutput,
+    PaperContentOutput,
+)
 
 __all__ = [
     # Store management
@@ -115,4 +124,10 @@ __all__ = [
     # document_processing tool
     "process_document",
     "DocumentProcessingOutput",
+    # paper_corpus tools
+    "search_papers",
+    "get_paper_content",
+    "PaperResult",
+    "PaperSearchOutput",
+    "PaperContentOutput",
 ]

@@ -11,6 +11,7 @@ from workflows.research.academic_lit_review.utils import (
     batch_score_relevance,
 )
 from workflows.shared.llm_utils import ModelTier
+from workflows.shared.language import filter_by_content_language
 
 from .types import KeywordSearchState, MAX_RESULTS_PER_QUERY
 
@@ -120,6 +121,28 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
             "rejected_papers": [],
             "keyword_dois": [],
         }
+
+    # Content-based language filtering (secondary check after query translation)
+    # Catches papers where metadata says target language but content is different
+    if language_config and language_config.get("code") != "en":
+        papers, lang_rejected = filter_by_content_language(
+            papers,
+            target_language=language_config["code"],
+            text_fields=["abstract", "title"],
+        )
+        if lang_rejected:
+            logger.info(
+                f"Content language filter: kept {len(papers)}, "
+                f"rejected {len(lang_rejected)} (abstract not in {language_config['code']})"
+            )
+
+        if not papers:
+            logger.warning("No papers after language filtering")
+            return {
+                "discovered_papers": [],
+                "rejected_papers": [],
+                "keyword_dois": [],
+            }
 
     relevant, rejected = await batch_score_relevance(
         papers=papers,
