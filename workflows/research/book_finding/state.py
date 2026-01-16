@@ -58,7 +58,14 @@ class BookResult(TypedDict):
     size: str
     abstract: Optional[str]
     matched_recommendation: str  # Which recommendation title it matches
-    content_summary: Optional[str]  # After processing via Marker
+    content_summary: Optional[str]  # After processing via Marker (legacy, kept for compatibility)
+
+    # New fields from document_processing integration
+    zotero_key: Optional[str]  # Zotero library entry key
+    tenth_summary: Optional[str]  # 10:1 summary (in original language)
+    tenth_summary_english: Optional[str]  # 10:1 summary (in English if translated)
+    original_language: Optional[str]  # Original document language
+    store_records: Optional[list[dict]]  # Elasticsearch store records
 
 
 # =============================================================================

@@ -75,6 +75,10 @@ def _format_book_entry(
         f"**Authors:** {book['authors']}",
     ]
 
+    # Add Zotero citation key if available (for use in citations)
+    if book.get("zotero_key"):
+        lines.append(f"**Citation key:** [@{book['zotero_key']}]")
+
     if recommendation:
         lines.append(f"**Why this book:** {recommendation['explanation']}")
     else:
@@ -84,7 +88,11 @@ def _format_book_entry(
 
     lines.append("")
 
-    if book.get("content_summary"):
+    # Prefer 10:1 summary if available, fall back to content_summary
+    if book.get("tenth_summary"):
+        lines.append(f"**Summary (10:1):** {book['tenth_summary']}")
+        lines.append("")
+    elif book.get("content_summary"):
         lines.append(f"**Summary:** {book['content_summary']}")
         lines.append("")
 

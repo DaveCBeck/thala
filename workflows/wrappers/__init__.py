@@ -2,5 +2,5 @@
 
 Contains wrapper workflows that orchestrate other workflows:
 - multi_lang: Multi-language research workflow
-- supervised_lit_review: Supervised literature review workflow
+- synthesis: Multi-phase synthesis workflow (lit review -> supervision -> web+books -> synthesis -> editing)
 """

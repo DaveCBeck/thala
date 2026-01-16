@@ -20,16 +20,16 @@ from workflows.research.academic_lit_review.state import (
 )
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 
-from workflows.wrappers.supervised_lit_review.supervision.mini_review import (
+from workflows.enhance.supervision.shared.mini_review import (
     run_mini_review,
 )
-from workflows.wrappers.supervised_lit_review.supervision.prompts import (
+from workflows.enhance.supervision.shared.prompts import (
     LOOP2_ANALYZER_SYSTEM,
     LOOP2_ANALYZER_USER,
     LOOP2_INTEGRATOR_SYSTEM,
     LOOP2_INTEGRATOR_USER,
 )
-from workflows.wrappers.supervised_lit_review.supervision.types import (
+from workflows.enhance.supervision.shared.types import (
     LiteratureBase,
     LiteratureBaseDecision,
 )

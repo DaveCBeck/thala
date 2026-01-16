@@ -18,12 +18,12 @@ from langsmith import traceable
 from typing_extensions import TypedDict
 
 from workflows.shared.workflow_state_store import save_workflow_state
-from workflows.wrappers.supervised_lit_review.supervision.nodes import (
+from workflows.enhance.supervision.shared.nodes import (
     analyze_review_node,
     expand_topic_node,
     integrate_content_node,
 )
-from workflows.wrappers.supervised_lit_review.supervision.routing import (
+from workflows.enhance.supervision.shared.routing import (
     route_after_analysis,
     should_continue_supervision,
 )

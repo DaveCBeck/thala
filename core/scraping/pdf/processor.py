@@ -424,6 +424,61 @@ async def process_pdf_file(
     )
 
 
+async def download_pdf_by_md5(
+    md5: str,
+    output_path: Path,
+    identifier: Optional[str] = None,
+    timeout: float = 120.0,
+) -> Optional[str]:
+    """Download PDF via MD5 hash without processing. Returns local file path.
+
+    Uses the retrieve-academic service (VPN-enabled) to download PDFs by MD5 hash.
+    The PDF is saved to the output_path without any Marker conversion.
+
+    Args:
+        md5: MD5 hash of the document to download
+        output_path: Path where the PDF should be saved
+        identifier: Identifier for logging (e.g., book title)
+        timeout: Download timeout in seconds
+
+    Returns:
+        Local file path (str) if successful, None if failed.
+    """
+    from core.stores import RetrieveAcademicClient
+
+    logger.debug(f"Downloading PDF by MD5: {md5[:12]}...")
+
+    try:
+        async with RetrieveAcademicClient() as client:
+            if not await client.health_check():
+                logger.warning("retrieve-academic service unavailable")
+                return None
+
+            # Ensure parent directory exists
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            await client.download_by_md5(
+                md5=md5,
+                local_path=str(output_path),
+                identifier=identifier or md5,
+                timeout=timeout,
+            )
+
+            if output_path.exists():
+                logger.debug(
+                    f"Downloaded PDF: {output_path} ({output_path.stat().st_size / 1024:.1f} KB)"
+                )
+                return str(output_path)
+            else:
+                logger.warning(f"Download completed but file not found: {output_path}")
+                return None
+
+    except Exception as e:
+        logger.warning(f"PDF download failed for md5={md5[:12]}...: {e}")
+        return None
+
+
 async def process_pdf_by_md5(
     md5: str,
     identifier: Optional[str] = None,

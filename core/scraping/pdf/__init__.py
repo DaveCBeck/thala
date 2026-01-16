@@ -2,6 +2,7 @@
 
 from .detector import is_pdf_url
 from .processor import (
+    download_pdf_by_md5,
     process_pdf_by_md5,
     process_pdf_bytes,
     process_pdf_file,
@@ -10,6 +11,7 @@ from .processor import (
 
 __all__ = [
     "is_pdf_url",
+    "download_pdf_by_md5",
     "process_pdf_by_md5",
     "process_pdf_bytes",
     "process_pdf_file",

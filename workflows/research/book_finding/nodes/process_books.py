@@ -1,22 +1,23 @@
 """
 Book download and processing node.
 
-Downloads PDFs and converts them via Marker, then generates
-theme-relevant summaries using Sonnet.
+Downloads PDFs via retrieve-academic and processes them through
+document_processing workflow to create Zotero entries and 10:1 summaries.
 """
 
 import asyncio
 import logging
+import tempfile
+from pathlib import Path
 from typing import Any
 
-from core.scraping import process_pdf_by_md5
+from core.scraping import download_pdf_by_md5
 from workflows.research.book_finding.state import (
     BookResult,
     BookFindingQualitySettings,
     QUALITY_PRESETS,
 )
-from workflows.research.book_finding.prompts import get_summary_prompt
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.research.book_finding.document_processing import process_book_document
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +26,17 @@ async def _process_single_book(
     book: BookResult,
     theme: str,
     quality_settings: BookFindingQualitySettings,
-    summary_prompt_template: str,
 ) -> tuple[BookResult | None, str | None]:
-    """Download, process via Marker, and summarize a single book.
+    """Download and process a single book through document_processing.
 
     Args:
         book: BookResult to process
-        theme: Theme for context-aware summarization
-        quality_settings: Quality configuration for content limits and tokens
-        summary_prompt_template: Prompt template for summary generation
+        theme: Theme for context (logged but not used for summarization -
+               document_processing handles that)
+        quality_settings: Quality configuration
 
     Returns:
-        Tuple of (updated BookResult with summary, None) on success,
+        Tuple of (updated BookResult with zotero_key and summaries, None) on success,
         or (None, title) on failure
     """
     try:
@@ -47,57 +47,80 @@ async def _process_single_book(
             )
             return None, book["title"]
 
-        # Download via VPN and convert via Marker
-        logger.debug(f"Processing '{book['title']}'")
-        content = await process_pdf_by_md5(
-            md5=book["md5"],
-            identifier=book["title"],
-        )
+        # Download PDF to temporary location
+        logger.debug(f"Downloading '{book['title']}'")
 
-        if not content:
-            logger.warning(f"No content extracted from '{book['title']}'")
-            return None, book["title"]
+        # Create temp file with meaningful name
+        safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in book["title"][:50])
+        with tempfile.NamedTemporaryFile(
+            suffix=".pdf",
+            prefix=f"book_{safe_title}_",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
 
-        # Truncate content for summary generation based on quality settings
-        max_content = quality_settings["max_content_for_summary"]
-        content_truncated = content[:max_content]
-        logger.debug(
-            f"Extracted {len(content)} chars from '{book['title']}', using {len(content_truncated)} for summary"
-        )
+        try:
+            # Download via retrieve-academic (VPN-enabled)
+            local_path = await download_pdf_by_md5(
+                md5=book["md5"],
+                output_path=tmp_path,
+                identifier=book["title"],
+                timeout=120.0,
+            )
 
-        # Generate theme-relevant summary using Sonnet
-        summary_tokens = quality_settings["summary_max_tokens"]
-        llm = get_llm(ModelTier.SONNET, max_tokens=summary_tokens)
-        summary_prompt = summary_prompt_template.format(
-            theme=theme,
-            title=book["title"],
-            authors=book["authors"],
-            content=content_truncated,
-        )
+            if not local_path:
+                logger.warning(f"Download failed for '{book['title']}'")
+                return None, book["title"]
 
-        response = await llm.ainvoke([{"role": "user", "content": summary_prompt}])
-        summary = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
-        )
-        summary = summary.strip()
+            # Process through document_processing workflow
+            logger.debug(f"Processing '{book['title']}' through document_processing")
+            result = await process_book_document(
+                file_path=local_path,
+                title=book["title"],
+                authors=book["authors"],
+                md5=book["md5"],
+                use_batch_api=True,  # Use batch API for cost savings
+            )
 
-        # Create updated book with summary
-        updated_book = BookResult(
-            title=book["title"],
-            authors=book["authors"],
-            md5=book["md5"],
-            url=book["url"],
-            format=book["format"],
-            size=book["size"],
-            abstract=book["abstract"],
-            matched_recommendation=book["matched_recommendation"],
-            content_summary=summary,
-        )
+            if not result["success"]:
+                logger.warning(
+                    f"Document processing failed for '{book['title']}': "
+                    f"{result.get('errors', [])}"
+                )
+                return None, book["title"]
 
-        logger.debug(f"Successfully processed '{book['title']}'")
-        return updated_book, None
+            # Create updated book with new fields from document_processing
+            updated_book = BookResult(
+                title=book["title"],
+                authors=book["authors"],
+                md5=book["md5"],
+                url=book["url"],
+                format=book["format"],
+                size=book["size"],
+                abstract=book["abstract"],
+                matched_recommendation=book["matched_recommendation"],
+                # Use short_summary as content_summary for backward compatibility
+                content_summary=result.get("short_summary"),
+                # New fields from document_processing
+                zotero_key=result.get("zotero_key"),
+                tenth_summary=result.get("tenth_summary"),
+                tenth_summary_english=result.get("tenth_summary_english"),
+                original_language=result.get("original_language"),
+                store_records=result.get("store_records"),
+            )
+
+            logger.info(
+                f"Successfully processed '{book['title']}' "
+                f"(zotero_key={result.get('zotero_key')})"
+            )
+            return updated_book, None
+
+        finally:
+            # Cleanup temp file
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     except Exception as e:
         logger.error(f"Failed to process '{book['title']}': {e}")
@@ -105,26 +128,26 @@ async def _process_single_book(
 
 
 async def process_books(state: dict) -> dict[str, Any]:
-    """Download and process books via Marker, generate theme-relevant summaries.
+    """Download and process books via document_processing workflow.
 
-    Processes books with limited concurrency to avoid overwhelming
-    the Marker service. Concurrency is controlled by quality settings.
+    Downloads PDFs via retrieve-academic (VPN-enabled), then processes
+    each through document_processing to create:
+    - Zotero library entries with "processed" tag
+    - 10:1 summaries stored in Elasticsearch
+    - Store records for later retrieval
     """
     books = state.get("search_results", [])
     theme = state.get("input", {}).get("theme", "")
     quality_settings = state.get("quality_settings") or QUALITY_PRESETS["standard"]
-    language_config = state.get("language_config")
 
     if not books:
         logger.warning("No books to process")
         return {"processed_books": [], "processing_failed": []}
 
-    logger.debug(
-        f"Processing {len(books)} books with max_concurrent={quality_settings['max_concurrent_downloads']}"
+    logger.info(
+        f"Processing {len(books)} books with max_concurrent="
+        f"{quality_settings['max_concurrent_downloads']}"
     )
-
-    # Get translated summary prompt if needed
-    summary_prompt_template = await get_summary_prompt(language_config)
 
     # Process books with limited concurrency based on quality settings
     max_concurrent = quality_settings["max_concurrent_downloads"]
@@ -132,9 +155,7 @@ async def process_books(state: dict) -> dict[str, Any]:
 
     async def process_with_semaphore(book: BookResult):
         async with semaphore:
-            return await _process_single_book(
-                book, theme, quality_settings, summary_prompt_template
-            )
+            return await _process_single_book(book, theme, quality_settings)
 
     tasks = [process_with_semaphore(book) for book in books]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -153,8 +174,11 @@ async def process_books(state: dict) -> dict[str, Any]:
         elif failed_title:
             failed.append(failed_title)
 
+    # Log summary with Zotero keys
+    zotero_keys = [b.get("zotero_key") for b in processed if b.get("zotero_key")]
     logger.info(
-        f"Book processing complete: {len(processed)} processed, {len(failed)} failed/skipped"
+        f"Book processing complete: {len(processed)} processed, {len(failed)} failed/skipped. "
+        f"Zotero keys: {zotero_keys}"
     )
 
     return {
