@@ -32,16 +32,21 @@ celery.conf.update(
     task_time_limit=14400,  # 4 hours hard limit
     # Worker prefetch (1 task at a time for GPU workloads)
     worker_prefetch_multiplier=1,
-    # Redis broker visibility timeout - must exceed task_time_limit
-    # When a task is not acked within this time, it gets requeued
-    broker_transport_options={
-        "visibility_timeout": 18000,  # 5 hours
-    },
     # Only ack task after it completes (prevents requeue on worker crash)
     task_acks_late=True,
+    # Explicitly ack on failure/timeout to prevent requeue of failed tasks
+    task_acks_on_failure_or_timeout=True,
     # Don't requeue tasks that were started but worker died
     task_reject_on_worker_lost=True,
 )
+
+# Redis broker visibility timeout - MUST be set separately after app creation
+# to ensure it takes effect. When a task is not acked within this time, Redis
+# redelivers it to another worker. Must exceed task_time_limit significantly.
+# Default is only 3600s (1 hour) which causes premature redelivery of long tasks.
+celery.conf.broker_transport_options = {
+    "visibility_timeout": 28800,  # 8 hours (2x task_time_limit for safety margin)
+}
 
 
 def _is_blocklisted(file_path: str) -> bool:

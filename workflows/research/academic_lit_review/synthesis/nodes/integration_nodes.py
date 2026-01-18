@@ -63,7 +63,7 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
         conclusions=conclusions,
     )
 
-    llm = get_llm(tier=ModelTier.SONNET, max_tokens=16000)
+    llm = get_llm(tier=ModelTier.OPUS, max_tokens=64000)
 
     response = await invoke_with_cache(
         llm,

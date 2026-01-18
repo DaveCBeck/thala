@@ -78,6 +78,7 @@ async def _create_initial_synthesis(
         user_prompt=user_prompt,
         system_prompt=INITIAL_SYNTHESIS_SYSTEM,
         tier=ModelTier.OPUS,
+        max_tokens=64000,
     )
 
     return result.synthesis_document
@@ -108,12 +109,13 @@ async def _integrate_language(
         language_findings=language_findings,
     )
 
+    # Note: thinking_budget cannot be used with batch API + tool_choice
     result: IntegrationOutput = await get_structured_output(
         output_schema=IntegrationOutput,
         user_prompt=user_prompt,
         system_prompt=system_prompt,
         tier=ModelTier.OPUS,
-        thinking_budget=24000,
+        max_tokens=64000,
     )
 
     integration_step: OpusIntegrationStep = {
@@ -156,6 +158,7 @@ async def _finalize_synthesis(
         user_prompt=user_prompt,
         system_prompt=FINAL_ENHANCEMENT_SYSTEM,
         tier=ModelTier.OPUS,
+        max_tokens=64000,
     )
 
     return result.finalized_document
