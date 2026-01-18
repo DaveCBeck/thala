@@ -7,7 +7,7 @@ and editing into a comprehensive synthesis.
 
 from datetime import datetime
 from operator import add
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from typing_extensions import TypedDict
 
@@ -19,6 +19,13 @@ from workflows.shared.quality_config import QualityTier
 # =============================================================================
 
 
+class MultiLangConfig(TypedDict, total=False):
+    """Configuration for multi-language research in synthesis."""
+
+    mode: Literal["set_languages", "main_languages", "all_languages"]
+    languages: Optional[list[str]]  # Required for set_languages mode
+
+
 class SynthesisInput(TypedDict):
     """Input parameters for synthesis workflow."""
 
@@ -27,6 +34,7 @@ class SynthesisInput(TypedDict):
     synthesis_brief: Optional[str]  # Describes desired synthesis angle
     quality: QualityTier
     language_code: Optional[str]  # ISO 639-1 code, default "en"
+    multi_lang_config: Optional[MultiLangConfig]  # Optional multi-lang research
 
 
 class WebResearchResult(TypedDict):

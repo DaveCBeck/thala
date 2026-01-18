@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from workflows.research.academic_lit_review import academic_lit_review
+from workflows.wrappers.multi_lang.graph.api import multi_lang_research
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,7 @@ async def run_lit_review(state: dict) -> dict[str, Any]:
 
     Calls the academic_lit_review workflow to generate an initial
     literature review that will be enhanced in subsequent phases.
+    If multi_lang_config is provided, uses multi_lang_research instead.
     """
     input_data = state.get("input", {})
 
@@ -20,16 +22,31 @@ async def run_lit_review(state: dict) -> dict[str, Any]:
     research_questions = input_data.get("research_questions", [])
     quality = input_data.get("quality", "standard")
     language = input_data.get("language_code", "en")
+    multi_lang_config = input_data.get("multi_lang_config")
 
     logger.info(f"Phase 1: Starting academic literature review for '{topic}'")
 
     try:
-        result = await academic_lit_review(
-            topic=topic,
-            research_questions=research_questions,
-            quality=quality,
-            language=language,
-        )
+        if multi_lang_config is not None:
+            # Use multi-language research wrapper
+            logger.info("Multi-lang mode enabled for academic lit review")
+            result_obj = await multi_lang_research(
+                topic=topic,
+                mode=multi_lang_config.get("mode", "set_languages"),
+                languages=multi_lang_config.get("languages"),
+                research_questions=research_questions,
+                workflow="academic",
+                quality=quality,
+            )
+            result = result_obj.to_dict()
+        else:
+            # Direct single-language call
+            result = await academic_lit_review(
+                topic=topic,
+                research_questions=research_questions,
+                quality=quality,
+                language=language,
+            )
 
         if result.get("status") == "failed":
             logger.error(f"Literature review failed: {result.get('errors', [])}")

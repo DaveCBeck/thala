@@ -7,6 +7,7 @@ from langgraph.types import Send
 
 from workflows.research.web_research import deep_research
 from workflows.research.book_finding import book_finding
+from workflows.wrappers.multi_lang.graph.api import multi_lang_research
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ def route_to_parallel_research(state: dict) -> list[Send]:
     generated_themes = state.get("generated_themes", [])
     input_data = state.get("input", {})
     quality = input_data.get("quality", "standard")
+    multi_lang_config = input_data.get("multi_lang_config")
 
     sends = []
 
@@ -33,6 +35,7 @@ def route_to_parallel_research(state: dict) -> list[Send]:
                     "iteration": i,
                     "query": query_data["query"],
                     "quality": quality,
+                    "multi_lang_config": multi_lang_config,
                 },
             )
         )
@@ -46,6 +49,7 @@ def route_to_parallel_research(state: dict) -> list[Send]:
                     "iteration": i,
                     "theme": theme_data["theme"],
                     "quality": quality,
+                    "multi_lang_config": multi_lang_config,
                 },
             )
         )
@@ -62,19 +66,34 @@ async def web_research_worker(state: dict) -> dict[str, Any]:
     """Worker that runs a single web research query.
 
     Receives iteration index and query from Send(), runs deep_research,
-    and returns result for aggregation.
+    and returns result for aggregation. If multi_lang_config is provided,
+    uses multi_lang_research instead.
     """
     iteration = state.get("iteration", 0)
     query = state.get("query", "")
     quality = state.get("quality", "standard")
+    multi_lang_config = state.get("multi_lang_config")
 
     logger.info(f"Web research worker {iteration}: '{query[:50]}...'")
 
     try:
-        result = await deep_research(
-            query=query,
-            quality=quality,
-        )
+        if multi_lang_config is not None:
+            # Use multi-language research wrapper
+            logger.info(f"Multi-lang mode enabled for web research worker {iteration}")
+            result_obj = await multi_lang_research(
+                topic=query,
+                mode=multi_lang_config.get("mode", "set_languages"),
+                languages=multi_lang_config.get("languages"),
+                workflow="web",
+                quality=quality,
+            )
+            result = result_obj.to_dict()
+        else:
+            # Direct single-language call
+            result = await deep_research(
+                query=query,
+                quality=quality,
+            )
 
         return {
             "web_research_results": [
@@ -112,19 +131,34 @@ async def book_finding_worker(state: dict) -> dict[str, Any]:
     """Worker that runs a single book finding theme.
 
     Receives iteration index and theme from Send(), runs book_finding,
-    and returns result for aggregation.
+    and returns result for aggregation. If multi_lang_config is provided,
+    uses multi_lang_research instead.
     """
     iteration = state.get("iteration", 0)
     theme = state.get("theme", "")
     quality = state.get("quality", "standard")
+    multi_lang_config = state.get("multi_lang_config")
 
     logger.info(f"Book finding worker {iteration}: '{theme[:50]}...'")
 
     try:
-        result = await book_finding(
-            theme=theme,
-            quality=quality,
-        )
+        if multi_lang_config is not None:
+            # Use multi-language research wrapper
+            logger.info(f"Multi-lang mode enabled for book finding worker {iteration}")
+            result_obj = await multi_lang_research(
+                topic=theme,
+                mode=multi_lang_config.get("mode", "set_languages"),
+                languages=multi_lang_config.get("languages"),
+                workflow="books",
+                quality=quality,
+            )
+            result = result_obj.to_dict()
+        else:
+            # Direct single-language call
+            result = await book_finding(
+                theme=theme,
+                quality=quality,
+            )
 
         # Extract zotero keys from processed books
         # Note: After our Part 1 changes, processed_books now have zotero_key
