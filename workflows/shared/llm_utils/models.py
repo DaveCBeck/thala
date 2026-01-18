@@ -70,6 +70,11 @@ def get_llm(
         "model": tier.value,
         "api_key": api_key,
         "max_tokens": max_tokens,
+        # LangSmith metadata for automatic cost tracking
+        "metadata": {
+            "ls_provider": "anthropic",
+            "ls_model_name": tier.value,
+        },
     }
 
     # Enable 1M context window beta for SONNET_1M (requires Tier 4+ account)

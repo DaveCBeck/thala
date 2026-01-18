@@ -16,15 +16,21 @@ def select_strategy(
     Selection rules:
     1. If explicitly specified, use that strategy
     2. If tools provided -> TOOL_AGENT
-    3. If prefer_batch_api=True -> BATCH_TOOL_CALL (for cost savings)
-    4. If batch with batch_threshold+ items -> BATCH_TOOL_CALL
-    5. Default -> LANGCHAIN_STRUCTURED
+    3. If thinking_budget set -> LANGCHAIN_STRUCTURED (BATCH_TOOL_CALL incompatible)
+    4. If prefer_batch_api=True -> BATCH_TOOL_CALL (for cost savings)
+    5. If batch with batch_threshold+ items -> BATCH_TOOL_CALL
+    6. Default -> LANGCHAIN_STRUCTURED
     """
     if config.strategy != StructuredOutputStrategy.AUTO:
         return config.strategy
 
     if config.tools:
         return StructuredOutputStrategy.TOOL_AGENT
+
+    # thinking_budget cannot be used with batch API + tool_choice
+    # Fall back to LangChain structured output which handles thinking gracefully
+    if config.thinking_budget:
+        return StructuredOutputStrategy.LANGCHAIN_STRUCTURED
 
     # prefer_batch_api routes ALL requests through batch API for 50% cost savings
     if config.prefer_batch_api:

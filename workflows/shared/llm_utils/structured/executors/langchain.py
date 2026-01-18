@@ -35,7 +35,10 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
             thinking_budget=config.thinking_budget,
         )
 
-        if config.use_json_schema_method:
+        # json_schema method uses tool_choice which conflicts with thinking.
+        # When thinking is enabled, fall back to default method and rely on retries.
+        use_json_schema = config.use_json_schema_method and not config.thinking_budget
+        if use_json_schema:
             structured_llm = llm.with_structured_output(
                 output_schema, method="json_schema"
             )

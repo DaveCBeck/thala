@@ -21,6 +21,8 @@ Examples of analogous domain thinking:
 - For "creative process": books about jazz improvisation, scientific discovery, or craft traditions
 - For "leadership under pressure": books about polar expeditions, emergency medicine, or military strategy
 
+IMPORTANT: Each recommendation must be a DISTINCT book. Do not recommend the same book twice, even under different editions or translations. Avoid obvious or frequently-recommended books—seek out lesser-known works that offer genuine insight.
+
 Return EXACTLY 3 book recommendations as a JSON array. Each book must be a real, published book that you are confident exists."""
 
 ANALOGOUS_DOMAIN_USER = """Theme: {theme}
@@ -46,6 +48,8 @@ Your task is to find books (fiction or nonfiction) that INSPIRE ACTION or CHANGE
 - Fiction that inspired real-world movements or personal transformation
 - Practical wisdom literature that changes behavior
 
+IMPORTANT: Each recommendation must be a DISTINCT book. Do not recommend the same book twice, even under different editions or translations. Avoid obvious or frequently-recommended books—seek out lesser-known works that offer genuine insight.
+
 Return EXACTLY 3 book recommendations as a JSON array. Each book must be a real, published book that you are confident exists."""
 
 INSPIRING_ACTION_USER = """Theme: {theme}
@@ -70,6 +74,8 @@ Your task is to find works of FICTION that express what a theme FEELS LIKE or CO
 - Explore what the theme could become (utopian or dystopian visions)
 - Express emotional and existential truth about the theme
 - Make abstract concepts viscerally real through narrative
+
+IMPORTANT: Each recommendation must be a DISTINCT book. Do not recommend the same book twice, even under different editions or translations. Avoid obvious or frequently-recommended books—seek out lesser-known works that offer genuine insight.
 
 Return EXACTLY 3 book recommendations as a JSON array. Each book must be a real, published book that you are confident exists."""
 
@@ -110,11 +116,10 @@ def _get_language_instruction(language_config: Optional[LanguageConfig]) -> str:
 
     lang_name = language_config["name"]
     return f"""
-IMPORTANT - Language requirement: Recommend books that are available in {lang_name}.
-This includes books originally written in {lang_name} OR well-known works that have been
-translated into {lang_name}. You MUST provide the book title in {lang_name} (the translated
-title if it's a translation). For example, if recommending Kahneman's book for a Spanish
-search, use "Pensar rápido, pensar despacio" not "Thinking, Fast and Slow".
+IMPORTANT - Language requirement: Recommend ONLY books originally written in {lang_name}.
+Do NOT recommend translations of English books or books from other languages. The goal is
+to discover perspectives from authors writing natively in {lang_name}. Provide the original
+{lang_name} title.
 """
 
 

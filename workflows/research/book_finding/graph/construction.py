@@ -22,16 +22,25 @@ from workflows.research.book_finding.nodes import (
 def route_to_recommendation_generators(state: BookFindingState) -> list[Send]:
     """Dispatch 3 parallel Opus calls for recommendations.
 
-    Each generator receives the theme and optional brief,
-    and generates recommendations for its category.
+    Each generator receives the theme, brief, quality settings, and language config
+    to generate recommendations for its category.
     """
     theme = state["input"]["theme"]
     brief = state["input"].get("brief")
+    quality_settings = state.get("quality_settings")
+    language_config = state.get("language_config")
+
+    payload = {
+        "theme": theme,
+        "brief": brief,
+        "quality_settings": quality_settings,
+        "language_config": language_config,
+    }
 
     return [
-        Send("generate_analogous", {"theme": theme, "brief": brief}),
-        Send("generate_inspiring", {"theme": theme, "brief": brief}),
-        Send("generate_expressive", {"theme": theme, "brief": brief}),
+        Send("generate_analogous", payload),
+        Send("generate_inspiring", payload),
+        Send("generate_expressive", payload),
     ]
 
 

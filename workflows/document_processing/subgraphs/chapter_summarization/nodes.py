@@ -244,20 +244,33 @@ async def _summarize_chapters_batched(
             }
         )
 
+        # Build the prompt to check token count
+        user_prompt = f"""Summarize this chapter in approximately {target_words} words.
+
+Context: {chapter_context}
+
+Chapter content:
+{chapter_content}"""
+
+        # Check if needs chunking (by character count) or SONNET_1M (by token count)
+        estimated_tokens = estimate_tokens_fast(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
+
         if len(chapter_content) > MAX_CHAPTER_CHARS:
             large_indices.append(i)
             logger.info(
                 f"Chapter '{chapter['title']}' is large ({len(chapter_content)} chars), "
                 "will process with chunking"
             )
+        elif estimated_tokens > HAIKU_SAFE_LIMIT:
+            # Too many tokens for Haiku batch API - process individually with SONNET_1M
+            large_indices.append(i)
+            logger.info(
+                f"Chapter '{chapter['title']}' exceeds Haiku token limit "
+                f"({estimated_tokens:,} > {HAIKU_SAFE_LIMIT:,} tokens), "
+                "will process individually with SONNET_1M"
+            )
         else:
             normal_indices.append(i)
-            user_prompt = f"""Summarize this chapter in approximately {target_words} words.
-
-Context: {chapter_context}
-
-Chapter content:
-{chapter_content}"""
 
             # TODO: Upgrade to ModelTier.OPUS before production
             processor.add_request(

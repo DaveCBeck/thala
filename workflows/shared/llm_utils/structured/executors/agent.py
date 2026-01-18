@@ -28,11 +28,9 @@ class ToolAgentExecutor(StrategyExecutor[T]):
         system_prompt: Optional[str],
         config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
-        # Import here to avoid circular dependency
-        from workflows.wrappers.supervised_lit_review.supervision.tools.agent_runner import (
-            run_tool_agent,
-        )
         from langchain_core.messages import HumanMessage, SystemMessage
+
+        from .agent_runner import run_tool_agent
 
         llm = get_llm(
             tier=config.tier,
