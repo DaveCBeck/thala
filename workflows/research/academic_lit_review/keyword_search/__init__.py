@@ -16,7 +16,6 @@ from workflows.research.academic_lit_review.state import (
     QualitySettings,
 )
 from workflows.shared.language import LanguageConfig
-from workflows.shared.tracing import workflow_traceable, get_trace_config
 
 from .types import KeywordSearchState
 from .query_builder import generate_queries_node
@@ -46,7 +45,6 @@ def create_keyword_search_subgraph() -> StateGraph:
 keyword_search_subgraph = create_keyword_search_subgraph()
 
 
-@workflow_traceable(name="KeywordSearch", workflow_type="keyword_search")
 async def run_keyword_search(
     topic: str,
     research_questions: list[str],
@@ -85,9 +83,7 @@ async def run_keyword_search(
         keyword_dois=[],
     )
 
-    result = await keyword_search_subgraph.ainvoke(
-        initial_state, config=get_trace_config()
-    )
+    result = await keyword_search_subgraph.ainvoke(initial_state)
     return {
         "discovered_papers": result.get("discovered_papers", []),
         "rejected_papers": result.get("rejected_papers", []),

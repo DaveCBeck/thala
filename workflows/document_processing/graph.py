@@ -22,11 +22,6 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from workflows.shared.tracing import (
-    workflow_traceable,
-    add_trace_metadata,
-    merge_trace_config,
-)
 from workflows.document_processing.nodes import (
     check_metadata,
     create_zotero_stub,
@@ -118,7 +113,6 @@ def create_document_processing_graph():
     return builder.compile()
 
 
-@workflow_traceable(name="DocumentProcessing", workflow_type="document_processing")
 async def process_document(
     source: str,
     title: str = None,
@@ -129,13 +123,6 @@ async def process_document(
 ) -> dict[str, Any]:
     """Process a document through the full pipeline."""
     graph = create_document_processing_graph()
-
-    # Add dynamic trace metadata for LangSmith filtering
-    desc = title or (source[:30] if isinstance(source, str) else "document")
-    add_trace_metadata({
-        "item_type": item_type,
-        "title": desc[:50],
-    })
 
     initial_state = {
         "input": {
@@ -156,13 +143,15 @@ async def process_document(
     }
 
     run_id = uuid.uuid4()
+    desc = title or (source[:30] if isinstance(source, str) else "document")
     logger.info(f"Starting document processing for: {title or source[:100]}")
     logger.info(f"LangSmith run ID: {run_id}")
     result = await graph.ainvoke(
         initial_state,
-        config=merge_trace_config({
+        config={
+            "run_id": run_id,
             "run_name": f"doc:{desc[:30]}",
-        }),
+        },
     )
     logger.info(f"Document processing complete. Status: {result.get('current_status')}")
 

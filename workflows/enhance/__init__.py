@@ -8,11 +8,8 @@ The main entry point is `enhance_report()` which runs:
 import logging
 from typing import Any, Literal
 
-from workflows.shared.tracing import (
-    workflow_traceable,
-    add_trace_metadata,
-    get_trace_config,
-)
+from langsmith import traceable
+
 from workflows.enhance.editing import editing
 from workflows.enhance.supervision import (
     enhance_report as supervision_enhance,
@@ -31,7 +28,7 @@ __all__ = [
 ]
 
 
-@workflow_traceable(name="EnhanceReportFull", workflow_type="enhance_full")
+@traceable(run_type="chain", name="EnhanceReportFull")
 async def enhance_report(
     report: str,
     topic: str,
@@ -107,13 +104,6 @@ async def enhance_report(
     editing_result = None
     current_report = report
 
-    # Add dynamic trace metadata for LangSmith filtering
-    add_trace_metadata({
-        "quality_tier": quality,
-        "topic": topic[:50],
-        "loops": loops,
-    })
-
     logger.info(
         f"Starting full enhancement: topic='{topic}', quality={quality}, "
         f"loops={loops}, run_editing={run_editing}, report_length={len(report)}"
@@ -133,7 +123,7 @@ async def enhance_report(
                 paper_corpus=paper_corpus,
                 paper_summaries=paper_summaries,
                 zotero_keys=zotero_keys,
-                config=config or get_trace_config(),
+                config=config,
             )
 
             current_report = supervision_result["final_report"]

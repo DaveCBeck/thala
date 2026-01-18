@@ -9,13 +9,11 @@ from workflows.research.academic_lit_review.state import (
     ThematicCluster,
 )
 from workflows.research.academic_lit_review.clustering import ClusterAnalysis
-from workflows.shared.tracing import workflow_traceable, get_trace_config
 
 from .types import SynthesisState
 from .graph import synthesis_subgraph
 
 
-@workflow_traceable(name="SynthesisMapReduce", workflow_type="synthesis_mapreduce")
 async def run_synthesis(
     paper_summaries: dict[str, PaperSummary],
     clusters: list[ThematicCluster],
@@ -85,7 +83,7 @@ async def run_synthesis(
         prisma_documentation="",
     )
 
-    result = await synthesis_subgraph.ainvoke(initial_state, config=get_trace_config())
+    result = await synthesis_subgraph.ainvoke(initial_state)
 
     return {
         "final_review": result.get("final_review", ""),

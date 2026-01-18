@@ -7,12 +7,10 @@ from workflows.research.academic_lit_review.state import (
     PaperSummary,
     QualitySettings,
 )
-from workflows.shared.tracing import workflow_traceable, get_trace_config
 
 from .graph import ClusteringState, clustering_subgraph
 
 
-@workflow_traceable(name="Clustering", workflow_type="clustering")
 async def run_clustering(
     paper_summaries: dict[str, PaperSummary],
     topic: str,
@@ -53,7 +51,7 @@ async def run_clustering(
         cluster_analyses=[],
     )
 
-    result = await clustering_subgraph.ainvoke(initial_state, config=get_trace_config())
+    result = await clustering_subgraph.ainvoke(initial_state)
 
     return {
         "final_clusters": result.get("final_clusters", []),

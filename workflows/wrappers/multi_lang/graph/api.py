@@ -9,11 +9,6 @@ from datetime import datetime
 from typing import Any, Optional
 
 from workflows.shared.quality_config import QualityTier
-from workflows.shared.tracing import (
-    workflow_traceable,
-    add_trace_metadata,
-    merge_trace_config,
-)
 from workflows.wrappers.multi_lang.state import (
     MultiLangState,
     MultiLangInput,
@@ -64,7 +59,6 @@ class MultiLangResult:
         }
 
 
-@workflow_traceable(name="MultiLangResearch", workflow_type="multi_lang")
 async def multi_lang_research(
     topic: str,
     mode: LanguageMode = "set_languages",
@@ -125,14 +119,6 @@ async def multi_lang_research(
     if mode == "set_languages" and not languages:
         languages = ["en"]
 
-    # Add dynamic trace metadata for LangSmith filtering
-    add_trace_metadata({
-        "quality_tier": quality,
-        "topic": topic[:50],
-        "mode": mode,
-        "workflow": workflow,
-    })
-
     # Build input
     input_data = MultiLangInput(
         topic=topic,
@@ -171,12 +157,12 @@ async def multi_lang_research(
     }
 
     # Run the graph
-    result_state = await multi_lang_graph.ainvoke(
-        initial_state,
-        config=merge_trace_config({
-            "run_name": f"multi_lang:{topic[:50]}",
-        }),
-    )
+    config = {
+        "run_id": run_id,
+        "run_name": f"multi_lang:{topic[:50]}",
+    }
+
+    result_state = await multi_lang_graph.ainvoke(initial_state, config=config)
 
     # Save full state for downstream workflows (in dev/test mode)
     save_workflow_state(
