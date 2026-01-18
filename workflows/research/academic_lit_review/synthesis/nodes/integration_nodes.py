@@ -6,7 +6,7 @@ from typing import Any
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
-from ..prompts import INTEGRATION_SYSTEM_PROMPT, INTEGRATION_USER_TEMPLATE
+from ..prompts import get_integration_system_prompt, INTEGRATION_USER_TEMPLATE, DEFAULT_TARGET_WORDS
 from ..citation_utils import extract_citations_from_text
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     conclusions = state.get("conclusions_draft", "")
     clusters = state.get("clusters", [])
     language_config = state.get("language_config")
+    quality_settings = state.get("quality_settings", {})
 
     topic = input_data.get("topic", "Literature Review")
 
@@ -36,13 +37,14 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
 
     thematic_text = "\n\n".join(ordered_sections)
 
-    # Translate prompts if needed
-    integration_system = INTEGRATION_SYSTEM_PROMPT
+    # Generate prompts with target word count
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
+    integration_system = get_integration_system_prompt(target_words)
     integration_user_template = INTEGRATION_USER_TEMPLATE
 
     if language_config and language_config["code"] != "en":
         integration_system = await get_translated_prompt(
-            INTEGRATION_SYSTEM_PROMPT,
+            integration_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_integration_system",

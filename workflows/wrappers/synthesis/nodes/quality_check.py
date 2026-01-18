@@ -7,6 +7,7 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field
 
 from workflows.shared.llm_utils import ModelTier, get_llm
+from ..prompts import get_section_writing_prompt, DEFAULT_TARGET_WORDS
 
 logger = logging.getLogger(__name__)
 
@@ -32,36 +33,6 @@ class SectionQuality(BaseModel):
 # =============================================================================
 
 
-SECTION_WRITING_PROMPT = """Write a section for a synthesis document.
-
-## Document Title
-{document_title}
-
-## Section: {section_title}
-{section_description}
-
-## Key Sources to Integrate
-{key_sources}
-
-## Available Research
-
-### Academic Literature
-{lit_review_excerpt}
-
-### Web Research
-{web_research_excerpt}
-
-### Book Summaries
-{book_summaries_excerpt}
-
-## Writing Guidelines
-1. Integrate insights from multiple sources
-2. Use citations in [@ZOTKEY] format (e.g., [@SMITH2024])
-3. Maintain academic tone while being accessible
-4. Create clear transitions between ideas
-5. Support claims with evidence from sources
-
-Write the complete section content in markdown format. Do NOT include the section title as a header - just write the content."""
 
 
 QUALITY_CHECK_PROMPT = """Assess the quality of this synthesis section.
@@ -96,6 +67,7 @@ def route_to_section_workers(state: dict) -> list[Send]:
     allowing them to be written in parallel.
     """
     synthesis_structure = state.get("synthesis_structure", {})
+    quality_settings = state.get("quality_settings", {})
     sections = synthesis_structure.get("sections", [])
 
     if not sections:
@@ -103,6 +75,9 @@ def route_to_section_workers(state: dict) -> list[Send]:
         return [Send("assemble_sections", state)]
 
     logger.info(f"Dispatching {len(sections)} section writing workers")
+
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
+    section_count = len(sections)
 
     sends = []
     for section in sections:
@@ -114,6 +89,8 @@ def route_to_section_workers(state: dict) -> list[Send]:
                     "section_title": section.get("title"),
                     "section_description": section.get("description"),
                     "key_sources": section.get("key_sources", []),
+                    "target_words": target_words,
+                    "section_count": section_count,
                 },
             )
         )
@@ -132,6 +109,8 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
     section_title = state.get("section_title", "Unknown Section")
     section_description = state.get("section_description", "")
     key_sources = state.get("key_sources", [])
+    target_words = state.get("target_words", DEFAULT_TARGET_WORDS)
+    section_count = state.get("section_count", 5)
 
     # Get context from parent state (passed through Send)
     input_data = state.get("input", {})
@@ -174,9 +153,11 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
             if quality_settings.get("use_opus_for_sections", True)
             else ModelTier.SONNET
         )
-        llm = get_llm(model_tier, max_tokens=4000)
+        llm = get_llm(model_tier, max_tokens=8000)
 
-        prompt = SECTION_WRITING_PROMPT.format(
+        # Generate prompt with word count target
+        prompt_template = get_section_writing_prompt(target_words, section_count)
+        prompt = prompt_template.format(
             document_title=document_title,
             section_title=section_title,
             section_description=section_description,

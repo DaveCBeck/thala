@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from workflows.shared.llm_utils import ModelTier, get_llm
+from ..prompts import get_simple_synthesis_prompt, DEFAULT_TARGET_WORDS
 
 logger = logging.getLogger(__name__)
 
@@ -86,30 +87,6 @@ Design a synthesis structure that:
 Provide a title, 4-7 sections with descriptions, and guidance for introduction and conclusion."""
 
 
-SIMPLE_SYNTHESIS_PROMPT = """Create a brief synthesis based on the following research.
-
-## Topic
-{topic}
-
-## Research Questions
-{research_questions}
-
-## Academic Literature
-{lit_review_summary}
-
-## Web Research
-{web_research_summary}
-
-## Book Insights
-{book_summary}
-
-Write a comprehensive synthesis that:
-1. Integrates all sources
-2. Addresses research questions
-3. Uses citations in [@ZOTKEY] format where available
-4. Is well-structured with clear sections
-
-Output the complete synthesis document in markdown format."""
 
 
 BOOK_SELECTION_PROMPT = """Select the most valuable books for deep integration into the synthesis.
@@ -252,6 +229,7 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
     without the full section-by-section writing process.
     """
     input_data = state.get("input", {})
+    quality_settings = state.get("quality_settings", {})
     lit_review_result = state.get("lit_review_result", {})
     supervision_result = state.get("supervision_result")
     web_research_results = state.get("web_research_results", [])
@@ -259,6 +237,7 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
 
     topic = input_data.get("topic", "")
     research_questions = input_data.get("research_questions", [])
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
 
     # Build source summaries
     if supervision_result and supervision_result.get("final_report"):
@@ -280,12 +259,13 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
         if r.get("status") == "success"
     )[:10000] or "No book insights available."
 
-    logger.info("Creating simple synthesis (test mode)")
+    logger.info(f"Creating simple synthesis (test mode), target: {target_words} words")
 
     try:
-        llm = get_llm(ModelTier.SONNET, max_tokens=8000)
+        llm = get_llm(ModelTier.SONNET, max_tokens=16000)
 
-        prompt = SIMPLE_SYNTHESIS_PROMPT.format(
+        prompt_template = get_simple_synthesis_prompt(target_words)
+        prompt = prompt_template.format(
             topic=topic,
             research_questions="\n".join(f"- {q}" for q in research_questions),
             lit_review_summary=lit_review_summary,

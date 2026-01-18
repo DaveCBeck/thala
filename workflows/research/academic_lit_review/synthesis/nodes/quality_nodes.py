@@ -6,7 +6,7 @@ from typing import Any
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
-from ..prompts import QUALITY_CHECK_SYSTEM_PROMPT
+from ..prompts import QUALITY_CHECK_SYSTEM_PROMPT, DEFAULT_TARGET_WORDS
 from ..schemas import QualityCheckOutput
 from ..citation_utils import calculate_quality_metrics
 
@@ -23,7 +23,7 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
 
     metrics = calculate_quality_metrics(final_review, paper_summaries, zotero_keys)
 
-    target_words = quality_settings.get("target_word_count", 10000)
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
     quality_passed = (
         metrics["corpus_coverage"] >= 0.5  # 50% citation coverage is sufficient
         and metrics["total_words"] >= target_words * 0.5  # 50% of target is sufficient

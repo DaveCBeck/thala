@@ -21,7 +21,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
     "test": QualitySettings(
         max_stages=1,
         max_papers=5,
-        target_word_count=500,
+        target_word_count=2000,
         min_citations_filter=0,
         saturation_threshold=0.5,
         use_batch_api=True,
@@ -32,7 +32,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
     "quick": QualitySettings(
         max_stages=2,
         max_papers=50,
-        target_word_count=3000,
+        target_word_count=8000,
         min_citations_filter=5,
         saturation_threshold=0.15,
         use_batch_api=True,
@@ -43,7 +43,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
     "standard": QualitySettings(
         max_stages=3,
         max_papers=100,
-        target_word_count=6000,
+        target_word_count=12000,
         min_citations_filter=10,
         saturation_threshold=0.12,
         use_batch_api=True,
@@ -54,7 +54,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
     "comprehensive": QualitySettings(
         max_stages=4,
         max_papers=200,
-        target_word_count=10000,
+        target_word_count=17500,
         min_citations_filter=10,
         saturation_threshold=0.10,
         use_batch_api=True,
@@ -65,7 +65,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
     "high_quality": QualitySettings(
         max_stages=5,
         max_papers=300,
-        target_word_count=12500,
+        target_word_count=25000,
         min_citations_filter=10,
         saturation_threshold=0.10,
         use_batch_api=True,

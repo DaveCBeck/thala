@@ -13,8 +13,9 @@ from workflows.shared.batch_processor import BatchProcessor
 from ...types import SynthesisState, MAX_CONCURRENT_SECTIONS
 from ...citation_utils import format_papers_with_keys
 from .prompts import (
-    THEMATIC_SECTION_SYSTEM_PROMPT,
+    get_thematic_section_system_prompt,
     THEMATIC_SECTION_USER_TEMPLATE,
+    DEFAULT_TARGET_WORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
     paper_summaries = state.get("paper_summaries", {})
     zotero_keys = state.get("zotero_keys", {})
     language_config = state.get("language_config")
+    quality_settings = state.get("quality_settings", {})
 
     if not clusters:
         logger.warning("No clusters to write sections for")
@@ -37,12 +39,14 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
 
     analysis_lookup = {a["cluster_id"]: a for a in cluster_analyses}
 
-    thematic_system = THEMATIC_SECTION_SYSTEM_PROMPT
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
+    theme_count = len(clusters)
+    thematic_system = get_thematic_section_system_prompt(target_words, theme_count)
     thematic_user_template = THEMATIC_SECTION_USER_TEMPLATE
 
     if language_config and language_config["code"] != "en":
         thematic_system = await get_translated_prompt(
-            THEMATIC_SECTION_SYSTEM_PROMPT,
+            thematic_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_thematic_system",

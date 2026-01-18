@@ -7,14 +7,15 @@ from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.language import get_translated_prompt
 from ...types import SynthesisState
 from .prompts import (
-    INTRODUCTION_SYSTEM_PROMPT,
+    get_introduction_system_prompt,
     INTRODUCTION_USER_TEMPLATE,
-    METHODOLOGY_SYSTEM_PROMPT,
+    get_methodology_system_prompt,
     METHODOLOGY_USER_TEMPLATE,
-    DISCUSSION_SYSTEM_PROMPT,
+    get_discussion_system_prompt,
     DISCUSSION_USER_TEMPLATE,
-    CONCLUSIONS_SYSTEM_PROMPT,
+    get_conclusions_system_prompt,
     CONCLUSIONS_USER_TEMPLATE,
+    DEFAULT_TARGET_WORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,14 +45,15 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     else:
         actual_range = "Not specified"
 
-    intro_system = INTRODUCTION_SYSTEM_PROMPT
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
+    intro_system = get_introduction_system_prompt(target_words)
     intro_user_template = INTRODUCTION_USER_TEMPLATE
-    method_system = METHODOLOGY_SYSTEM_PROMPT
+    method_system = get_methodology_system_prompt(target_words)
     method_user_template = METHODOLOGY_USER_TEMPLATE
 
     if language_config and language_config["code"] != "en":
         intro_system = await get_translated_prompt(
-            INTRODUCTION_SYSTEM_PROMPT,
+            intro_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_intro_system",
@@ -63,7 +65,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
             prompt_name="lit_review_intro_user",
         )
         method_system = await get_translated_prompt(
-            METHODOLOGY_SYSTEM_PROMPT,
+            method_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_method_system",
@@ -139,6 +141,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
     clusters = state.get("clusters", [])
     cluster_analyses = state.get("cluster_analyses", [])
     language_config = state.get("language_config")
+    quality_settings = state.get("quality_settings", {})
 
     research_questions = input_data.get("research_questions", [])
 
@@ -155,14 +158,15 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         for gap in cluster.get("gaps", []):
             gaps.append(gap)
 
-    discussion_system = DISCUSSION_SYSTEM_PROMPT
+    target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
+    discussion_system = get_discussion_system_prompt(target_words)
     discussion_user_template = DISCUSSION_USER_TEMPLATE
-    conclusions_system = CONCLUSIONS_SYSTEM_PROMPT
+    conclusions_system = get_conclusions_system_prompt(target_words)
     conclusions_user_template = CONCLUSIONS_USER_TEMPLATE
 
     if language_config and language_config["code"] != "en":
         discussion_system = await get_translated_prompt(
-            DISCUSSION_SYSTEM_PROMPT,
+            discussion_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_discussion_system",
@@ -174,7 +178,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
             prompt_name="lit_review_discussion_user",
         )
         conclusions_system = await get_translated_prompt(
-            CONCLUSIONS_SYSTEM_PROMPT,
+            conclusions_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_conclusions_system",

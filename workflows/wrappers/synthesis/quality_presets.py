@@ -22,6 +22,7 @@ class SynthesisQualitySettings(TypedDict):
     # Synthesis control
     simple_synthesis: bool  # Use simplified synthesis (for testing)
     max_books_to_select: int  # Max books to select for deep integration
+    target_word_count: int  # Target length of final synthesis (1.5x academic review)
 
     # Model selection
     use_opus_for_structure: bool  # Use Opus for structure suggestion
@@ -32,6 +33,7 @@ class SynthesisQualitySettings(TypedDict):
 
 
 # Quality presets for synthesis workflow
+# Word counts are 1.5x the academic lit review targets
 SYNTHESIS_QUALITY_PRESETS: dict[QualityTier, SynthesisQualitySettings] = {
     "test": SynthesisQualitySettings(
         skip_supervision=True,
@@ -39,6 +41,7 @@ SYNTHESIS_QUALITY_PRESETS: dict[QualityTier, SynthesisQualitySettings] = {
         book_finding_runs=1,
         simple_synthesis=True,
         max_books_to_select=2,
+        target_word_count=3000,
         use_opus_for_structure=False,
         use_opus_for_sections=False,
         section_quality_threshold=0.5,
@@ -49,6 +52,7 @@ SYNTHESIS_QUALITY_PRESETS: dict[QualityTier, SynthesisQualitySettings] = {
         book_finding_runs=2,
         simple_synthesis=False,
         max_books_to_select=3,
+        target_word_count=12000,
         use_opus_for_structure=True,
         use_opus_for_sections=False,
         section_quality_threshold=0.6,
@@ -59,6 +63,7 @@ SYNTHESIS_QUALITY_PRESETS: dict[QualityTier, SynthesisQualitySettings] = {
         book_finding_runs=3,
         simple_synthesis=False,
         max_books_to_select=4,
+        target_word_count=18000,
         use_opus_for_structure=True,
         use_opus_for_sections=True,
         section_quality_threshold=0.7,
@@ -69,6 +74,7 @@ SYNTHESIS_QUALITY_PRESETS: dict[QualityTier, SynthesisQualitySettings] = {
         book_finding_runs=4,
         simple_synthesis=False,
         max_books_to_select=5,
+        target_word_count=26250,
         use_opus_for_structure=True,
         use_opus_for_sections=True,
         section_quality_threshold=0.75,
@@ -79,6 +85,7 @@ SYNTHESIS_QUALITY_PRESETS: dict[QualityTier, SynthesisQualitySettings] = {
         book_finding_runs=5,
         simple_synthesis=False,
         max_books_to_select=6,
+        target_word_count=37500,
         use_opus_for_structure=True,
         use_opus_for_sections=True,
         section_quality_threshold=0.8,
