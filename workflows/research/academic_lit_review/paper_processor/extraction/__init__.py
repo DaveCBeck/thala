@@ -16,6 +16,8 @@ from .prompts import (
     L0_SIZE_THRESHOLD_FOR_L2,
     PAPER_SUMMARY_EXTRACTION_SYSTEM,
     METADATA_SUMMARY_EXTRACTION_SYSTEM,
+    format_paper_extraction_system,
+    format_metadata_extraction_system,
 )
 from .types import PaperSummarySchema
 
@@ -28,5 +30,7 @@ __all__ = [
     "L0_SIZE_THRESHOLD_FOR_L2",
     "PAPER_SUMMARY_EXTRACTION_SYSTEM",
     "METADATA_SUMMARY_EXTRACTION_SYSTEM",
+    "format_paper_extraction_system",
+    "format_metadata_extraction_system",
     "PaperSummarySchema",
 ]

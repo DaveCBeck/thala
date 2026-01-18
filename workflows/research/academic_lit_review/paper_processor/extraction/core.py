@@ -19,6 +19,7 @@ from .parsers import _fetch_content_for_extraction
 from .prompts import (
     PAPER_SUMMARY_EXTRACTION_SYSTEM,
     METADATA_SUMMARY_EXTRACTION_SYSTEM,
+    format_paper_extraction_system,
 )
 from .types import PaperSummarySchema
 
@@ -31,6 +32,8 @@ async def extract_paper_summary(
     short_summary: str,
     es_record_id: str,
     zotero_key: str,
+    topic: str | None = None,
+    research_questions: list[str] | None = None,
 ) -> PaperSummary:
     """Extract structured summary from paper content.
 
@@ -40,6 +43,8 @@ async def extract_paper_summary(
         short_summary: 100-word summary from document_processing
         es_record_id: Elasticsearch record ID
         zotero_key: Zotero item key
+        topic: Research topic for context-aware extraction
+        research_questions: Research questions to focus extraction
 
     Returns:
         PaperSummary with extracted fields
@@ -57,6 +62,12 @@ Content:
 
 Extract structured information from this paper."""
 
+    # Use research-context-aware prompt if topic provided, otherwise fallback
+    if topic and research_questions:
+        system_prompt = format_paper_extraction_system(topic, research_questions)
+    else:
+        system_prompt = PAPER_SUMMARY_EXTRACTION_SYSTEM
+
     # Use SONNET_1M for large content (>400k chars ≈ >100k tokens)
     # This threshold accounts for ~100k tokens of overhead (system prompt, metadata, response)
     # ensuring we stay under 200k limit for standard context, or use 1M for larger
@@ -66,7 +77,7 @@ Extract structured information from this paper."""
         extracted = await get_structured_output(
             output_schema=PaperSummarySchema,
             user_prompt=user_prompt,
-            system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            system_prompt=system_prompt,
             tier=tier,
             enable_prompt_cache=True,
         )
@@ -215,6 +226,8 @@ async def extract_all_summaries(
     processing_results: dict[str, dict],
     papers_by_doi: dict[str, PaperMetadata],
     use_batch_api: bool = True,
+    topic: str | None = None,
+    research_questions: list[str] | None = None,
 ) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str], set[str]]:
     """Extract structured summaries for all processed papers.
 
@@ -224,6 +237,8 @@ async def extract_all_summaries(
         processing_results: DOI -> processing result mapping
         papers_by_doi: DOI -> PaperMetadata mapping
         use_batch_api: Set False for rapid iteration (skips batch API)
+        topic: Research topic for context-aware extraction
+        research_questions: Research questions to focus extraction
 
     Returns:
         Tuple of (summaries, es_ids, zotero_keys, failed_dois)
@@ -237,7 +252,7 @@ async def extract_all_summaries(
     # Use batch API for 5+ papers when enabled
     if use_batch_api and len(processing_results) >= 5:
         return await _extract_all_summaries_batched(
-            processing_results, papers_by_doi, store_manager
+            processing_results, papers_by_doi, store_manager, topic, research_questions
         )
 
     # Fall back to concurrent calls for small batches
@@ -286,6 +301,8 @@ async def extract_all_summaries(
                     short_summary=short_summary,
                     es_record_id=es_record_id,
                     zotero_key=zotero_key,
+                    topic=topic,
+                    research_questions=research_questions,
                 )
 
                 completed_count += 1
@@ -328,12 +345,26 @@ async def _extract_all_summaries_batched(
     processing_results: dict[str, dict],
     papers_by_doi: dict[str, PaperMetadata],
     store_manager,
+    topic: str | None = None,
+    research_questions: list[str] | None = None,
 ) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str], set[str]]:
     """Extract summaries using unified structured output interface.
+
+    Args:
+        processing_results: DOI -> processing result mapping
+        papers_by_doi: DOI -> PaperMetadata mapping
+        store_manager: Store manager instance
+        topic: Research topic for context-aware extraction
+        research_questions: Research questions to focus extraction
 
     Returns:
         Tuple of (summaries, es_ids, zotero_keys, failed_dois)
     """
+    # Build system prompt with research context if available
+    if topic and research_questions:
+        system_prompt = format_paper_extraction_system(topic, research_questions)
+    else:
+        system_prompt = PAPER_SUMMARY_EXTRACTION_SYSTEM
     # First, fetch all L0 content (this is I/O, not LLM calls)
     paper_data = {}  # doi -> {paper, content, es_record_id, zotero_key, short_summary}
     failed_dois = set()
@@ -419,7 +450,7 @@ Extract structured information from this paper."""
         haiku_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=haiku_requests,
-            system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            system_prompt=system_prompt,
             tier=ModelTier.HAIKU,
             max_tokens=2048,
         )
@@ -432,7 +463,7 @@ Extract structured information from this paper."""
         sonnet_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=sonnet_1m_requests,
-            system_prompt=PAPER_SUMMARY_EXTRACTION_SYSTEM,
+            system_prompt=system_prompt,
             tier=ModelTier.SONNET_1M,
             max_tokens=2048,
         )

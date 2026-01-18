@@ -41,6 +41,7 @@ from .acquisition import run_paper_pipeline
 from .extraction import (
     extract_all_summaries,
     METADATA_SUMMARY_EXTRACTION_SYSTEM,
+    format_metadata_extraction_system,
 )
 from .types import MAX_PAPER_PIPELINE_CONCURRENT, PaperProcessingState
 
@@ -99,11 +100,17 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
 
     Falls back to metadata-based extraction when document processing fails.
     Uses unified structured output interface that auto-selects batch API for 5+ papers.
+    Extraction is contextualized by research topic and questions for relevance.
     """
     processing_results = state.get("processing_results", {})
     papers = state.get("papers_to_process", [])
     quality_settings = state["quality_settings"]
     use_batch_api = quality_settings.get("use_batch_api", True)
+
+    # Get research context for focused extraction
+    lit_review_input = state.get("input", {})
+    topic = lit_review_input.get("topic")
+    research_questions = lit_review_input.get("research_questions", [])
 
     papers_by_doi = {p.get("doi"): p for p in papers}
 
@@ -122,6 +129,8 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
             processing_results=processing_results,
             papers_by_doi=papers_by_doi,
             use_batch_api=use_batch_api,
+            topic=topic,
+            research_questions=research_questions,
         )
         summaries.update(full_text_summaries)
         es_ids.update(full_text_es_ids)
@@ -157,6 +166,8 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
             papers=papers_needing_fallback,
             existing_short_summaries=existing_short_summaries,
             zotero_keys=paper_zotero_keys,
+            topic=topic,
+            research_questions=research_questions,
         )
 
         summaries.update(metadata_summaries)
@@ -256,6 +267,8 @@ async def _extract_metadata_summaries_batched(
     papers: list[PaperMetadata],
     existing_short_summaries: dict[str, str] | None = None,
     zotero_keys: dict[str, str] | None = None,
+    topic: str | None = None,
+    research_questions: list[str] | None = None,
 ) -> dict[str, PaperSummary]:
     """Extract metadata summaries using unified structured output interface.
 
@@ -265,9 +278,17 @@ async def _extract_metadata_summaries_batched(
             document processing (preferred over generating from abstract)
         zotero_keys: Optional mapping of DOI -> Zotero key for papers
             (if not provided, generates synthetic keys from DOI)
+        topic: Research topic for context-aware extraction
+        research_questions: Research questions to focus extraction
     """
     existing_short_summaries = existing_short_summaries or {}
     zotero_keys = zotero_keys or {}
+
+    # Build system prompt with research context if available
+    if topic and research_questions:
+        system_prompt = format_metadata_extraction_system(topic, research_questions)
+    else:
+        system_prompt = METADATA_SUMMARY_EXTRACTION_SYSTEM
 
     requests = []
     paper_index = {}
@@ -306,7 +327,7 @@ Extract structured information based on this metadata."""
     batch_results = await get_structured_output(
         output_schema=MetadataSummarySchema,
         requests=requests,
-        system_prompt=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+        system_prompt=system_prompt,
         tier=ModelTier.HAIKU,
         max_tokens=1024,
     )
