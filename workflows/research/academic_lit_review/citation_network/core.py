@@ -14,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 
 from workflows.research.academic_lit_review.state import LitReviewInput
 from workflows.research.academic_lit_review.quality_presets import QualitySettings
+from workflows.shared.tracing import workflow_traceable, get_trace_config
 
 from .types import CitationNetworkState
 from .traversal import fetch_forward_citations_node, fetch_backward_citations_node
@@ -43,6 +44,7 @@ def create_citation_network_subgraph() -> StateGraph:
 citation_network_subgraph = create_citation_network_subgraph()
 
 
+@workflow_traceable(name="CitationNetwork", workflow_type="citation_network")
 async def run_citation_expansion(
     seed_dois: list[str],
     topic: str,
@@ -87,7 +89,9 @@ async def run_citation_expansion(
         new_edges=[],
     )
 
-    result = await citation_network_subgraph.ainvoke(initial_state)
+    result = await citation_network_subgraph.ainvoke(
+        initial_state, config=get_trace_config()
+    )
     return {
         "discovered_papers": result.get("discovered_papers", []),
         "rejected_papers": result.get("rejected_papers", []),

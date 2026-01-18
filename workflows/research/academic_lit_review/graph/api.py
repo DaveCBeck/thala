@@ -7,6 +7,11 @@ from typing import Any, Optional
 from workflows.research.academic_lit_review.state import LitReviewInput
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
 from workflows.shared.quality_config import QualityTier
+from workflows.shared.tracing import (
+    workflow_traceable,
+    add_trace_metadata,
+    merge_trace_config,
+)
 from workflows.shared.workflow_state_store import save_workflow_state
 from .state_init import build_initial_state
 from .construction import academic_lit_review_graph
@@ -14,6 +19,7 @@ from .construction import academic_lit_review_graph
 logger = logging.getLogger(__name__)
 
 
+@workflow_traceable(name="AcademicLitReview", workflow_type="lit_review")
 async def academic_lit_review(
     topic: str,
     research_questions: list[str],
@@ -70,6 +76,13 @@ async def academic_lit_review(
 
     quality_settings = QUALITY_PRESETS[quality].copy()
 
+    # Add dynamic trace metadata for LangSmith filtering
+    add_trace_metadata({
+        "quality_tier": quality,
+        "language": language,
+        "topic": topic[:50],
+    })
+
     # Build input
     input_data = LitReviewInput(
         topic=topic,
@@ -89,13 +102,11 @@ async def academic_lit_review(
     logger.debug(f"LangSmith run ID: {initial_state['langsmith_run_id']}")
 
     try:
-        run_id = uuid.UUID(initial_state["langsmith_run_id"])
         result = await academic_lit_review_graph.ainvoke(
             initial_state,
-            config={
-                "run_id": run_id,
+            config=merge_trace_config({
                 "run_name": f"lit_review:{topic[:30]}",
-            },
+            }),
         )
 
         final_review = result.get("final_review", "")

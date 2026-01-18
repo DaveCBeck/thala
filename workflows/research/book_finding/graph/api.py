@@ -12,6 +12,11 @@ from typing import Any, Optional
 
 from workflows.shared.language import get_language_config
 from workflows.shared.quality_config import QualityTier
+from workflows.shared.tracing import (
+    workflow_traceable,
+    add_trace_metadata,
+    merge_trace_config,
+)
 from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.research.book_finding.state import (
     BookFindingInput,
@@ -23,6 +28,7 @@ from .construction import book_finding_graph
 logger = logging.getLogger(__name__)
 
 
+@workflow_traceable(name="BookFinding", workflow_type="book_finding")
 async def book_finding(
     theme: str,
     brief: Optional[str] = None,
@@ -73,6 +79,13 @@ async def book_finding(
     # Get quality settings, defaulting to standard if invalid
     quality_settings = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
 
+    # Add dynamic trace metadata for LangSmith filtering
+    add_trace_metadata({
+        "quality_tier": quality,
+        "language": language,
+        "topic": theme[:50],
+    })
+
     # Get language configuration
     language_config = get_language_config(language)
 
@@ -111,10 +124,9 @@ async def book_finding(
     try:
         result = await book_finding_graph.ainvoke(
             initial_state,
-            config={
-                "run_id": run_id,
+            config=merge_trace_config({
                 "run_name": f"books:{theme[:30]}",
-            },
+            }),
         )
 
         final_markdown = result.get("final_markdown", "")

@@ -11,12 +11,14 @@ from workflows.research.academic_lit_review.state import (
 )
 from workflows.research.academic_lit_review.citation_graph import CitationGraph
 from workflows.shared.language import LanguageConfig
+from workflows.shared.tracing import workflow_traceable, get_trace_config
 from .types import DiffusionEngineState
 from .graph import diffusion_engine_subgraph
 
 logger = logging.getLogger(__name__)
 
 
+@workflow_traceable(name="DiffusionEngine", workflow_type="diffusion_engine")
 async def run_diffusion(
     discovery_seeds: list[str],
     paper_corpus: dict[str, PaperMetadata],
@@ -93,7 +95,9 @@ async def run_diffusion(
         saturation_reason=None,
     )
 
-    result = await diffusion_engine_subgraph.ainvoke(initial_state)
+    result = await diffusion_engine_subgraph.ainvoke(
+        initial_state, config=get_trace_config()
+    )
 
     return {
         "final_corpus_dois": result.get("final_corpus_dois", []),

@@ -8,11 +8,13 @@ from workflows.research.academic_lit_review.state import (
     QualitySettings,
 )
 from workflows.shared.language import LanguageConfig
+from workflows.shared.tracing import workflow_traceable, get_trace_config
 
 from .graph import paper_processing_subgraph
 from .types import PaperProcessingState
 
 
+@workflow_traceable(name="PaperProcessor", workflow_type="paper_processor")
 async def run_paper_processing(
     papers: list[PaperMetadata],
     quality_settings: QualitySettings,
@@ -55,7 +57,9 @@ async def run_paper_processing(
         zotero_keys={},
     )
 
-    result = await paper_processing_subgraph.ainvoke(initial_state)
+    result = await paper_processing_subgraph.ainvoke(
+        initial_state, config=get_trace_config()
+    )
     paper_summaries = result.get("paper_summaries", {})
 
     response = {

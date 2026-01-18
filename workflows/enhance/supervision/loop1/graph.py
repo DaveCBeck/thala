@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from langgraph.graph import END, START, StateGraph
-from langsmith import traceable
 from typing_extensions import TypedDict
 
+from workflows.shared.tracing import workflow_traceable, merge_trace_config
 from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.enhance.supervision.shared.nodes import (
     analyze_review_node,
@@ -153,7 +153,7 @@ def create_loop1_graph() -> StateGraph:
 loop1_graph = create_loop1_graph()
 
 
-@traceable(run_type="chain", name="Loop1_TheoreticalDepth")
+@workflow_traceable(name="Loop1_TheoreticalDepth", workflow_type="supervision_loop1")
 async def run_loop1_standalone(
     review: str,
     topic: str,
@@ -206,10 +206,9 @@ async def run_loop1_standalone(
         f"review length={len(review)} chars"
     )
 
-    if config:
-        final_state = await loop1_graph.ainvoke(initial_state, config=config)
-    else:
-        final_state = await loop1_graph.ainvoke(initial_state)
+    final_state = await loop1_graph.ainvoke(
+        initial_state, config=merge_trace_config(config)
+    )
 
     expansions = final_state.get("supervision_expansions", [])
     issues_explored = final_state.get("issues_explored", [])

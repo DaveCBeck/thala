@@ -28,6 +28,11 @@ import uuid
 from datetime import datetime
 
 from workflows.shared.quality_config import QualityTier
+from workflows.shared.tracing import (
+    workflow_traceable,
+    add_trace_metadata,
+    merge_trace_config,
+)
 from workflows.research.web_research.state import (
     DeepResearchState,
     DiffusionState,
@@ -41,6 +46,7 @@ from .config import RECURSION_LIMITS
 logger = logging.getLogger(__name__)
 
 
+@workflow_traceable(name="DeepResearch", workflow_type="web_research")
 async def deep_research(
     query: str,
     quality: QualityTier = "standard",
@@ -84,11 +90,18 @@ async def deep_research(
         # Research in Spanish
         result = await deep_research("impacto de IA en empleos", language="es")
     """
-    # Generate a run_id for LangSmith tracing (allows inspection of runs)
-    run_id = uuid.uuid4()
-
     # Determine primary language
     primary_lang = language or "en"
+
+    # Add dynamic trace metadata for LangSmith filtering
+    add_trace_metadata({
+        "quality_tier": quality,
+        "query": query[:50],
+        "language": primary_lang,
+    })
+
+    # Generate a run_id for state tracking
+    run_id = uuid.uuid4()
     primary_lang_config = (
         get_language_config(primary_lang) if primary_lang != "en" else None
     )
@@ -150,11 +163,10 @@ async def deep_research(
 
     result = await deep_research_graph.ainvoke(
         initial_state,
-        config={
+        config=merge_trace_config({
             "recursion_limit": recursion_limit,
-            "run_id": run_id,
             "run_name": f"deep_research:{query[:30]}",
-        },
+        }),
     )
 
     logger.info(

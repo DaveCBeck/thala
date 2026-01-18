@@ -11,7 +11,6 @@ import logging
 from typing import Optional
 
 from langgraph.graph import END, START, StateGraph
-from langsmith import traceable
 from typing_extensions import TypedDict
 
 from workflows.research.academic_lit_review.state import (
@@ -19,6 +18,7 @@ from workflows.research.academic_lit_review.state import (
     QualitySettings,
 )
 from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.tracing import workflow_traceable, merge_trace_config
 
 from workflows.enhance.supervision.shared.mini_review import (
     run_mini_review,
@@ -434,7 +434,7 @@ loop2_graph = create_loop2_graph()
 # =============================================================================
 
 
-@traceable(run_type="chain", name="Loop2_LiteratureExpansion")
+@workflow_traceable(name="Loop2_LiteratureExpansion", workflow_type="supervision_loop2")
 async def run_loop2_standalone(
     review: str,
     paper_corpus: dict,
@@ -487,10 +487,9 @@ async def run_loop2_standalone(
         mini_review_failed=False,
     )
 
-    if config:
-        result = await loop2_graph.ainvoke(initial_state, config=config)
-    else:
-        result = await loop2_graph.ainvoke(initial_state)
+    result = await loop2_graph.ainvoke(
+        initial_state, config=merge_trace_config(config)
+    )
 
     return {
         "current_review": result.get("current_review", review),

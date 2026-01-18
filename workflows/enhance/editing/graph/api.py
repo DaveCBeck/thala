@@ -6,6 +6,11 @@ from datetime import datetime
 from typing import Any
 
 from workflows.shared.quality_config import QualityTier
+from workflows.shared.tracing import (
+    workflow_traceable,
+    add_trace_metadata,
+    merge_trace_config,
+)
 
 from ..quality_presets import EDITING_QUALITY_PRESETS
 from ..state import EditingState, build_initial_state
@@ -14,6 +19,7 @@ from .construction import editing_graph
 logger = logging.getLogger(__name__)
 
 
+@workflow_traceable(name="EnhanceEditing", workflow_type="enhance_editing")
 async def editing(
     document: str,
     topic: str,
@@ -62,7 +68,13 @@ async def editing(
 
     quality_settings = dict(EDITING_QUALITY_PRESETS[quality])
 
-    # Generate run ID
+    # Add dynamic trace metadata for LangSmith filtering
+    add_trace_metadata({
+        "quality_tier": quality,
+        "topic": topic[:50],
+    })
+
+    # Generate run ID for state tracking
     langsmith_run_id = str(uuid.uuid4())
 
     # Build initial state
@@ -81,14 +93,12 @@ async def editing(
     logger.debug(f"LangSmith run ID: {langsmith_run_id}")
 
     try:
-        run_id = uuid.UUID(langsmith_run_id)
         result = await editing_graph.ainvoke(
             initial_state,
-            config={
-                "run_id": run_id,
+            config=merge_trace_config({
                 "run_name": f"editing:{topic[:30]}",
                 "recursion_limit": 100,  # Higher limit for many parallel sections
-            },
+            }),
         )
 
         final_document = result.get("final_document", "")

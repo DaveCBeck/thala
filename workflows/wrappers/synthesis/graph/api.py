@@ -10,6 +10,11 @@ from datetime import datetime
 from typing import Any, Optional
 
 from workflows.shared.quality_config import QualityTier
+from workflows.shared.tracing import (
+    workflow_traceable,
+    add_trace_metadata,
+    merge_trace_config,
+)
 from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.wrappers.synthesis.state import SynthesisInput, SynthesisState
 from workflows.wrappers.synthesis.quality_presets import SYNTHESIS_QUALITY_PRESETS
@@ -18,12 +23,14 @@ from .construction import synthesis_graph
 logger = logging.getLogger(__name__)
 
 
+@workflow_traceable(name="Synthesis", workflow_type="synthesis")
 async def synthesis(
     topic: str,
     research_questions: list[str],
     synthesis_brief: Optional[str] = None,
     quality: QualityTier = "standard",
     language: str = "en",
+    multi_lang_config: Optional[dict] = None,
 ) -> dict[str, Any]:
     """Run complete synthesis workflow.
 
@@ -46,6 +53,12 @@ async def synthesis(
             - "comprehensive": Thorough synthesis (4 iterations)
             - "high_quality": Maximum depth (5 iterations)
         language: ISO 639-1 language code (default: "en")
+        multi_lang_config: Optional multi-language research configuration.
+            When provided, research phases (lit review, web research, book finding)
+            will use multi_lang_research() instead of direct workflow calls.
+            Keys:
+            - mode: "set_languages", "main_languages", or "all_languages"
+            - languages: List of ISO 639-1 codes (required for set_languages mode)
 
     Returns:
         Dict containing:
@@ -68,6 +81,17 @@ async def synthesis(
             quality="standard",
         )
 
+        # With multi-language research
+        result = await synthesis(
+            topic="sustainable urban planning",
+            research_questions=["How are cities adapting to climate change?"],
+            quality="standard",
+            multi_lang_config={
+                "mode": "set_languages",
+                "languages": ["en", "es", "de", "zh"],
+            },
+        )
+
         # Access results
         print(f"Report length: {len(result['final_report'])} chars")
 
@@ -82,6 +106,13 @@ async def synthesis(
 
     quality_settings = dict(SYNTHESIS_QUALITY_PRESETS[quality])
 
+    # Add dynamic trace metadata for LangSmith filtering
+    add_trace_metadata({
+        "quality_tier": quality,
+        "language": language,
+        "topic": topic[:50],
+    })
+
     # Build input
     input_data = SynthesisInput(
         topic=topic,
@@ -89,6 +120,7 @@ async def synthesis(
         synthesis_brief=synthesis_brief,
         quality=quality,
         language_code=language,
+        multi_lang_config=multi_lang_config,
     )
 
     # Initialize state
@@ -128,21 +160,23 @@ async def synthesis(
         errors=[],
     )
 
+    multi_lang_msg = ""
+    if multi_lang_config is not None:
+        multi_lang_msg = f", multi_lang_mode={multi_lang_config.get('mode', 'set_languages')}"
+
     logger.info(
         f"Starting synthesis workflow: '{topic}' "
-        f"(quality={quality}, questions={len(research_questions)}, language={language})"
+        f"(quality={quality}, questions={len(research_questions)}, language={language}{multi_lang_msg})"
     )
     logger.debug(f"LangSmith run ID: {langsmith_run_id}")
 
     try:
-        run_id = uuid.UUID(langsmith_run_id)
         result = await synthesis_graph.ainvoke(
             initial_state,
-            config={
-                "run_id": run_id,
+            config=merge_trace_config({
                 "run_name": f"synthesis:{topic[:30]}",
                 "recursion_limit": 200,  # Higher limit for many parallel workers
-            },
+            }),
         )
 
         final_report = result.get("final_report", "")

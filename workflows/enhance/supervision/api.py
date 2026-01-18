@@ -7,8 +7,11 @@ markdown report with theoretical depth (Loop 1) and literature expansion (Loop 2
 import logging
 from typing import Any, Literal
 
-from langsmith import traceable
-
+from workflows.shared.tracing import (
+    workflow_traceable,
+    add_trace_metadata,
+    merge_trace_config,
+)
 from workflows.enhance.supervision.builder import create_enhancement_graph
 from workflows.enhance.supervision.types import EnhanceInput, EnhanceResult, EnhanceState
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
@@ -16,7 +19,7 @@ from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESE
 logger = logging.getLogger(__name__)
 
 
-@traceable(run_type="chain", name="EnhanceReport")
+@workflow_traceable(name="EnhanceSupervision", workflow_type="enhance_supervision")
 async def enhance_report(
     report: str,
     topic: str,
@@ -79,6 +82,13 @@ async def enhance_report(
     # Get quality settings
     quality_settings = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
 
+    # Add dynamic trace metadata for LangSmith filtering
+    add_trace_metadata({
+        "quality_tier": quality,
+        "topic": topic[:50],
+        "loops": loops,
+    })
+
     # Build input
     enhance_input: EnhanceInput = {
         "report": report,
@@ -115,10 +125,9 @@ async def enhance_report(
     # Create and run the graph
     graph = create_enhancement_graph(loops=loops)
 
-    if config:
-        final_state = await graph.ainvoke(initial_state, config=config)
-    else:
-        final_state = await graph.ainvoke(initial_state)
+    final_state = await graph.ainvoke(
+        initial_state, config=merge_trace_config(config)
+    )
 
     # Extract loops that were run from progress
     loops_run = [
