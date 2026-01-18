@@ -68,6 +68,27 @@ def validate_edit_references(edit: Any, doc_model: DocumentModel) -> bool:
     return True
 
 
+def _find_last_content_section(all_sections: list) -> str | None:
+    """Find the last content section (before References/Bibliography)."""
+    if not all_sections:
+        return None
+
+    # Find References/Bibliography section if it exists
+    references_idx = None
+    for i, section in enumerate(all_sections):
+        heading_lower = section.heading.lower()
+        if any(kw in heading_lower for kw in ["reference", "bibliography", "works cited"]):
+            references_idx = i
+            break
+
+    if references_idx is not None and references_idx > 0:
+        # Return the section just before References
+        return all_sections[references_idx - 1].section_id
+    else:
+        # No References section, use the last section
+        return all_sections[-1].section_id
+
+
 def create_edits_from_issues(
     analysis: StructuralAnalysis,
     doc_model: DocumentModel,
@@ -83,6 +104,7 @@ def create_edits_from_issues(
     all_sections = doc_model.get_all_sections()
     first_section_id = all_sections[0].section_id if all_sections else None
     last_section_id = all_sections[-1].section_id if all_sections else None
+    last_content_section_id = _find_last_content_section(all_sections)
 
     for issue in analysis.issues:
         try:
@@ -99,14 +121,23 @@ def create_edits_from_issues(
                 edits.append(edit)
 
             elif issue.recommended_action == "generate_conclusion":
-                # Context from last few sections
-                context_ids = [s.section_id for s in all_sections[-3:]]
+                # Context from last few content sections (excluding References)
+                content_sections = [s for s in all_sections
+                                   if not any(kw in s.heading.lower()
+                                             for kw in ["reference", "bibliography"])]
+                context_ids = [s.section_id for s in content_sections[-3:]]
+
+                is_document_scope = "document" in issue.description.lower()
                 edit = GenerateConclusionEdit(
-                    scope="document" if "document" in issue.description.lower() else "section",
-                    target_section_id=issue.affected_section_ids[0] if issue.affected_section_ids else None,
+                    scope="document" if is_document_scope else "section",
+                    # For section scope, add to the specified section
+                    target_section_id=issue.affected_section_ids[0] if issue.affected_section_ids and not is_document_scope else None,
+                    # For document scope, create new section after last content section
+                    insert_after_section_id=last_content_section_id if is_document_scope else None,
                     context_section_ids=context_ids,
                     conclusion_requirements=issue.action_details,
                     target_word_count=300,
+                    new_section_heading="Conclusion" if is_document_scope else "Conclusion",
                 )
                 edits.append(edit)
 
@@ -186,7 +217,10 @@ async def plan_edits_node(state: dict) -> dict[str, Any]:
         State update with edit_plan
     """
     analysis = StructuralAnalysis.model_validate(state["structural_analysis"])
-    document_model = DocumentModel.from_dict(state["document_model"])
+    # Use updated document model if available (from previous iterations)
+    document_model = DocumentModel.from_dict(
+        state.get("updated_document_model", state["document_model"])
+    )
 
     # If no structural work needed, skip
     if not analysis.needs_structural_work and not analysis.issues:

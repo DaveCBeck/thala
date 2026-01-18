@@ -3,7 +3,6 @@
 import logging
 
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
 
 from workflows.enhance.editing.state import EditingState
 from workflows.enhance.editing.nodes import (
@@ -31,19 +30,9 @@ from workflows.enhance.editing.nodes import (
     assemble_enhancements_node,
     enhance_coherence_review_node,
     route_enhance_iteration,
-    # Phase 8: Verify Facts (when has_citations)
-    screen_sections_for_fact_check,
-    route_to_fact_check_sections,
-    fact_check_section_worker,
-    assemble_fact_checks_node,
-    pre_validate_citations,
-    route_to_reference_check_sections,
-    reference_check_section_worker,
-    assemble_reference_checks_node,
-    apply_verified_edits_node,
-    # Phase 9: Polish
+    # Phase 8: Polish
     polish_node,
-    # Phase 10: Finalize
+    # Phase 9: Finalize
     finalize_node,
 )
 
@@ -61,13 +50,12 @@ def create_editing_graph() -> StateGraph:
     5. Assemble edits and verify structure
     6. Loop back if more structure work needed
     7. Detect citations in document
-    8. If citations found:
-       a. Enhance sections (with iteration loop)
-       b. Fact-check claims
-       c. Reference-check citations
-       d. Apply verified edits
+    8. If citations found: Enhance sections (with iteration loop)
     9. Polish for flow and coherence
     10. Finalize and output
+
+    Note: Fact-check and reference-check are now in a separate workflow
+    (workflows.enhance.fact_check) that runs after editing.
 
     Returns:
         Compiled StateGraph
@@ -102,19 +90,10 @@ def create_editing_graph() -> StateGraph:
     builder.add_node("assemble_enhancements", assemble_enhancements_node)
     builder.add_node("enhance_coherence_review", enhance_coherence_review_node)
 
-    # Phase 8: Verify Facts (when has_citations)
-    builder.add_node("screen_fact_check", screen_sections_for_fact_check)  # Pre-screening
-    builder.add_node("fact_check_section", fact_check_section_worker)
-    builder.add_node("assemble_fact_checks", assemble_fact_checks_node)
-    builder.add_node("pre_validate_citations", pre_validate_citations)  # Citation cache
-    builder.add_node("reference_check_section", reference_check_section_worker)
-    builder.add_node("assemble_reference_checks", assemble_reference_checks_node)
-    builder.add_node("apply_verified_edits", apply_verified_edits_node)
-
-    # Phase 9: Polish
+    # Phase 8: Polish
     builder.add_node("polish", polish_node)
 
-    # Phase 10: Finalize
+    # Phase 9: Finalize
     builder.add_node("finalize", finalize_node)
 
     # === Add Edges ===
@@ -144,13 +123,13 @@ def create_editing_graph() -> StateGraph:
     # Assemble -> verify
     builder.add_edge("assemble_edits", "verify_structure")
 
-    # Structure iteration loop - now routes to detect_citations instead of polish
+    # Structure iteration loop - routes to detect_citations when done
     builder.add_conditional_edges(
         "verify_structure",
         check_structure_complete,
         {
             "continue_structure": "analyze_structure",  # Loop back
-            "proceed_to_polish": "detect_citations",  # Changed: go to citation detection
+            "proceed_to_polish": "detect_citations",  # Go to citation detection
         },
     )
 
@@ -189,72 +168,23 @@ def create_editing_graph() -> StateGraph:
     builder.add_edge("enhance_section", "assemble_enhancements")
     builder.add_edge("assemble_enhancements", "enhance_coherence_review")
 
-    # Coherence review routes to continue enhancing or proceed to verify
-    def route_enhance_with_router(state: dict) -> str:
-        """Wrapper to route to router node for continuation."""
+    # Coherence review routes to continue enhancing or proceed to polish
+    # (Fact-check is now a separate workflow that runs after editing)
+    def route_enhance_to_polish(state: dict) -> str:
+        """Route to continue enhancing or proceed to polish."""
         result = route_enhance_iteration(state)
         if result == "continue":
             return "enhance_router"
-        return "fact_check_router"
+        return "polish"
 
     builder.add_conditional_edges(
         "enhance_coherence_review",
-        route_enhance_with_router,
+        route_enhance_to_polish,
         {
             "enhance_router": "enhance_router",  # More iterations needed
-            "fact_check_router": "fact_check_router",  # Enhancement complete
+            "polish": "polish",  # Enhancement complete -> polish
         },
     )
-
-    # === Verification Phase (when has_citations) ===
-    # Add router node for fact-check (routes to screening)
-    def fact_check_router_node(state: dict) -> dict:
-        """Pass-through node for fact-check routing."""
-        return {}
-
-    builder.add_node("fact_check_router", fact_check_router_node)
-
-    # Router -> screening -> routing to workers
-    builder.add_edge("fact_check_router", "screen_fact_check")
-
-    # After screening, route to fact-check workers (parallel via Send)
-    builder.add_conditional_edges(
-        "screen_fact_check",
-        route_to_fact_check_sections,
-        [
-            "fact_check_section",
-            "reference_check_router",  # When no sections to check
-        ],
-    )
-
-    # Fact-check workers -> assemble -> pre-validate citations -> reference router
-    builder.add_edge("fact_check_section", "assemble_fact_checks")
-    builder.add_edge("assemble_fact_checks", "pre_validate_citations")
-    builder.add_edge("pre_validate_citations", "reference_check_router")
-
-    # Add router node for reference-check
-    def reference_check_router_node(state: dict) -> dict:
-        """Pass-through node for reference-check routing."""
-        return {}
-
-    builder.add_node("reference_check_router", reference_check_router_node)
-
-    # Route to reference-check workers (parallel via Send)
-    builder.add_conditional_edges(
-        "reference_check_router",
-        route_to_reference_check_sections,
-        [
-            "reference_check_section",
-            "apply_verified_edits",  # When no sections to check
-        ],
-    )
-
-    # Reference-check workers -> assemble -> apply edits
-    builder.add_edge("reference_check_section", "assemble_reference_checks")
-    builder.add_edge("assemble_reference_checks", "apply_verified_edits")
-
-    # Apply verified edits -> polish
-    builder.add_edge("apply_verified_edits", "polish")
 
     # === Final Phases ===
     # Polish -> finalize -> end

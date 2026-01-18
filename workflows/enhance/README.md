@@ -1,13 +1,14 @@
 # Enhance
 
-A two-phase document enhancement workflow that combines content supervision with structural editing. The workflow first deepens theoretical foundations and expands literature coverage, then polishes the document for structural coherence and flow.
+A three-phase document enhancement workflow that combines content supervision, structural editing, and fact verification. The workflow deepens theoretical foundations, expands literature coverage, polishes structure and flow, then verifies factual claims and citations.
 
 ## Description
 
-The enhance module orchestrates two specialized subworkflows:
+The enhance module orchestrates three specialized subworkflows:
 
 1. **Supervision**: Analyzes documents for theoretical gaps and literature coverage, runs targeted literature searches, and integrates new perspectives
-2. **Editing**: Improves document structure, generates missing content, removes redundancy, verifies citations, and polishes flow
+2. **Editing**: Improves document structure, generates missing content, removes redundancy, enhances sections with citations, and polishes flow
+3. **Fact-Check**: Verifies factual claims, validates citation references, and applies corrections
 
 Together, these workflows transform draft documents into publication-ready academic literature reviews.
 
@@ -22,8 +23,13 @@ Content enhancement through iterative analysis and literature integration. Runs 
 Structural editing through multi-phase analysis and enhancement:
 - **Structure**: Reorganizes sections, generates intros/conclusions, removes redundancy
 - **Enhancement**: Strengthens arguments with evidence from paper corpus
-- **Verification**: Fact-checks claims and validates citations
 - **Polish**: Improves sentence-level flow and transitions
+
+### [Fact-Check](./fact_check/README.md)
+Verification of claims and citations:
+- **Fact-Check**: Verifies factual claims using corpus and Perplexity
+- **Reference-Check**: Validates citations exist and support their claims
+- **Apply Edits**: Applies verified corrections automatically
 
 ## Usage
 
@@ -39,6 +45,7 @@ result = await enhance_report(
     quality="standard",
     loops="all",
     run_editing=True,
+    run_fact_check=True,
 )
 
 enhanced_document = result["final_report"]
@@ -131,6 +138,7 @@ The `enhance_report()` function returns a dictionary containing:
 | `status` | str | `"success"`, `"partial"`, or `"failed"` |
 | `supervision_result` | dict \| None | Results from supervision phase |
 | `editing_result` | dict \| None | Results from editing phase |
+| `fact_check_result` | dict \| None | Results from fact-check phase |
 | `paper_corpus` | dict | Merged paper corpus (DOI → metadata) |
 | `paper_summaries` | dict | Merged paper summaries (DOI → summary) |
 | `zotero_keys` | dict | Citation keys for bibliography (DOI → Zotero key) |

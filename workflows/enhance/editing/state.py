@@ -64,23 +64,14 @@ class EditingState(TypedDict, total=False):
     enhance_flagged_sections: list[str]  # Section IDs needing re-enhancement
     enhance_complete: bool
 
-    # === Phase 7: Verify Facts (when has_citations=True) ===
-    screened_sections: list[str]  # Section IDs that passed screening for fact-check
-    screening_skipped: list[str]  # Section IDs skipped by screening
-    fact_check_results: Annotated[list[dict], add]  # Per-section results
-    reference_check_results: Annotated[list[dict], add]  # Citation validations
-    citation_cache: dict[str, dict]  # Pre-validated citation existence cache
-    pending_edits: Annotated[list[dict], add]  # Edits identified by verification (parallel)
-    applied_edits: list[dict]  # Edits successfully applied
-    skipped_edits: list[dict]  # Edits that couldn't be applied (logged)
-    unresolved_items: Annotated[list[dict], add]  # Items logged at INFO (parallel workers)
-    verify_complete: bool
+    # Note: Fact-check and reference-check are now in a separate workflow
+    # (workflows.enhance.fact_check) that runs after editing.
 
-    # === Phase 8: Polish ===
+    # === Phase 7: Polish ===
     polish_results: list[dict]
     polish_complete: bool
 
-    # === Phase 9: Finalize ===
+    # === Phase 8: Finalize ===
     final_document: str
     final_verification: dict
 
@@ -122,7 +113,6 @@ def build_initial_state(
         plan_complete=False,
         execution_complete=False,
         enhance_complete=False,
-        verify_complete=False,
         polish_complete=False,
         # Structure iteration control
         structure_iteration=0,
@@ -138,14 +128,7 @@ def build_initial_state(
         # Accumulators (start empty, use add reducer)
         completed_edits=[],
         section_enhancements=[],
-        fact_check_results=[],
-        reference_check_results=[],
         errors=[],
-        # Verification tracking
-        pending_edits=[],
-        applied_edits=[],
-        skipped_edits=[],
-        unresolved_items=[],
         # Metadata
         langsmith_run_id=langsmith_run_id,
         started_at=datetime.utcnow(),

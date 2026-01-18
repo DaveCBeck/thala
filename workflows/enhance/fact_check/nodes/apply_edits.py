@@ -1,9 +1,9 @@
-"""Apply verified edits node for editing workflow."""
+"""Apply verified edits node for fact-check workflow."""
 
 import logging
 from typing import Any
 
-from workflows.enhance.editing.document_model import DocumentModel
+from workflows.enhance.editing.document_model import DocumentModel, ContentBlock
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
     1. Collects all pending edits from fact-check and reference-check
     2. Validates each edit (find string must be unique)
     3. Applies valid edits to the document
-    4. Logs skipped edits at INFO level
+    4. Logs skipped edits at DEBUG level
     5. Returns updated document model and edit summaries
     """
     document_model = DocumentModel.from_dict(
@@ -37,6 +37,7 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
     if not pending_edits:
         logger.info("No verified edits to apply")
         return {
+            "updated_document_model": document_model.to_dict(),
             "applied_edits": [],
             "skipped_edits": [],
             "verify_complete": True,
@@ -59,8 +60,8 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
         confidence = edit.get("confidence", 0)
 
         # Skip empty or invalid edits
-        if not find_string or len(find_string) < 20:
-            logger.info(
+        if not find_string or len(find_string) < 10:
+            logger.debug(
                 f"Skipping edit: find string too short ({len(find_string)} chars) - {justification}"
             )
             skipped_edits.append({
@@ -74,7 +75,7 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
 
         if not is_unique:
             if count == 0:
-                logger.info(
+                logger.debug(
                     f"Skipping edit: find string not found in document - "
                     f"type={edit_type}, confidence={confidence:.2f}"
                 )
@@ -83,7 +84,7 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
                     "skip_reason": "find_string_not_found",
                 })
             else:
-                logger.info(
+                logger.debug(
                     f"Skipping edit: find string appears {count} times (must be unique) - "
                     f"type={edit_type}, confidence={confidence:.2f}"
                 )
@@ -123,8 +124,6 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
             )
 
     # Rebuild document model from edited text
-    # Note: This is a simplified approach - we're replacing the entire content
-    # In a production system, you might want to rebuild the block structure more carefully
     updated_model = _rebuild_document_model_from_text(document_model, document_text)
 
     return {
@@ -145,8 +144,6 @@ def _rebuild_document_model_from_text(
     This preserves the original structure as much as possible while
     incorporating the text changes from edits.
     """
-    from workflows.enhance.editing.document_model import ContentBlock
-
     # For each section, find its content in the edited text
     # and update the blocks accordingly
 

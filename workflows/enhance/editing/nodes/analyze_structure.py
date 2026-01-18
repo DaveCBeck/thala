@@ -26,7 +26,10 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
     Returns:
         State update with structural_analysis
     """
-    document_model = DocumentModel.from_dict(state["document_model"])
+    # Use updated document model if available (from previous iterations)
+    document_model = DocumentModel.from_dict(
+        state.get("updated_document_model", state["document_model"])
+    )
     topic = state["input"]["topic"]
     iteration = state.get("structure_iteration", 0)
     max_iterations = state.get("max_structure_iterations", 3)

@@ -3,6 +3,7 @@
 The main entry point is `enhance_report()` which runs:
 1. Supervision loops (theoretical depth + literature expansion)
 2. Editing workflow (structural coherence + flow)
+3. Fact-check workflow (fact verification + citation validation)
 """
 
 import logging
@@ -11,6 +12,7 @@ from typing import Any, Literal
 from langsmith import traceable
 
 from workflows.enhance.editing import editing
+from workflows.enhance.fact_check import fact_check
 from workflows.enhance.supervision import (
     enhance_report as supervision_enhance,
     EnhanceInput,
@@ -40,9 +42,10 @@ async def enhance_report(
     paper_summaries: dict[str, Any] | None = None,
     zotero_keys: dict[str, str] | None = None,
     run_editing: bool = True,
+    run_fact_check: bool = True,
     config: dict | None = None,
 ) -> dict[str, Any]:
-    """Enhance an existing report with supervision loops and structural editing.
+    """Enhance an existing report with supervision loops, structural editing, and fact-checking.
 
     This is the main enhancement workflow that runs:
     1. Supervision loops (if loops != "none"):
@@ -51,7 +54,13 @@ async def enhance_report(
     2. Editing workflow (if run_editing=True):
        - Structural analysis and reorganization
        - Content generation (intros, conclusions, transitions)
+       - Enhancement of sections with citations
        - Redundancy removal and flow polishing
+    3. Fact-check workflow (if run_fact_check=True):
+       - Pre-screening to identify factual sections
+       - Fact verification using corpus and Perplexity
+       - Citation validation and claim support checking
+       - Automatic correction of verified errors
 
     Args:
         report: Markdown report to enhance
@@ -69,6 +78,7 @@ async def enhance_report(
         paper_summaries: Optional existing paper summaries (DOI -> PaperSummary)
         zotero_keys: Optional existing Zotero keys (DOI -> Zotero key)
         run_editing: Whether to run the editing workflow after supervision (default: True)
+        run_fact_check: Whether to run the fact-check workflow after editing (default: True)
         config: Optional LangGraph config for tracing
 
     Returns:
@@ -77,6 +87,7 @@ async def enhance_report(
             - status: "success", "partial", or "failed"
             - supervision_result: Result from supervision phase (if run)
             - editing_result: Result from editing phase (if run)
+            - fact_check_result: Result from fact-check phase (if run)
             - paper_corpus: Merged paper corpus (including newly discovered)
             - paper_summaries: Merged paper summaries
             - zotero_keys: Merged Zotero keys
@@ -93,6 +104,7 @@ async def enhance_report(
             quality="standard",
             loops="all",
             run_editing=True,
+            run_fact_check=True,
         )
 
         print(result["final_report"])
@@ -102,11 +114,18 @@ async def enhance_report(
     errors = []
     supervision_result = None
     editing_result = None
+    fact_check_result = None
     current_report = report
+
+    # Track document model and citation info across phases
+    document_model = None
+    has_citations = None
+    citation_keys = None
 
     logger.info(
         f"Starting full enhancement: topic='{topic}', quality={quality}, "
-        f"loops={loops}, run_editing={run_editing}, report_length={len(report)}"
+        f"loops={loops}, run_editing={run_editing}, run_fact_check={run_fact_check}, "
+        f"report_length={len(report)}"
     )
 
     # Phase 1: Supervision loops
@@ -162,6 +181,10 @@ async def enhance_report(
             if editing_result.get("status") != "failed" and editing_result.get("final_report"):
                 current_report = editing_result["final_report"]
 
+            # Capture document model and citation info for fact-check phase
+            # Note: editing workflow stores these in internal state, we need to extract
+            # For now, fact-check will re-detect - can optimize later if needed
+
             if editing_result.get("errors"):
                 errors.extend([
                     {"phase": "editing", **err}
@@ -179,6 +202,41 @@ async def enhance_report(
     else:
         logger.info("Phase 2: Skipping editing workflow (run_editing=False)")
 
+    # Phase 3: Fact-check workflow
+    if run_fact_check:
+        logger.info("Phase 3: Running fact-check workflow")
+        try:
+            fact_check_result = await fact_check(
+                document=current_report,
+                document_model=document_model,
+                topic=topic,
+                quality=quality,
+                has_citations=has_citations,
+                citation_keys=citation_keys,
+            )
+
+            if fact_check_result.get("status") not in ("failed", "skipped"):
+                if fact_check_result.get("final_report"):
+                    current_report = fact_check_result["final_report"]
+
+            if fact_check_result.get("errors"):
+                errors.extend([
+                    {"phase": "fact_check", **err}
+                    for err in fact_check_result["errors"]
+                ])
+
+            logger.info(
+                f"Fact-check complete: status={fact_check_result.get('status')}, "
+                f"report_length={len(current_report)}, "
+                f"changes={fact_check_result.get('changes_summary', '')}"
+            )
+
+        except Exception as e:
+            logger.error(f"Fact-check phase failed: {e}", exc_info=True)
+            errors.append({"phase": "fact_check", "error": str(e)})
+    else:
+        logger.info("Phase 3: Skipping fact-check workflow (run_fact_check=False)")
+
     # Determine overall status
     if not current_report:
         status = "failed"
@@ -194,6 +252,7 @@ async def enhance_report(
         "status": status,
         "supervision_result": supervision_result,
         "editing_result": editing_result,
+        "fact_check_result": fact_check_result,
         "paper_corpus": paper_corpus or {},
         "paper_summaries": paper_summaries or {},
         "zotero_keys": zotero_keys or {},

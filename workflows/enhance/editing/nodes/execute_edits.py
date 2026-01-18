@@ -24,6 +24,16 @@ from workflows.shared.llm_utils import ModelTier, get_llm
 logger = logging.getLogger(__name__)
 
 
+def _flatten_sections(sections: list[Section]) -> list[Section]:
+    """Recursively flatten sections including all subsections."""
+    result = []
+    for section in sections:
+        result.append(section)
+        if section.subsections:
+            result.extend(_flatten_sections(section.subsections))
+    return result
+
+
 def route_to_edit_workers(state: dict) -> list[Send] | str:
     """Route to appropriate edit workers based on edit plan.
 
@@ -39,6 +49,9 @@ def route_to_edit_workers(state: dict) -> list[Send] | str:
     if not edit_plan.edits:
         return "assemble_edits"
 
+    # Use updated document model if available (from previous iterations)
+    current_doc_model = state.get("updated_document_model", state["document_model"])
+
     sends = []
 
     # Generation edits can run in parallel
@@ -49,7 +62,7 @@ def route_to_edit_workers(state: dict) -> list[Send] | str:
                 {
                     "edit": edit.model_dump(),
                     "edit_index": i,
-                    "document_model": state["document_model"],
+                    "document_model": current_doc_model,
                     "topic": state["input"]["topic"],
                     "quality_settings": state.get("quality_settings", {}),
                 },
@@ -63,7 +76,7 @@ def route_to_edit_workers(state: dict) -> list[Send] | str:
                 "execute_structure_edits",
                 {
                     "edits": [e.model_dump() for e in edit_plan.structure_edits],
-                    "document_model": state["document_model"],
+                    "document_model": current_doc_model,
                 },
             )
         )
@@ -76,7 +89,7 @@ def route_to_edit_workers(state: dict) -> list[Send] | str:
                 {
                     "edit": edit.model_dump(),
                     "edit_index": i,
-                    "document_model": state["document_model"],
+                    "document_model": current_doc_model,
                 },
             )
         )
@@ -400,7 +413,10 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
     This node takes all completed edits and applies them to create
     an updated document model.
     """
-    document_model = DocumentModel.from_dict(state["document_model"])
+    # Use updated document model if available (from previous iterations)
+    document_model = DocumentModel.from_dict(
+        state.get("updated_document_model", state["document_model"])
+    )
     completed_edits = state.get("completed_edits", [])
 
     if not completed_edits:
@@ -436,13 +452,60 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
                     logger.debug("Added document introduction to preamble")
 
         elif edit_type == "generate_conclusion":
-            # Add conclusion
             content = edit.get("generated_content", "")
-            if content and new_sections:
-                # Add to last section
+            if not content:
+                continue
+
+            insert_after_id = edit.get("insert_after_section_id")
+            target_section_id = edit.get("target_section_id")
+
+            if insert_after_id:
+                # Document scope: create a new conclusion section after the specified section
+                new_heading = edit.get("new_section_heading", "Conclusion")
+                new_section = Section.from_heading(new_heading, level=1)
                 new_block = ContentBlock.from_content(content, "paragraph")
-                new_sections[-1].blocks.append(new_block)
-                logger.debug("Added conclusion to last section")
+                new_section.blocks.append(new_block)
+
+                # Find where to insert in the top-level sections list
+                insert_idx = None
+                for i, sec in enumerate(new_sections):
+                    if sec.section_id == insert_after_id:
+                        insert_idx = i + 1
+                        break
+                    # Also check subsections (flatten search)
+                    all_in_sec = [sec] + list(_flatten_sections([sec]))
+                    for sub in all_in_sec:
+                        if sub.section_id == insert_after_id:
+                            # Insert after this top-level section
+                            insert_idx = i + 1
+                            break
+                    if insert_idx is not None:
+                        break
+
+                if insert_idx is not None:
+                    new_sections.insert(insert_idx, new_section)
+                    logger.debug(f"Created new conclusion section '{new_heading}' after section index {insert_idx - 1}")
+                else:
+                    # Fallback: append to end
+                    new_sections.append(new_section)
+                    logger.debug(f"Created new conclusion section '{new_heading}' at end (fallback)")
+
+            elif target_section_id:
+                # Section scope: add to existing section
+                section = document_model.get_section(target_section_id)
+                if section:
+                    new_block = ContentBlock.from_content(content, "paragraph")
+                    section.blocks.append(new_block)
+                    logger.debug(f"Added conclusion to section '{section.heading}'")
+
+            else:
+                # Legacy fallback: add to last section in document order
+                all_sections = document_model.get_all_sections()
+                if all_sections:
+                    last_section = all_sections[-1]
+                    new_block = ContentBlock.from_content(content, "paragraph")
+                    last_section.blocks.append(new_block)
+                    logger.debug(f"Added conclusion to last section '{last_section.heading}' (fallback)")
 
         elif edit_type == "generate_synthesis":
             content = edit.get("generated_content", "")

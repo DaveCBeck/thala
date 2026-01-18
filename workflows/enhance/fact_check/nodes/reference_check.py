@@ -1,4 +1,4 @@
-"""Reference-check section worker for editing workflow."""
+"""Reference-check section worker for fact-check workflow."""
 
 import logging
 import re
@@ -7,12 +7,10 @@ from typing import Any
 from langgraph.types import Send
 
 from workflows.enhance.editing.document_model import DocumentModel
-from workflows.enhance.editing.schemas import (
-    CitationValidation,
+from workflows.enhance.fact_check.schemas import (
     ReferenceCheckResult,
-    VerifiedEdit,
 )
-from workflows.enhance.editing.prompts import (
+from workflows.enhance.fact_check.prompts import (
     REFERENCE_CHECK_SYSTEM,
     REFERENCE_CHECK_USER,
 )
@@ -68,7 +66,7 @@ async def pre_validate_citations(state: dict) -> dict[str, Any]:
     if not all_citations:
         return {"citation_cache": {}}
 
-    logger.info(f"Pre-validating {len(all_citations)} unique citations")
+    logger.debug(f"Pre-validating {len(all_citations)} unique citations")
 
     # Validate each citation's existence
     from langchain_tools import get_paper_content
@@ -195,11 +193,11 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
     citations_to_check = [c for c in citations if c not in cached_invalid]
 
     if cached_invalid:
-        logger.info(
+        logger.debug(
             f"Skipping {len(cached_invalid)} cached-invalid citations in '{section_heading}'"
         )
 
-    logger.info(
+    logger.debug(
         f"Reference-checking section '{section_heading}' "
         f"({len(citations_to_check)} citations to check, {len(cached_invalid)} cached-invalid)"
     )
@@ -218,7 +216,7 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
                 preview = cache_entry.get("content_preview", "")[:200]
                 cached_info.append(f"[@{c}]: exists, preview: {preview}...")
         if cached_info:
-            cache_context = f"\n\nPRE-VALIDATED CITATIONS:\n" + "\n".join(cached_info)
+            cache_context = "\n\nPRE-VALIDATED CITATIONS:\n" + "\n".join(cached_info)
 
     user_prompt = REFERENCE_CHECK_USER.format(
         section_heading=section_heading,
@@ -272,7 +270,7 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
         ]
 
         if low_confidence_edits:
-            logger.info(
+            logger.debug(
                 f"Skipping {len(low_confidence_edits)} low-confidence citation edits "
                 f"in '{section_heading}'"
             )

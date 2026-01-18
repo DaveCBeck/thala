@@ -1,6 +1,8 @@
 # Editing Workflow
 
-A structural editing workflow that improves document coherence and quality through multi-phase analysis and enhancement. It parses markdown documents into a structured model, identifies and fixes structural issues (missing introductions, content sprawl, redundancy), enhances sections with supporting evidence from a paper corpus, verifies factual claims and citations, and polishes for flow—all while preserving the document's core content and meaning.
+A structural editing workflow that improves document coherence and quality through multi-phase analysis and enhancement. It parses markdown documents into a structured model, identifies and fixes structural issues (missing introductions, content sprawl, redundancy), enhances sections with supporting evidence from a paper corpus, and polishes for flow—all while preserving the document's core content and meaning.
+
+> **Note**: Fact-checking and reference validation are now in a separate [Fact-Check](../fact_check/README.md) workflow that runs after editing.
 
 ## Usage
 
@@ -60,26 +62,18 @@ flowchart TD
         K --> L[Enhance Sections]
         L --> M[Coherence Review]
         M -->|needs work| K
-        M -->|complete| N[Screen for Facts]
-    end
-
-    subgraph verify ["Verification Phase · validates claims and citations"]
-        N --> O[Fact-Check Sections]
-        O --> P[Cache Citations]
-        P --> Q[Reference-Check]
-        Q --> R[Apply Edits]
+        M -->|complete| N[Polish]
     end
 
     subgraph polish ["Polish Phase"]
-        J -->|no citations| S
-        R --> S[Screen for Polish]
-        S --> T[Polish Sections]
-        T --> U[Finalize]
+        J -->|no citations| N
+        N --> O[Screen for Polish]
+        O --> P[Polish Sections]
+        P --> Q[Finalize]
     end
 
     style structure fill:#e8f4e8
     style enhance fill:#e8e8f4
-    style verify fill:#f4e8e8
     style polish fill:#f4f4e8
 ```
 
@@ -87,7 +81,6 @@ flowchart TD
 
 - **Structure**: Reorganizes sections, generates missing intros/conclusions, removes redundancy
 - **Enhancement**: Strengthens arguments with evidence from paper corpus (parallel workers)
-- **Verification**: Fact-checks claims, validates citation references exist and support claims
 - **Polish**: Improves sentence-level flow and transitions
 
 ## Quality Settings
@@ -99,7 +92,6 @@ flowchart TD
 | Polish sections | 3 | 5 | 10 | 15 | 20 |
 | Use Opus for analysis | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Use Opus for generation | ✗ | ✗ | ✗ | ✓ | ✓ |
-| Perplexity fact-check | ✗ | ✓ | ✓ | ✓ | ✓ |
 | Coherence threshold | 0.60 | 0.70 | 0.75 | 0.80 | 0.85 |
 
 **Recommended**: Use `quick` for drafts, `standard` for most documents, `comprehensive` or `high_quality` for final publication.
