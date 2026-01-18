@@ -223,16 +223,20 @@ async def run_paper_pipeline(
 
             async def try_acquire_single(
                 paper: PaperMetadata, index: int
-            ) -> tuple[str, Optional[str], Optional[str], bool]:
+            ) -> tuple[str, Optional[str], Optional[str]]:
                 """Try OA first, then submit to retrieve-academic if needed.
 
+                OA successes are pushed directly to the processing queue for
+                immediate marker processing (streaming), rather than waiting
+                for all OA attempts to complete.
+
                 Returns:
-                    (doi, job_id_or_none, local_path, is_markdown)
-                    - If OA succeeded: (doi, None, source, is_markdown) - source is path or markdown
-                    - If needs retrieve: (doi, job_id, local_path, False)
+                    (doi, job_id_or_none, local_path)
+                    - If OA succeeded: (doi, None, None) - already pushed to queue
+                    - If needs retrieve: (doi, job_id, local_path)
                     - If failed: raises exception
                 """
-                nonlocal oa_acquired_count
+                nonlocal oa_acquired_count, acquired_count
 
                 async with semaphore:
                     if index > 0:
@@ -251,8 +255,18 @@ async def run_paper_pipeline(
                             oa_url, local_path, doi
                         )
                         if source:
+                            # Push directly to queue - stream to marker immediately
                             oa_acquired_count += 1
-                            return doi, None, source, is_markdown
+                            acquired_count += 1
+                            acquired_paths[doi] = source
+                            logger.debug(
+                                f"[{acquired_count}/{total_to_acquire}] "
+                                f"Acquired via OA (streaming): {doi}"
+                            )
+                            await processing_queue.put(
+                                (doi, source, papers_by_doi[doi], is_markdown)
+                            )
+                            return doi, None, None  # Signal OA handled
 
                     # Fall back to retrieve-academic
                     authors = [
@@ -267,10 +281,11 @@ async def run_paper_pipeline(
                         timeout_seconds=int(ACQUISITION_TIMEOUT),
                     )
 
-                    return doi, job.job_id, str(local_path), False
+                    return doi, job.job_id, str(local_path)
 
             try:
                 # Try OA and submit retrieve jobs with rate limiting
+                # OA successes are pushed to queue immediately (streaming)
                 submit_tasks = [
                     try_acquire_single(p, i) for i, p in enumerate(papers_to_acquire)
                 ]
@@ -278,7 +293,8 @@ async def run_paper_pipeline(
                     *submit_tasks, return_exceptions=True
                 )
 
-                # Process results: OA successes go directly to queue, others need polling
+                # Collect retrieve-academic jobs for polling
+                # (OA successes already pushed to queue in try_acquire_single)
                 valid_jobs = []
                 for i, result in enumerate(submit_results):
                     if isinstance(result, Exception):
@@ -286,23 +302,14 @@ async def run_paper_pipeline(
                         logger.error(f"Failed to acquire {doi}: {result}")
                         acquisition_failed.append(doi)
                     else:
-                        doi, job_id, source, is_markdown = result
-                        if job_id is None:
-                            # OA success - push directly to processing queue
-                            acquired_paths[doi] = source
-                            acquired_count += 1
-                            logger.debug(
-                                f"[{acquired_count}/{total_to_acquire}] Acquired via OA: {doi}"
-                            )
-                            await processing_queue.put(
-                                (doi, source, papers_by_doi[doi], is_markdown)
-                            )
-                        else:
+                        doi, job_id, local_path = result
+                        if job_id is not None:
                             # Needs retrieve-academic polling
-                            valid_jobs.append((doi, job_id, source))
+                            valid_jobs.append((doi, job_id, local_path))
+                        # else: OA success, already pushed to queue
 
                 logger.info(
-                    f"Acquired {oa_acquired_count} via OA, "
+                    f"Acquired {oa_acquired_count} via OA (streamed to marker), "
                     f"submitted {len(valid_jobs)} to retrieve-academic"
                 )
 
