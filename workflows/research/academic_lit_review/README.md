@@ -110,8 +110,11 @@ flowchart TD
 | Target word count | 500 | 3000 | 6000 | 10000 | 12500 |
 | Min citations filter | 0 | 5 | 10 | 10 | 10 |
 | Saturation threshold | 0.50 | 0.15 | 0.12 | 0.10 | 0.10 |
+| Recency quota | 0% | 25% | 25% | 25% | 25% |
 | Use Batch API | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Supervision loops | all | all | all | all | all |
+
+**Recency quota** ensures ~25% of papers come from the past 3 years (if available), balancing seminal works with recent research. Recent papers bypass the citation filter during discovery.
 
 **Recommended**: Use `quick` for exploratory research, `standard` for most reviews, `comprehensive` or `high_quality` for publication-ready work.
 

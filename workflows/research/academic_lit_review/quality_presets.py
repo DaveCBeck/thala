@@ -13,6 +13,8 @@ class QualitySettings(TypedDict):
     saturation_threshold: float  # Coverage delta threshold
     use_batch_api: bool  # Use Anthropic Batch API
     supervision_loops: str  # Which supervision loops to run: "none", "one", "two", "three", "four", "all"
+    recency_years: int  # Years to consider "recent" (default: 3)
+    recency_quota: float  # Target fraction of recent papers (default: 0.25)
 
 
 QUALITY_PRESETS: dict[str, QualitySettings] = {
@@ -24,6 +26,8 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         saturation_threshold=0.5,
         use_batch_api=True,
         supervision_loops="all",  # All loops with minimal iterations
+        recency_years=3,
+        recency_quota=0.0,  # Skip recency quota for test tier
     ),
     "quick": QualitySettings(
         max_stages=2,
@@ -33,6 +37,8 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         saturation_threshold=0.15,
         use_batch_api=True,
         supervision_loops="all",  # All loops with minimal iterations
+        recency_years=3,
+        recency_quota=0.25,
     ),
     "standard": QualitySettings(
         max_stages=3,
@@ -42,6 +48,8 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         saturation_threshold=0.12,
         use_batch_api=True,
         supervision_loops="all",  # Full multi-loop supervision
+        recency_years=3,
+        recency_quota=0.25,
     ),
     "comprehensive": QualitySettings(
         max_stages=4,
@@ -51,6 +59,8 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         saturation_threshold=0.10,
         use_batch_api=True,
         supervision_loops="all",  # Full multi-loop supervision
+        recency_years=3,
+        recency_quota=0.25,
     ),
     "high_quality": QualitySettings(
         max_stages=5,
@@ -60,5 +70,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         saturation_threshold=0.10,
         use_batch_api=True,
         supervision_loops="all",  # Full multi-loop supervision
+        recency_years=3,
+        recency_quota=0.25,
     ),
 }

@@ -97,7 +97,7 @@ async def select_expansion_seeds(state: DiffusionEngineState) -> dict[str, Any]:
     )
 
     if not seed_dois:
-        logger.info("No expansion candidates found, saturation reached")
+        logger.debug("No expansion candidates found, saturation reached")
         return {
             "current_stage_seeds": [],
             "diffusion": {**diffusion, "is_saturated": True},
@@ -123,7 +123,7 @@ async def select_expansion_seeds(state: DiffusionEngineState) -> dict[str, Any]:
         "stages": diffusion["stages"] + [new_stage_record],
     }
 
-    logger.info(f"Stage {new_stage}: Selected {len(seed_dois)} expansion seeds")
+    logger.debug(f"Stage {new_stage}: Selected {len(seed_dois)} expansion seeds")
 
     return {
         "current_stage_seeds": seed_dois,
@@ -145,11 +145,13 @@ async def run_citation_expansion_node(state: DiffusionEngineState) -> dict[str, 
         }
 
     min_citations = quality_settings.get("min_citations_filter", 10)
+    recency_years = quality_settings.get("recency_years", 3)
 
-    # Fetch all citations without relevance filtering
+    # Fetch all citations with recency-aware thresholds
     raw_results, citation_edges = await fetch_citations_raw(
         seed_dois=seed_dois,
         min_citations=min_citations,
+        recency_years=recency_years,
     )
 
     # Convert to PaperMetadata

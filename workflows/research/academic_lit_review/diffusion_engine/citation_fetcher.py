@@ -14,15 +14,22 @@ logger = logging.getLogger(__name__)
 async def fetch_citations_raw(
     seed_dois: list[str],
     min_citations: int = 10,
+    recency_years: int = 3,
 ) -> tuple[list[dict], list[CitationEdge]]:
-    """Fetch forward and backward citations without relevance filtering.
+    """Fetch forward and backward citations with recency-aware thresholds.
 
-    This allows the two-stage relevance filter (co-citation + LLM) to work
-    on the full candidate set.
+    Uses two-phase forward citation fetching to ensure emerging work
+    isn't filtered out:
+    - Recent papers (past N years): No citation threshold
+    - Older papers: Normal citation threshold
+
+    Backward citations don't need recency filtering - they're historical
+    references that should have accumulated citations.
 
     Args:
         seed_dois: DOIs to expand from
-        min_citations: Minimum citation count for forward citations
+        min_citations: Minimum citation count for older forward citations
+        recency_years: Years to consider "recent" (default: 3)
 
     Returns:
         Tuple of (candidate_papers, citation_edges)
@@ -33,6 +40,10 @@ async def fetch_citations_raw(
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
+    # Calculate recency cutoff
+    current_year = datetime.utcnow().year
+    recent_cutoff = current_year - recency_years
+
     async def fetch_single_paper(
         seed_doi: str,
     ) -> tuple[list[dict], list[dict], list[CitationEdge]]:
@@ -41,38 +52,75 @@ async def fetch_citations_raw(
             forward_papers = []
             backward_papers = []
             edges = []
+            seen_dois: set[str] = set()
 
-            # Fetch forward citations
+            # Phase 1: Recent forward citations (no min_citations)
             try:
-                forward_result = await get_forward_citations(
+                recent_forward = await get_forward_citations(
+                    work_id=seed_doi,
+                    limit=MAX_CITATIONS_PER_PAPER,
+                    min_citations=0,  # No threshold for recent
+                    from_year=recent_cutoff,
+                )
+
+                for work in recent_forward.results:
+                    work_dict = (
+                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
+                    )
+                    doi = work_dict.get("doi", "")
+                    if doi:
+                        doi_clean = (
+                            doi.replace("https://doi.org/", "")
+                            .replace("http://doi.org/", "")
+                        )
+                        if doi_clean not in seen_dois:
+                            seen_dois.add(doi_clean)
+                            forward_papers.append(work_dict)
+                            edges.append(
+                                CitationEdge(
+                                    citing_doi=doi_clean,
+                                    cited_doi=seed_doi,
+                                    discovered_at=datetime.utcnow(),
+                                    edge_type="forward",
+                                )
+                            )
+
+            except Exception as e:
+                logger.warning(f"Failed to fetch recent forward citations for {seed_doi}: {e}")
+
+            # Phase 2: Older forward citations (with min_citations)
+            try:
+                older_forward = await get_forward_citations(
                     work_id=seed_doi,
                     limit=MAX_CITATIONS_PER_PAPER,
                     min_citations=min_citations,
                 )
 
-                for work in forward_result.results:
+                for work in older_forward.results:
                     work_dict = (
                         work.model_dump() if hasattr(work, "model_dump") else dict(work)
                     )
-                    forward_papers.append(work_dict)
-
-                    if work_dict.get("doi"):
-                        citing_doi = (
-                            work_dict["doi"]
-                            .replace("https://doi.org/", "")
+                    doi = work_dict.get("doi", "")
+                    if doi:
+                        doi_clean = (
+                            doi.replace("https://doi.org/", "")
                             .replace("http://doi.org/", "")
                         )
-                        edges.append(
-                            CitationEdge(
-                                citing_doi=citing_doi,
-                                cited_doi=seed_doi,
-                                discovered_at=datetime.utcnow(),
-                                edge_type="forward",
+                        # Deduplicate - older query may include some recent papers
+                        if doi_clean not in seen_dois:
+                            seen_dois.add(doi_clean)
+                            forward_papers.append(work_dict)
+                            edges.append(
+                                CitationEdge(
+                                    citing_doi=doi_clean,
+                                    cited_doi=seed_doi,
+                                    discovered_at=datetime.utcnow(),
+                                    edge_type="forward",
+                                )
                             )
-                        )
 
             except Exception as e:
-                logger.warning(f"Failed to fetch forward citations for {seed_doi}: {e}")
+                logger.warning(f"Failed to fetch older forward citations for {seed_doi}: {e}")
 
             # Fetch backward citations
             try:
@@ -129,7 +177,7 @@ async def fetch_citations_raw(
 
     all_results = forward_results + backward_results
 
-    logger.info(
+    logger.debug(
         f"Fetched {len(forward_results)} forward, {len(backward_results)} backward "
         f"citations from {len(seed_dois)} seeds"
     )

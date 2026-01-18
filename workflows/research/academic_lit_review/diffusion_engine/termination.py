@@ -1,6 +1,7 @@
 """Saturation checking and diffusion finalization."""
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from .types import DiffusionEngineState, NON_ENGLISH_PAPER_OVERHEAD
@@ -35,6 +36,8 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
     diffusion = state["diffusion"]
     paper_corpus = state.get("paper_corpus", {})
     max_papers = _get_effective_max_papers(state)
+    # Collect 3x max_papers to ensure enough recent papers for recency quota
+    collection_target = max_papers * 3
 
     # Check stopping conditions
     saturation_reason = None
@@ -43,9 +46,9 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
     if diffusion["current_stage"] >= diffusion["max_stages"]:
         saturation_reason = f"Reached maximum stages ({diffusion['max_stages']})"
 
-    # 2. Max papers reached
-    elif len(paper_corpus) >= max_papers:
-        saturation_reason = f"Reached maximum papers ({max_papers})"
+    # 2. Collection target reached (3x max_papers for recency pool)
+    elif len(paper_corpus) >= collection_target:
+        saturation_reason = f"Reached collection target ({collection_target} papers for {max_papers} final)"
 
     # 3. Consecutive low coverage (2 stages with delta < threshold)
     elif diffusion["consecutive_low_coverage"] >= 2:
@@ -61,9 +64,9 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
             "saturation_reason": saturation_reason,
         }
     else:
-        logger.info(
+        logger.debug(
             f"Continuing diffusion: stage {diffusion['current_stage']}/{diffusion['max_stages']}, "
-            f"corpus size {len(paper_corpus)}/{max_papers}"
+            f"corpus size {len(paper_corpus)}/{collection_target} (target {max_papers} final)"
         )
         return {
             "diffusion": diffusion,
@@ -71,34 +74,67 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
 
 
 async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
-    """Finalize diffusion and filter to top papers by relevance."""
+    """Finalize diffusion and filter to top papers with recency quota.
+
+    Ensures ~25% of papers come from the past 3 years (if available) to
+    balance seminal works with recent research.
+    """
     paper_corpus = state.get("paper_corpus", {})
     saturation_reason = state.get("saturation_reason", "Unknown")
+    quality_settings = state["quality_settings"]
     max_papers = _get_effective_max_papers(state)
 
-    # Filter to top N papers by relevance score if we exceeded max_papers
-    if len(paper_corpus) > max_papers:
-        sorted_papers = sorted(
-            paper_corpus.items(),
-            key=lambda x: x[1].get("relevance_score", 0.5),
-            reverse=True,
-        )
-        cutoff_score = sorted_papers[max_papers - 1][1].get("relevance_score", 0.5)
-        final_dois = [doi for doi, _ in sorted_papers[:max_papers]]
-        logger.info(
-            f"Diffusion complete: Filtered {len(paper_corpus)} papers to {max_papers} "
-            f"(relevance cutoff: {cutoff_score:.2f}). Reason: {saturation_reason}"
-        )
-    else:
+    recency_years = quality_settings.get("recency_years", 3)
+    recency_quota = quality_settings.get("recency_quota", 0.25)
+
+    # If corpus is small enough, no filtering needed
+    if len(paper_corpus) <= max_papers:
         final_dois = list(paper_corpus.keys())
         logger.info(
             f"Diffusion complete: {len(final_dois)} papers in final corpus. "
             f"Reason: {saturation_reason}"
         )
+        return {"final_corpus_dois": final_dois}
 
-    return {
-        "final_corpus_dois": final_dois,
-    }
+    # Partition by recency
+    current_year = datetime.utcnow().year
+    cutoff_year = current_year - recency_years
+
+    recent = [(doi, p) for doi, p in paper_corpus.items() if p.get("year", 0) >= cutoff_year]
+    older = [(doi, p) for doi, p in paper_corpus.items() if p.get("year", 0) < cutoff_year]
+
+    # Sort each by relevance
+    recent.sort(key=lambda x: x[1].get("relevance_score", 0.5), reverse=True)
+    older.sort(key=lambda x: x[1].get("relevance_score", 0.5), reverse=True)
+
+    # Calculate target for recent papers
+    target_recent = int(max_papers * recency_quota)
+
+    # Select papers: recent first (up to quota), then older to fill
+    recent_selected = recent[: min(target_recent, len(recent))]
+    remaining_slots = max_papers - len(recent_selected)
+    older_selected = older[:remaining_slots]
+
+    # If we have extra slots and more recent papers, add them
+    total_selected = len(recent_selected) + len(older_selected)
+    if total_selected < max_papers and len(recent) > len(recent_selected):
+        extra_needed = max_papers - total_selected
+        extra = recent[len(recent_selected) : len(recent_selected) + extra_needed]
+        recent_selected.extend(extra)
+
+    final_dois = [doi for doi, _ in recent_selected] + [doi for doi, _ in older_selected]
+
+    # Log composition
+    actual_recent = len(
+        [d for d in final_dois if paper_corpus[d].get("year", 0) >= cutoff_year]
+    )
+    recent_pct = actual_recent / len(final_dois) if final_dois else 0
+    logger.info(
+        f"Diffusion complete: {len(final_dois)} papers "
+        f"({actual_recent} recent = {recent_pct:.0%}). Reason: {saturation_reason}"
+    )
+
+    return {"final_corpus_dois": final_dois}
 
 
 def should_continue_diffusion(state: DiffusionEngineState) -> str:

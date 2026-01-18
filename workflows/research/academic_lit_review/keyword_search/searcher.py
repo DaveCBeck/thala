@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any
 
 from langchain_tools.openalex import openalex_search, OpenAlexWork
@@ -19,10 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
-    """Execute searches against OpenAlex with quality filters.
+    """Execute searches against OpenAlex with recency-aware citation thresholds.
 
-    Filters applied:
-    - Minimum citation count (from quality settings)
+    Uses two-phase search to ensure emerging work isn't filtered out:
+    - Recent papers (past N years): No citation threshold
+    - Older papers: Normal citation threshold from quality settings
+
+    Other filters applied:
     - Date range (if specified in input)
     - Language filter (if language_config specified)
     - Sorts by relevance score
@@ -33,32 +37,70 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
     language_config = state.get("language_config")
 
     min_citations = quality_settings.get("min_citations_filter", 10)
+    recency_years = quality_settings.get("recency_years", 3)
     date_range = input_data.get("date_range")
-    from_year = date_range[0] if date_range else None
-    to_year = date_range[1] if date_range else None
     language_code = language_config["code"] if language_config else None
+
+    # Calculate recency cutoff
+    current_year = datetime.utcnow().year
+    recent_cutoff = current_year - recency_years
+
+    # Handle user-specified date range constraints
+    user_from_year = date_range[0] if date_range else None
+    user_to_year = date_range[1] if date_range else None
 
     all_results: list[OpenAlexWork] = []
 
     async def search_single_query(query: str) -> list[OpenAlexWork]:
-        """Search OpenAlex for a single query."""
+        """Search OpenAlex for a single query with two-phase approach."""
+        works = []
+
         try:
-            result = await openalex_search.ainvoke(
-                {
-                    "query": query,
-                    "limit": MAX_RESULTS_PER_QUERY,
-                    "min_citations": min_citations,
-                    "from_year": from_year,
-                    "to_year": to_year,
-                    "language": language_code,
-                }
-            )
+            # Phase 1: Recent papers with relaxed citation threshold
+            recent_from = max(recent_cutoff, user_from_year) if user_from_year else recent_cutoff
+            recent_to = user_to_year  # Respect user's upper bound
 
-            works = []
-            for r in result.get("results", []):
-                works.append(r)
+            # Only search recent if the date range allows it
+            if recent_to is None or recent_to >= recent_cutoff:
+                recent_result = await openalex_search.ainvoke(
+                    {
+                        "query": query,
+                        "limit": MAX_RESULTS_PER_QUERY,
+                        "min_citations": 0,  # No citation requirement for recent
+                        "from_year": recent_from,
+                        "to_year": recent_to,
+                        "language": language_code,
+                    }
+                )
+                for r in recent_result.get("results", []):
+                    works.append(r)
+                logger.debug(
+                    f"Query '{query[:40]}...' recent phase: {len(recent_result.get('results', []))} results"
+                )
 
-            logger.debug(f"Query '{query[:40]}...' returned {len(works)} results")
+            # Phase 2: Older papers with normal citation threshold
+            older_to = min(recent_cutoff - 1, user_to_year) if user_to_year else recent_cutoff - 1
+            older_from = user_from_year  # Respect user's lower bound
+
+            # Only search older if the date range allows it
+            if older_from is None or older_from < recent_cutoff:
+                older_result = await openalex_search.ainvoke(
+                    {
+                        "query": query,
+                        "limit": MAX_RESULTS_PER_QUERY,
+                        "min_citations": min_citations,
+                        "from_year": older_from,
+                        "to_year": older_to,
+                        "language": language_code,
+                    }
+                )
+                for r in older_result.get("results", []):
+                    works.append(r)
+                logger.debug(
+                    f"Query '{query[:40]}...' older phase: {len(older_result.get('results', []))} results"
+                )
+
+            logger.debug(f"Query '{query[:40]}...' total: {len(works)} results")
             return works
 
         except Exception as e:
@@ -75,7 +117,8 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
         all_results.extend(result)
 
     logger.info(
-        f"OpenAlex keyword search: {len(all_results)} raw results from {len(queries)} queries"
+        f"OpenAlex keyword search: {len(all_results)} raw results from {len(queries)} queries "
+        f"(two-phase: recent>={recent_cutoff} no citation filter, older<{recent_cutoff} min_citations={min_citations})"
     )
 
     return {"raw_results": all_results}
