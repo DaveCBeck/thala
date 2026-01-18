@@ -24,11 +24,11 @@ Examples of analogous domain thinking:
 Return EXACTLY 3 book recommendations as a JSON array. Each book must be a real, published book that you are confident exists."""
 
 ANALOGOUS_DOMAIN_USER = """Theme: {theme}
-{brief_section}
+{brief_section}{language_instruction}
 Find 3 books that explore this theme from DIFFERENT domains or fields. These should be real books that offer unexpected perspectives by examining analogous patterns in other contexts.
 
 For each book, provide:
-1. The exact title
+1. The exact title (in the target language if applicable)
 2. The author's name
 3. A 2-sentence explanation of why this book illuminates the theme from a different angle
 
@@ -49,11 +49,11 @@ Your task is to find books (fiction or nonfiction) that INSPIRE ACTION or CHANGE
 Return EXACTLY 3 book recommendations as a JSON array. Each book must be a real, published book that you are confident exists."""
 
 INSPIRING_ACTION_USER = """Theme: {theme}
-{brief_section}
+{brief_section}{language_instruction}
 Find 3 books (fiction or nonfiction) that INSPIRE ACTION or CHANGE related to this theme. These should be books that have demonstrably moved people to think or act differently.
 
 For each book, provide:
-1. The exact title
+1. The exact title (in the target language if applicable)
 2. The author's name
 3. A 2-sentence explanation of how this book inspires action on the theme
 
@@ -74,11 +74,11 @@ Your task is to find works of FICTION that express what a theme FEELS LIKE or CO
 Return EXACTLY 3 book recommendations as a JSON array. Each book must be a real, published book that you are confident exists."""
 
 EXPRESSIVE_USER = """Theme: {theme}
-{brief_section}
+{brief_section}{language_instruction}
 Find 3 works of FICTION that express the actuality or potentiality of this theme. These should be literary works that capture what this theme FEELS LIKE to experience, or what it COULD BECOME.
 
 For each book, provide:
-1. The exact title
+1. The exact title (in the target language if applicable)
 2. The author's name
 3. A 2-sentence explanation of how this book expresses the theme
 
@@ -96,6 +96,26 @@ Content excerpt:
 {content}
 
 Provide a 2-3 sentence summary focusing on insights relevant to the theme. Be specific about what the book contributes to understanding the theme."""
+
+
+def _get_language_instruction(language_config: Optional[LanguageConfig]) -> str:
+    """Generate language-specific instruction for book recommendations.
+
+    This is critical for multi-language support: the LLM must recommend books
+    using titles in the target language so that the book search API returns
+    books in that language.
+    """
+    if not language_config or language_config["code"] == "en":
+        return ""
+
+    lang_name = language_config["name"]
+    return f"""
+IMPORTANT - Language requirement: Recommend books that are available in {lang_name}.
+This includes books originally written in {lang_name} OR well-known works that have been
+translated into {lang_name}. You MUST provide the book title in {lang_name} (the translated
+title if it's a translation). For example, if recommending Kahneman's book for a Spanish
+search, use "Pensar rápido, pensar despacio" not "Thinking, Fast and Slow".
+"""
 
 
 async def get_recommendation_prompts(
@@ -119,6 +139,11 @@ async def get_recommendation_prompts(
 
     system_prompt, user_template = prompt_map[category]
 
+    # Inject language instruction (empty for English, guidance for other languages)
+    language_instruction = _get_language_instruction(language_config)
+    user_template = user_template.replace("{language_instruction}", language_instruction)
+
+    # Translate prompts for non-English languages
     if language_config and language_config["code"] != "en":
         system_prompt = await get_translated_prompt(
             system_prompt,
