@@ -24,6 +24,7 @@ async def enhance_report(
     quality: Literal["quick", "standard", "comprehensive", "high_quality"] = "standard",
     loops: Literal["none", "one", "two", "all"] = "all",
     max_iterations_per_loop: int = 3,
+    supervision_paper_factor: float = 0.5,
     paper_corpus: dict[str, Any] | None = None,
     paper_summaries: dict[str, Any] | None = None,
     zotero_keys: dict[str, str] | None = None,
@@ -47,6 +48,8 @@ async def enhance_report(
             - "two": Only Loop 2 (literature expansion)
             - "all": Both loops (default)
         max_iterations_per_loop: Maximum iterations for each loop (default: 3)
+        supervision_paper_factor: Multiplier for max_papers during supervision loops.
+            Default 0.5 means supervision examines half as many papers as initial review.
         paper_corpus: Optional existing paper corpus (DOI -> PaperMetadata)
         paper_summaries: Optional existing paper summaries (DOI -> PaperSummary)
         zotero_keys: Optional existing Zotero keys (DOI -> Zotero key)
@@ -76,8 +79,12 @@ async def enhance_report(
         print(result["final_report"])
         ```
     """
-    # Get quality settings
-    quality_settings = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
+    # Get quality settings and apply supervision paper factor
+    base_quality_settings = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
+    quality_settings = {
+        **base_quality_settings,
+        "max_papers": int(base_quality_settings["max_papers"] * supervision_paper_factor),
+    }
 
     # Build input
     enhance_input: EnhanceInput = {
@@ -109,7 +116,8 @@ async def enhance_report(
 
     logger.info(
         f"Starting enhancement: topic='{topic}', quality={quality}, loops={loops}, "
-        f"report_length={len(report)}, existing_papers={len(paper_corpus or {})}"
+        f"report_length={len(report)}, existing_papers={len(paper_corpus or {})}, "
+        f"supervision_max_papers={quality_settings['max_papers']} ({supervision_paper_factor}x)"
     )
 
     # Create and run the graph
