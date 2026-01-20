@@ -245,6 +245,39 @@ async def plan_edits_node(state: dict) -> dict[str, Any]:
         else:
             logger.warning(f"Skipping edit with invalid references: {edit.edit_type}")
 
+    # Deduplicate edits - only one edit per (edit_type, target) combination
+    # This is a safety net in case the LLM generates duplicates despite prompting
+    seen_keys = set()
+    deduped_edits = []
+    for edit in valid_edits:
+        # Create a deduplication key based on edit type and target
+        if edit.edit_type in ("generate_introduction", "generate_conclusion"):
+            # For document-level edits, key by type + scope
+            key = (edit.edit_type, getattr(edit, "scope", "document"))
+        elif edit.edit_type in ("generate_synthesis", "generate_transition"):
+            # Key by type + target section
+            key = (edit.edit_type, getattr(edit, "target_section_id", None))
+        elif edit.edit_type == "section_move":
+            key = (edit.edit_type, edit.source_section_id)
+        elif edit.edit_type == "section_merge":
+            # Order-independent key for merges
+            ids = tuple(sorted([edit.primary_section_id, edit.secondary_section_id]))
+            key = (edit.edit_type, ids)
+        elif edit.edit_type == "consolidate":
+            key = (edit.edit_type, edit.target_section_id)
+        elif edit.edit_type in ("delete_redundant", "trim_redundancy"):
+            key = (edit.edit_type, getattr(edit, "primary_block_id", None) or getattr(edit, "block_id", None))
+        else:
+            key = (edit.edit_type, id(edit))  # Unique fallback
+
+        if key not in seen_keys:
+            seen_keys.add(key)
+            deduped_edits.append(edit)
+        else:
+            logger.warning(f"Skipping duplicate edit: {edit.edit_type} with key {key}")
+
+    valid_edits = deduped_edits
+
     # Order edits by priority
     # 1. Structure generation (intro/conclusion)
     # 2. Moves

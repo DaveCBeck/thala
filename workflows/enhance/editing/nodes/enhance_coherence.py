@@ -47,7 +47,7 @@ async def enhance_coherence_review_node(state: dict) -> dict[str, Any]:
         iteration=iteration + 1,
         max_iterations=max_iterations,
         sections_enhanced=", ".join(enhanced_section_ids) or "none",
-        document_text=document_text[:30000],  # Limit context
+        document_text=document_text,  # Pass full document for accurate review
     )
 
     try:

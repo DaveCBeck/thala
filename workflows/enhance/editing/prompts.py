@@ -75,6 +75,13 @@ Edit types available:
 - delete_redundant: Remove duplicate content
 - trim_redundancy: Remove redundant portions while keeping essential content
 
+CRITICAL CONSTRAINTS:
+1. Propose AT MOST ONE edit per section in this iteration
+2. This is an ITERATIVE process - we can fix remaining issues in subsequent iterations
+3. Focus on the MOST CRITICAL issues first
+4. Do NOT propose duplicate edits (e.g., two generate_conclusion edits)
+5. For document-level edits (like document conclusion), propose only ONE
+
 Ordering principles:
 1. Structure additions (intro/conclusion) before moves
 2. Section moves before consolidation
@@ -93,6 +100,12 @@ EDIT_PLANNING_USER = """Create an edit plan to fix the identified structural iss
 <document_structure>
 {document_structure}
 </document_structure>
+
+CRITICAL RULES:
+- Propose AT MOST ONE edit per section (we can fix more in subsequent iterations)
+- Do NOT propose duplicate edits (e.g., only ONE generate_conclusion for the whole document)
+- Focus on the MOST CRITICAL issues first
+- This is iteration-based: remaining issues will be addressed in future passes
 
 Create a prioritized list of edits. For each issue:
 1. Determine the best edit type to fix it

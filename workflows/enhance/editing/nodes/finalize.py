@@ -26,7 +26,12 @@ async def finalize_node(state: dict) -> dict[str, Any]:
     )
     topic = state["input"]["topic"]
 
-    # Reconstruct markdown
+    # Final semantic deduplication - remove duplicate sections and content
+    removed_duplicates = document_model.deduplicate_sections()
+    if removed_duplicates:
+        logger.info(f"Deduplication removed {len(removed_duplicates)} items: {removed_duplicates}")
+
+    # Reconstruct markdown (also handles header deduplication in blocks)
     final_document = document_model.to_markdown()
 
     logger.info(
@@ -65,11 +70,11 @@ async def finalize_node(state: dict) -> dict[str, Any]:
         f"Iterations: {structure_iteration} structure, 1 polish."
     )
 
-    # Final verification
+    # Final verification - pass full document for accurate assessment
     try:
         user_prompt = FINAL_VERIFICATION_USER.format(
             topic=topic,
-            document=final_document[:40000],  # Limit for context
+            document=final_document,
         )
 
         final_verification = await get_structured_output(

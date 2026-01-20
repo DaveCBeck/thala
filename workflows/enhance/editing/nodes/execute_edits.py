@@ -1,11 +1,12 @@
 """Execute edits nodes for editing workflow."""
 
+import copy
 import logging
 from typing import Any
 
 from langgraph.types import Send
 
-from workflows.enhance.editing.document_model import DocumentModel, Section, ContentBlock
+from workflows.enhance.editing.document_model import DocumentModel, Section, ContentBlock, DocumentTransaction
 from workflows.enhance.editing.schemas import EditPlan
 from workflows.enhance.editing.prompts import (
     GENERATE_INTRODUCTION_SYSTEM,
@@ -222,6 +223,9 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                     "success": True,
                     "generated_content": generated,
                     "target_section_id": edit_data.get("target_section_id"),
+                    "insert_after_section_id": edit_data.get("insert_after_section_id"),
+                    "new_section_heading": edit_data.get("new_section_heading"),
+                    "context_section_ids": edit_data.get("context_section_ids", []),
                     "scope": edit_data.get("scope"),
                     "position": edit_data.get("position", "end"),
                     "word_count": len(generated.split()),
@@ -407,16 +411,47 @@ async def execute_removal_edit_worker(state: dict) -> dict[str, Any]:
         }
 
 
+def _find_last_content_section_id(document_model: DocumentModel) -> str | None:
+    """Find the last content section (before References/Bibliography).
+
+    This helper ensures generated content like conclusions don't end up
+    in the References section.
+    """
+    all_sections = document_model.get_all_sections()
+    if not all_sections:
+        return None
+
+    # Scan backwards to find last non-reference section
+    for i in range(len(all_sections) - 1, -1, -1):
+        heading_lower = all_sections[i].heading.lower()
+        if not any(kw in heading_lower for kw in ["reference", "bibliography", "works cited"]):
+            return all_sections[i].section_id
+
+    # Fallback to last section if all are reference-like (unlikely)
+    return all_sections[-1].section_id
+
+
+def _find_section_in_list(sections: list[Section], section_id: str) -> Section | None:
+    """Recursively find a section by ID in a list of sections."""
+    for section in sections:
+        if section.section_id == section_id:
+            return section
+        # Check subsections
+        found = _find_section_in_list(section.subsections, section_id)
+        if found:
+            return found
+    return None
+
+
 async def assemble_edits_node(state: dict) -> dict[str, Any]:
     """Assemble completed edits into updated document model.
 
     This node takes all completed edits and applies them to create
-    an updated document model.
+    an updated document model using a transaction-like approach.
     """
-    # Use updated document model if available (from previous iterations)
-    document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
-    )
+    # Use deep copy to avoid mutating original state
+    source_model_data = state.get("updated_document_model", state["document_model"])
+    document_model = DocumentModel.from_dict(copy.deepcopy(source_model_data))
     completed_edits = state.get("completed_edits", [])
 
     if not completed_edits:
@@ -429,14 +464,12 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
     successful_edits = [e for e in completed_edits if e.get("success")]
     logger.info(f"Assembling {len(successful_edits)} successful edits")
 
-    # For now, we'll do a simplified assembly that:
-    # 1. Collects generated content to append
-    # 2. Records structural changes for manual application
+    # Track placement issues for verification
+    placement_issues = []
 
-    # Rebuild document with edits
-    # This is a simplified version - full implementation would modify the model
-    new_sections = list(document_model.sections)
-    new_preamble = list(document_model.preamble_blocks)
+    # Deep copy sections and preamble to avoid mutation issues
+    new_sections = copy.deepcopy(document_model.sections)
+    new_preamble = copy.deepcopy(document_model.preamble_blocks)
 
     for edit in successful_edits:
         edit_type = edit.get("edit_type", "")
@@ -458,6 +491,7 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
 
             insert_after_id = edit.get("insert_after_section_id")
             target_section_id = edit.get("target_section_id")
+            scope = edit.get("scope", "document")
 
             if insert_after_id:
                 # Document scope: create a new conclusion section after the specified section
@@ -486,32 +520,67 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
                     new_sections.insert(insert_idx, new_section)
                     logger.debug(f"Created new conclusion section '{new_heading}' after section index {insert_idx - 1}")
                 else:
-                    # Fallback: append to end
-                    new_sections.append(new_section)
-                    logger.debug(f"Created new conclusion section '{new_heading}' at end (fallback)")
+                    # Smart fallback: find last content section (not References)
+                    last_content_id = _find_last_content_section_id(document_model)
+                    fallback_idx = len(new_sections)  # Default to end
+                    if last_content_id:
+                        for i, sec in enumerate(new_sections):
+                            if sec.section_id == last_content_id:
+                                fallback_idx = i + 1
+                                break
+                    new_sections.insert(fallback_idx, new_section)
+                    logger.warning(f"Could not find insert_after_id {insert_after_id}, inserted conclusion at index {fallback_idx}")
 
             elif target_section_id:
                 # Section scope: add to existing section
-                section = document_model.get_section(target_section_id)
-                if section:
+                # Find section in new_sections (deep copied)
+                target_section = _find_section_in_list(new_sections, target_section_id)
+                if target_section:
                     new_block = ContentBlock.from_content(content, "paragraph")
-                    section.blocks.append(new_block)
-                    logger.debug(f"Added conclusion to section '{section.heading}'")
+                    target_section.blocks.append(new_block)
+                    logger.debug(f"Added conclusion to section '{target_section.heading}'")
+                else:
+                    placement_issues.append(f"Could not find target_section_id {target_section_id} for conclusion")
+                    logger.warning(f"Could not find target_section_id {target_section_id}")
+
+            elif scope == "document":
+                # Document scope but no insert_after_id - use smart fallback
+                new_heading = edit.get("new_section_heading", "Conclusion")
+                new_section = Section.from_heading(new_heading, level=1)
+                new_block = ContentBlock.from_content(content, "paragraph")
+                new_section.blocks.append(new_block)
+
+                # Find last content section (not References/Bibliography)
+                last_content_id = _find_last_content_section_id(document_model)
+                insert_idx = len(new_sections)  # Default to end
+                if last_content_id:
+                    for i, sec in enumerate(new_sections):
+                        if sec.section_id == last_content_id:
+                            insert_idx = i + 1
+                            break
+                        # Check subsections
+                        all_in_sec = _flatten_sections([sec])
+                        for sub in all_in_sec:
+                            if sub.section_id == last_content_id:
+                                insert_idx = i + 1
+                                break
+                        if insert_idx != len(new_sections):
+                            break
+
+                new_sections.insert(insert_idx, new_section)
+                logger.debug(f"Created conclusion section '{new_heading}' at index {insert_idx} (smart fallback)")
 
             else:
-                # Legacy fallback: add to last section in document order
-                all_sections = document_model.get_all_sections()
-                if all_sections:
-                    last_section = all_sections[-1]
-                    new_block = ContentBlock.from_content(content, "paragraph")
-                    last_section.blocks.append(new_block)
-                    logger.debug(f"Added conclusion to last section '{last_section.heading}' (fallback)")
+                # Legacy fallback for section scope without target
+                placement_issues.append("generate_conclusion missing both target_section_id and insert_after_section_id")
+                logger.error("generate_conclusion edit missing both target_section_id and insert_after_section_id")
 
         elif edit_type == "generate_synthesis":
             content = edit.get("generated_content", "")
             target_id = edit.get("target_section_id")
             if content and target_id:
-                section = document_model.get_section(target_id)
+                # Use deep-copied section list
+                section = _find_section_in_list(new_sections, target_id)
                 if section:
                     new_block = ContentBlock.from_content(content, "paragraph")
                     if edit.get("position") == "start":
@@ -519,34 +588,90 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
                     else:
                         section.blocks.append(new_block)
                     logger.debug(f"Added synthesis to section {target_id}")
+                else:
+                    placement_issues.append(f"Could not find target_section_id {target_id} for synthesis")
+                    logger.warning(f"Could not find target section {target_id} for synthesis")
 
         elif edit_type == "generate_transition":
             content = edit.get("generated_content", "")
             from_id = edit.get("from_section_id")
             to_id = edit.get("to_section_id")
             if content and from_id:
-                section = document_model.get_section(from_id)
+                # Use deep-copied section list
+                section = _find_section_in_list(new_sections, from_id)
                 if section:
                     new_block = ContentBlock.from_content(content, "paragraph")
                     section.blocks.append(new_block)
                     logger.debug(f"Added transition after section {from_id}")
+                else:
+                    placement_issues.append(f"Could not find from_section_id {from_id} for transition")
+                    logger.warning(f"Could not find from_section {from_id} for transition")
 
         # Note: section_move, section_merge, consolidate, delete would need
         # more complex handling - for now we log them
 
-    # Create updated model
+    # Create updated model from deep-copied sections
     updated_model = DocumentModel(
         title=document_model.title,
         sections=new_sections,
         preamble_blocks=new_preamble,
     )
 
+    # Verify placement - check that conclusions didn't end up in References
+    verification_result = _verify_edit_placements(updated_model, successful_edits)
+    if verification_result["issues"]:
+        placement_issues.extend(verification_result["issues"])
+
     logger.info(
         f"Assembled document: {updated_model.total_words} words, "
         f"{updated_model.section_count} sections"
     )
+    if placement_issues:
+        logger.warning(f"Placement issues detected: {placement_issues}")
 
     return {
         "updated_document_model": updated_model.to_dict(),
         "execution_complete": True,
+        "placement_issues": placement_issues,
     }
+
+
+def _verify_edit_placements(document_model: DocumentModel, edits: list[dict]) -> dict:
+    """Verify that generated content was placed correctly.
+
+    Returns dict with 'issues' list containing any detected problems.
+    """
+    issues = []
+
+    # Find reference sections
+    reference_sections = []
+    for section in document_model.get_all_sections():
+        heading_lower = section.heading.lower()
+        if any(kw in heading_lower for kw in ["reference", "bibliography", "works cited"]):
+            reference_sections.append(section)
+
+    # Check each generation edit
+    for edit in edits:
+        edit_type = edit.get("edit_type", "")
+        content = edit.get("generated_content", "")
+
+        if not content or edit_type not in ("generate_conclusion", "generate_synthesis", "generate_introduction"):
+            continue
+
+        # Check first 100 chars of content to identify
+        content_preview = content[:100]
+
+        # Verify it's not in reference sections
+        for ref_section in reference_sections:
+            for block in ref_section.blocks:
+                if content_preview in block.content:
+                    issues.append(
+                        f"{edit_type} content incorrectly placed in "
+                        f"'{ref_section.heading}' section (ID: {ref_section.section_id})"
+                    )
+                    logger.error(
+                        f"PLACEMENT ERROR: {edit_type} content found in "
+                        f"'{ref_section.heading}' instead of proper location"
+                    )
+
+    return {"issues": issues}

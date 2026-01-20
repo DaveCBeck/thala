@@ -22,7 +22,6 @@ class EditingQualitySettings(TypedDict):
     # Verification phase settings (Phase 7)
     verify_use_perplexity: bool  # Enable Perplexity fact-checking
     verify_confidence_threshold: float  # Min confidence to consider resolved
-    fact_check_max_tool_calls: int  # Max tool calls per fact-check section
     enhance_max_tool_calls: int  # Max tool calls per enhance section
     reference_check_max_tool_calls: int  # Max tool calls per reference-check (base, +5 per citation)
 
@@ -43,7 +42,6 @@ EDITING_QUALITY_PRESETS: dict[str, EditingQualitySettings] = {
         # Verification phase
         verify_use_perplexity=False,  # Skip for speed in test
         verify_confidence_threshold=0.7,
-        fact_check_max_tool_calls=5,
         enhance_max_tool_calls=5,
         reference_check_max_tool_calls=3,
     ),
@@ -62,7 +60,6 @@ EDITING_QUALITY_PRESETS: dict[str, EditingQualitySettings] = {
         # Verification phase
         verify_use_perplexity=True,
         verify_confidence_threshold=0.7,
-        fact_check_max_tool_calls=10,
         enhance_max_tool_calls=8,
         reference_check_max_tool_calls=5,
     ),
@@ -81,7 +78,6 @@ EDITING_QUALITY_PRESETS: dict[str, EditingQualitySettings] = {
         # Verification phase
         verify_use_perplexity=True,
         verify_confidence_threshold=0.75,
-        fact_check_max_tool_calls=15,
         enhance_max_tool_calls=10,
         reference_check_max_tool_calls=8,
     ),
@@ -100,7 +96,6 @@ EDITING_QUALITY_PRESETS: dict[str, EditingQualitySettings] = {
         # Verification phase
         verify_use_perplexity=True,
         verify_confidence_threshold=0.8,
-        fact_check_max_tool_calls=18,
         enhance_max_tool_calls=12,
         reference_check_max_tool_calls=10,
     ),
@@ -119,7 +114,6 @@ EDITING_QUALITY_PRESETS: dict[str, EditingQualitySettings] = {
         # Verification phase
         verify_use_perplexity=True,
         verify_confidence_threshold=0.85,
-        fact_check_max_tool_calls=20,
         enhance_max_tool_calls=15,
         reference_check_max_tool_calls=12,
     ),
