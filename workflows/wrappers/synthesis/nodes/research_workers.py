@@ -7,6 +7,7 @@ from langgraph.types import Send
 
 from workflows.research.web_research import deep_research
 from workflows.research.book_finding import book_finding
+from workflows.shared.workflow_state_store import load_workflow_state
 from workflows.wrappers.multi_lang.graph.api import multi_lang_research
 
 logger = logging.getLogger(__name__)
@@ -153,18 +154,33 @@ async def book_finding_worker(state: dict) -> dict[str, Any]:
                 quality=quality,
             )
             result = result_obj.to_dict()
+            workflow_name = "multi_lang"
         else:
             # Direct single-language call
             result = await book_finding(
                 theme=theme,
                 quality=quality,
             )
+            workflow_name = "book_finding"
 
-        # Extract zotero keys from processed books
-        # Note: After our Part 1 changes, processed_books now have zotero_key
-        # We need to load the full result from the workflow state store
-        # For now, we'll extract what we can from the result
+        # Load full state from workflow state store to get processed books
+        processed_books = []
         zotero_keys = []
+
+        run_id = result.get("langsmith_run_id")
+        if run_id:
+            full_state = load_workflow_state(workflow_name, run_id)
+            if full_state:
+                processed_books = full_state.get("processed_books", [])
+                zotero_keys = [
+                    b["zotero_key"] for b in processed_books if b.get("zotero_key")
+                ]
+                logger.info(
+                    f"Book worker {iteration}: loaded {len(processed_books)} books, "
+                    f"{len(zotero_keys)} zotero keys"
+                )
+            else:
+                logger.debug(f"No persisted state found for {workflow_name}/{run_id}")
 
         return {
             "book_finding_results": [
@@ -172,7 +188,7 @@ async def book_finding_worker(state: dict) -> dict[str, Any]:
                     "iteration": iteration,
                     "theme": theme,
                     "final_report": result.get("final_report", ""),
-                    "processed_books": [],  # Would need to load from state store
+                    "processed_books": processed_books,
                     "zotero_keys": zotero_keys,
                     "status": result.get("status", "unknown"),
                 }
