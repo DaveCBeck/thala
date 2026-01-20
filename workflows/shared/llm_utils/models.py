@@ -70,6 +70,7 @@ def get_llm(
         "model": tier.value,
         "api_key": api_key,
         "max_tokens": max_tokens,
+        "max_retries": 3,  # Handles 429, 500, 502, 503, 529 with exponential backoff
         # LangSmith metadata for automatic cost tracking
         "metadata": {
             "ls_provider": "anthropic",
