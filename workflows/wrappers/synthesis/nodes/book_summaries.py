@@ -3,11 +3,14 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from langchain_tools.base import get_store_manager
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SynthesisFetchBookSummaries")
 async def fetch_book_summaries(state: dict) -> dict[str, Any]:
     """Fetch 10x summaries for selected books from Elasticsearch store.
 

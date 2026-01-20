@@ -4,6 +4,8 @@ import logging
 import re
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,7 @@ def extract_citation_keys(text: str) -> list[str]:
     return unique
 
 
+@traceable(run_type="chain", name="FactCheckDetectCitations")
 async def detect_citations_node(state: dict) -> dict[str, Any]:
     """Detect whether document contains Zotero citations.
 

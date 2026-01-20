@@ -9,6 +9,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from langsmith import traceable
+
 from langchain_tools.base import get_store_manager
 
 from workflows.document_processing.state import DocumentProcessingState
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 MAX_DETECTION_SAMPLE = 5000
 
 
+@traceable(run_type="chain", name="DetectLanguage")
 async def detect_document_language(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Detect original language from L0 content.

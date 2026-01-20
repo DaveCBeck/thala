@@ -9,6 +9,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
+from langsmith import traceable
+
 from workflows.shared.quality_config import QualityTier
 from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.wrappers.synthesis.state import SynthesisInput, SynthesisState
@@ -18,6 +20,7 @@ from .construction import synthesis_graph
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SynthesisWorkflow")
 async def synthesis(
     topic: str,
     research_questions: list[str],
@@ -142,6 +145,17 @@ async def synthesis(
                 "run_id": run_id,
                 "run_name": f"synthesis:{topic[:30]}",
                 "recursion_limit": 200,  # Higher limit for many parallel workers
+                "tags": [
+                    f"quality:{quality}",
+                    "workflow:synthesis",
+                    f"lang:{language}",
+                ],
+                "metadata": {
+                    "topic": topic[:100],
+                    "quality_tier": quality,
+                    "question_count": len(research_questions),
+                    "language": language,
+                },
             },
         )
 

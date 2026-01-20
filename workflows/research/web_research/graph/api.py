@@ -27,6 +27,8 @@ import logging
 import uuid
 from datetime import datetime
 
+from langsmith import traceable
+
 from workflows.shared.quality_config import QualityTier
 from workflows.research.web_research.state import (
     DeepResearchState,
@@ -41,6 +43,7 @@ from .config import RECURSION_LIMITS
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="DeepResearch")
 async def deep_research(
     query: str,
     quality: QualityTier = "standard",
@@ -154,6 +157,16 @@ async def deep_research(
             "recursion_limit": recursion_limit,
             "run_id": run_id,
             "run_name": f"deep_research:{query[:30]}",
+            "tags": [
+                f"quality:{quality}",
+                "workflow:web_research",
+                f"lang:{primary_lang}",
+            ],
+            "metadata": {
+                "topic": query[:100],
+                "quality_tier": quality,
+                "language": primary_lang,
+            },
         },
     )
 

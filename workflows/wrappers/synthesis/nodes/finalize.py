@@ -4,9 +4,12 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from langsmith import traceable
+
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SynthesisFinalize")
 async def finalize(state: dict) -> dict[str, Any]:
     """Finalize the synthesis workflow.
 

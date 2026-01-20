@@ -8,11 +8,14 @@ for user-curated active context, not automatically populated.
 import logging
 from uuid import UUID
 
+from langsmith import traceable
+
 from langchain_tools.base import get_store_manager
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="UpdateStore")
 async def update_store(state: dict) -> dict:
     """
     Update the initial store record with processed content.

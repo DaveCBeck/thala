@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.research.academic_lit_review import academic_lit_review
 from workflows.shared.workflow_state_store import load_workflow_state
 from workflows.wrappers.multi_lang.graph.api import multi_lang_research
@@ -10,6 +12,7 @@ from workflows.wrappers.multi_lang.graph.api import multi_lang_research
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SynthesisLitReview")
 async def run_lit_review(state: dict) -> dict[str, Any]:
     """Run academic literature review as first phase.
 

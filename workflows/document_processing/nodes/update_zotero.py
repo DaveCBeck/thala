@@ -5,6 +5,8 @@ Update Zotero item with extracted data node.
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from core.stores.zotero import ZoteroCreator, ZoteroItemUpdate
 from langchain_tools.base import get_store_manager
 from workflows.document_processing.state import DocumentProcessingState
@@ -12,6 +14,7 @@ from workflows.document_processing.state import DocumentProcessingState
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="UpdateZotero")
 async def update_zotero(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Update Zotero item with summary and extracted metadata.

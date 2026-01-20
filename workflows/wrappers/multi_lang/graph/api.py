@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
+from langsmith import traceable
+
 from workflows.shared.quality_config import QualityTier
 from workflows.wrappers.multi_lang.state import (
     MultiLangState,
@@ -59,6 +61,7 @@ class MultiLangResult:
         }
 
 
+@traceable(run_type="chain", name="MultiLangResearch")
 async def multi_lang_research(
     topic: str,
     mode: LanguageMode = "set_languages",
@@ -160,6 +163,19 @@ async def multi_lang_research(
     config = {
         "run_id": run_id,
         "run_name": f"multi_lang:{topic[:50]}",
+        "tags": [
+            f"quality:{quality}",
+            "workflow:multi_lang",
+            f"mode:{mode}",
+            f"subworkflow:{workflow}",
+        ],
+        "metadata": {
+            "topic": topic[:100],
+            "quality_tier": quality,
+            "mode": mode,
+            "workflow_type": workflow,
+            "language_count": len(languages) if languages else 0,
+        },
     }
 
     result_state = await multi_lang_graph.ainvoke(initial_state, config=config)

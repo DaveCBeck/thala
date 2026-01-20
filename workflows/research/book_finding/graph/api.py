@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
+from langsmith import traceable
+
 from workflows.shared.language import get_language_config
 from workflows.shared.quality_config import QualityTier
 from workflows.shared.workflow_state_store import save_workflow_state
@@ -23,6 +25,7 @@ from .construction import book_finding_graph
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="BookFinding")
 async def book_finding(
     theme: str,
     brief: Optional[str] = None,
@@ -114,6 +117,16 @@ async def book_finding(
             config={
                 "run_id": run_id,
                 "run_name": f"books:{theme[:30]}",
+                "tags": [
+                    f"quality:{quality}",
+                    "workflow:book_finding",
+                    f"lang:{language}",
+                ],
+                "metadata": {
+                    "topic": theme[:100],
+                    "quality_tier": quality,
+                    "language": language,
+                },
             },
         )
 

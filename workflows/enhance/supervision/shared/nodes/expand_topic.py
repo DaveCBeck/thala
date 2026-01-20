@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.supervision.shared.focused_expansion import (
     run_focused_expansion,
 )
@@ -10,6 +12,7 @@ from workflows.enhance.supervision.shared.focused_expansion import (
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SupervisionExpandTopic")
 async def expand_topic_node(state: dict[str, Any]) -> dict[str, Any]:
     """Run focused expansion on the identified theoretical gap.
 

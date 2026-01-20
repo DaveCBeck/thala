@@ -10,6 +10,8 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
+from langsmith import traceable
+
 from core.stores.schema import SourceType, StoreRecord
 from langchain_tools.base import get_store_manager
 from workflows.document_processing.state import DocumentProcessingState, StoreRecordRef
@@ -17,6 +19,7 @@ from workflows.document_processing.state import DocumentProcessingState, StoreRe
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SaveTenthSummary")
 async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Create StoreRecord(s) for the 10:1 summary.

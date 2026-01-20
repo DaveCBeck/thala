@@ -3,11 +3,14 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing import editing
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SynthesisEditing")
 async def run_editing(state: dict) -> dict[str, Any]:
     """Run editing workflow on the synthesized document.
 

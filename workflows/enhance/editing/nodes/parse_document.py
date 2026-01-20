@@ -3,11 +3,14 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.parser import parse_markdown_to_model, validate_document_model
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="EditingParseDocument")
 async def parse_document_node(state: dict) -> dict[str, Any]:
     """Parse markdown document into structured DocumentModel.
 

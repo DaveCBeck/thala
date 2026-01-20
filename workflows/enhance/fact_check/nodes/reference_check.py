@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Any
 
+from langsmith import traceable
 from langgraph.types import Send
 
 from workflows.enhance.editing.document_model import DocumentModel
@@ -37,6 +38,7 @@ def extract_section_citations(text: str) -> list[str]:
     return unique
 
 
+@traceable(run_type="chain", name="FactCheckPrevalidateCitations")
 async def pre_validate_citations(state: dict) -> dict[str, Any]:
     """Pre-validate all unique citations in the document.
 
@@ -170,6 +172,7 @@ def route_to_reference_check_sections(state: dict) -> list[Send] | str:
     return sends
 
 
+@traceable(run_type="chain", name="ReferenceCheckSectionWorker")
 async def reference_check_section_worker(state: dict) -> dict[str, Any]:
     """Check citation validity in a single section.
 
@@ -307,6 +310,7 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="ReferenceCheckAssemble")
 async def assemble_reference_checks_node(state: dict) -> dict[str, Any]:
     """Assemble reference-check results from parallel workers.
 

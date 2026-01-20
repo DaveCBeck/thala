@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any, Optional
 
+from langsmith import traceable
 from pydantic import BaseModel, Field, field_validator
 
 from workflows.document_processing.state import ChapterInfo, DocumentProcessingState
@@ -113,6 +114,7 @@ def _build_chapter_boundaries(
     return chapters
 
 
+@traceable(run_type="chain", name="DetectChapters")
 async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Use LLM to analyze heading structure and detect logical chapter divisions.

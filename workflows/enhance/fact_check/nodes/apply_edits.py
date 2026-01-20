@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel, ContentBlock
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,7 @@ def validate_edit_uniqueness(document_text: str, find_string: str) -> tuple[bool
     return count == 1, count
 
 
+@traceable(run_type="chain", name="FactCheckApplyEdits")
 async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
     """Apply validated edits to the document.
 

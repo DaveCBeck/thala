@@ -6,11 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from langsmith import traceable
+
 from core.stores.schema import SourceType, StoreRecord
 from core.stores.zotero import ZoteroItemCreate, ZoteroTag
 from langchain_tools.base import get_store_manager
 
 
+@traceable(run_type="chain", name="CreateZoteroStub")
 async def create_zotero_stub(state: dict) -> dict:
     """
     Create Zotero item and initial store record as tracking stubs.

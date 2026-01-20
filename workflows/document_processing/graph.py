@@ -19,6 +19,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from langsmith import traceable
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
@@ -113,6 +114,7 @@ def create_document_processing_graph():
     return builder.compile()
 
 
+@traceable(run_type="chain", name="DocumentProcessing")
 async def process_document(
     source: str,
     title: str = None,
@@ -144,6 +146,7 @@ async def process_document(
 
     run_id = uuid.uuid4()
     desc = title or (source[:30] if isinstance(source, str) else "document")
+    primary_lang = (langs[0] if langs else "en").lower()[:2]
     logger.info(f"Starting document processing for: {title or source[:100]}")
     logger.info(f"LangSmith run ID: {run_id}")
     result = await graph.ainvoke(
@@ -151,6 +154,16 @@ async def process_document(
         config={
             "run_id": run_id,
             "run_name": f"doc:{desc[:30]}",
+            "tags": [
+                "workflow:document_processing",
+                f"lang:{primary_lang}",
+                f"item_type:{item_type}",
+            ],
+            "metadata": {
+                "topic": (title or source[:100])[:100],
+                "item_type": item_type,
+                "language": primary_lang,
+            },
         },
     )
     logger.info(f"Document processing complete. Status: {result.get('current_status')}")

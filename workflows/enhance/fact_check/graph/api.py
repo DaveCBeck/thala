@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
+from langsmith import traceable
+
 from workflows.shared.quality_config import QualityTier
 
 from ..quality_presets import FACT_CHECK_QUALITY_PRESETS
@@ -14,6 +16,7 @@ from .construction import fact_check_graph
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="FactCheck")
 async def fact_check(
     document: Optional[str] = None,
     document_model: Optional[dict] = None,
@@ -109,6 +112,15 @@ async def fact_check(
                 "run_id": run_id,
                 "run_name": f"fact_check:{topic[:30]}",
                 "recursion_limit": 100,  # Higher limit for many parallel sections
+                "tags": [
+                    f"quality:{quality}",
+                    "workflow:fact_check",
+                ],
+                "metadata": {
+                    "topic": topic[:100],
+                    "quality_tier": quality,
+                    "has_citations": has_citations,
+                },
             },
         )
 

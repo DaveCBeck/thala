@@ -49,10 +49,12 @@ Integration approaches (use your judgment):
 3. Add to discussion section if findings primarily challenge or contextualize existing arguments
 
 Principles:
-- Maintain academic voice and flow
-- Ensure proper citations using [@KEY] format
-- Create smooth transitions
-- Do not remove or contradict existing content without justification"""
+1. **Purpose-Driven**: Only integrate content that serves the paper's research questions
+2. **Surgical Precision**: Make targeted additions/edits, not wholesale rewrites
+3. **Citation Integrity**: Preserve all existing citations; add new ones using [@KEY] format
+4. **Natural Flow**: New content should read as if it was always part of the review
+5. **Academic Voice**: Maintain consistent scholarly tone throughout
+"""
 
 LOOP2_INTEGRATOR_USER = """Integrate the following mini-review findings into the main literature review.
 

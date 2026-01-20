@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.shared.llm_utils.models import ModelTier, get_llm
 from workflows.enhance.supervision.shared.prompts import (
     INTEGRATOR_SYSTEM,
@@ -16,6 +18,7 @@ from workflows.enhance.supervision.shared.utils import (
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SupervisionIntegrateContent")
 async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     """Integrate expansion findings into the literature review.
 

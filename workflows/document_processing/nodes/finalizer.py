@@ -5,11 +5,14 @@ Final workflow step for document processing.
 import logging
 from datetime import datetime
 
+from langsmith import traceable
+
 from workflows.document_processing.state import DocumentProcessingState
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="DocProcessingFinalize")
 async def finalize(state: DocumentProcessingState) -> dict:
     """
     Final workflow step.

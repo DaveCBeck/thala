@@ -6,6 +6,7 @@ Used when batch API is not selected but multiple requests need processing.
 import asyncio
 from typing import Callable, Optional, Type, TypeVar
 
+from langsmith import traceable
 from pydantic import BaseModel
 
 from .executors import executors
@@ -19,6 +20,7 @@ from .types import (
 T = TypeVar("T", bound=BaseModel)
 
 
+@traceable(run_type="chain", name="batch_concurrent_fallback")
 async def execute_batch_concurrent(
     output_schema: Type[T],
     requests: list[StructuredRequest],

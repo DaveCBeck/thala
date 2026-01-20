@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from workflows.shared.llm_utils import ModelTier, get_llm
@@ -72,6 +73,7 @@ Based on the literature review above, generate:
 Generate diverse, non-overlapping targets that complement the academic literature."""
 
 
+@traceable(run_type="chain", name="SynthesisResearchTargets")
 async def generate_research_targets(state: dict) -> dict[str, Any]:
     """Generate queries for web research and themes for book finding.
 

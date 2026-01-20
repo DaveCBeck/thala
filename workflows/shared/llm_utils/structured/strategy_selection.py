@@ -5,6 +5,7 @@ Determines which execution strategy to use based on configuration and context.
 
 import logging
 
+from ..models import is_deepseek_tier
 from .types import StructuredOutputConfig, StructuredOutputStrategy
 
 logger = logging.getLogger(__name__)
@@ -20,10 +21,11 @@ def select_strategy(
     Selection rules:
     1. If explicitly specified, use that strategy
     2. If tools provided -> TOOL_AGENT
-    3. If thinking_budget set -> LANGCHAIN_STRUCTURED (BATCH_TOOL_CALL incompatible)
-    4. If prefer_batch_api=True -> BATCH_TOOL_CALL (for cost savings)
-    5. If batch with batch_threshold+ items -> BATCH_TOOL_CALL
-    6. Default -> LANGCHAIN_STRUCTURED
+    3. If DeepSeek tier -> LANGCHAIN_STRUCTURED (no batch API available)
+    4. If thinking_budget set -> LANGCHAIN_STRUCTURED (BATCH_TOOL_CALL incompatible)
+    5. If prefer_batch_api=True -> BATCH_TOOL_CALL (for cost savings)
+    6. If batch with batch_threshold+ items -> BATCH_TOOL_CALL
+    7. Default -> LANGCHAIN_STRUCTURED
     """
     if config.strategy != StructuredOutputStrategy.AUTO:
         logger.debug(f"[DIAG] Strategy explicitly set: {config.strategy}")
@@ -32,6 +34,11 @@ def select_strategy(
     if config.tools:
         logger.debug("[DIAG] Strategy: TOOL_AGENT (tools provided)")
         return StructuredOutputStrategy.TOOL_AGENT
+
+    # DeepSeek doesn't have a batch API - always use synchronous calls
+    if is_deepseek_tier(config.tier):
+        logger.debug(f"[DIAG] Strategy: LANGCHAIN_STRUCTURED (DeepSeek tier {config.tier.name}, no batch API)")
+        return StructuredOutputStrategy.LANGCHAIN_STRUCTURED
 
     # thinking_budget cannot be used with batch API + tool_choice
     # Fall back to LangChain structured output which handles thinking gracefully

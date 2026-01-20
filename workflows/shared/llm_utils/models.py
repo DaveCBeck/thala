@@ -13,44 +13,65 @@ from core.config import configure_langsmith
 configure_langsmith()
 
 from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models import BaseChatModel
+from langchain_openai import ChatOpenAI
 
 
 class ModelTier(Enum):
     """Model tiers for different task complexities.
 
-    HAIKU: Quick tasks, simple text generation
-    SONNET: Standard tasks, summarization, metadata extraction (200k context)
-    SONNET_1M: Same as SONNET but with 1M token context window for long documents (Tier 4+)
-    OPUS: Complex tasks requiring deep analysis (supports extended thinking)
+    Claude tiers:
+        HAIKU: Quick tasks, simple text generation
+        SONNET: Standard tasks, summarization, metadata extraction (200k context)
+        SONNET_1M: Same as SONNET but with 1M token context window for long documents (Tier 4+)
+        OPUS: Complex tasks requiring deep analysis (supports extended thinking)
+
+    DeepSeek tiers (10-15x cheaper than Claude, OpenAI-compatible API):
+        DEEPSEEK_V3: High-volume simple tasks (classification, filtering, extraction)
+        DEEPSEEK_R1: Reasoning tasks (methodology analysis, complex extraction)
     """
 
+    # Claude tiers
     HAIKU = "claude-haiku-4-5-20251001"
     SONNET = "claude-sonnet-4-5-20250929"
     SONNET_1M = "claude-sonnet-4-5-20250929"  # Same model as SONNET, requires 1M context beta header
-    OPUS = "claude-opus-4-5-20251101"  # replace with claude-opus-4-5-20251101 for production
+    OPUS = "claude-opus-4-5-20251101"
+
+    # DeepSeek tiers (OpenAI-compatible API)
+    DEEPSEEK_V3 = "deepseek-chat"  # V3.2, 128K context, $0.27/$1.10 per MTok
+    DEEPSEEK_R1 = "deepseek-reasoner"  # Reasoning model, 128K context, $0.55/$2.19 per MTok
 
 
 # Beta header for 1M context window (Sonnet 4/4.5 only, Tier 4+)
 CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
+# DeepSeek tiers for easy checking
+DEEPSEEK_TIERS = {ModelTier.DEEPSEEK_V3, ModelTier.DEEPSEEK_R1}
+
+
+def is_deepseek_tier(tier: ModelTier) -> bool:
+    """Check if a tier is a DeepSeek model."""
+    return tier in DEEPSEEK_TIERS
 
 
 def get_llm(
     tier: ModelTier = ModelTier.SONNET,
     thinking_budget: Optional[int] = None,
     max_tokens: int = 4096,
-) -> ChatAnthropic:
+) -> BaseChatModel:
     """
-    Get a configured Anthropic Claude LLM instance.
+    Get a configured LLM instance (Claude or DeepSeek).
 
     Args:
-        tier: Model tier selection (HAIKU, SONNET, SONNET_1M, OPUS)
+        tier: Model tier selection (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
         thinking_budget: Token budget for extended thinking (enables if set).
                         Recommended: 8000-16000 for complex tasks.
-                        Only supported on Sonnet 4.5, Haiku 4.5, and Opus 4.5.
+                        Only supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
+                        Ignored for DeepSeek tiers.
         max_tokens: Maximum output tokens (must be > thinking_budget if set)
 
     Returns:
-        ChatAnthropic instance configured for the specified tier
+        BaseChatModel instance configured for the specified tier
 
     Example:
         # Standard task with Sonnet
@@ -61,7 +82,39 @@ def get_llm(
 
         # Complex analysis with Opus and extended thinking
         llm = get_llm(ModelTier.OPUS, thinking_budget=8000)
+
+        # Cost-effective task with DeepSeek
+        llm = get_llm(ModelTier.DEEPSEEK_V3)
     """
+    # DeepSeek models use OpenAI-compatible API
+    if is_deepseek_tier(tier):
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY not set")
+
+        if thinking_budget is not None:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                f"thinking_budget ignored for DeepSeek tier {tier.name}"
+            )
+
+        return ChatOpenAI(
+            model=tier.value,
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+            max_tokens=max_tokens,
+            max_retries=3,
+            # LangSmith metadata for cost tracking
+            model_kwargs={
+                "metadata": {
+                    "ls_provider": "deepseek",
+                    "ls_model_name": tier.value,
+                }
+            },
+        )
+
+    # Claude models use Anthropic API
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not set")

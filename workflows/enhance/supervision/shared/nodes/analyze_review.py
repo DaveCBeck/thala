@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.enhance.supervision.shared.types import (
     SupervisorDecision,
@@ -15,6 +17,7 @@ from workflows.enhance.supervision.shared.prompts import (
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SupervisionAnalyzeReview")
 async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
     """Analyze the literature review for theoretical gaps.
 

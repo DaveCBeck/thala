@@ -8,6 +8,8 @@ Generates dual summaries (original language + English) for non-English documents
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.language import LANGUAGE_NAMES
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
@@ -34,6 +36,7 @@ TRANSLATION_SYSTEM = """You are a skilled translator. Translate the following te
 Output ONLY the English translation, no explanations or preamble."""
 
 
+@traceable(run_type="chain", name="GenerateSummary")
 async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Generate summary of the document.

@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 from workflows.enhance.fact_check.schemas import FactCheckScreeningResult
 from workflows.enhance.fact_check.prompts import (
@@ -14,6 +16,7 @@ from workflows.shared.llm_utils import ModelTier, get_structured_output
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="FactCheckScreenSections")
 async def screen_sections_for_fact_check(state: dict) -> dict[str, Any]:
     """Pre-screen sections to determine which need fact-checking.
 

@@ -7,6 +7,7 @@ Uses structured output with prompt caching for cost optimization.
 import logging
 from typing import Any, Optional
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from workflows.document_processing.state import DocumentProcessingState
@@ -49,6 +50,7 @@ Also determine:
 - chapter_authors: dict mapping chapter titles to author names (only for multi-author books)"""
 
 
+@traceable(run_type="chain", name="CheckMetadata")
 async def check_metadata(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Extract/verify metadata from first and last 10 pages.

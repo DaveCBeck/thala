@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.llm_utils.response_parsing import extract_response_content
@@ -150,6 +152,7 @@ async def _summarize_single_chapter(
             }
 
 
+@traceable(run_type="chain", name="SummarizeChapters")
 async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Summarize all chapters using Anthropic Batch API for 50% cost reduction.
@@ -346,6 +349,7 @@ Chapter content:
     return chapter_summaries
 
 
+@traceable(run_type="chain", name="AggregateSummaries")
 async def aggregate_summaries(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Combine all chapter summaries into tenth_summary.

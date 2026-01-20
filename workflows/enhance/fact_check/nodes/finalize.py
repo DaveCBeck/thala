@@ -4,11 +4,14 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="FactCheckFinalize")
 async def finalize_node(state: dict) -> dict[str, Any]:
     """Finalize the fact-check workflow and render final document.
 

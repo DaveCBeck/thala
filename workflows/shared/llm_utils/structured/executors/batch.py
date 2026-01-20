@@ -24,7 +24,7 @@ T = TypeVar("T", bound=BaseModel)
 class BatchToolCallExecutor(StrategyExecutor[T]):
     """Uses Anthropic Batch API with tool calling for bulk processing."""
 
-    @traceable(name="batch_structured_output")
+    @traceable(run_type="llm", name="batch_structured_output")
     async def execute_batch(
         self,
         output_schema: Type[T],

@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
 from langgraph.types import Send
 from pydantic import BaseModel, Field
 
@@ -98,6 +99,7 @@ def route_to_section_workers(state: dict) -> list[Send]:
     return sends
 
 
+@traceable(run_type="chain", name="SynthesisWriteSectionWorker")
 async def write_section_worker(state: dict) -> dict[str, Any]:
     """Worker that writes a single section.
 
@@ -213,6 +215,7 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SynthesisCheckQuality")
 async def check_section_quality(state: dict) -> dict[str, Any]:
     """Check quality of all written sections.
 
@@ -285,6 +288,7 @@ async def check_section_quality(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SynthesisAssembleSections")
 async def assemble_sections(state: dict) -> dict[str, Any]:
     """Assemble all sections into the final synthesis document."""
     section_drafts = state.get("section_drafts", [])

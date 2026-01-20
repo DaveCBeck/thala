@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from workflows.shared.llm_utils import ModelTier, get_llm
@@ -115,6 +116,7 @@ For each selected book, explain why it should be deeply integrated."""
 # =============================================================================
 
 
+@traceable(run_type="chain", name="SynthesisSuggestStructure")
 async def suggest_structure(state: dict) -> dict[str, Any]:
     """Suggest synthesis structure based on all gathered research.
 
@@ -222,6 +224,7 @@ async def suggest_structure(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SynthesisSimpleSynthesis")
 async def simple_synthesis(state: dict) -> dict[str, Any]:
     """Create a simple synthesis without full structure (for test mode).
 
@@ -296,6 +299,7 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SynthesisSelectBooks")
 async def select_books(state: dict) -> dict[str, Any]:
     """Select books for deep integration in synthesis.
 

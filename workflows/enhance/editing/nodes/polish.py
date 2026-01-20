@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel, ContentBlock
 from workflows.enhance.editing.schemas import PolishScreeningResult, SectionPolish
 from workflows.enhance.editing.prompts import (
@@ -16,6 +18,7 @@ from workflows.shared.llm_utils import ModelTier, get_structured_output
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="EditingPolish")
 async def polish_node(state: dict) -> dict[str, Any]:
     """Polish document for coherence: transitions, flow improvements.
 

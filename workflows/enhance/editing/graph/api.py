@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.shared.quality_config import QualityTier
 
 from ..quality_presets import EDITING_QUALITY_PRESETS
@@ -14,6 +16,7 @@ from .construction import editing_graph
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="EditingWorkflow")
 async def editing(
     document: str,
     topic: str,
@@ -88,6 +91,15 @@ async def editing(
                 "run_id": run_id,
                 "run_name": f"editing:{topic[:30]}",
                 "recursion_limit": 100,  # Higher limit for many parallel sections
+                "tags": [
+                    f"quality:{quality}",
+                    "workflow:editing",
+                ],
+                "metadata": {
+                    "topic": topic[:100],
+                    "quality_tier": quality,
+                    "doc_length": len(document),
+                },
             },
         )
 

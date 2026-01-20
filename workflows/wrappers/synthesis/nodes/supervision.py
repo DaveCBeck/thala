@@ -3,11 +3,14 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance import enhance_report
 
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="SynthesisSupervision")
 async def run_supervision(state: dict) -> dict[str, Any]:
     """Run supervision workflow to enhance literature review.
 

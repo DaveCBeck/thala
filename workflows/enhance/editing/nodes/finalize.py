@@ -4,6 +4,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 from workflows.enhance.editing.schemas import FinalVerification
 from workflows.enhance.editing.prompts import (
@@ -15,6 +17,7 @@ from workflows.shared.llm_utils import ModelTier, get_structured_output
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="EditingFinalize")
 async def finalize_node(state: dict) -> dict[str, Any]:
     """Generate final document and summary.
 

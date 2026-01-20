@@ -4,6 +4,8 @@ import json
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 from workflows.enhance.editing.schemas import (
     StructuralAnalysis,
@@ -207,6 +209,7 @@ def create_edits_from_issues(
     return edits
 
 
+@traceable(run_type="chain", name="EditingPlanEdits")
 async def plan_edits_node(state: dict) -> dict[str, Any]:
     """Create ordered edit plan from structural analysis.
 

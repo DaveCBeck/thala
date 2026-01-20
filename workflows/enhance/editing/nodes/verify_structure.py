@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 from workflows.enhance.editing.schemas import StructureVerification, StructuralAnalysis
 from workflows.enhance.editing.prompts import (
@@ -32,6 +34,7 @@ def summarize_structure(doc_model: DocumentModel) -> str:
     return "\n".join(lines)
 
 
+@traceable(run_type="chain", name="EditingVerifyStructure")
 async def verify_structure_node(state: dict) -> dict[str, Any]:
     """Verify structural edits improved coherence.
 

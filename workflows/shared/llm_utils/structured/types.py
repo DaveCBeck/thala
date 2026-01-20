@@ -54,7 +54,7 @@ class StructuredOutputConfig:
     """Configuration for structured output extraction.
 
     Args:
-        tier: Model tier (HAIKU, SONNET, SONNET_1M, OPUS)
+        tier: Model tier (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
         max_tokens: Maximum output tokens
         thinking_budget: Token budget for extended thinking (Opus)
 

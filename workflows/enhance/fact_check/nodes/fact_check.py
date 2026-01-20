@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
 from langgraph.types import Send
 
 from workflows.enhance.editing.document_model import DocumentModel
@@ -86,6 +87,7 @@ def route_to_fact_check_sections(state: dict) -> list[Send] | str:
     return sends
 
 
+@traceable(run_type="chain", name="FactCheckSectionWorker")
 async def fact_check_section_worker(state: dict) -> dict[str, Any]:
     """Fact-check claims in a single section.
 
@@ -191,6 +193,7 @@ async def fact_check_section_worker(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="FactCheckAssemble")
 async def assemble_fact_checks_node(state: dict) -> dict[str, Any]:
     """Assemble fact-check results from parallel workers.
 

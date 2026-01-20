@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
 from langgraph.types import Send
 
 from workflows.research.web_research import deep_research
@@ -63,6 +64,7 @@ def route_to_parallel_research(state: dict) -> list[Send]:
     return sends
 
 
+@traceable(run_type="chain", name="SynthesisWebResearchWorker")
 async def web_research_worker(state: dict) -> dict[str, Any]:
     """Worker that runs a single web research query.
 
@@ -128,6 +130,7 @@ async def web_research_worker(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SynthesisBookFindingWorker")
 async def book_finding_worker(state: dict) -> dict[str, Any]:
     """Worker that runs a single book finding theme.
 
@@ -214,6 +217,7 @@ async def book_finding_worker(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SynthesisAggregateResearch")
 async def aggregate_research(state: dict) -> dict[str, Any]:
     """Aggregate results from parallel research workers.
 

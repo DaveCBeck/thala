@@ -7,6 +7,9 @@ extracting parameters and updating state appropriately.
 import logging
 from typing import Any
 
+from langsmith import traceable
+from langgraph.types import RunnableConfig
+
 from workflows.enhance.supervision.loop1.graph import run_loop1_standalone
 from workflows.enhance.supervision.loop2.graph import run_loop2_standalone
 from workflows.enhance.supervision.types import EnhanceState
@@ -14,7 +17,8 @@ from workflows.enhance.supervision.types import EnhanceState
 logger = logging.getLogger(__name__)
 
 
-async def run_loop1_node(state: EnhanceState) -> dict[str, Any]:
+@traceable(run_type="chain", name="SupervisionLoop1Node")
+async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[str, Any]:
     """Run Loop 1 (theoretical depth) and update state.
 
     Extracts parameters from EnhanceState, calls run_loop1_standalone,
@@ -36,6 +40,7 @@ async def run_loop1_node(state: EnhanceState) -> dict[str, Any]:
             max_iterations=max_iterations,
             source_count=len(paper_corpus),
             quality_settings=quality_settings,
+            config=config,
         )
 
         loop_progress = state.get("loop_progress", [])
@@ -70,7 +75,8 @@ async def run_loop1_node(state: EnhanceState) -> dict[str, Any]:
         }
 
 
-async def run_loop2_node(state: EnhanceState) -> dict[str, Any]:
+@traceable(run_type="chain", name="SupervisionLoop2Node")
+async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[str, Any]:
     """Run Loop 2 (literature expansion) and update state.
 
     Extracts parameters from EnhanceState, calls run_loop2_standalone,
@@ -107,6 +113,7 @@ async def run_loop2_node(state: EnhanceState) -> dict[str, Any]:
             input_data=lit_review_input,
             quality_settings=quality_settings,
             max_iterations=max_iterations,
+            config=config,
         )
 
         loop_progress = state.get("loop_progress", [])
@@ -149,6 +156,7 @@ async def run_loop2_node(state: EnhanceState) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="SupervisionFinalizeNode")
 def finalize_node(state: EnhanceState) -> dict[str, Any]:
     """Finalize enhancement and prepare result.
 

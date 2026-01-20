@@ -17,6 +17,26 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+@traceable(run_type="tool", name="execute_tool_call")
+async def _execute_tool_call(
+    tool: BaseTool,
+    tool_name: str,
+    tool_args: dict,
+) -> str:
+    """Execute a single tool call with LangSmith tracing.
+
+    Args:
+        tool: The LangChain tool to execute
+        tool_name: Name of the tool for logging
+        tool_args: Arguments to pass to the tool
+
+    Returns:
+        String result from the tool
+    """
+    result = await tool.ainvoke(tool_args)
+    return str(result) if result is not None else ""
+
+
 @traceable(name="tool_agent")
 async def run_tool_agent(
     llm: ChatAnthropic,
@@ -72,8 +92,7 @@ async def run_tool_agent(
             else:
                 try:
                     tool = tool_map[tool_name]
-                    result = await tool.ainvoke(tool_args)
-                    tool_result = str(result) if result is not None else ""
+                    tool_result = await _execute_tool_call(tool, tool_name, tool_args)
 
                     # Truncate if needed
                     if len(tool_result) > max_total_chars - total_chars:

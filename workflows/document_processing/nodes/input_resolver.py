@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from langsmith import traceable
+
 from core.scraping import get_url, GetUrlOptions
 from core.scraping.pdf import process_pdf_file
 from workflows.shared.text_utils import chunk_by_headings, count_words, estimate_pages
@@ -134,6 +136,7 @@ async def _resolve_local_file(
     }
 
 
+@traceable(run_type="chain", name="ResolveInput")
 async def resolve_input(state: dict) -> dict:
     """
     Resolve input source to markdown content.

@@ -4,6 +4,8 @@ import logging
 import uuid
 from typing import Any, Optional
 
+from langsmith import traceable
+
 from workflows.research.academic_lit_review.state import LitReviewInput
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
 from workflows.shared.quality_config import QualityTier
@@ -14,6 +16,7 @@ from .construction import academic_lit_review_graph
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="AcademicLitReview")
 async def academic_lit_review(
     topic: str,
     research_questions: list[str],
@@ -95,6 +98,17 @@ async def academic_lit_review(
             config={
                 "run_id": run_id,
                 "run_name": f"lit_review:{topic[:30]}",
+                "tags": [
+                    f"quality:{quality}",
+                    "workflow:lit_review",
+                    f"lang:{language}",
+                ],
+                "metadata": {
+                    "topic": topic[:100],
+                    "quality_tier": quality,
+                    "question_count": len(research_questions),
+                    "language": language,
+                },
             },
         )
 

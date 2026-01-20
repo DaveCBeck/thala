@@ -4,6 +4,7 @@ import copy
 import logging
 from typing import Any
 
+from langsmith import traceable
 from langgraph.types import Send
 
 from workflows.enhance.editing.document_model import DocumentModel, Section, ContentBlock, DocumentTransaction
@@ -101,6 +102,7 @@ def route_to_edit_workers(state: dict) -> list[Send] | str:
     return sends
 
 
+@traceable(run_type="chain", name="EditingGenerationWorker")
 async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
     """Execute a content generation edit.
 
@@ -247,6 +249,7 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
         }
 
 
+@traceable(run_type="chain", name="EditingStructureWorker")
 async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
     """Execute structural edits (moves, merges, consolidations) sequentially."""
     edits = state["edits"]
@@ -356,6 +359,7 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
     return {"completed_edits": results}
 
 
+@traceable(run_type="chain", name="EditingRemovalWorker")
 async def execute_removal_edit_worker(state: dict) -> dict[str, Any]:
     """Execute removal edits (delete, trim)."""
     edit_data = state["edit"]
@@ -443,6 +447,7 @@ def _find_section_in_list(sections: list[Section], section_id: str) -> Section |
     return None
 
 
+@traceable(run_type="chain", name="EditingAssembleEdits")
 async def assemble_edits_node(state: dict) -> dict[str, Any]:
     """Assemble completed edits into updated document model.
 
