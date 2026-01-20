@@ -1,4 +1,8 @@
-"""Integration nodes for synthesis subgraph."""
+"""Integration nodes for synthesis subgraph.
+
+Programmatically assembles document sections and uses LLM only for abstract generation.
+This avoids token limit issues from having the LLM re-output the entire document.
+"""
 
 import logging
 from typing import Any
@@ -6,14 +10,65 @@ from typing import Any
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
-from ..prompts import get_integration_system_prompt, INTEGRATION_USER_TEMPLATE, DEFAULT_TARGET_WORDS
+from ..prompts import (
+    get_abstract_system_prompt,
+    ABSTRACT_USER_TEMPLATE,
+    SECTION_PROPORTIONS,
+    DEFAULT_TARGET_WORDS,
+)
 from ..citation_utils import extract_citations_from_text
 
 logger = logging.getLogger(__name__)
 
 
+def _assemble_document(
+    topic: str,
+    introduction: str,
+    methodology: str,
+    thematic_sections: dict[str, str],
+    discussion: str,
+    conclusions: str,
+    clusters: list[dict],
+    abstract: str = "",
+) -> str:
+    """Programmatically assemble the literature review document.
+
+    Combines all sections with proper markdown headers. No LLM needed.
+    """
+    parts = [f"# Literature Review: {topic}\n"]
+
+    if abstract:
+        parts.append(f"## Abstract\n\n{abstract}\n")
+
+    parts.append(f"## 1. Introduction\n\n{introduction}\n")
+    parts.append(f"## 2. Methodology\n\n{methodology}\n")
+
+    # Add thematic sections in cluster order
+    cluster_order = [c["label"] for c in clusters]
+    for i, label in enumerate(cluster_order):
+        section_num = i + 3
+        section_text = thematic_sections.get(
+            label, f"[Section for {label} not available]"
+        )
+        parts.append(f"## {section_num}. {label}\n\n{section_text}\n")
+
+    # Discussion and conclusions
+    discussion_num = len(cluster_order) + 3
+    conclusions_num = discussion_num + 1
+
+    parts.append(f"## {discussion_num}. Discussion\n\n{discussion}\n")
+    parts.append(f"## {conclusions_num}. Conclusions\n\n{conclusions}\n")
+
+    return "\n".join(parts)
+
+
 async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
-    """Integrate all sections into a cohesive document."""
+    """Integrate all sections into a cohesive document.
+
+    Uses programmatic assembly for the document structure and LLM only
+    for generating the abstract. This avoids token limit issues and
+    ensures no content is lost during integration.
+    """
     input_data = state.get("input", {})
     introduction = state.get("introduction_draft", "")
     methodology = state.get("methodology_draft", "")
@@ -25,79 +80,68 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     quality_settings = state.get("quality_settings", {})
 
     topic = input_data.get("topic", "Literature Review")
-
-    cluster_order = [c["label"] for c in clusters]
-    ordered_sections = []
-
-    for i, label in enumerate(cluster_order):
-        section_text = thematic_sections.get(
-            label, f"[Section for {label} not available]"
-        )
-        ordered_sections.append(f"### {i + 3}. {label}\n\n{section_text}")
-
-    thematic_text = "\n\n".join(ordered_sections)
-
-    # Generate prompts with target word count
     target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
-    integration_system = get_integration_system_prompt(target_words)
-    integration_user_template = INTEGRATION_USER_TEMPLATE
+
+    # Step 1: Generate abstract using LLM (only ~250 words output)
+    abstract_target = int(target_words * SECTION_PROPORTIONS["abstract"])
+    abstract_system = get_abstract_system_prompt(abstract_target)
+    abstract_user_template = ABSTRACT_USER_TEMPLATE
 
     if language_config and language_config["code"] != "en":
-        integration_system = await get_translated_prompt(
-            integration_system,
+        abstract_system = await get_translated_prompt(
+            abstract_system,
             language_code=language_config["code"],
             language_name=language_config["name"],
-            prompt_name="lit_review_integration_system",
+            prompt_name="lit_review_abstract_system",
         )
-        integration_user_template = await get_translated_prompt(
-            INTEGRATION_USER_TEMPLATE,
+        abstract_user_template = await get_translated_prompt(
+            ABSTRACT_USER_TEMPLATE,
             language_code=language_config["code"],
             language_name=language_config["name"],
-            prompt_name="lit_review_integration_user",
+            prompt_name="lit_review_abstract_user",
         )
 
-    integration_prompt = integration_user_template.format(
-        title=f"Literature Review: {topic}",
+    abstract_prompt = abstract_user_template.format(
+        topic=topic,
         introduction=introduction,
-        methodology=methodology,
-        thematic_sections=thematic_text,
-        discussion=discussion,
         conclusions=conclusions,
     )
 
-    llm = get_llm(tier=ModelTier.OPUS, max_tokens=64000)
+    llm = get_llm(tier=ModelTier.SONNET, max_tokens=1000)
 
     response = await invoke_with_cache(
         llm,
-        system_prompt=integration_system,
-        user_prompt=integration_prompt,
+        system_prompt=abstract_system,
+        user_prompt=abstract_prompt,
         cache_ttl="1h",
     )
 
-    integrated = (
+    abstract = (
         response.content
         if isinstance(response.content, str)
         else response.content[0].get("text", "")
     )
 
-    # Validate citation preservation
-    input_citations = extract_citations_from_text(thematic_text)
+    logger.info(f"Generated abstract: {len(abstract.split())} words")
+
+    # Step 2: Assemble final document with abstract
+    integrated = _assemble_document(
+        topic=topic,
+        introduction=introduction,
+        methodology=methodology,
+        thematic_sections=thematic_sections,
+        discussion=discussion,
+        conclusions=conclusions,
+        clusters=clusters,
+        abstract=abstract,
+    )
+
+    # Count citations for logging
     output_citations = extract_citations_from_text(integrated)
 
-    if input_citations and not output_citations:
-        logger.warning(
-            f"Citation format lost during integration! "
-            f"Input had {len(input_citations)} citations, output has 0. "
-            f"The LLM may have reformatted [@KEY] citations."
-        )
-    elif len(output_citations) < len(input_citations) * 0.5:
-        logger.warning(
-            f"Significant citation loss during integration: "
-            f"{len(input_citations)} -> {len(output_citations)} citations"
-        )
-
     logger.info(
-        f"Integrated review: {len(integrated.split())} words, {len(output_citations)} citations preserved"
+        f"Assembled review: {len(integrated.split())} words, "
+        f"{len(output_citations)} citations preserved"
     )
 
     return {"integrated_review": integrated}

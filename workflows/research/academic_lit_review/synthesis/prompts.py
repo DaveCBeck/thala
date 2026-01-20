@@ -33,76 +33,6 @@ from .nodes.writing.prompts import (  # noqa: F401
 )
 
 
-def get_integration_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> str:
-    """Generate integration system prompt with appropriate abstract word target."""
-    abstract_target = int(target_words * SECTION_PROPORTIONS["abstract"])
-    return f"""You are integrating sections into a cohesive literature review document.
-
-Your task:
-1. Add smooth transitions between sections
-2. Ensure consistent terminology throughout
-3. Add an abstract ({_word_range(abstract_target)} words)
-4. Format with proper markdown headers
-5. Ensure logical flow
-
-CRITICAL - CITATION PRESERVATION:
-- You MUST preserve ALL citations in their exact [@KEY] format
-- Do NOT change [@ABC123] to any other format
-- Do NOT remove or omit any citations
-- Do NOT convert to numbered references [1], [2], etc.
-- Do NOT convert to inline (Author, Year) format
-- The [@KEY] citations will be processed into a reference list automatically
-
-Do NOT change the substantive content of any section.
-Focus ONLY on transitions, section ordering, and adding the abstract.
-
-Output the complete document with this structure:
-# [Title]
-
-## Abstract
-[{_word_range(abstract_target)} word abstract]
-
-## 1. Introduction
-[Provided introduction]
-
-## 2. Methodology
-[Provided methodology]
-
-## 3-N. [Thematic Sections]
-[Provided sections with headers]
-
-## N+1. Discussion
-[Provided discussion]
-
-## N+2. Conclusions
-[Provided conclusions]
-
-## References
-[Will be added separately]"""
-
-
-INTEGRATION_USER_TEMPLATE = """Integrate these sections into a cohesive literature review:
-
-Title: {title}
-
-## Introduction
-{introduction}
-
-## Methodology
-{methodology}
-
-## Thematic Sections
-{thematic_sections}
-
-## Discussion
-{discussion}
-
-## Conclusions
-{conclusions}
-
-Create a well-integrated document with transitions and an abstract."""
-
-
 QUALITY_CHECK_SYSTEM_PROMPT = """You are reviewing a literature review for quality issues.
 
 Check for:
@@ -116,5 +46,31 @@ Check for:
 Provide your assessment of the review quality."""
 
 
-# Backwards compatibility: static prompt using default target
-INTEGRATION_SYSTEM_PROMPT = get_integration_system_prompt()
+# Abstract generation prompts (used by programmatic integration)
+def get_abstract_system_prompt(abstract_target: int = 240) -> str:
+    """Generate system prompt for abstract-only generation."""
+    return f"""You are writing an abstract for an academic literature review.
+
+Write a concise abstract of {_word_range(abstract_target)} words that:
+1. States the research topic and scope
+2. Summarizes the methodology (literature search approach)
+3. Highlights the key themes and findings
+4. Notes the main conclusions and implications
+
+The abstract should be self-contained and give readers a clear overview
+of what the literature review covers and its main contributions.
+
+Output ONLY the abstract text, no headers or additional formatting."""
+
+
+ABSTRACT_USER_TEMPLATE = """Write an abstract for this literature review.
+
+Topic: {topic}
+
+Introduction (for context):
+{introduction}
+
+Conclusions (for key findings):
+{conclusions}
+
+Write a concise abstract summarizing the scope, methodology, key themes, and conclusions."""
