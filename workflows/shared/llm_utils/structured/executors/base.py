@@ -58,9 +58,14 @@ class StrategyExecutor(ABC, Generic[T]):
         output_schema: Type[T],
         user_prompt: str,
         system_prompt: Optional[str],
-        config: StructuredOutputConfig,
+        output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
-        """Execute the strategy and return result."""
+        """Execute the strategy and return result.
+
+        Note: Parameter is named 'output_config' (not 'config') to avoid conflict
+        with LangSmith's @traceable decorator which treats 'config' as a LangChain
+        RunnableConfig dict and tries to call .get("callbacks") on it.
+        """
         pass
 
 

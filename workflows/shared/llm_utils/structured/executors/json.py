@@ -6,6 +6,7 @@ Fallback strategy that prompts for JSON output and parses the response.
 import json
 from typing import Optional, Type, TypeVar
 
+from langsmith import traceable
 from pydantic import BaseModel
 
 from ...caching import create_cached_messages
@@ -24,16 +25,17 @@ T = TypeVar("T", bound=BaseModel)
 class JSONPromptingExecutor(StrategyExecutor[T]):
     """Fallback: prompts for JSON output and parses response."""
 
+    @traceable(run_type="llm", name="json_prompting")
     async def execute(
         self,
         output_schema: Type[T],
         user_prompt: str,
         system_prompt: Optional[str],
-        config: StructuredOutputConfig,
+        output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
         llm = get_llm(
-            tier=config.tier,
-            max_tokens=config.max_tokens,
+            tier=output_config.tier,
+            max_tokens=output_config.max_tokens,
         )
 
         # Append JSON instruction
@@ -48,11 +50,11 @@ You must respond with ONLY valid JSON matching this schema:
 Do not include any text outside the JSON object. Do not wrap in markdown code blocks."""
         )
 
-        if config.enable_prompt_cache:
+        if output_config.enable_prompt_cache:
             messages = create_cached_messages(
                 system_content=augmented_system,
                 user_content=user_prompt,
-                cache_ttl=config.cache_ttl,
+                cache_ttl=output_config.cache_ttl,
             )
         else:
             messages = [

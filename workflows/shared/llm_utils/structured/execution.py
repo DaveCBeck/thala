@@ -49,7 +49,7 @@ async def execute_single(
                     output_schema=output_schema,
                     requests=[StructuredRequest(id="_single", user_prompt=user_prompt)],
                     default_system=system_prompt,
-                    config=cfg,
+                    output_config=cfg,
                 )
                 return results["_single"]
 
@@ -61,7 +61,7 @@ async def execute_single(
                     output_schema=output_schema,
                     user_prompt=user_prompt,
                     system_prompt=system_prompt,
-                    config=cfg,
+                    output_config=cfg,
                 )
 
         return _invoke
@@ -100,7 +100,7 @@ async def execute_batch(
             output_schema=output_schema,
             requests=requests,
             default_system=system_prompt,
-            config=config,
+            output_config=config,
             progress_callback=progress_callback,
         )
     else:
@@ -108,7 +108,7 @@ async def execute_batch(
             output_schema=output_schema,
             requests=requests,
             system_prompt=system_prompt,
-            config=config,
+            output_config=config,
             selected_strategy=selected_strategy,
             progress_callback=progress_callback,
         )

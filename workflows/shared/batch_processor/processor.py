@@ -2,6 +2,11 @@
 
 This module provides 50% cost reduction by batching LLM requests for
 asynchronous processing. Most batches complete within 1 hour.
+
+LangSmith Integration:
+- Clients wrapped with langsmith.wrappers.wrap_anthropic for tracing
+- Batch execution methods decorated with @traceable for visibility
+- Token usage aggregated and attached to run metadata
 """
 
 import asyncio
@@ -11,6 +16,8 @@ from typing import Optional
 
 from anthropic import Anthropic, AsyncAnthropic
 from dotenv import load_dotenv
+from langsmith import get_current_run_tree, traceable
+from langsmith.wrappers import wrap_anthropic
 
 from ..llm_utils import ModelTier
 from .models import BatchRequest, BatchResult
@@ -43,8 +50,9 @@ class BatchProcessor:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY not set")
 
-        self.client = Anthropic(api_key=api_key)
-        self.async_client = AsyncAnthropic(api_key=api_key)
+        # Wrap clients with LangSmith for tracing batch API calls
+        self.client = wrap_anthropic(Anthropic(api_key=api_key))
+        self.async_client = wrap_anthropic(AsyncAnthropic(api_key=api_key))
         self.poll_interval = poll_interval
         self.max_wait_hours = max_wait_hours
         self.pending_requests: list[BatchRequest] = []
@@ -99,6 +107,7 @@ class BatchProcessor:
         self._request_builder.clear()
         self._needs_1m_context = False
 
+    @traceable(name="anthropic_batch_execute", run_type="llm")
     async def execute_batch(self) -> dict[str, BatchResult]:
         """
         Submit batch and wait for results.
@@ -156,11 +165,57 @@ class BatchProcessor:
         # Fetch and parse results
         results = await self._result_parser.fetch_results(batch.results_url)
 
+        # Aggregate token usage and attach to LangSmith run
+        self._attach_usage_metadata(results, batch_id, len(batch_requests))
+
         # Clear pending requests after successful execution
         self.clear_requests()
 
         return results
 
+    def _attach_usage_metadata(
+        self,
+        results: dict[str, BatchResult],
+        batch_id: str,
+        request_count: int,
+    ) -> None:
+        """Attach aggregated token usage to current LangSmith run."""
+        total_input = sum(
+            r.usage.get("input_tokens", 0) for r in results.values() if r.usage
+        )
+        total_output = sum(
+            r.usage.get("output_tokens", 0) for r in results.values() if r.usage
+        )
+        total_cache_read = sum(
+            r.usage.get("cache_read_input_tokens", 0)
+            for r in results.values()
+            if r.usage
+        )
+        total_cache_creation = sum(
+            r.usage.get("cache_creation_input_tokens", 0)
+            for r in results.values()
+            if r.usage
+        )
+
+        run = get_current_run_tree()
+        if run:
+            run.add_metadata(
+                {
+                    "batch_id": batch_id,
+                    "request_count": request_count,
+                    "successful_count": sum(1 for r in results.values() if r.success),
+                    "failed_count": sum(1 for r in results.values() if not r.success),
+                    "usage_metadata": {
+                        "input_tokens": total_input,
+                        "output_tokens": total_output,
+                        "total_tokens": total_input + total_output,
+                        "cache_read_input_tokens": total_cache_read,
+                        "cache_creation_input_tokens": total_cache_creation,
+                    },
+                }
+            )
+
+    @traceable(name="anthropic_batch_execute_with_callback", run_type="llm")
     async def execute_batch_with_callback(
         self,
         callback: callable,
@@ -220,6 +275,10 @@ class BatchProcessor:
             )
 
         results = await self._result_parser.fetch_results(batch.results_url)
+
+        # Aggregate token usage and attach to LangSmith run
+        self._attach_usage_metadata(results, batch_id, len(batch_requests))
+
         self.clear_requests()
         return results
 

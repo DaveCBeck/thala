@@ -26,16 +26,16 @@ class ToolAgentExecutor(StrategyExecutor[T]):
         output_schema: Type[T],
         user_prompt: str,
         system_prompt: Optional[str],
-        config: StructuredOutputConfig,
+        output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from .agent_runner import run_tool_agent
 
         llm = get_llm(
-            tier=config.tier,
-            max_tokens=config.max_tokens,
-            thinking_budget=config.thinking_budget,
+            tier=output_config.tier,
+            max_tokens=output_config.max_tokens,
+            thinking_budget=output_config.thinking_budget,
         )
 
         messages = []
@@ -45,11 +45,11 @@ class ToolAgentExecutor(StrategyExecutor[T]):
 
         result = await run_tool_agent(
             llm=llm,
-            tools=config.tools,
+            tools=output_config.tools,
             messages=messages,
             output_schema=output_schema,
-            max_tool_calls=config.max_tool_calls,
-            max_total_chars=config.max_tool_result_chars,
+            max_tool_calls=output_config.max_tool_calls,
+            max_total_chars=output_config.max_tool_result_chars,
         )
 
         return StructuredOutputResult.ok(

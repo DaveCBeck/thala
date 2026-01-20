@@ -9,6 +9,7 @@ from typing import Type, TypeVar
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
+from langsmith import traceable
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+@traceable(name="tool_agent")
 async def run_tool_agent(
     llm: ChatAnthropic,
     tools: list[BaseTool],

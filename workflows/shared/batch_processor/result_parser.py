@@ -1,9 +1,12 @@
 """Result parsing logic for batch processing."""
 
 import json
+import logging
 import os
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from .models import BatchResult
 
@@ -55,7 +58,12 @@ class ResultParser:
                             thinking = block.get("thinking", "")
                         elif block.get("type") == "tool_use":
                             # Tool input is already valid JSON - serialize it
-                            content = json.dumps(block.get("input", {}))
+                            tool_input = block.get("input", {})
+                            # Unwrap $output wrapper if present (Anthropic batch API wrapping)
+                            if isinstance(tool_input, dict) and "$output" in tool_input and len(tool_input) == 1:
+                                tool_input = tool_input["$output"]
+                            logger.debug(f"[DIAG] tool_use block input keys: {list(tool_input.keys()) if isinstance(tool_input, dict) else type(tool_input)}")
+                            content = json.dumps(tool_input)
 
                     results[original_id] = BatchResult(
                         custom_id=original_id,

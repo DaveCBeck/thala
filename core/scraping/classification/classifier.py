@@ -5,6 +5,10 @@ Classifies scraped web content to determine:
 - abstract_with_pdf: Abstract page with PDF download link
 - paywall: Access restricted, needs fallback to retrieve-academic
 - non_academic: Not academic content
+
+LangSmith Integration:
+- Client wrapped with langsmith.wrappers.wrap_anthropic for tracing
+- classify_content decorated with @traceable for visibility
 """
 
 import logging
@@ -13,6 +17,8 @@ import re
 from typing import Optional
 
 import anthropic
+from langsmith import traceable
+from langsmith.wrappers import wrap_anthropic
 
 from .prompts import CLASSIFICATION_SYSTEM_PROMPT, CLASSIFICATION_USER_TEMPLATE
 from .types import ClassificationResult
@@ -21,6 +27,20 @@ logger = logging.getLogger(__name__)
 
 # Use Haiku for fast, cheap classification
 CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
+
+# Module-level wrapped client for connection reuse and tracing
+_client: Optional[anthropic.AsyncAnthropic] = None
+
+
+def _get_client() -> anthropic.AsyncAnthropic:
+    """Get or create the wrapped Anthropic async client."""
+    global _client
+    if _client is None:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not set")
+        _client = wrap_anthropic(anthropic.AsyncAnthropic(api_key=api_key))
+    return _client
 
 
 def _quick_paywall_check(markdown: str) -> bool:
@@ -61,6 +81,7 @@ def _has_article_structure(markdown: str) -> bool:
     return matches >= 3  # At least 3 typical sections
 
 
+@traceable(name="classify_content", run_type="llm")
 async def classify_content(
     url: str,
     markdown: str,
@@ -118,7 +139,7 @@ async def classify_content(
     )
 
     try:
-        client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = _get_client()
 
         response = await client.messages.create(
             model=CLASSIFIER_MODEL,

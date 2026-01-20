@@ -23,7 +23,7 @@ async def execute_batch_concurrent(
     output_schema: Type[T],
     requests: list[StructuredRequest],
     system_prompt: Optional[str],
-    config: StructuredOutputConfig,
+    output_config: StructuredOutputConfig,
     selected_strategy: StructuredOutputStrategy,
     progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> dict[str, StructuredOutputResult[T]]:
@@ -41,7 +41,7 @@ async def execute_batch_concurrent(
                 output_schema=output_schema,
                 user_prompt=req.user_prompt,
                 system_prompt=req.system_prompt or system_prompt,
-                config=config,
+                output_config=output_config,
             )
         except Exception as e:
             result = StructuredOutputResult.err(error=str(e))
