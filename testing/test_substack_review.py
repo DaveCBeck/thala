@@ -8,6 +8,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -140,4 +142,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        wait_for_all_tracers()

@@ -17,21 +17,23 @@ Environment:
 import asyncio
 import json
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
-import uuid
 
 # Enable dev mode for LangSmith tracing before any imports
 os.environ["THALA_MODE"] = "dev"
 
 import argparse
 import logging
-import langsmith as ls
 
-from testing.utils import configure_logging, get_output_dir
+import langsmith as ls
+from langchain_core.tracers.langchain import wait_for_all_tracers
 from workflows.wrappers.supervised_lit_review.supervision.loops.loop3.graph import (
     run_loop3_standalone,
 )
+
+from testing.utils import configure_logging, get_output_dir
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
 
 configure_logging("loop3_test")
@@ -354,4 +356,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        wait_for_all_tracers()

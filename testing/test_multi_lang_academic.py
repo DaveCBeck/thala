@@ -36,14 +36,16 @@ os.environ["THALA_MODE"] = "dev"
 
 import logging
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from testing.utils import (
-    configure_logging,
-    get_output_dir,
-    print_section_header,
-    format_duration,
-    create_test_parser,
     add_quality_argument,
     add_research_questions_argument,
+    configure_logging,
+    create_test_parser,
+    format_duration,
+    get_output_dir,
+    print_section_header,
 )
 from workflows.shared.workflow_state_store import load_workflow_state
 
@@ -76,7 +78,7 @@ async def translate_to_english(text: str, source_language: str) -> str:
     Returns:
         English translation of the text
     """
-    from workflows.shared.llm_utils.models import get_llm, ModelTier
+    from workflows.shared.llm_utils.models import ModelTier, get_llm
 
     llm = get_llm(ModelTier.SONNET, max_tokens=16384)
 
@@ -383,4 +385,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        wait_for_all_tracers()

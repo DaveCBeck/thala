@@ -32,15 +32,17 @@ os.environ["THALA_MODE"] = "dev"
 
 import logging
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from testing.utils import (
     configure_logging,
     get_output_dir,
+    print_errors,
+    print_section_header,
+    print_timing,
+    safe_preview,
     save_json_result,
     save_markdown_report,
-    print_section_header,
-    safe_preview,
-    print_timing,
-    print_errors,
 )
 
 configure_logging("supervision")
@@ -292,4 +294,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        wait_for_all_tracers()

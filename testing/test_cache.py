@@ -3,14 +3,16 @@
 import asyncio
 import logging
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from core.config import configure_logging
+from langchain_tools.openalex.queries import get_work_by_doi
 from workflows.shared.persistent_cache import (
+    clear_cache,
+    get_cache_stats,
     get_cached,
     set_cached,
-    get_cache_stats,
-    clear_cache,
 )
-from langchain_tools.openalex.queries import get_work_by_doi
 
 configure_logging("cache_test")
 logger = logging.getLogger(__name__)
@@ -79,4 +81,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        wait_for_all_tracers()

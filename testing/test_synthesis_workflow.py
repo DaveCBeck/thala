@@ -28,22 +28,24 @@ os.environ["THALA_MODE"] = "dev"
 
 import logging
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from testing.utils import (
-    configure_logging,
-    get_output_dir,
-    save_json_result,
-    save_markdown_report,
-    print_section_header,
-    safe_preview,
-    print_timing,
-    print_errors,
-    print_quality_analysis,
     BaseQualityAnalyzer,
     QualityMetrics,
-    create_test_parser,
-    add_quality_argument,
     add_language_argument,
+    add_quality_argument,
     add_research_questions_argument,
+    configure_logging,
+    create_test_parser,
+    get_output_dir,
+    print_errors,
+    print_quality_analysis,
+    print_section_header,
+    print_timing,
+    safe_preview,
+    save_json_result,
+    save_markdown_report,
 )
 from workflows.shared.workflow_state_store import load_workflow_state
 
@@ -419,4 +421,10 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        # Without this, the process may exit before end_time is sent,
+        # causing runs to appear as "interrupted" in LangSmith
+        wait_for_all_tracers()

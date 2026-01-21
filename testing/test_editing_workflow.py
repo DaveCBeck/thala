@@ -25,14 +25,16 @@ os.environ["THALA_MODE"] = "dev"
 
 import argparse
 import logging
+
 import langsmith as ls
+from langchain_core.tracers.langchain import wait_for_all_tracers
 
 from testing.utils import (
     configure_logging,
     get_output_dir,
-    print_section_header,
-    print_key_value,
     print_errors,
+    print_key_value,
+    print_section_header,
 )
 from workflows.enhance.editing import editing
 
@@ -310,4 +312,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Wait for LangSmith to flush all trace data before exiting
+        wait_for_all_tracers()
