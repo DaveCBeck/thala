@@ -200,58 +200,57 @@ async def _batch_score_deepseek_cached(
     language_config: LanguageConfig | None,
     tier: ModelTier,
     max_concurrent: int,
+    chunk_size: int = 10,
 ) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
-    """Score papers using DeepSeek with cache-aware batch processing.
+    """Score papers using DeepSeek with cache-aware chunked batch processing.
 
-    Uses batch_invoke_with_cache to:
-    1. Send first request to warm the cache
+    Chunks papers into groups of chunk_size for cross-comparison scoring,
+    then uses cache warmup coordination:
+    1. Send first chunk to warm the cache
     2. Wait for cache construction (~10s)
-    3. Process remaining requests concurrently (cache hits)
+    3. Process remaining chunks concurrently (cache hits)
 
-    This achieves ~90% cost reduction on input tokens for papers 2-N.
+    This combines better calibration (cross-comparison within chunks) with
+    ~90% cost reduction on input tokens for chunks 2-N.
     """
     llm = get_llm(tier=tier)
 
-    system_prompt = RELEVANCE_SCORING_SYSTEM
+    system_prompt = BATCH_RELEVANCE_SCORING_SYSTEM
     if language_config and language_config["code"] != "en":
         system_prompt = await get_translated_prompt(
-            RELEVANCE_SCORING_SYSTEM,
+            BATCH_RELEVANCE_SCORING_SYSTEM,
             language_code=language_config["code"],
             language_name=language_config["name"],
-            prompt_name="lit_review_relevance_system",
+            prompt_name="lit_review_batch_relevance_system",
         )
+
+    # Chunk papers for cross-comparison scoring
+    chunks = chunk_papers(papers, chunk_size)
+    chunk_index: dict[str, list[PaperMetadata]] = {}
 
     # Build cache prefix (shared portion of user prompts)
     research_questions_str = "; ".join(research_questions[:3])
-    cache_prefix = f"Research Topic: {topic}\nResearch Questions: {research_questions_str}\n\nPaper to Evaluate:"
+    cache_prefix = f"Research Topic: {topic}\nResearch Questions: {research_questions_str}\n\nPapers to Evaluate:"
 
-    # Build user prompts for each paper
+    # Build user prompts for each chunk
     user_prompts: list[tuple[str, str]] = []
-    paper_index: dict[str, PaperMetadata] = {}
 
-    for i, paper in enumerate(papers):
-        paper_id = paper.get("doi") or f"paper-{i}"
-        paper_index[paper_id] = paper
+    for i, chunk in enumerate(chunks):
+        chunk_id = f"chunk-{i}"
+        chunk_index[chunk_id] = chunk
 
-        authors_str = ", ".join(a.get("name", "") for a in paper.get("authors", [])[:5])
-        if len(paper.get("authors", [])) > 5:
-            authors_str += " et al."
+        papers_text = "\n".join(format_paper_for_batch(p) for p in chunk)
 
-        user_prompt = RELEVANCE_SCORING_USER_TEMPLATE.format(
+        user_prompt = BATCH_RELEVANCE_SCORING_USER_TEMPLATE.format(
             topic=topic,
             research_questions=research_questions_str,
-            title=paper.get("title", "Unknown"),
-            authors=authors_str or "Unknown",
-            year=paper.get("year", "Unknown"),
-            venue=paper.get("venue", "Unknown"),
-            abstract=(paper.get("abstract") or "No abstract available")[:1000],
-            primary_topic=paper.get("primary_topic", "Not specified"),
+            papers=papers_text,
         )
-        user_prompts.append((paper_id, user_prompt))
+        user_prompts.append((chunk_id, user_prompt))
 
     logger.info(
         f"Scoring {len(papers)} papers with DeepSeek cache-aware batch "
-        f"(topic: {topic[:50]}...)"
+        f"({len(chunks)} chunks of up to {chunk_size}, topic: {topic[:50]}...)"
     )
 
     # Process with cache warmup coordination
@@ -267,12 +266,13 @@ async def _batch_score_deepseek_cached(
     relevant = []
     rejected = []
 
-    for paper_id, paper in paper_index.items():
-        response = responses.get(paper_id)
+    for chunk_id, papers_in_chunk in chunk_index.items():
+        response = responses.get(chunk_id)
         if not response:
-            logger.warning(f"No response for paper {paper_id}, defaulting to 0.5")
-            paper["relevance_score"] = 0.5
-            rejected.append(paper)
+            logger.warning(f"No response for {chunk_id}, defaulting papers to 0.5")
+            for paper in papers_in_chunk:
+                paper["relevance_score"] = 0.5
+                rejected.append(paper)
             continue
 
         try:
@@ -287,28 +287,47 @@ async def _batch_score_deepseek_cached(
                 lines = content.split("\n")
                 content = "\n".join(lines[1:-1])
 
-            result = json.loads(content)
-            score = float(result.get("relevance_score", 0.5))
-            score = max(0.0, min(1.0, score))
+            parsed = json.loads(content)
 
-            paper["relevance_score"] = score
-            if score >= threshold:
-                relevant.append(paper)
-                logger.debug(
-                    f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
-                )
-            else:
-                rejected.append(paper)
-                logger.debug(
-                    f"Rejected ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
-                )
+            # Build DOI -> (score, reasoning) map from response
+            doi_scores: dict[str, tuple[float, str]] = {}
+            for item in parsed:
+                doi = item.get("doi", "")
+                score = float(item.get("relevance_score", 0.5))
+                reasoning = item.get("reasoning", "")
+                score = max(0.0, min(1.0, score))
+                doi_scores[doi] = (score, reasoning)
+
+            # Match papers to their scores
+            for paper in papers_in_chunk:
+                paper_doi = paper.get("doi", "")
+                if paper_doi in doi_scores:
+                    score, reasoning = doi_scores[paper_doi]
+                else:
+                    logger.warning(
+                        f"DOI {paper_doi} not found in chunk response, defaulting to 0.5"
+                    )
+                    score, reasoning = 0.5, "DOI not in response"
+
+                paper["relevance_score"] = score
+                if score >= threshold:
+                    relevant.append(paper)
+                    logger.debug(
+                        f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+                    )
+                else:
+                    rejected.append(paper)
+                    logger.debug(
+                        f"Rejected ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+                    )
 
         except Exception as e:
             logger.warning(
-                f"Failed to parse relevance for {paper.get('title', 'Unknown')}: {e}"
+                f"Failed to parse relevance for {chunk_id}: {e}"
             )
-            paper["relevance_score"] = 0.5
-            rejected.append(paper)
+            for paper in papers_in_chunk:
+                paper["relevance_score"] = 0.5
+                rejected.append(paper)
 
     logger.info(
         f"Relevance filtering (DeepSeek cached): {len(relevant)} relevant, "
