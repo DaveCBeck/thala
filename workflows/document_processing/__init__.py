@@ -4,20 +4,15 @@ Uses Anthropic Claude models for LLM tasks:
 - Sonnet: Standard summarization and metadata extraction
 - Opus with extended thinking: Complex chapter analysis
 
-Supports batch processing via Anthropic's Message Batches API
-for 50% cost reduction when processing multiple documents.
+Cost optimizations:
+- Prompt caching: 90% reduction for repeated tasks
+- Batch API (per-document): 50% reduction when use_batch_api=True
 """
 
 from workflows.document_processing.graph import (
     create_document_processing_graph,
     process_document,
     process_documents_batch,
-)
-from workflows.document_processing.batch_mode import (
-    BatchDocumentProcessor,
-    BatchDocumentRequest,
-    BatchDocumentResult,
-    process_documents_with_batch_api,
 )
 from workflows.document_processing.state import (
     ChapterInfo,
@@ -38,13 +33,8 @@ __all__ = [
     "ProcessingResult",
     "StoreRecordRef",
     "merge_metadata",
-    # Standard processing
+    # Processing functions
     "create_document_processing_graph",
     "process_document",
     "process_documents_batch",
-    # Batch API processing (50% cost savings)
-    "BatchDocumentProcessor",
-    "BatchDocumentRequest",
-    "BatchDocumentResult",
-    "process_documents_with_batch_api",
 ]

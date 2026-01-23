@@ -1,18 +1,34 @@
 """Core paper acquisition and processing pipeline.
 
-Architecture: Streaming Producer-Consumer Pipeline
-==================================================
+Architecture: Two-Stage Streaming Pipeline
+==========================================
 Phase 1: Check cache for all papers (fast, parallel)
-Phase 2+3: Streaming acquisition → processing
-  - Producer: Submit jobs with rate limiting, poll completions
-  - Queue: Buffer acquired papers for processing (bounded for backpressure)
-  - Consumer: Process papers as they arrive from queue
+Phase 2+3+4: Streaming acquisition → marker → LLM
+
+  acquisition_producer
+          ↓
+  marker_queue (bounded ~400MB, maxsize=8)
+          ↓
+  marker_consumer (semaphore=4, GPU-bound)
+      - PDF → process_pdf_file() → markdown
+      - Already markdown → passthrough
+          ↓
+  llm_queue (unbounded, ~100KB-1MB per item)
+          ↓
+  llm_consumer (semaphore=4, IO-bound)
+      - process_single_document(markdown_text)
+          ↓
+  results
+
+Key insight: LLM queue can be unbounded because markdown text is ~100KB-1MB
+vs PDFs at ~50MB. This decouples Marker (GPU-bound, fast) from LLM workflow
+(IO-bound with batch API delays), keeping the Marker GPU busy.
 
 This architecture ensures:
-- Processing starts as soon as first paper downloads (not after all)
-- Marker GPU stays busy throughout the pipeline
-- Memory bounded by queue size (~8 papers × 50MB = ~400MB)
-- External API rate limiting is independent of processing speed
+- Marker GPU stays busy during batch API polling delays
+- No memory pressure (markdown ~100KB vs PDF ~50MB in LLM queue)
+- Independent concurrency tuning per stage
+- Processing starts as soon as first paper downloads
 """
 
 import asyncio
@@ -26,6 +42,7 @@ from workflows.research.academic_lit_review.paper_processor.cache import (
     check_document_exists_by_doi,
 )
 from workflows.research.academic_lit_review.paper_processor.document_processing import (
+    process_multiple_documents,
     process_single_document,
 )
 from workflows.research.academic_lit_review.paper_processor.types import (
@@ -34,8 +51,10 @@ from workflows.research.academic_lit_review.paper_processor.types import (
     MAX_PAPER_PIPELINE_CONCURRENT,
 )
 
+from core.scraping.pdf import process_pdf_file
+
 from .sources import try_oa_download
-from .types import MAX_PROCESSING_CONCURRENT, PROCESSING_QUEUE_SIZE
+from .types import MARKER_QUEUE_SIZE, MAX_LLM_CONCURRENT, MAX_MARKER_CONCURRENT
 
 logger = logging.getLogger(__name__)
 
@@ -204,8 +223,11 @@ async def run_paper_pipeline(
         processing_results: dict[str, dict] = dict(cached_results)
         processing_failed: list[str] = []
 
-        # Queue bridges acquisition → processing with backpressure
-        processing_queue: asyncio.Queue = asyncio.Queue(maxsize=PROCESSING_QUEUE_SIZE)
+        # Two-stage pipeline queues:
+        # marker_queue: bounded (~400MB) - bridges acquisition → marker
+        # llm_queue: unbounded (~100KB-1MB per item) - bridges marker → LLM
+        marker_queue: asyncio.Queue = asyncio.Queue(maxsize=MARKER_QUEUE_SIZE)
+        llm_queue: asyncio.Queue = asyncio.Queue()  # unbounded - markdown is small
 
         # Counters for progress logging
         acquired_count = 0
@@ -263,7 +285,7 @@ async def run_paper_pipeline(
                                 f"[{acquired_count}/{total_to_acquire}] "
                                 f"Acquired via OA (streaming): {doi}"
                             )
-                            await processing_queue.put(
+                            await marker_queue.put(
                                 (doi, source, papers_by_doi[doi], is_markdown)
                             )
                             return doi, None, None  # Signal OA handled
@@ -333,70 +355,150 @@ async def run_paper_pipeline(
                             logger.debug(
                                 f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}"
                             )
-                            await processing_queue.put(
+                            await marker_queue.put(
                                 (doi, local_path, papers_by_doi[doi], False)
                             )
 
             finally:
-                # Always signal end of acquisitions
-                await processing_queue.put(None)
+                # Always signal end of acquisitions to marker stage
+                await marker_queue.put(None)
 
-        async def processing_consumer():
-            """Process papers from queue as they arrive."""
-            nonlocal processed_count
-
-            process_semaphore = asyncio.Semaphore(MAX_PROCESSING_CONCURRENT)
+        async def marker_consumer():
+            """Stage 1: Convert PDFs to markdown, passthrough already-markdown items."""
+            marker_semaphore = asyncio.Semaphore(MAX_MARKER_CONCURRENT)
             active_tasks: set[asyncio.Task] = set()
+            marker_completed = 0
 
-            async def process_item(
+            async def process_marker_item(
                 doi: str, source: str, paper: PaperMetadata, is_markdown: bool
             ):
-                """Process a single document with concurrency limiting."""
-                nonlocal processed_count
-                async with process_semaphore:
+                """Process a single item through marker stage."""
+                nonlocal marker_completed
+                async with marker_semaphore:
                     try:
-                        result = await process_single_document(
-                            doi, source, paper, is_markdown, use_batch_api
-                        )
-                        processed_count += 1
-                        title = paper.get("title", "Unknown")[:50]
-
-                        if result.get("success"):
-                            processing_results[doi] = result
-                            logger.debug(
-                                f"[{processed_count}/{total_to_acquire}] Processed: {title}"
-                            )
+                        if is_markdown:
+                            # Already markdown - passthrough to LLM stage
+                            markdown_text = source
+                            logger.debug(f"Marker passthrough (already markdown): {doi}")
                         else:
-                            processing_failed.append(doi)
-                            logger.warning(
-                                f"[{processed_count}/{total_to_acquire}] Processing failed: {title}"
+                            # PDF - convert to markdown via Marker
+                            logger.debug(f"Marker processing PDF: {doi}")
+                            markdown_text = await process_pdf_file(source)
+                            logger.debug(
+                                f"Marker complete: {doi} ({len(markdown_text)} chars)"
                             )
+
+                        marker_completed += 1
+                        # Push markdown to LLM stage
+                        await llm_queue.put((doi, markdown_text, paper))
+
                     except Exception as e:
+                        # Marker failure - log error, add to failed, don't push to LLM
                         processing_failed.append(doi)
-                        logger.error(f"Processing error for {doi}: {e}")
+                        logger.error(f"Marker error for {doi}: {e}")
 
             while True:
-                item = await processing_queue.get()
+                item = await marker_queue.get()
 
                 if item is None:
-                    # End signal - wait for active tasks to complete
+                    # End signal - wait for active tasks, then signal LLM stage
                     if active_tasks:
                         await asyncio.gather(*active_tasks, return_exceptions=True)
+                    await llm_queue.put(None)
+                    logger.debug(f"Marker stage complete: {marker_completed} items processed")
                     break
 
                 doi, source, paper, is_markdown = item
 
-                # Create processing task
+                # Create marker task
                 task = asyncio.create_task(
-                    process_item(doi, source, paper, is_markdown)
+                    process_marker_item(doi, source, paper, is_markdown)
                 )
                 active_tasks.add(task)
                 task.add_done_callback(active_tasks.discard)
 
-        # Run producer and consumer concurrently
+        async def llm_consumer():
+            """Stage 2: Run LLM workflow on markdown text using batched processing."""
+            nonlocal processed_count
+
+            async def llm_worker(worker_id: int):
+                """Single worker that drains queue and processes batches."""
+                nonlocal processed_count
+                while True:
+                    # Wait for first item
+                    item = await llm_queue.get()
+                    if item is None:
+                        # Put None back for other workers to see
+                        await llm_queue.put(None)
+                        logger.debug(f"LLM worker {worker_id}: received shutdown signal")
+                        break
+
+                    # Collect batch: first item + drain additional available items
+                    batch = [item]
+                    while True:
+                        try:
+                            next_item = llm_queue.get_nowait()
+                            if next_item is None:
+                                # Put None back for other workers
+                                await llm_queue.put(None)
+                                break
+                            batch.append(next_item)
+                        except asyncio.QueueEmpty:
+                            break
+
+                    # Process batch
+                    logger.info(
+                        f"LLM worker {worker_id}: processing batch of {len(batch)} documents"
+                    )
+                    documents = [(doi, md, paper) for doi, md, paper in batch]
+
+                    try:
+                        if use_batch_api and len(documents) > 1:
+                            # Batch multiple documents together
+                            results = await process_multiple_documents(
+                                documents, use_batch_api=True
+                            )
+                        else:
+                            # Single doc or batch API disabled: process individually
+                            results = []
+                            for doi, md, paper in documents:
+                                result = await process_single_document(
+                                    doi, md, paper, is_markdown=True, use_batch_api=use_batch_api
+                                )
+                                results.append(result)
+
+                        # Handle results
+                        for result in results:
+                            doi = result["doi"]
+                            processed_count += 1
+                            if result.get("success"):
+                                processing_results[doi] = result
+                                logger.debug(
+                                    f"[{processed_count}/{total_to_acquire}] LLM complete: {doi}"
+                                )
+                            else:
+                                processing_failed.append(doi)
+                                logger.warning(
+                                    f"[{processed_count}/{total_to_acquire}] LLM failed: {doi}"
+                                )
+
+                    except Exception as e:
+                        # Batch processing failed - mark all as failed
+                        logger.error(f"LLM worker {worker_id} batch error: {e}")
+                        for doi, _, _ in documents:
+                            processed_count += 1
+                            processing_failed.append(doi)
+
+            # Launch workers
+            workers = [llm_worker(i) for i in range(MAX_LLM_CONCURRENT)]
+            await asyncio.gather(*workers)
+            logger.debug(f"LLM stage complete: {processed_count} items processed")
+
+        # Run all three stages concurrently
         await asyncio.gather(
             acquisition_producer(),
-            processing_consumer(),
+            marker_consumer(),
+            llm_consumer(),
         )
 
         # Final summary

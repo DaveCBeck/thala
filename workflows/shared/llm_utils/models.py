@@ -14,7 +14,7 @@ configure_langsmith()
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
+from langchain_deepseek import ChatDeepSeek
 
 
 class ModelTier(Enum):
@@ -66,8 +66,9 @@ def get_llm(
         tier: Model tier selection (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
         thinking_budget: Token budget for extended thinking (enables if set).
                         Recommended: 8000-16000 for complex tasks.
-                        Only supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
-                        Ignored for DeepSeek tiers.
+                        Supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
+                        For DEEPSEEK_R1, thinking is always enabled (explicit mode).
+                        Ignored for DEEPSEEK_V3.
         max_tokens: Maximum output tokens (must be > thinking_budget if set)
 
     Returns:
@@ -86,33 +87,30 @@ def get_llm(
         # Cost-effective task with DeepSeek
         llm = get_llm(ModelTier.DEEPSEEK_V3)
     """
-    # DeepSeek models use OpenAI-compatible API
+    # DeepSeek models use native ChatDeepSeek integration
     if is_deepseek_tier(tier):
-        api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY not set")
+        # ChatDeepSeek auto-reads DEEPSEEK_API_KEY and sets LangSmith metadata
+        kwargs: dict[str, Any] = {
+            "model": tier.value,
+            "max_tokens": max_tokens,
+            "max_retries": 3,
+        }
 
-        if thinking_budget is not None:
+        if tier == ModelTier.DEEPSEEK_R1:
+            # Enable explicit thinking for R1 reasoner model
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+            # R1 needs higher max_tokens for reasoning content
+            kwargs["max_tokens"] = max(max_tokens, 16384)
+            # R1 supports tool calling but NOT tool_choice parameter
+            kwargs["disabled_params"] = {"tool_choice": None}
+        elif thinking_budget is not None:
             import logging
 
             logging.getLogger(__name__).warning(
-                f"thinking_budget ignored for DeepSeek tier {tier.name}"
+                f"thinking_budget ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
             )
 
-        return ChatOpenAI(
-            model=tier.value,
-            api_key=api_key,
-            base_url="https://api.deepseek.com",
-            max_tokens=max_tokens,
-            max_retries=3,
-            # LangSmith metadata for cost tracking
-            model_kwargs={
-                "metadata": {
-                    "ls_provider": "deepseek",
-                    "ls_model_name": tier.value,
-                }
-            },
-        )
+        return ChatDeepSeek(**kwargs)
 
     # Claude models use Anthropic API
     api_key = os.getenv("ANTHROPIC_API_KEY")

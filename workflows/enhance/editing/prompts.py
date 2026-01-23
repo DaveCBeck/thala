@@ -39,14 +39,15 @@ For each issue, provide:
 Be precise with IDs. Only reference IDs that exist in the document.
 Prioritize issues that most impact document coherence and reader understanding."""
 
-STRUCTURE_ANALYSIS_USER = """Analyze the structural quality of this document about "{topic}".
+STRUCTURE_ANALYSIS_USER = """<document>
+{document_xml}
+</document>
+
+---
+Task: Analyze the structural quality of this document about "{topic}".
 
 This is iteration {iteration} of {max_iterations} for structural analysis.
 {focus_instruction}
-
-<document>
-{document_xml}
-</document>
 
 Identify structural issues that impair coherence, flow, and completeness. Focus on:
 1. Is there a clear introduction that sets up the document?
@@ -128,17 +129,15 @@ An effective introduction should:
 
 Match the tone and style of the existing document. Do not use phrases like "This document..." or "In this paper...". Instead, directly engage with the content."""
 
-GENERATE_INTRODUCTION_USER = """Generate an introduction for this {scope}.
+GENERATE_INTRODUCTION_USER = """{context_content}
 
-TOPIC: {topic}
+---
+Task: Generate an introduction for this {scope} about "{topic}".
 
-CONTEXT (content this introduction should set up):
-{context_content}
+The introduction should set up the content above.
 
-REQUIREMENTS:
-{requirements}
-
-TARGET LENGTH: approximately {target_words} words
+Requirements: {requirements}
+Target length: approximately {target_words} words
 
 Write a cohesive introduction that naturally leads into the existing content. Output only the introduction text, no commentary or markdown headers."""
 
@@ -152,17 +151,15 @@ An effective conclusion should:
 
 Match the tone and style of the existing document."""
 
-GENERATE_CONCLUSION_USER = """Generate a conclusion for this {scope}.
+GENERATE_CONCLUSION_USER = """{context_content}
 
-TOPIC: {topic}
+---
+Task: Generate a conclusion for this {scope} about "{topic}".
 
-CONTEXT (content this conclusion should synthesize):
-{context_content}
+The conclusion should synthesize the content above.
 
-REQUIREMENTS:
-{requirements}
-
-TARGET LENGTH: approximately {target_words} words
+Requirements: {requirements}
+Target length: approximately {target_words} words
 
 Write a cohesive conclusion that synthesizes the key points and provides closure. Output only the conclusion text, no commentary or markdown headers."""
 
@@ -176,17 +173,13 @@ Effective synthesis:
 
 Match the tone and style of the existing document."""
 
-GENERATE_SYNTHESIS_USER = """Generate synthesizing discussion for this section.
+GENERATE_SYNTHESIS_USER = """{section_content}
 
-TOPIC: {topic}
+---
+Task: Generate synthesizing discussion for this section about "{topic}".
 
-SECTION CONTENT:
-{section_content}
-
-REQUIREMENTS:
-{requirements}
-
-TARGET LENGTH: approximately {target_words} words
+Requirements: {requirements}
+Target length: approximately {target_words} words
 
 Write discussion that synthesizes the themes and adds analytical depth. Output only the synthesis text, no commentary or headers."""
 
@@ -204,17 +197,16 @@ Types of transitions:
 - progression: Show logical progression ("Building on this...")
 - pivot: Major topic shift ("Having examined X, we now turn to Y...")"""
 
-GENERATE_TRANSITION_USER = """Generate a transition between these sections.
-
-FROM SECTION (ending):
+GENERATE_TRANSITION_USER = """FROM SECTION (ending):
 {from_content}
 
 TO SECTION (beginning):
 {to_content}
 
-TRANSITION TYPE: {transition_type}
+---
+Task: Generate a {transition_type} transition between these sections.
 
-TARGET LENGTH: approximately {target_words} words
+Target length: approximately {target_words} words
 
 Write a smooth transition paragraph. Output only the transition text."""
 
@@ -233,12 +225,12 @@ Your task is to:
 
 The output should read as a unified section, not as merged fragments."""
 
-CONSOLIDATE_CONTENT_USER = """Consolidate this scattered content about "{topic}" into a cohesive section.
+CONSOLIDATE_CONTENT_USER = """{source_blocks}
 
-SOURCE BLOCKS TO CONSOLIDATE:
-{source_blocks}
+---
+Task: Consolidate the scattered content above about "{topic}" into a cohesive section.
 
-CONSOLIDATION APPROACH: {approach}
+Consolidation approach: {approach}
 
 Create a unified section that:
 - Covers all key points from the source blocks
@@ -328,12 +320,10 @@ Rules:
 - Do NOT change technical terminology
 - Make minimal, targeted improvements"""
 
-POLISH_SECTION_USER = """Polish this section for improved flow and clarity.
+POLISH_SECTION_USER = """{section_content}
 
-SECTION: {section_heading}
-
-CONTENT:
-{section_content}
+---
+Task: Polish the section "{section_heading}" above for improved flow and clarity.
 
 Return the polished content with smoother flow and clearer references."""
 
@@ -350,11 +340,12 @@ Evaluate on three dimensions:
 
 Be objective and fair. A score of 0.8+ indicates high quality."""
 
-FINAL_VERIFICATION_USER = """Provide final quality assessment for this document about "{topic}".
-
-<document>
+FINAL_VERIFICATION_USER = """<document>
 {document}
 </document>
+
+---
+Task: Provide final quality assessment for this document about "{topic}".
 
 Assess:
 1. Does it have a clear introduction?
@@ -384,12 +375,10 @@ You have access to paper search and content retrieval tools. Use them to:
 
 Do NOT change the fundamental meaning or argument. Focus on strengthening what's there."""
 
-ENHANCE_ABSTRACT_USER = """Enhance this abstract for the document on "{topic}".
+ENHANCE_ABSTRACT_USER = """{section_content}
 
-SECTION HEADING: {section_heading}
-
-CURRENT CONTENT:
-{section_content}
+---
+Task: Enhance this abstract (section: "{section_heading}") for the document on "{topic}".
 
 Use the available tools to:
 1. Verify existing citations support their claims
@@ -417,14 +406,12 @@ You have access to paper search and content retrieval tools. Use them to:
 
 Focus on strengthening scholarly grounding without changing the core argument."""
 
-ENHANCE_FRAMING_USER = """Enhance this {section_type} section for the document on "{topic}".
+ENHANCE_FRAMING_USER = """{section_content}
 
-SECTION HEADING: {section_heading}
+---
+Task: Enhance this {section_type} section (heading: "{section_heading}") for the document on "{topic}".
 
-CURRENT CONTENT:
-{section_content}
-
-WORD COUNT: {original_word_count} words
+Original word count: {original_word_count} words
 
 CRITICAL REQUIREMENTS:
 - Preserve ALL existing content - do not summarize or shorten
@@ -465,14 +452,12 @@ Guidelines:
 - Maintain academic tone
 - Do NOT remove content unless it is factually wrong"""
 
-ENHANCE_CONTENT_USER = """Enhance this content section for the document on "{topic}".
+ENHANCE_CONTENT_USER = """{section_content}
 
-SECTION HEADING: {section_heading}
+---
+Task: Enhance this content section (heading: "{section_heading}") for the document on "{topic}".
 
-CURRENT CONTENT:
-{section_content}
-
-WORD COUNT: {original_word_count} words
+Original word count: {original_word_count} words
 
 CRITICAL REQUIREMENTS:
 - Preserve ALL existing content - do not summarize or shorten
@@ -499,14 +484,13 @@ Your role is to:
 A coherence score of 0.75 or higher indicates good quality.
 Focus on how well sections flow together and support the overall argument."""
 
-ENHANCE_COHERENCE_REVIEW_USER = """Review the coherence of this document after enhancement pass {iteration}/{max_iterations}.
+ENHANCE_COHERENCE_REVIEW_USER = """{document_text}
 
-TOPIC: {topic}
+---
+Task: Review the coherence of the document above after enhancement pass {iteration}/{max_iterations}.
 
-SECTIONS ENHANCED IN THIS PASS: {sections_enhanced}
-
-DOCUMENT:
-{document_text}
+Topic: {topic}
+Sections enhanced in this pass: {sections_enhanced}
 
 Evaluate:
 1. Overall coherence score (0.0-1.0)

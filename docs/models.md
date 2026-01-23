@@ -28,11 +28,11 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `core/scraping/classification/classifier.py:29` | Classify scraped content (full_text/abstract/paywall/non_academic) | 256 | Yes | No | No | **HAIKU** |
-| `workflows/research/academic_lit_review/diffusion_engine/relevance_filters.py:108` | Filter papers by relevance to research topic | 512 | Yes | No | Yes | **HAIKU** |
-| `workflows/research/academic_lit_review/utils/relevance_scoring/scorer.py:44` | Score paper relevance (0-1) | 256 | Yes | No | Yes | **HAIKU** |
-| `workflows/research/academic_lit_review/citation_network/scoring.py:107` | Score citation importance | 256 | Yes | No | Yes | **HAIKU** |
-| `workflows/wrappers/multi_lang/nodes/relevance_checker.py:112` | Check language-specific content relevance | 256 | Yes | No | No | **HAIKU** |
+| `core/scraping/classification/classifier.py:29` | Classify scraped content (full_text/abstract/paywall/non_academic) | 256 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/academic_lit_review/diffusion_engine/relevance_filters.py:108` | Filter papers by relevance to research topic | 512 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/academic_lit_review/utils/relevance_scoring/scorer.py:44` | Score paper relevance (0-1) | 256 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/academic_lit_review/citation_network/scoring.py:107` | Score citation importance | 256 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/wrappers/multi_lang/nodes/relevance_checker.py:112` | Check language-specific content relevance | 256 | Yes | No | No | **DEEPSEEK_V3** |
 
 ---
 
@@ -40,10 +40,10 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `workflows/research/academic_lit_review/keyword_search/searcher.py:196` | Generate academic search keywords | 512 | Yes | No | No | **HAIKU** |
-| `workflows/research/academic_lit_review/keyword_search/query_builder.py:32` | Build database queries from keywords | 256 | Yes | No | No | **HAIKU** |
-| `workflows/research/web_research/subgraphs/researcher_base/query_generator.py` | Generate web search queries | 512 | Yes | No | No | **HAIKU** |
-| `workflows/research/web_research/subgraphs/researcher_base/query_validator.py` | Validate/refine search queries | 256 | Yes | No | No | **HAIKU** |
+| `workflows/research/academic_lit_review/keyword_search/searcher.py:196` | Score relevance during keyword search | 512 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/academic_lit_review/keyword_search/query_builder.py:32` | Build database queries from keywords | 256 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/web_research/subgraphs/researcher_base/query_generator.py` | Generate web search queries | 512 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/web_research/subgraphs/researcher_base/query_validator.py` | Validate/refine search queries | 256 | Yes | No | No | **DEEPSEEK_V3** |
 
 ---
 
@@ -62,9 +62,9 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/research/academic_lit_review/paper_processor/extraction/core.py:74` | Extract paper summary (key findings, methodology, limitations) | 2048 | Yes | No | Yes | **HAIKU** (≤400k chars) |
 | `workflows/research/academic_lit_review/paper_processor/extraction/core.py:74` | Extract paper summary (large papers >400k chars) | 4096 | Yes | No | Yes | **SONNET_1M** |
-| `workflows/document_processing/nodes/metadata_agent.py:81` | Extract document metadata (title, authors, date, ISBN) | 1024 | Yes | No | No | **SONNET** |
-| `workflows/document_processing/nodes/summary_agent.py:81,123` | Generate document summaries | 4096 | No | No | No | **SONNET** |
-| `workflows/document_processing/nodes/chapter_detector.py:213` | Detect chapter boundaries in documents | 2048 | Yes | No | No | **SONNET** |
+| `workflows/document_processing/nodes/metadata_agent.py:85` | Extract document metadata (title, authors, date, ISBN) | 1024 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/document_processing/nodes/summary_agent.py:81,123` | Generate document summaries | 4096 | No | No | No | **DEEPSEEK_R1** |
+| `workflows/document_processing/nodes/chapter_detector.py:213` | Detect chapter boundaries in documents | 2048 | Yes | No | No | **DEEPSEEK_V3** |
 
 ---
 
@@ -82,12 +82,12 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `workflows/research/web_research/nodes/clarify_intent.py` | Clarify user research intent | 1024 | Yes | No | No | **HAIKU** |
-| `workflows/research/web_research/nodes/create_brief.py:51` | Create structured research brief | 2048 | Yes | No | No | **SONNET** |
+| `workflows/research/web_research/nodes/clarify_intent.py` | Clarify user research intent | 1024 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/research/web_research/nodes/create_brief.py:51` | Create structured research brief | 2048 | Yes | No | No | **DEEPSEEK_V3** |
 | `workflows/research/web_research/nodes/iterate_plan.py` | Iterate on research plan | 4096 | Yes | No | No | **OPUS** |
 | `workflows/research/web_research/nodes/supervisor/core.py:148` | Diffusion algorithm supervisor (orchestrates research) | 4096 | Yes | Yes | No | **OPUS** |
 | `workflows/research/web_research/nodes/supervisor/llm_integration.py` | Get structured supervisor decisions | 2048 | Yes | No | No | **OPUS** |
-| `workflows/research/web_research/subgraphs/web_researcher.py:181` | Execute web research sub-tasks | 4096 | Yes | Yes | No | **SONNET** |
+| `workflows/research/web_research/subgraphs/web_researcher.py:181` | Execute web research sub-tasks | 4096 | Yes | Yes | No | **HAIKU** |
 | `workflows/research/web_research/nodes/final_report.py:122` | Generate final research report | 16384 | No | No | No | **OPUS** |
 
 ---
@@ -133,12 +133,12 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `workflows/enhance/editing/nodes/execute_edits.py:130` | Execute planned edits | 2000 | No | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/execute_edits.py:152` | Generate new content | 2000 | No | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/execute_edits.py:173` | Refine existing content | 2000 | No | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/execute_edits.py:199` | Extract metadata | 500 | Yes | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/execute_edits.py:288` | Generate complex content | 4000 | No | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/execute_edits.py:321` | Generate synthesis content | 3000 | No | No | No | **SONNET** |
+| `workflows/enhance/editing/nodes/execute_edits.py:130` | Execute planned edits | 2000 | No | No | No | **HAIKU** |
+| `workflows/enhance/editing/nodes/execute_edits.py:152` | Generate new content | 2000 | No | No | No | **HAIKU** |
+| `workflows/enhance/editing/nodes/execute_edits.py:173` | Refine existing content | 2000 | No | No | No | **HAIKU** |
+| `workflows/enhance/editing/nodes/execute_edits.py:199` | Extract metadata | 500 | Yes | No | No | **HAIKU** |
+| `workflows/enhance/editing/nodes/execute_edits.py:288` | Generate complex content | 4000 | No | No | No | **HAIKU** |
+| `workflows/enhance/editing/nodes/execute_edits.py:321` | Generate synthesis content | 3000 | No | No | No | **HAIKU** |
 
 ---
 
@@ -148,8 +148,8 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/enhance/editing/nodes/enhance_section.py:204-220` | Enhance section with citations | 4096 | Yes | Yes | No | **OPUS**¹ |
 | `workflows/enhance/editing/nodes/enhance_coherence.py:58` | Review document coherence | 2048 | Yes | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/verify_structure.py:68` | Verify structural changes | 2048 | Yes | No | No | **SONNET** |
-| `workflows/enhance/editing/nodes/finalize.py:84` | Final verification of edits | 2048 | Yes | No | No | **SONNET** |
+| `workflows/enhance/editing/nodes/verify_structure.py:68` | Verify structural changes | 2048 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/enhance/editing/nodes/finalize.py:84` | Final verification of edits | 2048 | Yes | No | No | **DEEPSEEK_V3** |
 
 ¹ Falls back to SONNET if `use_opus_for_generation=False`
 
@@ -159,7 +159,7 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `workflows/enhance/editing/nodes/polish.py:81` | Screen sections needing polish | 1024 | Yes | No | No | **HAIKU** |
+| `workflows/enhance/editing/nodes/polish.py:81` | Screen sections needing polish | 1024 | Yes | No | No | **DEEPSEEK_V3** |
 | `workflows/enhance/editing/nodes/polish.py:153` | Polish section for flow/clarity | 2048 | Yes | No | No | **HAIKU** |
 
 ---
@@ -168,9 +168,9 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `workflows/enhance/fact_check/nodes/screen_sections.py:61` | Pre-screen sections for verifiable claims | 1024 | Yes | No | No | **HAIKU** |
-| `workflows/enhance/fact_check/nodes/fact_check.py:127-140` | Fact-check claims with tools | 4096 | Yes | Yes | No | **SONNET** |
-| `workflows/enhance/fact_check/nodes/reference_check.py:234` | Validate citation accuracy | 4096 | Yes | Yes | No | **SONNET** |
+| `workflows/enhance/fact_check/nodes/screen_sections.py:61` | Pre-screen sections for verifiable claims | 1024 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/enhance/fact_check/nodes/fact_check.py:127-140` | Fact-check claims with tools | 4096 | Yes | Yes | No | **HAIKU** |
+| `workflows/enhance/fact_check/nodes/reference_check.py:234` | Validate citation accuracy | 4096 | Yes | Yes | No | **HAIKU** |
 
 ---
 
@@ -202,11 +202,10 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/wrappers/synthesis/nodes/synthesis.py:159-164` | Structure synthesis document | 8192 | Yes | No | No | **OPUS**¹ |
-| `workflows/wrappers/synthesis/nodes/quality_check.py:151-156` | Verify synthesis quality | 2048 | Yes | No | No | **SONNET**² |
-| `workflows/wrappers/synthesis/nodes/research_targets.py:107` | Identify research targets | 2048 | Yes | No | No | **SONNET** |
+| `workflows/wrappers/synthesis/nodes/quality_check.py:151-156` | Verify synthesis quality | 2048 | Yes | No | No | **HAIKU** |
+| `workflows/wrappers/synthesis/nodes/research_targets.py:107` | Identify research targets | 2048 | Yes | No | No | **HAIKU** |
 
 ¹ Falls back to SONNET for test tier
-² Uses HAIKU for quick verification in some paths
 
 ---
 
@@ -224,8 +223,6 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/shared/batch_processor/processor.py:68` | Batch API default | 4096 | Yes | Yes | Yes | **SONNET** |
-| `workflows/document_processing/batch_mode/job_manager.py:121,130` | Batch document parsing | 4096 | Yes | No | Yes | **SONNET** |
-| `workflows/document_processing/batch_mode/job_manager.py:151` | Batch large document parsing | 4096 | Yes | No | Yes | **HAIKU** |
 
 ---
 
@@ -357,28 +354,25 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 ### Technical Integration Notes
 
-**DeepSeek API is OpenAI-compatible:**
+**LangChain integration** uses native `ChatDeepSeek`:
 ```python
-from openai import OpenAI
+from langchain_deepseek import ChatDeepSeek
 
-client = OpenAI(
-    api_key="your-deepseek-key",
-    base_url="https://api.deepseek.com"  # or /beta for strict mode
-)
+# V3 (standard tasks)
+llm = ChatDeepSeek(model="deepseek-chat", max_tokens=4096)
 
-# Same patterns work:
-response = client.chat.completions.create(
-    model="deepseek-chat",  # V3.2
-    # model="deepseek-reasoner",  # R1
-    messages=[...],
-    response_format={"type": "json_object"}
+# R1 (reasoning tasks with tool support)
+llm = ChatDeepSeek(
+    model="deepseek-reasoner",
+    extra_body={"thinking": {"type": "enabled"}},
+    disabled_params={"tool_choice": None},  # R1 supports tools but not tool_choice
 )
 ```
 
-**Current LangChain integration** would need:
-1. Add `ChatDeepSeek` wrapper (or use OpenAI wrapper with base_url)
-2. Add `ModelTier.DEEPSEEK_V3` and `ModelTier.DEEPSEEK_R1`
-3. Update `get_llm()` to route appropriately
+**Key notes:**
+- `ChatDeepSeek` auto-reads `DEEPSEEK_API_KEY` from environment
+- R1 now supports structured output via `disabled_params={"tool_choice": None}`
+- LangSmith metadata is set automatically (`ls_provider="deepseek"`)
 
 ---
 

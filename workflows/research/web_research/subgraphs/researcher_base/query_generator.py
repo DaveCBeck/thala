@@ -72,7 +72,7 @@ Question: {question["question"]}
             result: SearchQueries = await get_structured_output(
                 output_schema=SearchQueries,
                 user_prompt=prompt,
-                tier=ModelTier.HAIKU,
+                tier=ModelTier.DEEPSEEK_V3,
             )
 
             # Validate queries are relevant

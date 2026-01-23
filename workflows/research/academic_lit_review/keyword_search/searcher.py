@@ -193,7 +193,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
         research_questions=research_questions,
         threshold=0.6,
         language_config=language_config,
-        tier=ModelTier.HAIKU,
+        tier=ModelTier.DEEPSEEK_V3,
         max_concurrent=10,
         use_batch_api=quality_settings.get("use_batch_api", True),
     )

@@ -233,7 +233,7 @@ async def check_section_quality(state: dict) -> dict[str, Any]:
     logger.info(f"Phase 4e: Checking quality of {len(section_drafts)} sections")
 
     try:
-        llm = get_llm(ModelTier.SONNET, max_tokens=1000)
+        llm = get_llm(ModelTier.HAIKU, max_tokens=1000)
         llm_structured = llm.with_structured_output(SectionQuality)
 
         updated_sections = []

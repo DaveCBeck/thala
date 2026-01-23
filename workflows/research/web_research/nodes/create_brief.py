@@ -18,7 +18,7 @@ from workflows.research.web_research.utils import (
     load_prompts_with_translation,
     extract_json_from_llm_response,
 )
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,13 @@ async def create_brief(state: DeepResearchState) -> dict[str, Any]:
         clarifications=json.dumps(clarifications) if clarifications else "None",
     )
 
-    llm = get_llm(ModelTier.SONNET)
+    llm = get_llm(ModelTier.DEEPSEEK_V3)
 
     try:
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": human_prompt},
-            ]
+        response = await invoke_with_cache(
+            llm,
+            system_prompt=system_prompt,
+            user_prompt=human_prompt,
         )
 
         brief_data = extract_json_from_llm_response(response.content)

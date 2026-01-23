@@ -29,7 +29,7 @@ async def generate_queries_node(state: KeywordSearchState) -> dict[str, Any]:
         topic=topic,
         research_questions=research_questions,
         language_config=language_config,
-        tier=ModelTier.HAIKU,
+        tier=ModelTier.DEEPSEEK_V3,
     )
 
     queries = queries[:MAX_QUERIES]

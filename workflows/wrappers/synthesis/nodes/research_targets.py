@@ -106,7 +106,7 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
 
     try:
         # Use Sonnet to generate research targets
-        llm = get_llm(ModelTier.SONNET, max_tokens=2000)
+        llm = get_llm(ModelTier.HAIKU, max_tokens=2000)
         llm_structured = llm.with_structured_output(ResearchTargets)
 
         prompt = RESEARCH_TARGETS_PROMPT.format(

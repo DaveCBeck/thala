@@ -11,6 +11,7 @@ from typing import Any
 from langsmith import traceable
 
 from workflows.document_processing.state import DocumentProcessingState
+from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM, TRANSLATION_SYSTEM
 from workflows.shared.language import LANGUAGE_NAMES
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
 from workflows.shared.llm_utils.response_parsing import extract_response_content
@@ -18,22 +19,6 @@ from workflows.shared.retry_utils import with_retry
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
 
 logger = logging.getLogger(__name__)
-
-# System prompt for summarization (cached)
-SUMMARY_SYSTEM = """You are a skilled summarizer. Create concise summaries that capture the essential information.
-
-Guidelines:
-- Focus on the main thesis, key arguments, and conclusions
-- Preserve critical details and nuance
-- Write in clear, professional prose"""
-
-# System prompt for translation (kept simple for summaries)
-TRANSLATION_SYSTEM = """You are a skilled translator. Translate the following text accurately to English while:
-- Preserving the meaning and nuance
-- Maintaining academic/professional tone
-- Keeping technical terms appropriately translated or retained
-
-Output ONLY the English translation, no explanations or preamble."""
 
 
 @traceable(run_type="chain", name="GenerateSummary")
@@ -57,36 +42,40 @@ async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
         original_language = state.get("original_language", "en")
 
         # For very long documents, use first and last pages
+        # Format matches metadata_agent for prefix caching
         if len(markdown) > 50000:
             logger.info("Document is long, using first and last 10 pages for summary")
             first_pages = get_first_n_pages(markdown, 10)
             last_pages = get_last_n_pages(markdown, 10)
-            content = (
-                f"{first_pages}\n\n[... middle section omitted ...]\n\n{last_pages}"
-            )
+            content = f"{first_pages}\n\n--- END OF FRONT MATTER ---\n\n{last_pages}"
         else:
             content = markdown
 
-        # Build user prompt with language instruction if non-English
+        # Build language instruction if non-English
         lang_instruction = ""
         if original_language != "en":
             lang_name = LANGUAGE_NAMES.get(original_language, original_language)
             lang_instruction = f" Write the summary in {lang_name}."
 
-        user_prompt = f"""Summarize the following text in approximately 100 words.{lang_instruction}
+        # Content at start for prefix caching (shared with metadata_agent for long docs)
+        user_prompt = f"""{content}
 
-Focus on the main thesis, key arguments, and conclusions. Highlight what makes this work significant.
+---
+Task: Summarize the document above in approximately 100 words.{lang_instruction}
 
-Text:
-{content}"""
+Guidelines:
+- Focus on the main thesis, key arguments, and conclusions
+- Preserve critical details and nuance
+- Write in clear, professional prose
+- Highlight what makes this work significant"""
 
         # Generate summary via LLM with prompt caching
-        llm = get_llm(tier=ModelTier.SONNET)
+        llm = get_llm(tier=ModelTier.DEEPSEEK_R1)
 
         async def _summarize():
             response = await invoke_with_cache(
                 llm,
-                system_prompt=SUMMARY_SYSTEM,
+                system_prompt=DOCUMENT_ANALYSIS_SYSTEM,
                 user_prompt=user_prompt,
             )
             return extract_response_content(response)
@@ -123,7 +112,7 @@ Text:
 
 async def _translate_to_english(text: str) -> str:
     """Translate text to English using Sonnet."""
-    llm = get_llm(tier=ModelTier.SONNET)
+    llm = get_llm(tier=ModelTier.DEEPSEEK_R1)
 
     async def _invoke():
         response = await invoke_with_cache(

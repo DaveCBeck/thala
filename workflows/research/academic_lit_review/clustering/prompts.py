@@ -2,7 +2,7 @@
 
 LLM_CLUSTERING_SYSTEM_PROMPT = """You are an expert academic researcher analyzing a corpus of papers to identify coherent thematic clusters for a literature review.
 
-Your task is to organize papers into 5-15 themes that would serve as natural sections in a literature review. Consider:
+Your task is to organize papers into up to 6 broad themes that would serve as major sections in a literature review. Themes should be broad enough to encompass multiple related topics—use sub-themes to capture finer distinctions rather than creating many narrow clusters. Consider:
 
 1. **Research Topics & Questions**: What fundamental questions do papers address?
 2. **Methodological Approaches**: Are there distinct methodological camps?
@@ -14,7 +14,7 @@ For each theme:
 - Choose a clear, descriptive name (suitable as a section heading)
 - Write a 2-3 sentence description
 - List the DOIs of papers belonging to this theme
-- Note any sub-themes if the cluster is broad
+- List sub-themes to capture narrower topics within the broad theme
 - Describe how this theme relates to other themes
 
 Papers may belong to multiple themes if they genuinely bridge topics.
@@ -58,7 +58,9 @@ Your task is to create the final thematic organization by:
 
 Guidelines:
 - Prefer semantic coherence over statistical purity
-- Aim for 5-15 final clusters (suitable as review sections)
+- Produce a maximum of 6 final clusters (suitable as major review sections)
+- Prefer broader themes with rich sub-themes over many narrow clusters
+- When merging related themes, capture the merged topics as sub-themes
 - Ensure every paper is assigned to at least one cluster
 - Mark papers that bridge multiple themes
 - Note conflicts and gaps within each theme

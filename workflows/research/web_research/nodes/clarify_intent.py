@@ -70,7 +70,7 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
             output_schema=ClarificationResponse,
             user_prompt=human_prompt,
             system_prompt=system_prompt,
-            tier=ModelTier.HAIKU,
+            tier=ModelTier.DEEPSEEK_V3,
         )
 
         if result.need_clarification:

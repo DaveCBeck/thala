@@ -48,21 +48,6 @@ documents = [
 results = await process_documents_batch(documents, concurrency=5)
 ```
 
-### Batch API Mode (50% Cost Savings)
-
-```python
-from workflows.document_processing import process_documents_with_batch_api
-
-# For bulk processing with delayed results
-results = await process_documents_with_batch_api(
-    documents=[
-        {"source": url, "title": title}
-        for url, title in document_list
-    ],
-    poll_interval=60,  # Check every 60 seconds
-)
-```
-
 ### Examples
 
 ```bash

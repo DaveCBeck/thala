@@ -212,9 +212,8 @@ Guidelines:
                 output_schema=HeadingAnalysisResult,
                 user_prompt=heading_list,
                 system_prompt=system_prompt,
-                tier=ModelTier.SONNET,
+                tier=ModelTier.DEEPSEEK_V3,
                 max_tokens=16384,
-                use_json_schema_method=True,
             )
             analysis = [h.model_dump() for h in result.headings]
 

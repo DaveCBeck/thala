@@ -8,7 +8,9 @@ from workflows.shared.llm_utils import (
     ModelTier,
     get_llm,
     invoke_with_cache,
+    batch_invoke_with_cache,
 )
+from workflows.shared.llm_utils.models import is_deepseek_tier
 from workflows.shared.batch_processor import BatchProcessor
 from workflows.shared.language import LanguageConfig, get_translated_prompt
 from .types import (
@@ -27,7 +29,7 @@ async def score_paper_relevance(
     topic: str,
     research_questions: list[str],
     language_config: LanguageConfig | None = None,
-    tier: ModelTier = ModelTier.HAIKU,
+    tier: ModelTier = ModelTier.DEEPSEEK_V3,
 ) -> tuple[float, str]:
     """Score a single paper's relevance to the research topic.
 
@@ -106,7 +108,7 @@ async def batch_score_relevance(
     research_questions: list[str],
     threshold: float = 0.6,
     language_config: LanguageConfig | None = None,
-    tier: ModelTier = ModelTier.HAIKU,
+    tier: ModelTier = ModelTier.DEEPSEEK_V3,
     max_concurrent: int = 10,
     use_batch_api: bool = True,
 ) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
@@ -132,11 +134,21 @@ async def batch_score_relevance(
     if not papers:
         return [], []
 
-    if use_batch_api and len(papers) >= 5:
+    # Disable batch API for DeepSeek models (no batch API available)
+    effective_use_batch = use_batch_api and not is_deepseek_tier(tier)
+
+    if effective_use_batch and len(papers) >= 5:
         return await _batch_score_relevance_batched(
             papers, topic, research_questions, threshold, language_config, tier
         )
 
+    # DeepSeek: use cache-aware batch processing (first request -> wait -> batch)
+    if is_deepseek_tier(tier):
+        return await _batch_score_deepseek_cached(
+            papers, topic, research_questions, threshold, language_config, tier, max_concurrent
+        )
+
+    # Non-DeepSeek fallback: concurrent calls
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def score_with_limit(
@@ -175,6 +187,132 @@ async def batch_score_relevance(
     logger.info(
         f"Relevance filtering: {len(relevant)} relevant, {len(rejected)} rejected "
         f"(threshold={threshold})"
+    )
+
+    return relevant, rejected
+
+
+async def _batch_score_deepseek_cached(
+    papers: list[PaperMetadata],
+    topic: str,
+    research_questions: list[str],
+    threshold: float,
+    language_config: LanguageConfig | None,
+    tier: ModelTier,
+    max_concurrent: int,
+) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
+    """Score papers using DeepSeek with cache-aware batch processing.
+
+    Uses batch_invoke_with_cache to:
+    1. Send first request to warm the cache
+    2. Wait for cache construction (~10s)
+    3. Process remaining requests concurrently (cache hits)
+
+    This achieves ~90% cost reduction on input tokens for papers 2-N.
+    """
+    llm = get_llm(tier=tier)
+
+    system_prompt = RELEVANCE_SCORING_SYSTEM
+    if language_config and language_config["code"] != "en":
+        system_prompt = await get_translated_prompt(
+            RELEVANCE_SCORING_SYSTEM,
+            language_code=language_config["code"],
+            language_name=language_config["name"],
+            prompt_name="lit_review_relevance_system",
+        )
+
+    # Build cache prefix (shared portion of user prompts)
+    research_questions_str = "; ".join(research_questions[:3])
+    cache_prefix = f"Research Topic: {topic}\nResearch Questions: {research_questions_str}\n\nPaper to Evaluate:"
+
+    # Build user prompts for each paper
+    user_prompts: list[tuple[str, str]] = []
+    paper_index: dict[str, PaperMetadata] = {}
+
+    for i, paper in enumerate(papers):
+        paper_id = paper.get("doi") or f"paper-{i}"
+        paper_index[paper_id] = paper
+
+        authors_str = ", ".join(a.get("name", "") for a in paper.get("authors", [])[:5])
+        if len(paper.get("authors", [])) > 5:
+            authors_str += " et al."
+
+        user_prompt = RELEVANCE_SCORING_USER_TEMPLATE.format(
+            topic=topic,
+            research_questions=research_questions_str,
+            title=paper.get("title", "Unknown"),
+            authors=authors_str or "Unknown",
+            year=paper.get("year", "Unknown"),
+            venue=paper.get("venue", "Unknown"),
+            abstract=(paper.get("abstract") or "No abstract available")[:1000],
+            primary_topic=paper.get("primary_topic", "Not specified"),
+        )
+        user_prompts.append((paper_id, user_prompt))
+
+    logger.info(
+        f"Scoring {len(papers)} papers with DeepSeek cache-aware batch "
+        f"(topic: {topic[:50]}...)"
+    )
+
+    # Process with cache warmup coordination
+    responses = await batch_invoke_with_cache(
+        llm,
+        system_prompt=system_prompt,
+        user_prompts=user_prompts,
+        cache_prefix=cache_prefix,
+        max_concurrent=max_concurrent,
+    )
+
+    # Parse results
+    relevant = []
+    rejected = []
+
+    for paper_id, paper in paper_index.items():
+        response = responses.get(paper_id)
+        if not response:
+            logger.warning(f"No response for paper {paper_id}, defaulting to 0.5")
+            paper["relevance_score"] = 0.5
+            rejected.append(paper)
+            continue
+
+        try:
+            content = (
+                response.content
+                if isinstance(response.content, str)
+                else response.content[0].get("text", "")
+            )
+            content = content.strip()
+
+            if content.startswith("```"):
+                lines = content.split("\n")
+                content = "\n".join(lines[1:-1])
+
+            result = json.loads(content)
+            score = float(result.get("relevance_score", 0.5))
+            score = max(0.0, min(1.0, score))
+
+            paper["relevance_score"] = score
+            if score >= threshold:
+                relevant.append(paper)
+                logger.debug(
+                    f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+                )
+            else:
+                rejected.append(paper)
+                logger.debug(
+                    f"Rejected ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+                )
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to parse relevance for {paper.get('title', 'Unknown')}: {e}"
+            )
+            paper["relevance_score"] = 0.5
+            rejected.append(paper)
+
+    logger.info(
+        f"Relevance filtering (DeepSeek cached): {len(relevant)} relevant, "
+        f"{len(rejected)} rejected (threshold={threshold})"
     )
 
     return relevant, rejected

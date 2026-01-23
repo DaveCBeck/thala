@@ -11,6 +11,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from workflows.document_processing.state import DocumentProcessingState
+from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
 
@@ -34,20 +35,6 @@ class DocumentMetadata(BaseModel):
         default_factory=dict,
         description="Mapping of chapter titles to author names (for multi-author books)",
     )
-
-
-METADATA_SYSTEM_PROMPT = """You are a bibliographic metadata extraction specialist. Extract structured metadata from document excerpts.
-
-Look for:
-- title: Full document title
-- authors: List of author names (can be empty list)
-- date: Publication date (any format)
-- publisher: Publisher name
-- isbn: ISBN if present
-
-Also determine:
-- is_multi_author: true if this appears to be a multi-author edited volume (look for "edited by" or chapter authors)
-- chapter_authors: dict mapping chapter titles to author names (only for multi-author books)"""
 
 
 @traceable(run_type="chain", name="CheckMetadata")
@@ -76,11 +63,26 @@ async def check_metadata(state: DocumentProcessingState) -> dict[str, Any]:
         content = f"{first_pages}\n\n--- END OF FRONT MATTER ---\n\n{last_pages}"
 
         # Extract metadata via structured output
+        # Content at start for prefix caching (shared with summary_agent)
+        user_prompt = f"""{content}
+
+---
+Task: Extract bibliographic metadata from the document above.
+
+Extract:
+- title: Full document title
+- authors: List of author names (can be empty list)
+- date: Publication date (any format)
+- publisher: Publisher name
+- isbn: ISBN if present
+- is_multi_author: true if multi-author edited volume (look for "edited by" or chapter authors)
+- chapter_authors: dict mapping chapter titles to author names (only for multi-author books)"""
+
         result = await get_structured_output(
             output_schema=DocumentMetadata,
-            user_prompt=f"Extract metadata from this document:\n\n{content}",
-            system_prompt=METADATA_SYSTEM_PROMPT,
-            tier=ModelTier.SONNET,
+            user_prompt=user_prompt,
+            system_prompt=DOCUMENT_ANALYSIS_SYSTEM,
+            tier=ModelTier.DEEPSEEK_V3,  # V3 for cost efficiency (R1 also works but costs 2x more)
             enable_prompt_cache=True,
         )
 

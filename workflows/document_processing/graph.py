@@ -186,6 +186,7 @@ async def process_documents_batch(
                 item_type=doc_config.get("item_type", "document"),
                 langs=doc_config.get("langs"),
                 extra_metadata=doc_config.get("extra_metadata"),
+                use_batch_api=doc_config.get("use_batch_api", True),
             )
 
     logger.info(
