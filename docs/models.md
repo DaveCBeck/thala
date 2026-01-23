@@ -224,8 +224,6 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/shared/batch_processor/processor.py:68` | Batch API default | 4096 | Yes | Yes | Yes | **SONNET** |
-| `workflows/document_processing/batch_mode/job_manager.py:121,130` | Batch document parsing | 4096 | Yes | No | Yes | **SONNET** |
-| `workflows/document_processing/batch_mode/job_manager.py:151` | Batch large document parsing | 4096 | Yes | No | Yes | **HAIKU** |
 
 ---
 
