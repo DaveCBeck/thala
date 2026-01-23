@@ -87,7 +87,6 @@ async def get_structured_output(
     strategy: Optional[StructuredOutputStrategy] = None,
     use_json_schema_method: Optional[bool] = None,
     prefer_batch_api: Optional[bool] = None,
-    batch_threshold: Optional[int] = None,
     max_retries: Optional[int] = None,
     enable_prompt_cache: Optional[bool] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
@@ -107,7 +106,6 @@ async def get_structured_output(
     strategy: Optional[StructuredOutputStrategy] = None,
     use_json_schema_method: Optional[bool] = None,
     prefer_batch_api: Optional[bool] = None,
-    batch_threshold: Optional[int] = None,
     max_retries: Optional[int] = None,
     enable_prompt_cache: Optional[bool] = None,
     tools: Optional[list[BaseTool]] = None,
@@ -127,7 +125,6 @@ async def get_structured_output(
     The strategy is auto-selected based on context:
     - Tools provided -> TOOL_AGENT (multi-turn with tool use)
     - prefer_batch_api=True -> BATCH_TOOL_CALL (50% cost reduction)
-    - Batch with 5+ items -> BATCH_TOOL_CALL (50% cost reduction)
     - Otherwise -> LANGCHAIN_STRUCTURED (default)
 
     Args:
@@ -149,10 +146,9 @@ async def get_structured_output(
         thinking_budget: Token budget for extended thinking
         strategy: Force a specific strategy
         use_json_schema_method: Use stricter JSON schema validation
-        prefer_batch_api: Route ALL requests through batch API for 50% cost savings.
+        prefer_batch_api: Route requests through batch API for 50% cost savings.
             Set to True for cost optimization when latency isn't a concern.
             Defaults to THALA_PREFER_BATCH_API env var.
-        batch_threshold: Min items to use batch API when prefer_batch_api=False (default: 5)
         max_retries: Retry attempts on failure
         enable_prompt_cache: Enable prompt caching
         tools: LangChain tools (triggers TOOL_AGENT strategy)
@@ -217,8 +213,6 @@ async def get_structured_output(
         effective_config.use_json_schema_method = use_json_schema_method
     if prefer_batch_api is not None:
         effective_config.prefer_batch_api = prefer_batch_api
-    if batch_threshold is not None:
-        effective_config.batch_threshold = batch_threshold
     if max_retries is not None:
         effective_config.max_retries = max_retries
     if enable_prompt_cache is not None:
@@ -231,9 +225,8 @@ async def get_structured_output(
         effective_config.max_tool_result_chars = max_tool_result_chars
 
     is_batch = requests is not None
-    batch_size = len(requests) if requests else 0
 
-    selected_strategy = select_strategy(effective_config, is_batch, batch_size)
+    selected_strategy = select_strategy(effective_config, is_batch)
     logger.debug(f"Selected strategy: {selected_strategy.name}")
 
     if is_batch:

@@ -39,7 +39,7 @@ print(result.confidence)
 
 ### Batch Request
 
-For multiple items, pass a list of `StructuredRequest`. The function automatically uses the Anthropic Batch API for 5+ items, providing 50% cost savings:
+For multiple items, pass a list of `StructuredRequest`. Set `prefer_batch_api=True` to use the Anthropic Batch API for 50% cost savings:
 
 ```python
 requests = [
@@ -111,8 +111,7 @@ result = await get_structured_output(
 
     # Strategy hints
     use_json_schema_method=True,  # Stricter schema validation
-    prefer_batch_api=True,  # Route ALL requests through batch API (50% savings)
-    batch_threshold=5,  # Min items to trigger batch API (when prefer_batch_api=False)
+    prefer_batch_api=True,  # Route requests through batch API (50% savings)
 
     # Reliability
     max_retries=2,
@@ -135,7 +134,6 @@ config = StructuredOutputConfig(
     thinking_budget=8000,
     use_json_schema_method=True,
     prefer_batch_api=False,  # Set True for cost savings (or use THALA_PREFER_BATCH_API env var)
-    batch_threshold=5,
     max_retries=3,
     enable_prompt_cache=True,
     cache_ttl="5m",  # or "1h"
@@ -159,7 +157,6 @@ The function auto-selects the best strategy:
 |-----------|----------|------|
 | Tools provided | `TOOL_AGENT` | Standard |
 | `prefer_batch_api=True` | `BATCH_TOOL_CALL` | 50% savings |
-| Batch with 5+ items | `BATCH_TOOL_CALL` | 50% savings |
 | Default | `LANGCHAIN_STRUCTURED` | Standard |
 
 **Environment Variable:** Set `THALA_PREFER_BATCH_API=true` to route all requests through the batch API by default. This is useful for development/testing or batch processing pipelines where latency isn't critical.
@@ -388,12 +385,11 @@ result = await get_structured_output(
 
 ## Cost Optimization Tips
 
-1. **Use `prefer_batch_api=True` when latency isn't critical**: 50% cost reduction on ALL requests
-2. **Use batch API for 5+ items**: Automatic 50% cost reduction (even without prefer_batch_api)
-3. **Enable prompt caching**: 90% savings on repeated system prompts
-4. **Use HAIKU for simple tasks**: Classification, simple extraction
-5. **Reserve OPUS for complex reasoning**: Deep analysis, multi-step logic
-6. **Set appropriate max_tokens**: Don't over-provision
+1. **Use `prefer_batch_api=True` when latency isn't critical**: 50% cost reduction on requests
+2. **Enable prompt caching**: 90% savings on repeated system prompts
+3. **Use HAIKU for simple tasks**: Classification, simple extraction
+4. **Reserve OPUS for complex reasoning**: Deep analysis, multi-step logic
+5. **Set appropriate max_tokens**: Don't over-provision
 
 ### Batch API Configuration
 

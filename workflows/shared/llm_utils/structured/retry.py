@@ -77,7 +77,6 @@ async def with_retries(
                     strategy=config.strategy,
                     use_json_schema_method=config.use_json_schema_method,
                     prefer_batch_api=config.prefer_batch_api,
-                    batch_threshold=config.batch_threshold,
                     max_retries=config.max_retries,
                     retry_backoff=config.retry_backoff,
                     enable_context_fallback=False,  # Prevent infinite fallback loop

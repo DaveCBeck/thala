@@ -6,7 +6,7 @@ and retry logic across all patterns.
 
 Strategies (auto-selected based on context):
 - LANGCHAIN_STRUCTURED: LangChain's .with_structured_output() (default for single requests)
-- BATCH_TOOL_CALL: Anthropic Batch API with tool calling (for batch_threshold+ items)
+- BATCH_TOOL_CALL: Anthropic Batch API with tool calling (when prefer_batch_api=True)
 - TOOL_AGENT: Multi-turn tool agent with output as final tool (when tools provided)
 - JSON_PROMPTING: Fallback JSON extraction from response (for edge cases)
 

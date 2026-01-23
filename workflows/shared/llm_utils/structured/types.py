@@ -60,10 +60,9 @@ class StructuredOutputConfig:
 
         strategy: Force a specific strategy (default: AUTO)
         use_json_schema_method: Use method="json_schema" for stricter validation
-        prefer_batch_api: Route ALL requests through batch API for 50% cost savings.
-            When True, even single requests use the batch API (higher latency but cheaper).
+        prefer_batch_api: Route requests through batch API for 50% cost savings.
+            When True, requests use the batch API (higher latency but cheaper).
             Defaults to THALA_PREFER_BATCH_API environment variable.
-        batch_threshold: Minimum items to trigger batch API when prefer_batch_api=False (default: 5)
 
         max_retries: Maximum retry attempts on failure
         retry_backoff: Backoff multiplier between retries
@@ -85,7 +84,6 @@ class StructuredOutputConfig:
     strategy: StructuredOutputStrategy = StructuredOutputStrategy.AUTO
     use_json_schema_method: bool = False
     prefer_batch_api: bool = field(default_factory=_get_prefer_batch_default)
-    batch_threshold: int = 5  # Use batch API for 5+ items (when prefer_batch_api=False)
 
     # Retry behavior
     max_retries: int = 2
