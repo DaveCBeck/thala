@@ -130,7 +130,7 @@ async def fact_check_section_worker(state: dict) -> dict[str, Any]:
             output_schema=FactCheckResult,
             user_prompt=user_prompt,
             system_prompt=FACT_CHECK_SYSTEM,
-            tier=ModelTier.SONNET,
+            tier=ModelTier.HAIKU,
             tools=tools,
             max_tokens=4000,
             max_tool_calls=max_tool_calls,

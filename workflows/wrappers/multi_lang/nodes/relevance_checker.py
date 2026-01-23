@@ -109,7 +109,7 @@ async def _check_language_relevance(
             output_schema=RelevanceDecision,
             user_prompt=user_prompt,
             system_prompt=system_prompt,
-            tier=ModelTier.HAIKU,
+            tier=ModelTier.DEEPSEEK_V3,
             max_tokens=512,
         )
 

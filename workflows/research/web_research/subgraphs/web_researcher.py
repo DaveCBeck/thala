@@ -178,7 +178,7 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
         raw_research=raw_research[:15000],
     )
 
-    llm = get_llm(ModelTier.SONNET)
+    llm = get_llm(ModelTier.HAIKU)
 
     try:
         # Use cached system prompt for 90% cost reduction on repeated calls

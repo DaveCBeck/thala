@@ -61,7 +61,7 @@ async def screen_sections_for_fact_check(state: dict) -> dict[str, Any]:
                 sections_summary=sections_summary,
             ),
             system_prompt=FACT_CHECK_SCREENING_SYSTEM,
-            tier=ModelTier.HAIKU,  # Use fast/cheap model for screening
+            tier=ModelTier.DEEPSEEK_V3,  # DeepSeek V3 for screening
             max_tokens=2000,  # Simplified schema needs less tokens
         )
 

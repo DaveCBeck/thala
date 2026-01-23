@@ -9,6 +9,7 @@ from workflows.shared.llm_utils import (
     get_llm,
     invoke_with_cache,
 )
+from workflows.shared.llm_utils.models import is_deepseek_tier
 from workflows.shared.batch_processor import BatchProcessor
 from workflows.shared.language import LanguageConfig, get_translated_prompt
 from .types import (
@@ -27,7 +28,7 @@ async def score_paper_relevance(
     topic: str,
     research_questions: list[str],
     language_config: LanguageConfig | None = None,
-    tier: ModelTier = ModelTier.HAIKU,
+    tier: ModelTier = ModelTier.DEEPSEEK_V3,
 ) -> tuple[float, str]:
     """Score a single paper's relevance to the research topic.
 
@@ -106,7 +107,7 @@ async def batch_score_relevance(
     research_questions: list[str],
     threshold: float = 0.6,
     language_config: LanguageConfig | None = None,
-    tier: ModelTier = ModelTier.HAIKU,
+    tier: ModelTier = ModelTier.DEEPSEEK_V3,
     max_concurrent: int = 10,
     use_batch_api: bool = True,
 ) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
@@ -132,7 +133,10 @@ async def batch_score_relevance(
     if not papers:
         return [], []
 
-    if use_batch_api and len(papers) >= 5:
+    # Disable batch API for DeepSeek models (no batch API available)
+    effective_use_batch = use_batch_api and not is_deepseek_tier(tier)
+
+    if effective_use_batch and len(papers) >= 5:
         return await _batch_score_relevance_batched(
             papers, topic, research_questions, threshold, language_config, tier
         )

@@ -81,7 +81,7 @@ async def polish_node(state: dict) -> dict[str, Any]:
                     section_content=content,
                 ),
                 system_prompt=POLISH_SECTION_SYSTEM,
-                tier=ModelTier.HAIKU,  # Use Haiku for polish (fast/cheap)
+                tier=ModelTier.DEEPSEEK_V3,  # DeepSeek V3 for polish (fast/cheap)
                 max_tokens=4000,
             )
 

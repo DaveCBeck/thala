@@ -1,4 +1,4 @@
-"""Content classification using direct Anthropic SDK.
+"""Content classification using structured output abstraction.
 
 Classifies scraped web content to determine:
 - full_text: Complete article ready for processing
@@ -6,41 +6,20 @@ Classifies scraped web content to determine:
 - paywall: Access restricted, needs fallback to retrieve-academic
 - non_academic: Not academic content
 
-LangSmith Integration:
-- Client wrapped with langsmith.wrappers.wrap_anthropic for tracing
-- classify_content decorated with @traceable for visibility
+Uses get_structured_output() for provider-agnostic structured extraction.
 """
 
 import logging
-import os
 import re
 from typing import Optional
 
-import anthropic
 from langsmith import traceable
-from langsmith.wrappers import wrap_anthropic
 
+from workflows.shared.llm_utils import ModelTier, get_structured_output
 from .prompts import CLASSIFICATION_SYSTEM_PROMPT, CLASSIFICATION_USER_TEMPLATE
 from .types import ClassificationResult
 
 logger = logging.getLogger(__name__)
-
-# Use Haiku for fast, cheap classification
-CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
-
-# Module-level wrapped client for connection reuse and tracing
-_client: Optional[anthropic.AsyncAnthropic] = None
-
-
-def _get_client() -> anthropic.AsyncAnthropic:
-    """Get or create the wrapped Anthropic async client."""
-    global _client
-    if _client is None:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not set")
-        _client = wrap_anthropic(anthropic.AsyncAnthropic(api_key=api_key))
-    return _client
 
 
 def _quick_paywall_check(markdown: str) -> bool:
@@ -88,9 +67,9 @@ async def classify_content(
     links: list[str],
     doi: Optional[str] = None,
 ) -> ClassificationResult:
-    """Classify scraped content using Anthropic Haiku.
+    """Classify scraped content using structured output.
 
-    Uses direct Anthropic SDK with tool_use for structured output.
+    Uses get_structured_output() for provider-agnostic structured extraction.
     Applies quick heuristics first for obvious cases.
 
     Args:
@@ -122,7 +101,7 @@ async def classify_content(
         )
 
     # LLM classification for ambiguous cases
-    logger.debug("Classifying content via Haiku")
+    logger.debug("Classifying content via DeepSeek V3")
 
     # Truncate content for classification
     content_preview = markdown[:15000] if len(markdown) > 15000 else markdown
@@ -139,79 +118,19 @@ async def classify_content(
     )
 
     try:
-        client = _get_client()
-
-        response = await client.messages.create(
-            model=CLASSIFIER_MODEL,
+        result: ClassificationResult = await get_structured_output(
+            output_schema=ClassificationResult,
+            user_prompt=user_prompt,
+            system_prompt=CLASSIFICATION_SYSTEM_PROMPT,
+            tier=ModelTier.DEEPSEEK_V3,
             max_tokens=1024,
-            system=CLASSIFICATION_SYSTEM_PROMPT,
-            tools=[
-                {
-                    "name": "classify_content",
-                    "description": "Classify academic content type and extract PDF URL if applicable",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "classification": {
-                                "type": "string",
-                                "enum": [
-                                    "full_text",
-                                    "abstract_with_pdf",
-                                    "paywall",
-                                    "non_academic",
-                                ],
-                                "description": "The classification of the content",
-                            },
-                            "confidence": {
-                                "type": "number",
-                                "minimum": 0,
-                                "maximum": 1,
-                                "description": "Confidence score between 0 and 1",
-                            },
-                            "pdf_url": {
-                                "type": "string",
-                                "description": "URL to download PDF if classification is abstract_with_pdf. Must be a valid HTTP/HTTPS URL.",
-                            },
-                            "reasoning": {
-                                "type": "string",
-                                "description": "Brief explanation of the classification decision",
-                            },
-                            "title": {
-                                "type": "string",
-                                "description": "Article title if this is academic content",
-                            },
-                            "authors": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "List of author names if this is academic content",
-                            },
-                        },
-                        "required": ["classification", "confidence", "reasoning"],
-                    },
-                }
-            ],
-            tool_choice={"type": "tool", "name": "classify_content"},
-            messages=[{"role": "user", "content": user_prompt}],
         )
 
-        # Extract tool call result
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "classify_content":
-                result = ClassificationResult(**block.input)
-                logger.debug(
-                    f"Classification: {result.classification} "
-                    f"(confidence={result.confidence:.2f}, pdf_url={result.pdf_url is not None})"
-                )
-                return result
-
-        # Fallback if no tool call in response
-        logger.warning("No tool call in classification response")
-        return ClassificationResult(
-            classification="full_text",
-            confidence=0.5,
-            pdf_url=None,
-            reasoning="Fallback: no tool call in LLM response",
+        logger.debug(
+            f"Classification: {result.classification} "
+            f"(confidence={result.confidence:.2f}, pdf_url={result.pdf_url is not None})"
         )
+        return result
 
     except Exception as e:
         logger.error(f"Classification failed: {type(e).__name__}: {e}")

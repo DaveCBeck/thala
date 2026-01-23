@@ -84,9 +84,8 @@ async def finalize_node(state: dict) -> dict[str, Any]:
             output_schema=FinalVerification,
             user_prompt=user_prompt,
             system_prompt=FINAL_VERIFICATION_SYSTEM,
-            tier=ModelTier.SONNET,
+            tier=ModelTier.DEEPSEEK_V3,
             max_tokens=1500,
-            use_json_schema_method=True,
         )
 
         logger.info(

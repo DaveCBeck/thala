@@ -63,7 +63,7 @@ Accept queries that would help find information about the research topic.
         result: QueryValidationBatch = await get_structured_output(
             output_schema=QueryValidationBatch,
             user_prompt=prompt,
-            tier=ModelTier.HAIKU,
+            tier=ModelTier.DEEPSEEK_V3,
         )
 
         valid_queries = []

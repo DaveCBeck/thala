@@ -48,7 +48,7 @@ async def create_brief(state: DeepResearchState) -> dict[str, Any]:
         clarifications=json.dumps(clarifications) if clarifications else "None",
     )
 
-    llm = get_llm(ModelTier.SONNET)
+    llm = get_llm(ModelTier.DEEPSEEK_V3)
 
     try:
         response = await llm.ainvoke(

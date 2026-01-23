@@ -116,7 +116,7 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
     quality_settings = state.get("quality_settings", {})
 
     use_opus = quality_settings.get("use_opus_for_generation", False)
-    tier = ModelTier.OPUS if use_opus else ModelTier.SONNET
+    tier = ModelTier.OPUS if use_opus else ModelTier.HAIKU
 
     logger.info(f"Executing generation edit: {edit_type}")
 

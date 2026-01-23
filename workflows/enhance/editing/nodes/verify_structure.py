@@ -68,9 +68,8 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
             output_schema=StructureVerification,
             user_prompt=user_prompt,
             system_prompt=STRUCTURE_VERIFICATION_SYSTEM,
-            tier=ModelTier.SONNET,
+            tier=ModelTier.DEEPSEEK_V3,
             max_tokens=2000,
-            use_json_schema_method=True,
         )
 
         logger.info(
