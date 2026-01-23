@@ -62,7 +62,7 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/research/academic_lit_review/paper_processor/extraction/core.py:74` | Extract paper summary (key findings, methodology, limitations) | 2048 | Yes | No | Yes | **HAIKU** (≤400k chars) |
 | `workflows/research/academic_lit_review/paper_processor/extraction/core.py:74` | Extract paper summary (large papers >400k chars) | 4096 | Yes | No | Yes | **SONNET_1M** |
-| `workflows/document_processing/nodes/metadata_agent.py:85` | Extract document metadata (title, authors, date, ISBN) | 1024 | Yes | No | No | **DEEPSEEK_R1** |
+| `workflows/document_processing/nodes/metadata_agent.py:85` | Extract document metadata (title, authors, date, ISBN) | 1024 | Yes | No | No | **DEEPSEEK_V3** |
 | `workflows/document_processing/nodes/summary_agent.py:81,123` | Generate document summaries | 4096 | No | No | No | **DEEPSEEK_R1** |
 | `workflows/document_processing/nodes/chapter_detector.py:213` | Detect chapter boundaries in documents | 2048 | Yes | No | No | **DEEPSEEK_V3** |
 
@@ -354,28 +354,25 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 ### Technical Integration Notes
 
-**DeepSeek API is OpenAI-compatible:**
+**LangChain integration** uses native `ChatDeepSeek`:
 ```python
-from openai import OpenAI
+from langchain_deepseek import ChatDeepSeek
 
-client = OpenAI(
-    api_key="your-deepseek-key",
-    base_url="https://api.deepseek.com"  # or /beta for strict mode
-)
+# V3 (standard tasks)
+llm = ChatDeepSeek(model="deepseek-chat", max_tokens=4096)
 
-# Same patterns work:
-response = client.chat.completions.create(
-    model="deepseek-chat",  # V3.2
-    # model="deepseek-reasoner",  # R1
-    messages=[...],
-    response_format={"type": "json_object"}
+# R1 (reasoning tasks with tool support)
+llm = ChatDeepSeek(
+    model="deepseek-reasoner",
+    extra_body={"thinking": {"type": "enabled"}},
+    disabled_params={"tool_choice": None},  # R1 supports tools but not tool_choice
 )
 ```
 
-**Current LangChain integration** would need:
-1. Add `ChatDeepSeek` wrapper (or use OpenAI wrapper with base_url)
-2. Add `ModelTier.DEEPSEEK_V3` and `ModelTier.DEEPSEEK_R1`
-3. Update `get_llm()` to route appropriately
+**Key notes:**
+- `ChatDeepSeek` auto-reads `DEEPSEEK_API_KEY` from environment
+- R1 now supports structured output via `disabled_params={"tool_choice": None}`
+- LangSmith metadata is set automatically (`ls_provider="deepseek"`)
 
 ---
 

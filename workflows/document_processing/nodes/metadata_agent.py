@@ -82,7 +82,7 @@ Extract:
             output_schema=DocumentMetadata,
             user_prompt=user_prompt,
             system_prompt=DOCUMENT_ANALYSIS_SYSTEM,
-            tier=ModelTier.DEEPSEEK_R1,
+            tier=ModelTier.DEEPSEEK_V3,  # V3 for cost efficiency (R1 also works but costs 2x more)
             enable_prompt_cache=True,
         )
 

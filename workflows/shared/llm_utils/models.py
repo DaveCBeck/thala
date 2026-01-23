@@ -14,7 +14,7 @@ configure_langsmith()
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
+from langchain_deepseek import ChatDeepSeek
 
 
 class ModelTier(Enum):
@@ -87,25 +87,22 @@ def get_llm(
         # Cost-effective task with DeepSeek
         llm = get_llm(ModelTier.DEEPSEEK_V3)
     """
-    # DeepSeek models use OpenAI-compatible API
+    # DeepSeek models use native ChatDeepSeek integration
     if is_deepseek_tier(tier):
-        api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY not set")
-
-        model_kwargs: dict[str, Any] = {
-            "metadata": {
-                "ls_provider": "deepseek",
-                "ls_model_name": tier.value,
-            }
+        # ChatDeepSeek auto-reads DEEPSEEK_API_KEY and sets LangSmith metadata
+        kwargs: dict[str, Any] = {
+            "model": tier.value,
+            "max_tokens": max_tokens,
+            "max_retries": 3,
         }
 
-        # Enable explicit thinking for R1 reasoner model
-        # Per DeepSeek API docs: thinking parameter via extra_body
         if tier == ModelTier.DEEPSEEK_R1:
-            model_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
-            # R1 needs higher max_tokens for reasoning content (default 32K, max 64K)
-            max_tokens = max(max_tokens, 16384)
+            # Enable explicit thinking for R1 reasoner model
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+            # R1 needs higher max_tokens for reasoning content
+            kwargs["max_tokens"] = max(max_tokens, 16384)
+            # R1 supports tool calling but NOT tool_choice parameter
+            kwargs["disabled_params"] = {"tool_choice": None}
         elif thinking_budget is not None:
             import logging
 
@@ -113,14 +110,7 @@ def get_llm(
                 f"thinking_budget ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
             )
 
-        return ChatOpenAI(
-            model=tier.value,
-            api_key=api_key,
-            base_url="https://api.deepseek.com",
-            max_tokens=max_tokens,
-            max_retries=3,
-            model_kwargs=model_kwargs,
-        )
+        return ChatDeepSeek(**kwargs)
 
     # Claude models use Anthropic API
     api_key = os.getenv("ANTHROPIC_API_KEY")

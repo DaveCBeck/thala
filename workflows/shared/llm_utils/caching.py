@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
+from langchain_deepseek import ChatDeepSeek
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +59,7 @@ def create_cached_messages(
 
 def _is_deepseek_model(llm: BaseChatModel) -> bool:
     """Check if LLM is a DeepSeek model."""
-    if isinstance(llm, ChatOpenAI):
-        base_url = getattr(llm, "openai_api_base", "") or ""
-        return "deepseek" in base_url.lower()
-    return False
+    return isinstance(llm, ChatDeepSeek)
 
 
 async def warm_deepseek_cache(system_prompt: str) -> None:
