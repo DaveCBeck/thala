@@ -61,17 +61,14 @@ Each edit must have:
 
 Be conservative - only suggest edits you're confident about."""
 
-FACT_CHECK_USER = """Fact-check the claims in this section.
+FACT_CHECK_USER = """{section_content}
 
-SECTION HEADING: {section_heading}
+---
+Task: Fact-check the claims in the section "{section_heading}" above.
 
-CONTENT:
-{section_content}
-
-TOPIC: {topic}
-
-PERPLEXITY: {use_perplexity}
-MINIMUM CONFIDENCE FOR EDITS: {confidence_threshold}
+Topic: {topic}
+Perplexity: {use_perplexity}
+Minimum confidence for edits: {confidence_threshold}
 
 Use the available tools to:
 1. Search the paper corpus for evidence
@@ -112,17 +109,14 @@ Each edit must have:
 - Confidence score (0.0-1.0)
 - Source reference (the correct citation key)"""
 
-REFERENCE_CHECK_USER = """Validate the citations in this section.
+REFERENCE_CHECK_USER = """{section_content}
 
-SECTION HEADING: {section_heading}
+---
+Task: Validate the citations in the section "{section_heading}" above.
 
-CONTENT:
-{section_content}
-
-CITATIONS TO CHECK: {citations}
-
-TOPIC: {topic}
-MINIMUM CONFIDENCE FOR EDITS: {confidence_threshold}
+Citations to check: {citations}
+Topic: {topic}
+Minimum confidence for edits: {confidence_threshold}
 
 For each citation:
 1. Use get_paper_content to retrieve the paper

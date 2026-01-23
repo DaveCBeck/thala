@@ -37,6 +37,7 @@ from .caching import (
     CacheTTL,
     create_cached_messages,
     invoke_with_cache,
+    batch_invoke_with_cache,
     warm_deepseek_cache,
 )
 from .structured import (
@@ -71,5 +72,6 @@ __all__ = [
     "CacheTTL",
     "create_cached_messages",
     "invoke_with_cache",
+    "batch_invoke_with_cache",
     "warm_deepseek_cache",
 ]

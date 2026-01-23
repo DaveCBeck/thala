@@ -140,3 +140,100 @@ async def invoke_with_cache(
                 logger.debug(f"Cache miss: {cache_creation} tokens written to cache")
 
     return response
+
+
+def _compute_prefix_hash(system_prompt: str, cache_prefix: str | None = None) -> int:
+    """Compute hash for cache tracking, including optional user prefix."""
+    if cache_prefix:
+        return hash(system_prompt + cache_prefix)
+    return hash(system_prompt)
+
+
+async def batch_invoke_with_cache(
+    llm: BaseChatModel,
+    system_prompt: str,
+    user_prompts: list[tuple[str, str]],
+    cache_prefix: str | None = None,
+    max_concurrent: int = 10,
+) -> dict[str, Any]:
+    """Invoke LLM for multiple requests with cache warmup coordination.
+
+    For DeepSeek: Sends first request, waits for cache construction, then
+    processes remaining requests concurrently to benefit from prefix caching.
+
+    For Anthropic: Processes all requests concurrently (cache is explicit).
+
+    Args:
+        llm: Language model to use
+        system_prompt: System prompt (shared across all requests)
+        user_prompts: List of (request_id, user_prompt) tuples
+        cache_prefix: Optional shared prefix in user prompts for hash tracking
+            (e.g., "Research Topic: X\\nResearch Questions: Y\\n\\n")
+        max_concurrent: Maximum concurrent requests after warmup
+
+    Returns:
+        Dict mapping request_id to response
+    """
+    if not user_prompts:
+        return {}
+
+    results: dict[str, Any] = {}
+
+    # Non-DeepSeek: process all concurrently
+    if not _is_deepseek_model(llm):
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def process_one(req_id: str, user_prompt: str) -> tuple[str, Any]:
+            async with semaphore:
+                response = await invoke_with_cache(llm, system_prompt, user_prompt)
+                return req_id, response
+
+        tasks = [process_one(req_id, prompt) for req_id, prompt in user_prompts]
+        for req_id, response in await asyncio.gather(*tasks):
+            results[req_id] = response
+        return results
+
+    # DeepSeek: coordinate cache warmup
+    prefix_hash = _compute_prefix_hash(system_prompt, cache_prefix)
+
+    # Check if cache needs warmup
+    if prefix_hash not in _deepseek_cache_warmed:
+        # First request triggers cache construction
+        first_id, first_prompt = user_prompts[0]
+        remaining = user_prompts[1:]
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": first_prompt},
+        ]
+        response = await llm.ainvoke(messages)
+        results[first_id] = response
+
+        # Mark warmed and wait for cache construction
+        _deepseek_cache_warmed[prefix_hash] = time.time()
+        logger.info(
+            f"DeepSeek cache warmup: waiting {DEEPSEEK_CACHE_WARMUP_DELAY}s "
+            f"before processing {len(remaining)} remaining requests"
+        )
+        await asyncio.sleep(DEEPSEEK_CACHE_WARMUP_DELAY)
+    else:
+        remaining = user_prompts
+        logger.debug(f"DeepSeek cache already warm, processing {len(remaining)} requests")
+
+    # Process remaining requests concurrently
+    if remaining:
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def process_remaining(req_id: str, user_prompt: str) -> tuple[str, Any]:
+            async with semaphore:
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                return req_id, await llm.ainvoke(messages)
+
+        tasks = [process_remaining(req_id, prompt) for req_id, prompt in remaining]
+        for req_id, response in await asyncio.gather(*tasks):
+            results[req_id] = response
+
+    return results
