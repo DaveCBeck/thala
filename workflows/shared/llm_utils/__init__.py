@@ -37,6 +37,7 @@ from .caching import (
     CacheTTL,
     create_cached_messages,
     invoke_with_cache,
+    warm_deepseek_cache,
 )
 from .structured import (
     StructuredOutputStrategy,
@@ -70,4 +71,5 @@ __all__ = [
     "CacheTTL",
     "create_cached_messages",
     "invoke_with_cache",
+    "warm_deepseek_cache",
 ]

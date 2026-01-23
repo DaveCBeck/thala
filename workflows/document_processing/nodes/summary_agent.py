@@ -81,7 +81,7 @@ Text:
 {content}"""
 
         # Generate summary via LLM with prompt caching
-        llm = get_llm(tier=ModelTier.SONNET)
+        llm = get_llm(tier=ModelTier.DEEPSEEK_R1)
 
         async def _summarize():
             response = await invoke_with_cache(
@@ -123,7 +123,7 @@ Text:
 
 async def _translate_to_english(text: str) -> str:
     """Translate text to English using Sonnet."""
-    llm = get_llm(tier=ModelTier.SONNET)
+    llm = get_llm(tier=ModelTier.DEEPSEEK_R1)
 
     async def _invoke():
         response = await invoke_with_cache(

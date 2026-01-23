@@ -80,7 +80,7 @@ async def check_metadata(state: DocumentProcessingState) -> dict[str, Any]:
             output_schema=DocumentMetadata,
             user_prompt=f"Extract metadata from this document:\n\n{content}",
             system_prompt=METADATA_SYSTEM_PROMPT,
-            tier=ModelTier.SONNET,
+            tier=ModelTier.DEEPSEEK_V3,
             enable_prompt_cache=True,
         )
 

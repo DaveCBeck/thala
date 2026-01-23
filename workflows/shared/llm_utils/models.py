@@ -66,8 +66,9 @@ def get_llm(
         tier: Model tier selection (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
         thinking_budget: Token budget for extended thinking (enables if set).
                         Recommended: 8000-16000 for complex tasks.
-                        Only supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
-                        Ignored for DeepSeek tiers.
+                        Supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
+                        For DEEPSEEK_R1, thinking is always enabled (explicit mode).
+                        Ignored for DEEPSEEK_V3.
         max_tokens: Maximum output tokens (must be > thinking_budget if set)
 
     Returns:
@@ -92,11 +93,24 @@ def get_llm(
         if not api_key:
             raise ValueError("DEEPSEEK_API_KEY not set")
 
-        if thinking_budget is not None:
+        model_kwargs: dict[str, Any] = {
+            "metadata": {
+                "ls_provider": "deepseek",
+                "ls_model_name": tier.value,
+            }
+        }
+
+        # Enable explicit thinking for R1 reasoner model
+        # Per DeepSeek API docs: thinking parameter via extra_body
+        if tier == ModelTier.DEEPSEEK_R1:
+            model_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+            # R1 needs higher max_tokens for reasoning content (default 32K, max 64K)
+            max_tokens = max(max_tokens, 16384)
+        elif thinking_budget is not None:
             import logging
 
             logging.getLogger(__name__).warning(
-                f"thinking_budget ignored for DeepSeek tier {tier.name}"
+                f"thinking_budget ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
             )
 
         return ChatOpenAI(
@@ -105,13 +119,7 @@ def get_llm(
             base_url="https://api.deepseek.com",
             max_tokens=max_tokens,
             max_retries=3,
-            # LangSmith metadata for cost tracking
-            model_kwargs={
-                "metadata": {
-                    "ls_provider": "deepseek",
-                    "ls_model_name": tier.value,
-                }
-            },
+            model_kwargs=model_kwargs,
         )
 
     # Claude models use Anthropic API

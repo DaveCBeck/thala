@@ -62,9 +62,9 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 |----------|-------------|--------------|------------|-------|---------|------|
 | `workflows/research/academic_lit_review/paper_processor/extraction/core.py:74` | Extract paper summary (key findings, methodology, limitations) | 2048 | Yes | No | Yes | **HAIKU** (≤400k chars) |
 | `workflows/research/academic_lit_review/paper_processor/extraction/core.py:74` | Extract paper summary (large papers >400k chars) | 4096 | Yes | No | Yes | **SONNET_1M** |
-| `workflows/document_processing/nodes/metadata_agent.py:81` | Extract document metadata (title, authors, date, ISBN) | 1024 | Yes | No | No | **SONNET** |
-| `workflows/document_processing/nodes/summary_agent.py:81,123` | Generate document summaries | 4096 | No | No | No | **SONNET** |
-| `workflows/document_processing/nodes/chapter_detector.py:213` | Detect chapter boundaries in documents | 2048 | Yes | No | No | **SONNET** |
+| `workflows/document_processing/nodes/metadata_agent.py:81` | Extract document metadata (title, authors, date, ISBN) | 1024 | Yes | No | No | **DEEPSEEK_V3** |
+| `workflows/document_processing/nodes/summary_agent.py:81,123` | Generate document summaries | 4096 | No | No | No | **DEEPSEEK_R1** |
+| `workflows/document_processing/nodes/chapter_detector.py:213` | Detect chapter boundaries in documents | 2048 | Yes | No | No | **DEEPSEEK_V3** |
 
 ---
 
