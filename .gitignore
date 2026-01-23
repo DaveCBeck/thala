@@ -7,10 +7,14 @@ dev.md
 claude.md
 todo.md
 logs/
+.outputs/
 testing/test_data/
 testing/logs/
 testing/traces/
 **/claude.md
+
+# Task queue data (local state, not committed)
+topic_queue/
 
 # Environment variables
 .env
