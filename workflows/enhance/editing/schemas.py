@@ -335,6 +335,33 @@ class StructureVerification(BaseModel):
         )
 
 
+class CoherenceComparisonResult(BaseModel):
+    """Result of comparing two document versions for coherence."""
+
+    preferred_version: Literal["original", "edited"] = Field(
+        description="Which version is more coherent overall"
+    )
+    original_score: float = Field(
+        ge=0.0, le=1.0,
+        description="Coherence score for original document"
+    )
+    edited_score: float = Field(
+        ge=0.0, le=1.0,
+        description="Coherence score for edited document"
+    )
+    confidence: float = Field(
+        ge=0.0, le=1.0,
+        description="Confidence in this assessment"
+    )
+    reasoning: str = Field(
+        description="Explanation of why one version is preferred"
+    )
+    key_regressions: list[str] = Field(
+        default_factory=list,
+        description="Specific areas where edited version regressed"
+    )
+
+
 # =============================================================================
 # Enhancement Schemas (Phase 6 - when document has citations)
 # =============================================================================

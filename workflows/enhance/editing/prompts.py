@@ -276,6 +276,40 @@ Assess:
 5. Should another editing iteration be performed?"""
 
 # =============================================================================
+# Coherence Regression Detection (Sonnet comparison)
+# =============================================================================
+
+COHERENCE_COMPARISON_SYSTEM = """You are an expert document quality assessor comparing two versions of the same document.
+
+Determine which version has better overall coherence - the original or the edited version.
+
+Coherence encompasses:
+1. Logical flow between sections and paragraphs
+2. Clear narrative thread throughout the document
+3. Proper introduction and conclusion framing
+4. Smooth transitions between ideas
+5. Absence of jarring jumps or disconnects
+
+Be objective and focus on structural coherence, not minor stylistic preferences. A regression occurs when edits introduce fragmentation, break narrative flow, or create logical gaps."""
+
+COHERENCE_COMPARISON_USER = """Compare these two versions of a document about "{topic}" and determine which is more coherent.
+
+ORIGINAL VERSION (before edits):
+<original>
+{original_document}
+</original>
+
+EDITED VERSION (after structural edits):
+<edited>
+{edited_document}
+</edited>
+
+EDITS APPLIED:
+{edits_summary}
+
+Assess which version has better logical flow and narrative coherence. If the edits introduced problems, identify specific regressions."""
+
+# =============================================================================
 # Phase 6: Polish Analysis
 # =============================================================================
 

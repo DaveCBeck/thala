@@ -48,6 +48,12 @@ class EditingState(TypedDict, total=False):
     structure_verification: dict
     needs_more_structure_work: bool
 
+    # Coherence regression detection
+    baseline_coherence_score: Optional[float]  # From initial structural analysis
+    coherence_regression_detected: bool
+    coherence_regression_warning: Optional[str]
+    coherence_regression_retry_used: bool  # Track if we've already retried after a regression
+
     # === Iteration Tracking (Structure) ===
     structure_iteration: int
     max_structure_iterations: int
@@ -118,6 +124,11 @@ def build_initial_state(
         structure_iteration=0,
         max_structure_iterations=max_structure_iterations,
         needs_more_structure_work=False,
+        # Coherence regression detection
+        baseline_coherence_score=None,
+        coherence_regression_detected=False,
+        coherence_regression_warning=None,
+        coherence_regression_retry_used=False,
         # Citation detection (set during parse)
         has_citations=False,
         citation_keys=[],

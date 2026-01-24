@@ -94,9 +94,20 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
                 f"{issue.description[:100]}"
             )
 
+        # Store baseline coherence on first iteration for regression detection
+        baseline_update = {}
+        if iteration == 0:
+            baseline_coherence = (
+                analysis.narrative_coherence_score +
+                analysis.section_organization_score
+            ) / 2
+            baseline_update["baseline_coherence_score"] = baseline_coherence
+            logger.info(f"Baseline coherence captured: {baseline_coherence:.2f}")
+
         return {
             "structural_analysis": analysis.model_dump(),
             "analysis_complete": True,
+            **baseline_update,
         }
 
     except Exception as e:

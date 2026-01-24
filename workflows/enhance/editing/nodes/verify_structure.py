@@ -1,19 +1,27 @@
 """Verify structure node for editing workflow."""
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from langsmith import traceable
 
 from workflows.enhance.editing.document_model import DocumentModel
-from workflows.enhance.editing.schemas import StructureVerification, StructuralAnalysis
+from workflows.enhance.editing.schemas import (
+    StructureVerification,
+    CoherenceComparisonResult,
+)
 from workflows.enhance.editing.prompts import (
     STRUCTURE_VERIFICATION_SYSTEM,
     STRUCTURE_VERIFICATION_USER,
+    COHERENCE_COMPARISON_SYSTEM,
+    COHERENCE_COMPARISON_USER,
 )
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 logger = logging.getLogger(__name__)
+
+# Threshold for coherence drop that triggers Sonnet comparison
+REGRESSION_THRESHOLD = 0.05
 
 
 def summarize_structure(doc_model: DocumentModel) -> str:
@@ -34,6 +42,55 @@ def summarize_structure(doc_model: DocumentModel) -> str:
     return "\n".join(lines)
 
 
+async def _check_coherence_regression(
+    original_model: DocumentModel,
+    edited_model: DocumentModel,
+    topic: str,
+    edits_summary: str,
+) -> Optional[CoherenceComparisonResult]:
+    """Call Sonnet to compare original and edited documents for coherence regression.
+
+    Args:
+        original_model: The original document model (before edits)
+        edited_model: The edited document model (after edits)
+        topic: Document topic for context
+        edits_summary: Summary of edits applied
+
+    Returns:
+        CoherenceComparisonResult if successful, None on failure
+    """
+    # Render both documents as markdown for comparison
+    original_md = original_model.to_markdown()
+    edited_md = edited_model.to_markdown()
+
+    user_prompt = COHERENCE_COMPARISON_USER.format(
+        topic=topic,
+        original_document=original_md,
+        edited_document=edited_md,
+        edits_summary=edits_summary,
+    )
+
+    logger.info("Calling Sonnet to compare document versions for coherence regression")
+
+    try:
+        result = await get_structured_output(
+            output_schema=CoherenceComparisonResult,
+            user_prompt=user_prompt,
+            system_prompt=COHERENCE_COMPARISON_SYSTEM,
+            tier=ModelTier.SONNET,
+            max_tokens=2000,
+        )
+        logger.info(
+            f"Coherence comparison: preferred={result.preferred_version}, "
+            f"confidence={result.confidence:.2f}, "
+            f"original={result.original_score:.2f}, edited={result.edited_score:.2f}"
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Coherence comparison failed: {e}", exc_info=True)
+        return None
+
+
 @traceable(run_type="chain", name="EditingVerifyStructure")
 async def verify_structure_node(state: dict) -> dict[str, Any]:
     """Verify structural edits improved coherence.
@@ -43,7 +100,6 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
     original_model = DocumentModel.from_dict(state["document_model"])
     updated_model = DocumentModel.from_dict(state.get("updated_document_model", state["document_model"]))
     completed_edits = state.get("completed_edits", [])
-    analysis = state.get("structural_analysis", {})
 
     # Build edit summary
     successful_edits = [e for e in completed_edits if e.get("success")]
@@ -79,11 +135,70 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
             f"regressions={len(verification.regressions)}"
         )
 
-        # Determine if more work needed
         iteration = state.get("structure_iteration", 0)
         max_iterations = state.get("max_structure_iterations", 3)
         min_coherence = state.get("quality_settings", {}).get("min_coherence_threshold", 0.75)
+        topic = state["input"]["topic"]
 
+        # === Coherence Regression Detection ===
+        baseline_coherence = state.get("baseline_coherence_score")
+        retry_used = state.get("coherence_regression_retry_used", False)
+
+        if baseline_coherence is not None:
+            coherence_drop = baseline_coherence - verification.coherence_score
+
+            if coherence_drop > REGRESSION_THRESHOLD:
+                logger.warning(
+                    f"Potential coherence regression detected: "
+                    f"baseline={baseline_coherence:.2f}, "
+                    f"current={verification.coherence_score:.2f}, "
+                    f"drop={coherence_drop:.2f}"
+                )
+
+                # Call Sonnet to compare both documents
+                comparison = await _check_coherence_regression(
+                    original_model=original_model,
+                    edited_model=updated_model,
+                    topic=topic,
+                    edits_summary=edits_summary,
+                )
+
+                if comparison and comparison.preferred_version == "original" and comparison.confidence >= 0.6:
+                    # Confirmed regression - need to rollback
+                    regressions_desc = ", ".join(comparison.key_regressions[:3]) if comparison.key_regressions else "general coherence loss"
+
+                    if not retry_used:
+                        # First regression: retry without incrementing iteration
+                        logger.warning(
+                            f"Coherence regression confirmed (confidence={comparison.confidence:.2f}). "
+                            f"Rolling back and retrying. Regressions: {regressions_desc}"
+                        )
+                        return {
+                            "updated_document_model": state["document_model"],  # Rollback to original
+                            "structure_verification": verification.model_dump(),
+                            "coherence_regression_retry_used": True,
+                            "structure_iteration": iteration,  # Don't increment!
+                            "needs_more_structure_work": True,  # Retry
+                        }
+                    else:
+                        # Second regression: give up and proceed to polish
+                        warning_msg = (
+                            f"Coherence regression persisted after retry "
+                            f"(confidence={comparison.confidence:.2f}). "
+                            f"Rolling back to original document. "
+                            f"Regressions: {regressions_desc}"
+                        )
+                        logger.warning(warning_msg)
+                        return {
+                            "updated_document_model": state["document_model"],  # Rollback to original
+                            "structure_verification": verification.model_dump(),
+                            "coherence_regression_detected": True,
+                            "coherence_regression_warning": warning_msg,
+                            "needs_more_structure_work": False,  # Give up, proceed to polish
+                            "structure_iteration": iteration + 1,
+                        }
+
+        # === Normal flow (no regression or regression not confirmed) ===
         needs_more = (
             verification.coherence_score < min_coherence
             and verification.needs_another_iteration
@@ -131,6 +246,17 @@ def check_structure_complete(state: dict) -> str:
     if not verification_data:
         logger.warning("No verification data, proceeding to polish")
         return "proceed_to_polish"
+
+    # === Coherence Regression Handling ===
+    # If final regression detected (after retry), proceed to polish with original document
+    if state.get("coherence_regression_detected"):
+        logger.warning("Coherence regression confirmed after retry, proceeding to polish with original document")
+        return "proceed_to_polish"
+
+    # If retry is pending (regression_retry_used but needs_more_structure_work), loop back
+    if state.get("coherence_regression_retry_used") and state.get("needs_more_structure_work"):
+        logger.info("Retrying structure work after coherence regression rollback")
+        return "continue_structure"
 
     verification = StructureVerification.model_validate(verification_data)
 
