@@ -18,8 +18,24 @@ import re
 
 
 def _normalize_heading(text: str) -> str:
-    """Normalize heading for comparison (lowercase, strip punctuation/whitespace)."""
-    return re.sub(r'[^a-z0-9]', '', text.lower())
+    """Normalize heading for comparison.
+
+    Strips:
+    - Leading section numbers (e.g., "1.", "1.2.", "3.2.1")
+    - Leading "Chapter/Section X" prefixes
+    - All punctuation and whitespace
+    - Converts to lowercase
+
+    Examples:
+        "1. Introduction" → "introduction"
+        "Chapter 3: Methods" → "methods"
+        "## 1.2 Results" → "results"
+    """
+    text = text.lower()
+    # Strip leading section/chapter numbers: "1.", "1.2.", "Chapter 1:", "Section 2.3"
+    text = re.sub(r'^(?:chapter|section)?\s*[\d.]+[.:)]*\s*', '', text)
+    # Remove remaining non-alphabetic characters
+    return re.sub(r'[^a-z]', '', text)
 
 
 def _strip_leading_header(content: str, section_heading: str) -> str:

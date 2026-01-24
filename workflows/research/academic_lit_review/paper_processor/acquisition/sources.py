@@ -63,7 +63,7 @@ async def try_oa_download(
         return result.content, True
 
     except Exception as e:
-        logger.warning(
+        logger.info(
             f"[OA] Failed to download from OA URL for {doi}: {type(e).__name__}: {e}"
         )
         return None, False

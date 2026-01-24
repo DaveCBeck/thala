@@ -111,7 +111,7 @@ async def get_url(
         if result:
             return result
         # PDF download failed - skip web scraping (won't work for PDFs) and go to retrieve-academic
-        logger.warning("PDF download failed, skipping web scraping for PDF URL")
+        logger.info("PDF download failed, skipping web scraping for PDF URL")
         # Jump directly to retrieve-academic fallback (Step 5)
         if opts.allow_retrieve_academic and doi_info:
             fallback_chain.append("retrieve_academic")
@@ -184,9 +184,9 @@ async def get_url(
                     pdf_result.classification = ContentClassification.ABSTRACT_WITH_PDF
                     return pdf_result
                 # Fall through to retrieve-academic
-                logger.warning("Extracted PDF download failed")
+                logger.info("Extracted PDF download failed")
             else:
-                logger.warning("Abstract page but no valid PDF URL extracted")
+                logger.info("Abstract page but no valid PDF URL extracted")
             # Fall through to retrieve-academic
 
         elif classification.classification == "paywall":
@@ -287,5 +287,5 @@ async def _handle_pdf_url(
             fallback_chain=fallback_chain,
         )
     except Exception as e:
-        logger.warning(f"PDF processing failed: {type(e).__name__}: {e}")
+        logger.info(f"PDF processing failed: {type(e).__name__}: {e}")
         return None

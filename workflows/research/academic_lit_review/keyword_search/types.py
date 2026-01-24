@@ -5,6 +5,7 @@ from typing_extensions import TypedDict
 
 from langchain_tools.openalex import OpenAlexWork
 from workflows.research.academic_lit_review.state import (
+    FallbackCandidate,
     LitReviewInput,
     PaperMetadata,
     QualitySettings,
@@ -30,4 +31,5 @@ class KeywordSearchState(TypedDict):
     # Output
     discovered_papers: list[PaperMetadata]
     rejected_papers: list[PaperMetadata]
+    fallback_queue: list[FallbackCandidate]  # Overflow + near-threshold papers for fallback
     keyword_dois: list[str]

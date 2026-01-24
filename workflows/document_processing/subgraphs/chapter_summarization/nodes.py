@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 from langsmith import traceable
@@ -18,6 +19,8 @@ from .prompts import CHAPTER_SUMMARIZATION_SYSTEM, TRANSLATION_SYSTEM
 
 logger = logging.getLogger(__name__)
 
+_USE_BATCH_API = os.getenv("THALA_PREFER_BATCH_API", "").lower() in ("true", "1", "yes")
+
 MAX_CONCURRENT_CHAPTER_SUMMARIES = 4
 
 
@@ -33,7 +36,13 @@ async def _summarize_content_chunk(
     if chunk_num is not None and total_chunks is not None:
         chunk_info = f" (Part {chunk_num}/{total_chunks})"
 
-    user_prompt = f"""Summarize this content in approximately {target_words} words.
+    # Short summaries should be prose-only without headings
+    if target_words < 800:
+        format_instruction = " Use text-only prose with no headings."
+    else:
+        format_instruction = ""
+
+    user_prompt = f"""Summarize this content in approximately {target_words} words.{format_instruction}
 
 Context: {chapter_context}{chunk_info}
 
@@ -165,7 +174,7 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     try:
         markdown = state["processing_result"]["markdown"]
         chapters = state["chapters"]
-        use_batch_api = state["input"].get("use_batch_api", True)
+        use_batch_api = state["input"].get("use_batch_api", _USE_BATCH_API)
 
         if not chapters:
             logger.warning("No chapters to summarize")
@@ -247,8 +256,14 @@ async def _summarize_chapters_batched(
             }
         )
 
+        # Short summaries should be prose-only without headings
+        if target_words < 800:
+            format_instruction = " Use text-only prose with no headings."
+        else:
+            format_instruction = ""
+
         # Build the prompt to check token count
-        user_prompt = f"""Summarize this chapter in approximately {target_words} words.
+        user_prompt = f"""Summarize this chapter in approximately {target_words} words.{format_instruction}
 
 Context: {chapter_context}
 

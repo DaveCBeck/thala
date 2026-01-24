@@ -97,6 +97,11 @@ class DocumentProcessingState(TypedDict):
     # Error tracking
     errors: Annotated[list[dict], add]
 
+    # Content-metadata validation
+    validation_passed: Optional[bool]  # True=valid, False=invalid, None=not run
+    validation_confidence: Optional[float]  # 0.0-1.0
+    validation_reasoning: Optional[str]
+
     # Workflow metadata
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

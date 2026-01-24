@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from workflows.research.academic_lit_review.citation_graph import CitationGraph
+from workflows.research.academic_lit_review.state import FallbackCandidate
 from workflows.research.academic_lit_review.utils import batch_score_relevance
 from workflows.shared.llm_utils import ModelTier
 from .types import DiffusionEngineState, COCITATION_THRESHOLD
@@ -83,7 +84,10 @@ async def check_cocitation_relevance_node(
 
 
 async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[str, Any]:
-    """Two-stage relevance: Stage 2 - LLM scoring for remaining candidates."""
+    """Two-stage relevance: Stage 2 - LLM scoring for remaining candidates.
+
+    Returns relevant papers + fallback candidates (0.5-0.6 score) for the fallback queue.
+    """
     candidates = state.get("current_stage_candidates", [])
     input_data = state["input"]
     quality_settings = state["quality_settings"]
@@ -96,14 +100,16 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
         return {
             "current_stage_relevant": [],
             "current_stage_rejected": [],
+            "current_stage_fallback": [],
         }
 
-    # Score relevance with LLM
-    relevant, rejected = await batch_score_relevance(
+    # Score relevance with LLM - now returns 3-tuple
+    relevant, fallback_candidates, rejected = await batch_score_relevance(
         papers=candidates,
         topic=topic,
         research_questions=research_questions,
         threshold=0.6,
+        fallback_threshold=0.5,
         language_config=language_config,
         tier=ModelTier.DEEPSEEK_V3,
         max_concurrent=10,
@@ -114,11 +120,24 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
     relevant_dois = [p.get("doi") for p in relevant if p.get("doi")]
     rejected_dois = [p.get("doi") for p in rejected if p.get("doi")]
 
+    # Build fallback candidates for this stage
+    stage_fallback: list[FallbackCandidate] = [
+        FallbackCandidate(
+            doi=p.get("doi", ""),
+            relevance_score=p.get("relevance_score", 0.5),
+            source="near_threshold",
+        )
+        for p in fallback_candidates
+        if p.get("doi")
+    ]
+
     logger.info(
-        f"LLM relevance scoring: {len(relevant_dois)} relevant, {len(rejected_dois)} rejected"
+        f"LLM relevance scoring: {len(relevant_dois)} relevant, "
+        f"{len(stage_fallback)} fallback, {len(rejected_dois)} rejected"
     )
 
     return {
         "current_stage_relevant": relevant_dois,
         "current_stage_rejected": rejected_dois,
+        "current_stage_fallback": stage_fallback,
     }

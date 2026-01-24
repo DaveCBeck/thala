@@ -98,11 +98,14 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
     # language_config already fetched above for early filtering
     if language_config is None:
         language_config = state.get("language_config")
-    relevant, rejected = await batch_score_relevance(
+    # Note: fallback_candidates from citation network are not currently used,
+    # but we accept the 3-tuple return for API consistency
+    relevant, _fallback_candidates, rejected = await batch_score_relevance(
         papers=papers,
         topic=topic,
         research_questions=research_questions,
         threshold=0.6,
+        fallback_threshold=0.5,
         language_config=language_config,
         tier=ModelTier.DEEPSEEK_V3,
         max_concurrent=10,

@@ -5,6 +5,7 @@ Uses Anthropic Batch API for 50% cost reduction when writing 5+ thematic section
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
@@ -19,6 +20,8 @@ from .prompts import (
 )
 
 logger = logging.getLogger(__name__)
+
+_USE_BATCH_API = os.getenv("THALA_PREFER_BATCH_API", "").lower() in ("true", "1", "yes")
 
 
 async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
@@ -58,7 +61,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             prompt_name="lit_review_thematic_user",
         )
 
-    if len(clusters) >= 5:
+    if _USE_BATCH_API and len(clusters) >= 5:
         return await _write_thematic_sections_batched(
             clusters,
             analysis_lookup,

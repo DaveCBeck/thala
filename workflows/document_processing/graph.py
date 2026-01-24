@@ -32,6 +32,7 @@ from workflows.document_processing.nodes import (
     save_short_summary,
     update_store,
     update_zotero,
+    validate_content_metadata,
 )
 from workflows.document_processing.nodes.chapter_detector import detect_chapters
 from workflows.document_processing.nodes.finalizer import finalize
@@ -50,6 +51,13 @@ def fan_out_to_agents(state: DocumentProcessingState) -> list[Send]:
         Send("generate_summary", state),
         Send("check_metadata", state),
     ]
+
+
+def route_after_validation(state: DocumentProcessingState) -> str:
+    """Route based on content-metadata validation result."""
+    if state.get("validation_passed") is False:
+        return "invalid"
+    return "valid"
 
 
 def route_by_doc_size(state: DocumentProcessingState) -> str:
@@ -71,6 +79,7 @@ def create_document_processing_graph():
     builder.add_node("generate_summary", generate_summary)
     builder.add_node("check_metadata", check_metadata)
     builder.add_node("save_short_summary", save_short_summary)
+    builder.add_node("validate_content_metadata", validate_content_metadata)
     builder.add_node("update_zotero", update_zotero)
     builder.add_node("detect_chapters", detect_chapters)
     builder.add_node("chapter_summarization", chapter_summarization_subgraph)
@@ -94,7 +103,12 @@ def create_document_processing_graph():
     builder.add_edge("generate_summary", "save_short_summary")
     builder.add_edge("check_metadata", "save_short_summary")
 
-    builder.add_edge("save_short_summary", "update_zotero")
+    builder.add_edge("save_short_summary", "validate_content_metadata")
+    builder.add_conditional_edges(
+        "validate_content_metadata",
+        route_after_validation,
+        {"valid": "update_zotero", "invalid": "finalize"},
+    )
 
     builder.add_edge("update_zotero", "detect_chapters")
     builder.add_conditional_edges(

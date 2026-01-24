@@ -17,6 +17,7 @@ from workflows.shared.chunking_utils import (
 from workflows.shared.llm_utils import get_structured_output, ModelTier
 from workflows.shared.markdown_utils import extract_headings
 from workflows.shared.text_utils import count_words
+from workflows.shared.token_utils import estimate_tokens_fast
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,42 @@ class HeadingAnalysis(BaseModel):
     chapter_author: Optional[str] = Field(
         default=None, description="Author name if multi-author book"
     )
+
+
+class ChapterClassification(BaseModel):
+    """Classification of a chapter for content filtering."""
+
+    title: str = Field(description="Exact chapter title")
+    is_content: bool = Field(
+        description="True if main content, False if non-content (references, preface, etc.) or subsidiary"
+    )
+    reason: Optional[str] = Field(
+        default=None, description="Brief reason if marked as non-content"
+    )
+
+
+class ChapterClassificationResult(BaseModel):
+    """Result of chapter content classification."""
+
+    chapters: list[ChapterClassification] = Field(
+        description="Classification of each chapter"
+    )
+
+    @field_validator("chapters", mode="before")
+    @classmethod
+    def parse_json_string(cls, v: Any) -> list:
+        """Handle LLM returning JSON string instead of list."""
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            raise ValueError(
+                f"chapters must be a list, got unparseable string: {v[:100]}..."
+            )
+        return v if v is not None else []
 
 
 class HeadingAnalysisResult(BaseModel):
@@ -114,6 +151,136 @@ def _build_chapter_boundaries(
     return chapters
 
 
+MIN_CHAPTER_WORDS = 100  # Chapters below this are too short to summarize
+
+
+async def _filter_content_chapters(
+    chapters: list[ChapterInfo],
+) -> tuple[list[ChapterInfo], list[ChapterInfo]]:
+    """
+    Filter chapters to identify main content vs non-content/subsidiary sections.
+
+    Filtering stages:
+    1. Word count filter: Skip chapters below MIN_CHAPTER_WORDS (too short to summarize)
+    2. LLM classification: Identify non-content (references, etc.) and subsidiary sections
+
+    Args:
+        chapters: List of detected chapters
+
+    Returns:
+        Tuple of (content_chapters, excluded_chapters)
+    """
+    if not chapters:
+        return [], []
+
+    # Stage 1: Filter out chapters that are too short to meaningfully summarize
+    substantial_chapters = []
+    short_chapters = []
+    for chapter in chapters:
+        if chapter["word_count"] < MIN_CHAPTER_WORDS:
+            short_chapters.append(chapter)
+            logger.debug(
+                f"Excluding short chapter '{chapter['title']}' ({chapter['word_count']} words)"
+            )
+        else:
+            substantial_chapters.append(chapter)
+
+    if short_chapters:
+        logger.info(
+            f"Filtered {len(short_chapters)} chapters below {MIN_CHAPTER_WORDS} words"
+        )
+
+    if not substantial_chapters:
+        return [], short_chapters
+
+    # Stage 2: Prepare chapter list for LLM content classification
+    chapter_list = "\n".join([f"- {c['title']}" for c in substantial_chapters])
+
+    system_prompt = """Classify each chapter/section as content or non-content.
+
+Mark is_content=false for:
+1. NON-CONTENT sections (not main document content):
+   - References, Bibliography, Works Cited
+   - Index, Glossary, Appendix (unless substantive)
+   - Preface, Foreword, Introduction by editor (not author's introduction)
+   - About the Author, Author Bio, Contributors
+   - Acknowledgements, Dedications
+   - Title pages, Copyright, Credits
+   - Conflicts of Interest, Funding statements
+   - "Titles in this series", "Also by this author"
+
+2. SUBSIDIARY sections (sub-parts of a larger unit):
+   - Numbered sub-sections like "2.1", "2.2" when "2" is the main chapter
+   - However, in edited volumes with Parts containing Chapters, the CHAPTERS are content
+   - Example: "Part I" contains "Chapter 1", "Chapter 2" -> Chapters are content, not subsidiary
+
+Mark is_content=true for:
+- Main chapters with substantive content
+- Author's own Introduction, Conclusion
+- Numbered chapters (Chapter 1, Chapter 2, etc.)
+- In edited volumes: individual chapter contributions
+
+When in doubt, mark as content (is_content=true)."""
+
+    try:
+        result = await get_structured_output(
+            output_schema=ChapterClassificationResult,
+            user_prompt=chapter_list,
+            system_prompt=system_prompt,
+            tier=ModelTier.DEEPSEEK_V3,
+            max_tokens=4096,
+        )
+
+        # Build lookup map
+        classification_map = {c.title: c for c in result.chapters}
+
+        content_chapters = []
+        excluded_chapters = list(short_chapters)  # Start with already-excluded short chapters
+
+        for chapter in substantial_chapters:
+            classification = classification_map.get(chapter["title"])
+            if classification and not classification.is_content:
+                excluded_chapters.append(chapter)
+                logger.debug(
+                    f"Excluding chapter '{chapter['title']}': {classification.reason}"
+                )
+            else:
+                content_chapters.append(chapter)
+
+        if excluded_chapters:
+            excluded_titles = [c["title"] for c in excluded_chapters]
+            logger.info(
+                f"Filtered {len(excluded_chapters)} non-content chapters: {excluded_titles}"
+            )
+
+        # Log token counts for content chapters (estimate ~1.3 tokens per word)
+        content_words = sum(c["word_count"] for c in content_chapters)
+        content_tokens = int(content_words * 1.3)
+        excluded_words = sum(c["word_count"] for c in excluded_chapters)
+        excluded_tokens = int(excluded_words * 1.3)
+        logger.info(
+            f"[TOKEN_TRACKING] Post-filter chapters: {len(content_chapters)} chapters, "
+            f"{content_tokens:,} tokens ({content_words:,} words) | "
+            f"Excluded: {excluded_tokens:,} tokens ({excluded_words:,} words)"
+        )
+
+        return content_chapters, excluded_chapters
+
+    except Exception as e:
+        logger.warning(
+            f"Chapter content filtering failed: {e}. Using substantial chapters only."
+        )
+        # Log token counts even on failure path
+        content_words = sum(c["word_count"] for c in substantial_chapters)
+        content_tokens = int(content_words * 1.3)
+        logger.info(
+            f"[TOKEN_TRACKING] Post-filter chapters (fallback): "
+            f"{len(substantial_chapters)} chapters, {content_tokens:,} tokens"
+        )
+        # Still exclude short chapters even if LLM classification fails
+        return substantial_chapters, short_chapters
+
+
 @traceable(run_type="chain", name="DetectChapters")
 async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     """
@@ -145,6 +312,13 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
 
         markdown = processing_result["markdown"]
         word_count = processing_result.get("word_count", count_words(markdown))
+
+        # Log document token count for tracking
+        doc_tokens = estimate_tokens_fast(markdown, with_safety_margin=False)
+        logger.info(
+            f"[TOKEN_TRACKING] Document content: {doc_tokens:,} tokens "
+            f"({word_count:,} words)"
+        )
 
         # Only run 10:1 summary for documents with substantial content
         if word_count < 3000:
@@ -213,7 +387,7 @@ Guidelines:
                 user_prompt=heading_list,
                 system_prompt=system_prompt,
                 tier=ModelTier.DEEPSEEK_V3,
-                max_tokens=16384,
+                max_tokens=8192,
             )
             analysis = [h.model_dump() for h in result.headings]
 
@@ -222,7 +396,7 @@ Guidelines:
 
             # If no chapters identified, try using top-level headings as fallback
             if not chapters:
-                logger.warning(
+                logger.info(
                     "No chapters identified by LLM, trying top-level heading fallback"
                 )
                 chapters = create_heading_based_chapters(
@@ -233,8 +407,16 @@ Guidelines:
                     logger.info(
                         f"Created {len(chapters)} chapters from top-level headings"
                     )
+                    # Filter to content chapters only
+                    content_chapters, excluded = await _filter_content_chapters(
+                        chapters
+                    )
+                    logger.info(
+                        f"After filtering: {len(content_chapters)} content chapters "
+                        f"({len(excluded)} excluded)"
+                    )
                     return {
-                        "chapters": chapters,
+                        "chapters": content_chapters,
                         "needs_tenth_summary": True,
                         "current_status": "chapters_detected_heading_fallback",
                     }
@@ -249,8 +431,16 @@ Guidelines:
                 }
 
             logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
+
+            # Filter to content chapters only
+            content_chapters, excluded = await _filter_content_chapters(chapters)
+            logger.info(
+                f"After filtering: {len(content_chapters)} content chapters "
+                f"({len(excluded)} excluded)"
+            )
+
             return {
-                "chapters": chapters,
+                "chapters": content_chapters,
                 "needs_tenth_summary": True,
                 "current_status": "chapters_detected",
             }

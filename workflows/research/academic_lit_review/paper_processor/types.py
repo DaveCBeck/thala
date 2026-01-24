@@ -4,6 +4,8 @@ from typing import Optional
 from typing_extensions import TypedDict
 
 from workflows.research.academic_lit_review.state import (
+    FallbackCandidate,
+    FallbackSubstitution,
     LitReviewInput,
     PaperMetadata,
     PaperSummary,
@@ -44,6 +46,11 @@ class PaperProcessingState(TypedDict, total=False):
     language_config: Optional[LanguageConfig]
     language_rejected_dois: list[str]  # DOIs rejected for wrong language
     language_verification_stats: LanguageVerificationStats
+
+    # Fallback mechanism
+    fallback_queue: list[FallbackCandidate]  # Ordered by relevance (overflow first, then near-threshold)
+    fallback_substitutions: list[FallbackSubstitution]  # Track all substitutions made
+    fallback_exhausted: list[str]  # DOIs that failed with no fallback available
 
     # Final outputs
     paper_summaries: dict[str, PaperSummary]

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 
 from workflows.research.academic_lit_review.state import PaperMetadata
 from workflows.shared.llm_utils import (
@@ -22,6 +23,11 @@ from .types import (
 from .strategies import format_paper_for_batch, chunk_papers
 
 logger = logging.getLogger(__name__)
+
+
+def _get_batch_api_default() -> bool:
+    """Get default for batch API from environment variable."""
+    return os.getenv("THALA_PREFER_BATCH_API", "").lower() in ("true", "1", "yes")
 
 
 async def score_paper_relevance(
@@ -107,11 +113,12 @@ async def batch_score_relevance(
     topic: str,
     research_questions: list[str],
     threshold: float = 0.6,
+    fallback_threshold: float = 0.5,
     language_config: LanguageConfig | None = None,
     tier: ModelTier = ModelTier.DEEPSEEK_V3,
     max_concurrent: int = 10,
-    use_batch_api: bool = True,
-) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
+    use_batch_api: bool | None = None,
+) -> tuple[list[PaperMetadata], list[PaperMetadata], list[PaperMetadata]]:
     """Score multiple papers' relevance and filter by threshold.
 
     Uses Anthropic Batch API for 50% cost reduction when scoring 5+ papers.
@@ -121,31 +128,40 @@ async def batch_score_relevance(
         papers: Papers to evaluate
         topic: Research topic
         research_questions: List of research questions
-        threshold: Minimum relevance score to include
+        threshold: Minimum relevance score to include (default 0.6)
+        fallback_threshold: Minimum score for fallback eligibility (default 0.5)
         language_config: Optional language configuration for translation
         tier: Model tier for scoring
         max_concurrent: Kept for API compatibility
+        use_batch_api: Whether to use batch API; defaults to THALA_PREFER_BATCH_API env var
 
     Returns:
-        Tuple of (relevant_papers, rejected_papers)
+        Tuple of (relevant_papers, fallback_candidates, rejected_papers)
+        - relevant: score >= threshold
+        - fallback_candidates: fallback_threshold <= score < threshold
+        - rejected: score < fallback_threshold
     """
     import asyncio
 
     if not papers:
-        return [], []
+        return [], [], []
+
+    # Resolve batch API preference from env var if not explicitly set
+    if use_batch_api is None:
+        use_batch_api = _get_batch_api_default()
 
     # Disable batch API for DeepSeek models (no batch API available)
     effective_use_batch = use_batch_api and not is_deepseek_tier(tier)
 
     if effective_use_batch and len(papers) >= 5:
         return await _batch_score_relevance_batched(
-            papers, topic, research_questions, threshold, language_config, tier
+            papers, topic, research_questions, threshold, fallback_threshold, language_config, tier
         )
 
     # DeepSeek: use cache-aware batch processing (first request -> wait -> batch)
     if is_deepseek_tier(tier):
         return await _batch_score_deepseek_cached(
-            papers, topic, research_questions, threshold, language_config, tier, max_concurrent
+            papers, topic, research_questions, threshold, fallback_threshold, language_config, tier, max_concurrent
         )
 
     # Non-DeepSeek fallback: concurrent calls
@@ -164,6 +180,7 @@ async def batch_score_relevance(
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     relevant = []
+    fallback_candidates = []
     rejected = []
 
     for result in results:
@@ -178,6 +195,11 @@ async def batch_score_relevance(
             logger.debug(
                 f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
             )
+        elif score >= fallback_threshold:
+            fallback_candidates.append(paper)
+            logger.debug(
+                f"Fallback ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+            )
         else:
             rejected.append(paper)
             logger.debug(
@@ -185,11 +207,11 @@ async def batch_score_relevance(
             )
 
     logger.info(
-        f"Relevance filtering: {len(relevant)} relevant, {len(rejected)} rejected "
-        f"(threshold={threshold})"
+        f"Relevance filtering: {len(relevant)} relevant, {len(fallback_candidates)} fallback, "
+        f"{len(rejected)} rejected (threshold={threshold}, fallback_threshold={fallback_threshold})"
     )
 
-    return relevant, rejected
+    return relevant, fallback_candidates, rejected
 
 
 async def _batch_score_deepseek_cached(
@@ -197,11 +219,12 @@ async def _batch_score_deepseek_cached(
     topic: str,
     research_questions: list[str],
     threshold: float,
+    fallback_threshold: float,
     language_config: LanguageConfig | None,
     tier: ModelTier,
     max_concurrent: int,
     chunk_size: int = 10,
-) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
+) -> tuple[list[PaperMetadata], list[PaperMetadata], list[PaperMetadata]]:
     """Score papers using DeepSeek with cache-aware chunked batch processing.
 
     Chunks papers into groups of chunk_size for cross-comparison scoring,
@@ -212,6 +235,9 @@ async def _batch_score_deepseek_cached(
 
     This combines better calibration (cross-comparison within chunks) with
     ~90% cost reduction on input tokens for chunks 2-N.
+
+    Returns:
+        Tuple of (relevant_papers, fallback_candidates, rejected_papers)
     """
     llm = get_llm(tier=tier)
 
@@ -264,6 +290,7 @@ async def _batch_score_deepseek_cached(
 
     # Parse results
     relevant = []
+    fallback_candidates = []
     rejected = []
 
     for chunk_id, papers_in_chunk in chunk_index.items():
@@ -272,7 +299,7 @@ async def _batch_score_deepseek_cached(
             logger.warning(f"No response for {chunk_id}, defaulting papers to 0.5")
             for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
-                rejected.append(paper)
+                fallback_candidates.append(paper)  # 0.5 is at fallback threshold
             continue
 
         try:
@@ -315,6 +342,11 @@ async def _batch_score_deepseek_cached(
                     logger.debug(
                         f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
                     )
+                elif score >= fallback_threshold:
+                    fallback_candidates.append(paper)
+                    logger.debug(
+                        f"Fallback ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+                    )
                 else:
                     rejected.append(paper)
                     logger.debug(
@@ -327,14 +359,15 @@ async def _batch_score_deepseek_cached(
             )
             for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
-                rejected.append(paper)
+                fallback_candidates.append(paper)  # 0.5 is at fallback threshold
 
     logger.info(
         f"Relevance filtering (DeepSeek cached): {len(relevant)} relevant, "
-        f"{len(rejected)} rejected (threshold={threshold})"
+        f"{len(fallback_candidates)} fallback, {len(rejected)} rejected "
+        f"(threshold={threshold}, fallback_threshold={fallback_threshold})"
     )
 
-    return relevant, rejected
+    return relevant, fallback_candidates, rejected
 
 
 async def _batch_score_relevance_batched(
@@ -342,15 +375,19 @@ async def _batch_score_relevance_batched(
     topic: str,
     research_questions: list[str],
     threshold: float,
+    fallback_threshold: float,
     language_config: LanguageConfig | None,
     tier: ModelTier,
     chunk_size: int = 10,
-) -> tuple[list[PaperMetadata], list[PaperMetadata]]:
+) -> tuple[list[PaperMetadata], list[PaperMetadata], list[PaperMetadata]]:
     """Score papers using Anthropic Batch API with chunked prompts.
 
     Groups papers into chunks of chunk_size for more efficient scoring.
     Each batch request scores multiple papers, reducing API overhead
     and enabling better calibration through comparison.
+
+    Returns:
+        Tuple of (relevant_papers, fallback_candidates, rejected_papers)
     """
     system_prompt = BATCH_RELEVANCE_SCORING_SYSTEM
     if language_config and language_config["code"] != "en":
@@ -394,6 +431,7 @@ async def _batch_score_relevance_batched(
     results = await processor.execute_batch()
 
     relevant = []
+    fallback_candidates = []
     rejected = []
 
     for custom_id, papers_in_chunk in chunk_index.items():
@@ -405,7 +443,7 @@ async def _batch_score_relevance_batched(
             )
             for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
-                rejected.append(paper)
+                fallback_candidates.append(paper)  # 0.5 is at fallback threshold
             continue
 
         try:
@@ -440,6 +478,11 @@ async def _batch_score_relevance_batched(
                     logger.debug(
                         f"Relevant ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
                     )
+                elif score >= fallback_threshold:
+                    fallback_candidates.append(paper)
+                    logger.debug(
+                        f"Fallback ({score:.2f}): {paper.get('title', 'Unknown')[:50]}"
+                    )
                 else:
                     rejected.append(paper)
                     logger.debug(
@@ -452,11 +495,12 @@ async def _batch_score_relevance_batched(
             )
             for paper in papers_in_chunk:
                 paper["relevance_score"] = 0.5
-                rejected.append(paper)
+                fallback_candidates.append(paper)  # 0.5 is at fallback threshold
 
     logger.info(
-        f"Relevance filtering (batch): {len(relevant)} relevant, {len(rejected)} rejected "
-        f"(threshold={threshold})"
+        f"Relevance filtering (batch): {len(relevant)} relevant, "
+        f"{len(fallback_candidates)} fallback, {len(rejected)} rejected "
+        f"(threshold={threshold}, fallback_threshold={fallback_threshold})"
     )
 
-    return relevant, rejected
+    return relevant, fallback_candidates, rejected

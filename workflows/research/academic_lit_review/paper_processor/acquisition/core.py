@@ -29,15 +29,23 @@ This architecture ensures:
 - No memory pressure (markdown ~100KB vs PDF ~50MB in LLM queue)
 - Independent concurrency tuning per stage
 - Processing starts as soon as first paper downloads
+
+Fallback Mechanism:
+- When papers fail (PDF validation, metadata mismatch, acquisition failure),
+  a FallbackManager can provide alternative papers to process
+- Fallback papers are injected into a retry queue for the acquisition producer
 """
 
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from core.stores.retrieve_academic import RetrieveAcademicClient
-from workflows.research.academic_lit_review.state import PaperMetadata
+from workflows.research.academic_lit_review.state import (
+    FallbackSubstitution,
+    PaperMetadata,
+)
 from workflows.research.academic_lit_review.paper_processor.cache import (
     check_document_exists_by_doi,
 )
@@ -51,10 +59,15 @@ from workflows.research.academic_lit_review.paper_processor.types import (
     MAX_PAPER_PIPELINE_CONCURRENT,
 )
 
-from core.scraping.pdf import process_pdf_file
+from core.scraping.pdf import process_pdf_file, MarkerProcessingError
 
 from .sources import try_oa_download
 from .types import MARKER_QUEUE_SIZE, MAX_LLM_CONCURRENT, MAX_MARKER_CONCURRENT
+
+if TYPE_CHECKING:
+    from workflows.research.academic_lit_review.paper_processor.fallback import (
+        FallbackManager,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +172,8 @@ async def run_paper_pipeline(
     papers: list[PaperMetadata],
     max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
     use_batch_api: bool = True,
-) -> tuple[dict[str, str], dict[str, dict], list[str], list[str]]:
+    fallback_manager: Optional["FallbackManager"] = None,
+) -> tuple[dict[str, str], dict[str, dict], list[str], list[str], list[FallbackSubstitution]]:
     """Run streaming acquire→process pipeline for all papers.
 
     Architecture: Streaming Producer-Consumer Pipeline
@@ -175,25 +189,34 @@ async def run_paper_pipeline(
     - Marker GPU stays busy throughout the pipeline
     - Memory bounded by queue size (~8 papers)
 
+    Fallback mechanism: When papers fail (invalid PDF, acquisition failure),
+    the fallback_manager provides alternative papers which are injected into
+    a retry queue for processing.
+
     Args:
         papers: Papers to process
         max_concurrent: Maximum concurrent acquisitions (default: 2)
+        use_batch_api: Whether to use batch API for LLM processing
+        fallback_manager: Optional manager for paper substitution on failure
 
     Returns:
-        Tuple of (acquired, processing_results, acquisition_failed, processing_failed)
+        Tuple of (acquired, processing_results, acquisition_failed, processing_failed, fallback_substitutions)
     """
     async with RetrieveAcademicClient() as client:
         if not await client.health_check():
             logger.warning(
                 "Retrieve-academic service unavailable, skipping full-text acquisition"
             )
-            return {}, {}, [p.get("doi") for p in papers], []
+            return {}, {}, [p.get("doi") for p in papers], [], []
 
         output_dir = Path("/tmp/thala_papers")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         total_papers = len(papers)
         papers_by_doi = {p.get("doi"): p for p in papers}
+
+        # Fallback retry queue - papers injected after failures
+        retry_queue: asyncio.Queue = asyncio.Queue()
 
         # ========================================
         # Phase 1: Check cache for all papers
@@ -207,7 +230,7 @@ async def run_paper_pipeline(
         )
 
         if not papers_to_acquire:
-            return {}, cached_results, [], []
+            return {}, cached_results, [], [], []
 
         # ========================================
         # Phase 2+3: Streaming acquire → process
@@ -322,7 +345,25 @@ async def run_paper_pipeline(
                     if isinstance(result, Exception):
                         doi = papers_to_acquire[i].get("doi")
                         logger.error(f"Failed to acquire {doi}: {result}")
-                        acquisition_failed.append(doi)
+
+                        # Try to get a fallback paper
+                        if fallback_manager:
+                            fallback_paper = fallback_manager.get_fallback_for(
+                                doi, "acquisition_failed", "acquisition"
+                            )
+                            if fallback_paper:
+                                # Add fallback to retry queue
+                                fallback_doi = fallback_paper.get("doi")
+                                papers_by_doi[fallback_doi] = fallback_paper
+                                await retry_queue.put(fallback_paper)
+                                logger.info(
+                                    f"Fallback requested for {doi} -> {fallback_doi} "
+                                    "(reason: acquisition_failed)"
+                                )
+                            else:
+                                acquisition_failed.append(doi)
+                        else:
+                            acquisition_failed.append(doi)
                     else:
                         doi, job_id, local_path = result
                         if job_id is not None:
@@ -347,8 +388,25 @@ async def run_paper_pipeline(
                         timeout=ACQUISITION_TIMEOUT,
                     ):
                         if isinstance(result, Exception):
-                            acquisition_failed.append(doi)
                             logger.warning(f"Acquisition failed for {doi}: {result}")
+
+                            # Try to get a fallback paper
+                            if fallback_manager:
+                                fallback_paper = fallback_manager.get_fallback_for(
+                                    doi, "acquisition_failed", "acquisition"
+                                )
+                                if fallback_paper:
+                                    fallback_doi = fallback_paper.get("doi")
+                                    papers_by_doi[fallback_doi] = fallback_paper
+                                    await retry_queue.put(fallback_paper)
+                                    logger.info(
+                                        f"Fallback requested for {doi} -> {fallback_doi} "
+                                        "(reason: acquisition_failed)"
+                                    )
+                                else:
+                                    acquisition_failed.append(doi)
+                            else:
+                                acquisition_failed.append(doi)
                         else:
                             acquired_paths[doi] = local_path
                             acquired_count += 1
@@ -358,6 +416,54 @@ async def run_paper_pipeline(
                             await marker_queue.put(
                                 (doi, local_path, papers_by_doi[doi], False)
                             )
+
+                # Process retry queue items (fallback papers from failures)
+                while not retry_queue.empty():
+                    try:
+                        fallback_paper = retry_queue.get_nowait()
+                        fallback_doi = fallback_paper.get("doi")
+                        oa_url = fallback_paper.get("oa_url")
+                        safe_doi = fallback_doi.replace("/", "_").replace(":", "_")
+                        local_path = output_dir / f"{safe_doi}.pdf"
+
+                        # Try OA download first
+                        if oa_url:
+                            source, is_markdown = await try_oa_download(
+                                oa_url, local_path, fallback_doi
+                            )
+                            if source:
+                                acquired_paths[fallback_doi] = source
+                                await marker_queue.put(
+                                    (fallback_doi, source, fallback_paper, is_markdown)
+                                )
+                                logger.debug(f"Fallback acquired via OA: {fallback_doi}")
+                                continue
+
+                        # Fall back to retrieve-academic
+                        authors = [
+                            a.get("name")
+                            for a in fallback_paper.get("authors", [])[:5]
+                            if a.get("name")
+                        ]
+                        try:
+                            path, _ = await client.retrieve_and_download(
+                                doi=fallback_doi,
+                                local_path=str(local_path),
+                                title=fallback_paper.get("title", "Unknown"),
+                                authors=authors,
+                                timeout=ACQUISITION_TIMEOUT,
+                            )
+                            acquired_paths[fallback_doi] = path
+                            await marker_queue.put(
+                                (fallback_doi, path, fallback_paper, False)
+                            )
+                            logger.debug(f"Fallback acquired via retrieve-academic: {fallback_doi}")
+                        except Exception as e:
+                            logger.warning(f"Fallback acquisition failed for {fallback_doi}: {e}")
+                            acquisition_failed.append(fallback_doi)
+
+                    except asyncio.QueueEmpty:
+                        break
 
             finally:
                 # Always signal end of acquisitions to marker stage
@@ -392,8 +498,39 @@ async def run_paper_pipeline(
                         # Push markdown to LLM stage
                         await llm_queue.put((doi, markdown_text, paper))
 
+                    except MarkerProcessingError as e:
+                        error_str = str(e)
+                        # Determine failure reason for fallback
+                        if "not a valid PDF" in error_str:
+                            failure_reason = "pdf_invalid"
+                        else:
+                            failure_reason = "marker_error"
+
+                        # Try to get a fallback paper
+                        if fallback_manager:
+                            fallback_paper = fallback_manager.get_fallback_for(
+                                doi, failure_reason, "marker"
+                            )
+                            if fallback_paper:
+                                # Inject fallback into retry queue for acquisition
+                                fallback_doi = fallback_paper.get("doi")
+                                papers_by_doi[fallback_doi] = fallback_paper
+                                await retry_queue.put(fallback_paper)
+                                logger.info(
+                                    f"Fallback requested for {doi} -> {fallback_doi} "
+                                    f"(reason: {failure_reason})"
+                                )
+                            else:
+                                # No fallback available - expected when queue exhausted
+                                processing_failed.append(doi)
+                                logger.info(f"Marker error for {doi} (no fallback available): {e}")
+                        else:
+                            # No fallback manager - log as info since this is a known limitation
+                            processing_failed.append(doi)
+                            logger.info(f"Marker error for {doi}: {e}")
+
                     except Exception as e:
-                        # Marker failure - log error, add to failed, don't push to LLM
+                        # Other marker failure - log error, add to failed
                         processing_failed.append(doi)
                         logger.error(f"Marker error for {doi}: {e}")
 
@@ -476,6 +613,16 @@ async def run_paper_pipeline(
                                 logger.debug(
                                     f"[{processed_count}/{total_to_acquire}] LLM complete: {doi}"
                                 )
+                            elif result.get("validation_failed"):
+                                # Content-metadata mismatch - expected condition, triggers fallback
+                                processing_failed.append(doi)
+                                logger.info(
+                                    f"[{processed_count}/{total_to_acquire}] Validation failed for {doi}: "
+                                    f"{result.get('validation_reasoning', 'Unknown reason')}"
+                                )
+                                # Store validation failure info in result for fallback handling
+                                result["failure_reason"] = "metadata_mismatch"
+                                result["failure_stage"] = "validation"
                             else:
                                 processing_failed.append(doi)
                                 logger.warning(
@@ -501,13 +648,19 @@ async def run_paper_pipeline(
             llm_consumer(),
         )
 
+        # Collect fallback substitutions
+        fallback_substitutions = (
+            fallback_manager.get_substitutions() if fallback_manager else []
+        )
+
         # Final summary
         logger.info(
             f"Paper pipeline complete: {len(acquired_paths)} acquired "
             f"({len(cached_results)} from cache), "
             f"{len(processing_results)} processed successfully, "
             f"{len(acquisition_failed)} acquisition failed, "
-            f"{len(processing_failed)} processing failed"
+            f"{len(processing_failed)} processing failed, "
+            f"{len(fallback_substitutions)} fallback substitutions"
         )
 
         return (
@@ -515,4 +668,5 @@ async def run_paper_pipeline(
             processing_results,
             acquisition_failed,
             processing_failed,
+            fallback_substitutions,
         )

@@ -80,6 +80,28 @@ class ClaimWithEvidence(TypedDict):
     page_reference: Optional[str]
 
 
+# =============================================================================
+# Fallback Types
+# =============================================================================
+
+
+class FallbackCandidate(TypedDict):
+    """A paper available for fallback substitution when primary acquisition fails."""
+
+    doi: str
+    relevance_score: float  # >= 0.5 (includes overflow papers that scored >= 0.6)
+    source: str  # "overflow" (>=0.6 but excluded by max_papers) or "near_threshold" (0.5-0.6)
+
+
+class FallbackSubstitution(TypedDict):
+    """Record of a fallback substitution when a paper failed acquisition/processing."""
+
+    failed_doi: str
+    fallback_doi: str
+    failure_reason: str  # "pdf_invalid", "metadata_mismatch", "acquisition_failed"
+    failure_stage: str  # "acquisition", "marker", "validation"
+
+
 class PaperSummary(TypedDict):
     """Structured summary of a processed paper."""
 
@@ -309,6 +331,11 @@ class AcademicLitReviewState(TypedDict):
     papers_to_process: list[str]  # DOIs queued for processing
     papers_processed: list[str]  # DOIs successfully processed
     papers_failed: list[str]  # DOIs that failed processing
+
+    # Fallback mechanism
+    fallback_queue: list[FallbackCandidate]  # Ordered by relevance (overflow first, then near-threshold)
+    fallback_substitutions: Annotated[list[FallbackSubstitution], add]  # Track all substitutions
+    fallback_exhausted: Annotated[list[str], add]  # DOIs that failed with no fallback available
 
     # Clustering results
     bertopic_clusters: Optional[list[BERTopicCluster]]

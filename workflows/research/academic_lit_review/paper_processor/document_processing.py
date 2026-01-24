@@ -85,14 +85,21 @@ async def process_single_document(
         store_records = result.get("store_records", [])
         es_record_id = store_records[0].get("id") if store_records else None
 
+        # Check for content-metadata validation failure
+        validation_passed = result.get("validation_passed", True)
+        validation_failed = validation_passed is False
+        validation_reasoning = result.get("validation_reasoning", "")
+
         return {
             "doi": doi,
-            "success": status not in ("failed",),
+            "success": status not in ("failed",) and not validation_failed,
             "es_record_id": es_record_id,
             "zotero_key": result.get("zotero_key"),
             "short_summary": result.get("short_summary", ""),
             "original_language": result.get("original_language", "en"),
             "errors": errors,
+            "validation_failed": validation_failed,
+            "validation_reasoning": validation_reasoning,
         }
 
     except TimeoutError as e:
@@ -160,14 +167,18 @@ async def process_multiple_documents(
     results = []
     for (doi, _, _), raw in zip(documents, raw_results):
         store_records = raw.get("store_records", [])
+        validation_passed = raw.get("validation_passed", True)
+        validation_failed = validation_passed is False
         results.append({
             "doi": doi,
-            "success": raw.get("current_status") not in ("failed",),
+            "success": raw.get("current_status") not in ("failed",) and not validation_failed,
             "es_record_id": store_records[0].get("id") if store_records else None,
             "zotero_key": raw.get("zotero_key"),
             "short_summary": raw.get("short_summary", ""),
             "original_language": raw.get("original_language", "en"),
             "errors": raw.get("errors", []),
+            "validation_failed": validation_failed,
+            "validation_reasoning": raw.get("validation_reasoning", ""),
         })
 
     succeeded = sum(1 for r in results if r.get("success"))

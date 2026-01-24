@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from langchain_tools.openalex import openalex_search, OpenAlexWork
+from workflows.research.academic_lit_review.state import FallbackCandidate
 from workflows.research.academic_lit_review.utils import (
     convert_to_paper_metadata,
     deduplicate_papers,
@@ -128,7 +129,9 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
     """Filter results by LLM-based relevance scoring.
 
     Converts raw OpenAlex results to PaperMetadata, deduplicates,
-    and scores relevance to the research topic.
+    and scores relevance to the research topic. Creates a fallback queue
+    from overflow papers (above threshold but excluded by max_papers) and
+    near-threshold papers (0.5-0.6 score).
     """
     raw_results = state.get("raw_results", [])
     input_data = state["input"]
@@ -136,12 +139,14 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     language_config = state.get("language_config")
+    max_papers = quality_settings.get("max_papers", 100)
 
     if not raw_results:
         logger.warning("No raw results to filter")
         return {
             "discovered_papers": [],
             "rejected_papers": [],
+            "fallback_queue": [],
             "keyword_dois": [],
         }
 
@@ -162,6 +167,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
         return {
             "discovered_papers": [],
             "rejected_papers": [],
+            "fallback_queue": [],
             "keyword_dois": [],
         }
 
@@ -184,29 +190,69 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
             return {
                 "discovered_papers": [],
                 "rejected_papers": [],
+                "fallback_queue": [],
                 "keyword_dois": [],
             }
 
-    relevant, rejected = await batch_score_relevance(
+    relevant, fallback_candidates, rejected = await batch_score_relevance(
         papers=papers,
         topic=topic,
         research_questions=research_questions,
         threshold=0.6,
+        fallback_threshold=0.5,
         language_config=language_config,
         tier=ModelTier.DEEPSEEK_V3,
         max_concurrent=10,
         use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
-    keyword_dois = [p.get("doi") for p in relevant if p.get("doi")]
+    # Sort relevant papers by relevance score descending
+    relevant.sort(key=lambda p: p.get("relevance_score", 0), reverse=True)
+
+    # Apply max_papers limit - overflow papers become highest-priority fallbacks
+    if len(relevant) > max_papers:
+        selected = relevant[:max_papers]
+        overflow = relevant[max_papers:]
+        logger.info(
+            f"max_papers limit applied: keeping {len(selected)}, "
+            f"{len(overflow)} overflow papers added to fallback queue"
+        )
+    else:
+        selected = relevant
+        overflow = []
+
+    # Build fallback queue: overflow papers first (highest relevance), then near-threshold
+    # Overflow papers scored >= 0.6, fallback_candidates scored 0.5-0.6
+    fallback_queue: list[FallbackCandidate] = []
+
+    for paper in overflow:
+        fallback_queue.append(
+            FallbackCandidate(
+                doi=paper.get("doi", ""),
+                relevance_score=paper.get("relevance_score", 0.6),
+                source="overflow",
+            )
+        )
+
+    for paper in fallback_candidates:
+        fallback_queue.append(
+            FallbackCandidate(
+                doi=paper.get("doi", ""),
+                relevance_score=paper.get("relevance_score", 0.5),
+                source="near_threshold",
+            )
+        )
+
+    keyword_dois = [p.get("doi") for p in selected if p.get("doi")]
 
     logger.info(
-        f"Keyword search discovered {len(relevant)} relevant papers "
-        f"(rejected {len(rejected)})"
+        f"Keyword search discovered {len(selected)} relevant papers "
+        f"(fallback queue: {len(fallback_queue)}, rejected: {len(rejected)})"
     )
 
     return {
-        "discovered_papers": relevant,
+        "discovered_papers": selected,
         "rejected_papers": rejected,
+        "fallback_queue": fallback_queue,
         "keyword_dois": keyword_dois,
     }

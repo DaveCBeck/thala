@@ -10,12 +10,18 @@ from pydantic import BaseModel, Field
 
 from core.stores.zotero import ZoteroItemCreate, ZoteroTag
 from langchain_tools.base import get_store_manager
-from workflows.research.academic_lit_review.state import PaperMetadata, PaperSummary
+from workflows.research.academic_lit_review.state import (
+    FallbackCandidate,
+    PaperMetadata,
+    PaperSummary,
+)
 from workflows.shared.llm_utils import ModelTier
 from workflows.shared.llm_utils.structured import (
     get_structured_output,
     StructuredRequest,
 )
+
+from .fallback import FallbackManager
 
 
 class MetadataSummarySchema(BaseModel):
@@ -55,10 +61,14 @@ async def acquire_and_process_papers_node(
 
     This node combines acquisition and processing as one operation per paper,
     which naturally rate-limits retrieval requests since processing takes time.
+
+    If a fallback_queue is provided in state, papers that fail acquisition or
+    processing will be substituted with fallback candidates.
     """
     papers = state.get("papers_to_process", [])
     quality_settings = state["quality_settings"]
     use_batch_api = quality_settings.get("use_batch_api", True)
+    fallback_queue = state.get("fallback_queue", [])
 
     if not papers:
         logger.warning("No papers to process")
@@ -67,7 +77,29 @@ async def acquire_and_process_papers_node(
             "acquisition_failed": [],
             "processing_results": {},
             "processing_failed": [],
+            "fallback_substitutions": [],
+            "fallback_queue": fallback_queue,
+            "fallback_exhausted": [],
         }
+
+    # Create FallbackManager if we have fallback candidates
+    fallback_manager = None
+    if fallback_queue:
+        # Build paper corpus from papers_to_process and any additional metadata
+        papers_by_doi = {p.get("doi"): p for p in papers}
+
+        # For fallback candidates, we need their full metadata
+        # They may not be in papers_to_process, so we need to build a lookup
+        # from the rejected papers that were scored during discovery
+        # For now, we'll use the fallback_queue DOIs to look up in papers_by_doi
+        # If metadata isn't available, the FallbackManager will skip those candidates
+        fallback_manager = FallbackManager(
+            fallback_queue=fallback_queue,
+            paper_corpus=papers_by_doi,
+        )
+        logger.info(
+            f"FallbackManager initialized with {len(fallback_queue)} candidates"
+        )
 
     logger.info(f"Starting unified paper pipeline for {len(papers)} papers")
 
@@ -76,15 +108,31 @@ async def acquire_and_process_papers_node(
         processing_results,
         acquisition_failed,
         processing_failed,
+        fallback_substitutions,
     ) = await run_paper_pipeline(
         papers=papers,
         max_concurrent=MAX_PAPER_PIPELINE_CONCURRENT,
         use_batch_api=use_batch_api,
+        fallback_manager=fallback_manager,
     )
+
+    # Get remaining fallback queue and exhausted DOIs
+    remaining_fallback_queue: list[FallbackCandidate] = []
+    fallback_exhausted: list[str] = []
+    if fallback_manager:
+        remaining_fallback_queue = fallback_manager.get_remaining_queue()
+        fallback_exhausted = fallback_manager.get_exhausted_warnings()
+        stats = fallback_manager.get_stats()
+        logger.info(
+            f"Fallback stats: {stats['substitutions_made']} substitutions, "
+            f"{stats['remaining_count']} candidates remaining, "
+            f"{stats['exhausted_count']} exhausted"
+        )
 
     logger.info(
         f"Paper pipeline complete: {len(processing_results)} processed, "
-        f"{len(acquisition_failed) + len(processing_failed)} failed"
+        f"{len(acquisition_failed) + len(processing_failed)} failed, "
+        f"{len(fallback_substitutions)} fallback substitutions"
     )
 
     return {
@@ -92,6 +140,9 @@ async def acquire_and_process_papers_node(
         "acquisition_failed": acquisition_failed,
         "processing_results": processing_results,
         "processing_failed": processing_failed,
+        "fallback_substitutions": fallback_substitutions,
+        "fallback_queue": remaining_fallback_queue,
+        "fallback_exhausted": fallback_exhausted,
     }
 
 

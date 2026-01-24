@@ -372,7 +372,7 @@ class ScraperService:
 
             except SiteBlockedError:
                 # Site blocked even with stealth - add to blocklist
-                logger.warning(
+                logger.info(
                     f"Site {domain} blocked by cloud stealth, adding to blocklist"
                 )
                 self._blocklist.add(domain)

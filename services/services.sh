@@ -231,7 +231,11 @@ cmd_restore() {
     for svc in chroma zotero; do
         if [[ -f "${backup_path}/${svc}-data.tar.gz" ]]; then
             log "Restoring ${svc} data..."
-            rm -rf "${SCRIPT_DIR}/${svc}/data"
+            # Use alpine container to remove files that may be owned by container user
+            if [[ -d "${SCRIPT_DIR}/${svc}/data" ]]; then
+                docker run --rm -v "${SCRIPT_DIR}/${svc}/data:/data" alpine rm -rf /data/* /data/.[!.]* 2>/dev/null || true
+                rm -rf "${SCRIPT_DIR}/${svc}/data"
+            fi
             tar -xzf "${backup_path}/${svc}-data.tar.gz" -C "${SCRIPT_DIR}/${svc}"
         fi
     done
@@ -263,10 +267,12 @@ cmd_reset() {
         docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" down -v 2>/dev/null || true
     done
 
-    # Remove bind-mounted data
+    # Remove bind-mounted data (use docker to handle container-owned files)
     for svc in chroma zotero; do
         if [[ -d "${SCRIPT_DIR}/${svc}/data" ]]; then
             log "Removing ${svc} data..."
+            # Use alpine container to remove files that may be owned by container user
+            docker run --rm -v "${SCRIPT_DIR}/${svc}/data:/data" alpine rm -rf /data/* /data/.[!.]* 2>/dev/null || true
             rm -rf "${SCRIPT_DIR}/${svc}/data"
         fi
     done

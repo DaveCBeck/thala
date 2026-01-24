@@ -16,6 +16,7 @@ Usage:
 
 import asyncio
 import logging
+import os
 from typing import Optional
 
 from cachetools import TTLCache
@@ -25,6 +26,8 @@ from workflows.shared.llm_utils.response_parsing import extract_response_content
 from workflows.shared.batch_processor import BatchProcessor
 
 logger = logging.getLogger(__name__)
+
+_USE_BATCH_API = os.getenv("THALA_PREFER_BATCH_API", "").lower() in ("true", "1", "yes")
 
 _query_cache: TTLCache = TTLCache(maxsize=1000, ttl=3600)
 _query_locks: dict[str, asyncio.Lock] = {}
@@ -127,7 +130,7 @@ async def translate_queries(
         return results
 
     # Use batch API for 5+ uncached queries (50% cost reduction)
-    if len(uncached_queries) >= 5:
+    if _USE_BATCH_API and len(uncached_queries) >= 5:
         translated = await _translate_queries_batched(
             uncached_queries, target_language_code, target_language_name
         )

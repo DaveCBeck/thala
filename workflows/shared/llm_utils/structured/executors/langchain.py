@@ -82,6 +82,12 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
 
         result = await structured_llm.ainvoke(messages)
 
+        # DeepSeek with function_calling can return None if model doesn't call the function
+        if result is None:
+            return StructuredOutputResult.err(
+                error="Model did not return structured output (got None)"
+            )
+
         return StructuredOutputResult.ok(
             value=result,
             strategy=StructuredOutputStrategy.LANGCHAIN_STRUCTURED,

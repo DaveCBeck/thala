@@ -98,7 +98,7 @@ class CitationGraphBuilder:
         """
         # Ensure both nodes exist
         if citing_doi not in self._nodes or cited_doi not in self._nodes:
-            logger.warning(
+            logger.info(
                 f"Cannot add citation: missing node(s) {citing_doi}, {cited_doi}"
             )
             return False

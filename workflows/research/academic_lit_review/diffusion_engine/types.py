@@ -4,11 +4,12 @@ from typing import Optional
 from typing_extensions import TypedDict
 
 from workflows.research.academic_lit_review.state import (
+    CitationEdge,
+    FallbackCandidate,
     LitReviewDiffusionState,
     LitReviewInput,
     PaperMetadata,
     QualitySettings,
-    CitationEdge,
 )
 from workflows.research.academic_lit_review.citation_graph import CitationGraph
 from workflows.shared.language import LanguageConfig
@@ -45,8 +46,12 @@ class DiffusionEngineState(TypedDict, total=False):
     current_stage_candidates: list[PaperMetadata]
     current_stage_relevant: list[str]
     current_stage_rejected: list[str]
+    current_stage_fallback: list[FallbackCandidate]  # Near-threshold papers from this stage
     new_citation_edges: list[CitationEdge]
     cocitation_included: list[str]
+
+    # Fallback queue (accumulated across stages)
+    fallback_queue: list[FallbackCandidate]
 
     # Output
     final_corpus_dois: list[str]
