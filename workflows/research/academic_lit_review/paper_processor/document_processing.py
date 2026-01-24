@@ -60,6 +60,7 @@ async def process_single_document(
             "abstractNote": paper.get("abstract", "")[:500]
             if paper.get("abstract")
             else "",
+            "authors": [a.get("name", "") for a in paper.get("authors", [])[:10]],
         }
 
         result = await process_document(
@@ -155,6 +156,7 @@ async def process_multiple_documents(
                 "date": paper.get("publication_date", ""),
                 "publicationTitle": paper.get("venue", ""),
                 "abstractNote": paper.get("abstract", "")[:500] if paper.get("abstract") else "",
+                "authors": [a.get("name", "") for a in paper.get("authors", [])[:10]],
             },
             "use_batch_api": use_batch_api,
         })

@@ -122,17 +122,20 @@ class CitationGraphAlgorithms:
 
         return list(clusters_dict.values())
 
-    def get_cocitation_candidates(
-        self, paper_doi: str, corpus_dois: set[str], threshold: int = 3
-    ) -> bool:
-        """Check if paper shares >= threshold citations with corpus.
+    def get_corpus_overlap_count(
+        self, paper_doi: str, corpus_dois: set[str]
+    ) -> int:
+        """Count how many corpus papers this paper shares citations with.
 
         Checks both directions:
-        - Papers this paper cites (backward)
-        - Papers citing this paper (forward)
+        - Papers this paper cites that are in corpus (backward overlap)
+        - Papers citing this paper that are in corpus (forward overlap)
+
+        Returns:
+            Total count of corpus papers connected to this paper.
         """
         if paper_doi not in self._builder.nodes:
-            return False
+            return 0
 
         # Get papers cited by this paper (outgoing edges)
         cited_by_paper = set(self._builder.graph.successors(paper_doi))
@@ -144,8 +147,18 @@ class CitationGraphAlgorithms:
         backward_overlap = len(cited_by_paper & corpus_dois)
         forward_overlap = len(citing_paper & corpus_dois)
 
-        total_overlap = backward_overlap + forward_overlap
-        return total_overlap >= threshold
+        return backward_overlap + forward_overlap
+
+    def get_cocitation_candidates(
+        self, paper_doi: str, corpus_dois: set[str], threshold: int = 3
+    ) -> bool:
+        """Check if paper shares >= threshold citations with corpus.
+
+        Checks both directions:
+        - Papers this paper cites (backward)
+        - Papers citing this paper (forward)
+        """
+        return self.get_corpus_overlap_count(paper_doi, corpus_dois) >= threshold
 
     def get_unexplored_citations(
         self, doi: str, explored_dois: set[str]

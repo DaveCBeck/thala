@@ -39,6 +39,7 @@ Consider for each paper:
 - Methodology relevance (if applicable)
 - Theoretical framework fit
 - Disciplinary alignment
+- Corpus Co-citations: If provided, this indicates how many papers already in our corpus cite or are cited by this paper. Higher counts suggest the paper is well-connected to the existing literature we've collected. Use this as supporting evidence - a paper with high co-citations that also has relevant content should score higher, but co-citations alone don't guarantee relevance.
 
 Output ONLY a JSON array with one object per paper (in the same order as input):
 [

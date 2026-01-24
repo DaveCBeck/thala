@@ -1,8 +1,10 @@
 """
 Content-metadata validation node for document processing workflow.
 
-Verifies that document content "vaguely matches" its extracted metadata.
-Uses quick heuristics first, then LLM semantic check if needed.
+Verifies that document content matches its catalog metadata (from OpenAlex/relevance
+scoring). This ensures the acquired document is actually the paper we intended to
+acquire, not a different document. Uses quick heuristics first, then LLM semantic
+check if needed.
 """
 
 import logging
@@ -36,6 +38,8 @@ def _quick_heuristic_check(
     """
     Fast heuristic checks before LLM.
 
+    Compares document content against catalog metadata (from OpenAlex/relevance scoring).
+
     Returns:
         (result, confidence, reasoning) where result is:
         - True: Definitely matches (skip LLM)
@@ -45,17 +49,6 @@ def _quick_heuristic_check(
     content_lower = content.lower()
     checks_passed = 0
     checks_total = 0
-
-    # ISBN exact match (strongest signal)
-    isbn = metadata.get("isbn")
-    if isbn:
-        checks_total += 1
-        # Normalize ISBN (remove hyphens)
-        isbn_clean = isbn.replace("-", "").replace(" ", "")
-        if isbn_clean in content.replace("-", "").replace(" ", ""):
-            checks_passed += 1
-            # ISBN match is very strong signal
-            return (True, 0.95, f"ISBN {isbn} found in content")
 
     # Author name check (at least one author should appear)
     authors = metadata.get("authors", [])
@@ -89,7 +82,6 @@ def _quick_heuristic_check(
     if checks_passed >= checks_total * 0.7:
         return (None, 0.7, f"Heuristics suggest match ({checks_passed}/{checks_total})")
 
-    # If ISBN was checked and not found, that's suspicious but not definitive
     return (None, 0.5, f"Heuristics inconclusive ({checks_passed}/{checks_total})")
 
 
@@ -102,17 +94,22 @@ def _format_metadata_for_prompt(metadata: dict) -> str:
         lines.append(f"Authors: {', '.join(metadata['authors'])}")
     if metadata.get("date"):
         lines.append(f"Date: {metadata['date']}")
-    if metadata.get("publisher"):
-        lines.append(f"Publisher: {metadata['publisher']}")
-    if metadata.get("isbn"):
-        lines.append(f"ISBN: {metadata['isbn']}")
+    if metadata.get("venue"):
+        lines.append(f"Venue: {metadata['venue']}")
+    if metadata.get("abstract"):
+        abstract = metadata["abstract"][:300]
+        lines.append(f"Abstract: {abstract}...")
     return "\n".join(lines) if lines else "(no metadata)"
 
 
 @traceable(run_type="chain", name="ValidateContentMetadata")
 async def validate_content_metadata(state: DocumentProcessingState) -> dict[str, Any]:
     """
-    Validate that document content matches extracted metadata.
+    Validate that document content matches catalog metadata.
+
+    Compares the acquired document against the OpenAlex/catalog metadata that was
+    used during relevance scoring to select this paper. This ensures we acquired
+    the correct document and not a different paper.
 
     Uses quick heuristics first, then LLM semantic check if needed.
     On failure, routes to finalize (non-blocking for batch processing).
@@ -131,13 +128,29 @@ async def validate_content_metadata(state: DocumentProcessingState) -> dict[str,
                 "current_status": "validation_skipped",
             }
 
-        metadata = state.get("metadata_updates", {})
-        if not metadata:
-            logger.warning("No metadata, skipping validation")
+        # Use catalog metadata from input (OpenAlex/relevance scoring) instead of
+        # extracted metadata. This validates the acquired document matches what we
+        # expected based on the metadata used during paper selection.
+        doc_input = state.get("input", {})
+        extra_metadata = doc_input.get("extra_metadata", {})
+        title = doc_input.get("title")
+
+        # Build metadata dict for validation from catalog data
+        metadata = {
+            "title": title,
+            "authors": extra_metadata.get("authors", []),
+            "date": extra_metadata.get("date"),
+            "venue": extra_metadata.get("publicationTitle"),
+            "abstract": extra_metadata.get("abstractNote"),
+        }
+
+        # Skip if no useful metadata available
+        if not title and not extra_metadata.get("authors"):
+            logger.warning("No catalog metadata available, skipping validation")
             return {
                 "validation_passed": True,
                 "validation_confidence": 0.0,
-                "validation_reasoning": "Skipped: no metadata extracted",
+                "validation_reasoning": "Skipped: no catalog metadata available",
                 "current_status": "validation_skipped",
             }
 
@@ -168,18 +181,18 @@ async def validate_content_metadata(state: DocumentProcessingState) -> dict[str,
         user_prompt = f"""{content}
 
 ---
-Extracted metadata:
+Catalog metadata (from academic database):
 {metadata_summary}
 
 ---
-Task: Determine if this document content plausibly matches the extracted metadata.
+Task: Determine if this document content matches the catalog metadata above.
 
 Consider:
 - Does the content seem to be about what the title suggests?
 - Do any author names appear in the text?
-- Is there any evidence this is a different document?
+- Is there any evidence this is a different document than what the catalog describes?
 
-Be LENIENT - metadata extraction is imperfect. Only mark as NOT matching if there's clear evidence of mismatch (e.g., completely different topic, wrong language, obviously different authors)."""
+Be LENIENT - we're checking if we acquired the correct paper. Only mark as NOT matching if there's clear evidence of mismatch (e.g., completely different topic, wrong language, obviously different authors than listed)."""
 
         result = await get_structured_output(
             output_schema=ContentMetadataMatch,

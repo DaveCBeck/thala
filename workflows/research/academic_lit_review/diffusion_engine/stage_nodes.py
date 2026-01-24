@@ -68,7 +68,6 @@ async def initialize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
         "current_stage_relevant": [],
         "current_stage_rejected": [],
         "new_citation_edges": [],
-        "cocitation_included": [],
     }
 
 

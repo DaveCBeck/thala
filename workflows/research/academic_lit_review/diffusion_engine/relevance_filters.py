@@ -1,4 +1,4 @@
-"""Two-stage relevance filtering: co-citation analysis + LLM scoring."""
+"""Relevance filtering with corpus co-citation context for LLM scoring."""
 
 import logging
 from typing import Any
@@ -7,30 +7,38 @@ from workflows.research.academic_lit_review.citation_graph import CitationGraph
 from workflows.research.academic_lit_review.state import FallbackCandidate
 from workflows.research.academic_lit_review.utils import batch_score_relevance
 from workflows.shared.llm_utils import ModelTier
-from .types import DiffusionEngineState, COCITATION_THRESHOLD
+from .types import DiffusionEngineState
 
 logger = logging.getLogger(__name__)
 
 
-async def check_cocitation_relevance_node(
+async def enrich_with_cocitation_counts_node(
     state: DiffusionEngineState,
 ) -> dict[str, Any]:
-    """Two-stage relevance: Stage 1 - auto-include papers co-cited with 3+ corpus papers."""
+    """Compute corpus co-citation counts for each candidate.
+
+    Adds 'corpus_cocitations' field to each candidate paper, indicating how many
+    papers in the current corpus cite or are cited by this paper. This count is
+    passed to the LLM as additional context for relevance scoring.
+    """
     candidates = state.get("current_stage_candidates", [])
     citation_graph = state.get("citation_graph")
     citation_edges = state.get("new_citation_edges", [])
     corpus_dois = set(state.get("paper_corpus", {}).keys())
 
-    if not candidates or not citation_graph:
-        return {
-            "cocitation_included": [],
-            "current_stage_candidates": candidates,
-        }
+    if not candidates:
+        return {"current_stage_candidates": []}
 
-    # Temporarily add new edges to graph for co-citation analysis
+    if not citation_graph:
+        # No graph available - set all counts to 0
+        for candidate in candidates:
+            candidate["corpus_cocitations"] = 0
+        return {"current_stage_candidates": candidates}
+
+    # Build temporary graph with corpus + candidates + new edges
     temp_graph = CitationGraph()
 
-    # Add existing nodes
+    # Add existing corpus nodes
     for doi, metadata in state.get("paper_corpus", {}).items():
         temp_graph.add_paper(doi, metadata)
 
@@ -48,43 +56,35 @@ async def check_cocitation_relevance_node(
             edge_type=edge["edge_type"],
         )
 
-    # Check co-citation for each candidate
-    cocitation_included = []
-    remaining_candidates = []
-
+    # Compute co-citation count for each candidate
+    enriched_candidates = []
     for candidate in candidates:
         doi = candidate.get("doi")
         if not doi:
             continue
 
-        # Check if this candidate is co-cited with corpus papers
-        is_cocited = temp_graph.get_cocitation_candidates(
+        cocitation_count = temp_graph.get_corpus_overlap_count(
             paper_doi=doi,
             corpus_dois=corpus_dois,
-            threshold=COCITATION_THRESHOLD,
         )
+        candidate["corpus_cocitations"] = cocitation_count
+        enriched_candidates.append(candidate)
 
-        if is_cocited:
-            cocitation_included.append(doi)
-            logger.debug(
-                f"Auto-included via co-citation: {candidate.get('title', 'Unknown')[:50]}"
-            )
-        else:
-            remaining_candidates.append(candidate)
-
+    high_cocitation = sum(1 for c in enriched_candidates if c.get("corpus_cocitations", 0) >= 3)
     logger.info(
-        f"Co-citation filter: {len(cocitation_included)} auto-included, "
-        f"{len(remaining_candidates)} require LLM scoring"
+        f"Co-citation enrichment: {len(enriched_candidates)} candidates, "
+        f"{high_cocitation} with 3+ corpus connections"
     )
 
-    return {
-        "cocitation_included": cocitation_included,
-        "current_stage_candidates": remaining_candidates,
-    }
+    return {"current_stage_candidates": enriched_candidates}
 
 
-async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[str, Any]:
-    """Two-stage relevance: Stage 2 - LLM scoring for remaining candidates.
+async def score_relevance_node(state: DiffusionEngineState) -> dict[str, Any]:
+    """Score all candidates with LLM, using corpus co-citation counts as context.
+
+    Each candidate should have 'corpus_cocitations' field set by
+    enrich_with_cocitation_counts_node. This count is passed to the LLM
+    as additional context for relevance scoring.
 
     Returns relevant papers + fallback candidates (0.5-0.6 score) for the fallback queue.
     """
@@ -96,7 +96,7 @@ async def score_remaining_relevance_node(state: DiffusionEngineState) -> dict[st
     language_config = state.get("language_config")
 
     if not candidates:
-        logger.info("No candidates remaining for LLM relevance scoring")
+        logger.info("No candidates for LLM relevance scoring")
         return {
             "current_stage_relevant": [],
             "current_stage_rejected": [],

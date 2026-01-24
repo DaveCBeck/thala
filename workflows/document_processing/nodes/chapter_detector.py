@@ -36,11 +36,11 @@ class ChapterClassification(BaseModel):
     """Classification of a chapter for content filtering."""
 
     title: str = Field(description="Exact chapter title")
-    is_content: bool = Field(
-        description="True if main content, False if non-content (references, preface, etc.) or subsidiary"
+    action: str = Field(
+        description="'include' for main content, 'exclude' for non-content, 'combine_with_previous' to merge with preceding chapter"
     )
     reason: Optional[str] = Field(
-        default=None, description="Brief reason if marked as non-content"
+        default=None, description="Brief reason if not 'include'"
     )
 
 
@@ -156,16 +156,34 @@ MIN_CHAPTER_WORDS = 100  # Chapters below this are too short to summarize
 
 async def _filter_content_chapters(
     chapters: list[ChapterInfo],
+    short_summary: str | None = None,
 ) -> tuple[list[ChapterInfo], list[ChapterInfo]]:
     """
     Filter chapters to identify main content vs non-content/subsidiary sections.
 
     Filtering stages:
-    1. Word count filter: Skip chapters below MIN_CHAPTER_WORDS (too short to summarize)
-    2. LLM classification: Identify non-content (references, etc.) and subsidiary sections
+    1. LLM classification: Identify non-content, or chapters to combine with previous
+    2. Word count filter: Skip any remaining chapters below MIN_CHAPTER_WORDS
+
+    The LLM sees ALL chapters with word counts, allowing it to intelligently combine
+    short intro sections with their following content rather than discarding them.
+
+    Example scenario:
+        Input chapters:
+        - Introduction (80 words)      → combine_with_previous (first, so falls back to include)
+        - Background (150 words)       → include
+        - Methodology (60 words)       → combine_with_previous → merged into Background
+        - Data Collection (400 words)  → combine_with_previous → merged into Background
+        - Results (1200 words)         → include
+
+        Output: Background (610 words combined), Results (1200 words)
+
+    The short "Methodology" intro paragraph gets merged with substantive sections
+    rather than being discarded by a pre-filter.
 
     Args:
         chapters: List of detected chapters
+        short_summary: Optional 100-word summary for document context
 
     Returns:
         Tuple of (content_chapters, excluded_chapters)
@@ -173,59 +191,51 @@ async def _filter_content_chapters(
     if not chapters:
         return [], []
 
-    # Stage 1: Filter out chapters that are too short to meaningfully summarize
-    substantial_chapters = []
-    short_chapters = []
-    for chapter in chapters:
-        if chapter["word_count"] < MIN_CHAPTER_WORDS:
-            short_chapters.append(chapter)
-            logger.debug(
-                f"Excluding short chapter '{chapter['title']}' ({chapter['word_count']} words)"
-            )
-        else:
-            substantial_chapters.append(chapter)
+    # Stage 1: Prepare chapter list with word counts for LLM classification
+    chapter_list = "\n".join(
+        [f"- {c['title']} ({c['word_count']:,} words)" for c in chapters]
+    )
 
-    if short_chapters:
-        logger.info(
-            f"Filtered {len(short_chapters)} chapters below {MIN_CHAPTER_WORDS} words"
-        )
+    # Add document context if available
+    context_section = ""
+    if short_summary:
+        context_section = f"""DOCUMENT SUMMARY (for context):
+{short_summary}
 
-    if not substantial_chapters:
-        return [], short_chapters
+"""
 
-    # Stage 2: Prepare chapter list for LLM content classification
-    chapter_list = "\n".join([f"- {c['title']}" for c in substantial_chapters])
+    system_prompt = f"""{context_section}Classify each chapter/section. For each, choose one action:
 
-    system_prompt = """Classify each chapter/section as content or non-content.
-
-Mark is_content=false for:
-1. NON-CONTENT sections (not main document content):
-   - References, Bibliography, Works Cited
-   - Index, Glossary, Appendix (unless substantive)
-   - Preface, Foreword, Introduction by editor (not author's introduction)
-   - About the Author, Author Bio, Contributors
-   - Acknowledgements, Dedications
-   - Title pages, Copyright, Credits
-   - Conflicts of Interest, Funding statements
-   - "Titles in this series", "Also by this author"
-
-2. SUBSIDIARY sections (sub-parts of a larger unit):
-   - Numbered sub-sections like "2.1", "2.2" when "2" is the main chapter
-   - However, in edited volumes with Parts containing Chapters, the CHAPTERS are content
-   - Example: "Part I" contains "Chapter 1", "Chapter 2" -> Chapters are content, not subsidiary
-
-Mark is_content=true for:
-- Main chapters with substantive content
-- Author's own Introduction, Conclusion
+ACTION: "include" - Main content to summarize
+- Topic chapters that discuss the document's subject matter
+- Author's Introduction, Methods, Results, Discussion, Conclusion
 - Numbered chapters (Chapter 1, Chapter 2, etc.)
-- In edited volumes: individual chapter contributions
+- In academic papers: ALL sections discussing findings, methods, analysis
+- Word count helps: substantial sections (500+ words) are usually content
 
-When in doubt, mark as content (is_content=true)."""
+ACTION: "exclude" - Non-content to skip entirely
+- Abstract (already captured in short summary)
+- References, Bibliography, Works Cited
+- Index, Glossary, Appendix (unless substantive analysis)
+- Acknowledgements, Funding, Conflicts of Interest
+- About the Author, Contributors, Dedications
+- Title pages, Copyright, Credits
+
+ACTION: "combine_with_previous" - Merge into preceding chapter
+- Very short sections (<300 words) that continue the previous topic
+- Sub-sections that shouldn't stand alone
+- Note: First chapter cannot use this action
+
+IMPORTANT: Topic-specific headings are almost always content!
+If a heading relates to the document's subject matter (based on the summary above),
+it should be "include" even if it sounds like a generic term.
+
+When in doubt, use "include"."""
 
     try:
         result = await get_structured_output(
             output_schema=ChapterClassificationResult,
-            user_prompt=chapter_list,
+            user_prompt=f"CHAPTERS:\n{chapter_list}",
             system_prompt=system_prompt,
             tier=ModelTier.DEEPSEEK_V3,
             max_tokens=4096,
@@ -235,16 +245,38 @@ When in doubt, mark as content (is_content=true)."""
         classification_map = {c.title: c for c in result.chapters}
 
         content_chapters = []
-        excluded_chapters = list(short_chapters)  # Start with already-excluded short chapters
+        excluded_chapters = []
 
-        for chapter in substantial_chapters:
+        for i, chapter in enumerate(chapters):
             classification = classification_map.get(chapter["title"])
-            if classification and not classification.is_content:
+            if not classification:
+                # Not in response, default to include
+                content_chapters.append(chapter)
+                continue
+
+            action = classification.action.lower().strip()
+
+            if action == "exclude":
                 excluded_chapters.append(chapter)
                 logger.debug(
                     f"Excluding chapter '{chapter['title']}': {classification.reason}"
                 )
+            elif action == "combine_with_previous" and content_chapters:
+                # Merge this chapter's content range into the previous one
+                prev_chapter = content_chapters[-1]
+                combined = ChapterInfo(
+                    title=prev_chapter["title"],
+                    start_position=prev_chapter["start_position"],
+                    end_position=chapter["end_position"],
+                    author=prev_chapter["author"],
+                    word_count=prev_chapter["word_count"] + chapter["word_count"],
+                )
+                content_chapters[-1] = combined
+                logger.debug(
+                    f"Combined '{chapter['title']}' with '{prev_chapter['title']}'"
+                )
             else:
+                # "include" or fallback
                 content_chapters.append(chapter)
 
         if excluded_chapters:
@@ -252,6 +284,29 @@ When in doubt, mark as content (is_content=true)."""
             logger.info(
                 f"Filtered {len(excluded_chapters)} non-content chapters: {excluded_titles}"
             )
+
+        # Stage 2: Filter out any remaining chapters too short to summarize
+        # (after combining, some may still be below threshold)
+        final_content = []
+        short_chapters = []
+        for chapter in content_chapters:
+            if chapter["word_count"] < MIN_CHAPTER_WORDS:
+                short_chapters.append(chapter)
+                logger.debug(
+                    f"Excluding short chapter '{chapter['title']}' "
+                    f"({chapter['word_count']} words, below {MIN_CHAPTER_WORDS})"
+                )
+            else:
+                final_content.append(chapter)
+
+        if short_chapters:
+            logger.info(
+                f"Filtered {len(short_chapters)} chapters below {MIN_CHAPTER_WORDS} words "
+                f"(post-combine)"
+            )
+            excluded_chapters.extend(short_chapters)
+
+        content_chapters = final_content
 
         # Log token counts for content chapters (estimate ~1.3 tokens per word)
         content_words = sum(c["word_count"] for c in content_chapters)
@@ -268,17 +323,24 @@ When in doubt, mark as content (is_content=true)."""
 
     except Exception as e:
         logger.warning(
-            f"Chapter content filtering failed: {e}. Using substantial chapters only."
+            f"Chapter content filtering failed: {e}. Applying word count filter only."
         )
-        # Log token counts even on failure path
-        content_words = sum(c["word_count"] for c in substantial_chapters)
+        # Fallback: just apply word count filter
+        content_chapters = []
+        excluded_chapters = []
+        for chapter in chapters:
+            if chapter["word_count"] < MIN_CHAPTER_WORDS:
+                excluded_chapters.append(chapter)
+            else:
+                content_chapters.append(chapter)
+
+        content_words = sum(c["word_count"] for c in content_chapters)
         content_tokens = int(content_words * 1.3)
         logger.info(
             f"[TOKEN_TRACKING] Post-filter chapters (fallback): "
-            f"{len(substantial_chapters)} chapters, {content_tokens:,} tokens"
+            f"{len(content_chapters)} chapters, {content_tokens:,} tokens"
         )
-        # Still exclude short chapters even if LLM classification fails
-        return substantial_chapters, short_chapters
+        return content_chapters, excluded_chapters
 
 
 @traceable(run_type="chain", name="DetectChapters")
@@ -408,8 +470,11 @@ Guidelines:
                         f"Created {len(chapters)} chapters from top-level headings"
                     )
                     # Filter to content chapters only
+                    short_summary = state.get("short_summary_english") or state.get(
+                        "short_summary"
+                    )
                     content_chapters, excluded = await _filter_content_chapters(
-                        chapters
+                        chapters, short_summary=short_summary
                     )
                     logger.info(
                         f"After filtering: {len(content_chapters)} content chapters "
@@ -433,7 +498,12 @@ Guidelines:
             logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
 
             # Filter to content chapters only
-            content_chapters, excluded = await _filter_content_chapters(chapters)
+            short_summary = state.get("short_summary_english") or state.get(
+                "short_summary"
+            )
+            content_chapters, excluded = await _filter_content_chapters(
+                chapters, short_summary=short_summary
+            )
             logger.info(
                 f"After filtering: {len(content_chapters)} content chapters "
                 f"({len(excluded)} excluded)"

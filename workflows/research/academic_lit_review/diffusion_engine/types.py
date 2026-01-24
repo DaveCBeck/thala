@@ -20,7 +20,6 @@ NON_ENGLISH_PAPER_OVERHEAD = 1.5
 
 MAX_CITATIONS_PER_PAPER = 30
 MAX_CONCURRENT_FETCHES = 5
-COCITATION_THRESHOLD = 3
 
 
 class DiffusionEngineState(TypedDict, total=False):
@@ -43,12 +42,11 @@ class DiffusionEngineState(TypedDict, total=False):
 
     # Current stage working state
     current_stage_seeds: list[str]
-    current_stage_candidates: list[PaperMetadata]
+    current_stage_candidates: list[PaperMetadata]  # Enriched with corpus_cocitations
     current_stage_relevant: list[str]
     current_stage_rejected: list[str]
     current_stage_fallback: list[FallbackCandidate]  # Near-threshold papers from this stage
     new_citation_edges: list[CitationEdge]
-    cocitation_included: list[str]
 
     # Fallback queue (accumulated across stages)
     fallback_queue: list[FallbackCandidate]

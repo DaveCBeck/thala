@@ -1,11 +1,9 @@
-"""Corpus and graph synchronization with DOI fallback."""
+"""Corpus and graph synchronization."""
 
 import logging
 from datetime import datetime
 from typing import Any
 
-from langchain_tools.openalex import get_works_by_dois
-from workflows.research.academic_lit_review.utils import convert_to_paper_metadata
 from .types import DiffusionEngineState
 
 logger = logging.getLogger(__name__)
@@ -13,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]:
     """Add newly relevant papers to corpus and update citation graph."""
-    cocitation_included = state.get("cocitation_included", [])
     llm_relevant = state.get("current_stage_relevant", [])
     llm_rejected = state.get("current_stage_rejected", [])
     candidates = state.get("current_stage_candidates", [])
@@ -22,64 +19,17 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
     paper_corpus = state.get("paper_corpus", {})
     diffusion = state["diffusion"]
 
-    all_relevant_dois = set(cocitation_included) | set(llm_relevant)
-
+    # Build lookup from candidates (enriched with corpus_cocitations and relevance_score)
     candidate_lookup = {p.get("doi"): p for p in candidates if p.get("doi")}
 
-    all_candidates_lookup = {
-        p.get("doi"): p
-        for p in state.get("current_stage_candidates", [])
-        if p.get("doi")
-    }
-
-    missing_cocited_dois = [
-        doi
-        for doi in cocitation_included
-        if doi not in candidate_lookup and doi not in all_candidates_lookup
-    ]
-
-    fallback_papers = {}
-    if missing_cocited_dois:
-        logger.debug(
-            f"Fetching {len(missing_cocited_dois)} co-cited papers by DOI fallback"
-        )
-        try:
-            fetched_works = await get_works_by_dois(missing_cocited_dois)
-            for work in fetched_works:
-                if work.doi:
-                    doi_clean = work.doi.replace("https://doi.org/", "").replace(
-                        "http://doi.org/", ""
-                    )
-                    paper = convert_to_paper_metadata(
-                        work.model_dump(),
-                        discovery_stage=diffusion["current_stage"],
-                        discovery_method="cocitation_fallback",
-                    )
-                    if paper:
-                        fallback_papers[doi_clean] = paper
-                        logger.debug(
-                            f"Recovered co-cited paper via DOI: {work.title[:50]}..."
-                        )
-
-            still_missing = set(missing_cocited_dois) - set(fallback_papers.keys())
-            if still_missing:
-                for doi in still_missing:
-                    logger.warning(f"Co-cited paper {doi} not found in OpenAlex")
-        except Exception as e:
-            logger.warning(f"Failed to fetch co-cited papers by DOI: {e}")
-
+    # Add relevant papers to corpus
     new_corpus_papers = {}
-    for doi in all_relevant_dois:
-        paper = (
-            candidate_lookup.get(doi)
-            or all_candidates_lookup.get(doi)
-            or fallback_papers.get(doi)
-        )
+    for doi in llm_relevant:
+        paper = candidate_lookup.get(doi)
         if paper:
-            if paper.get("relevance_score") is None:
-                paper["relevance_score"] = 0.8
             new_corpus_papers[doi] = paper
 
+    # Update citation graph with new papers and edges
     if citation_graph:
         for doi, paper in new_corpus_papers.items():
             citation_graph.add_paper(doi, paper)
@@ -91,15 +41,15 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
                 edge_type=edge["edge_type"],
             )
 
-    total_candidates = len(cocitation_included) + len(llm_relevant) + len(llm_rejected)
+    total_candidates = len(llm_relevant) + len(llm_rejected)
     coverage_delta = (
-        len(all_relevant_dois) / total_candidates if total_candidates > 0 else 0.0
+        len(llm_relevant) / total_candidates if total_candidates > 0 else 0.0
     )
 
     current_stage = diffusion["current_stage"]
     stages = diffusion["stages"]
     if stages and stages[-1]["stage_number"] == current_stage:
-        stages[-1]["new_relevant"] = list(all_relevant_dois)
+        stages[-1]["new_relevant"] = llm_relevant
         stages[-1]["new_rejected"] = llm_rejected
         stages[-1]["coverage_delta"] = coverage_delta
         stages[-1]["completed_at"] = datetime.utcnow()
@@ -117,7 +67,7 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
         "total_papers_discovered": diffusion["total_papers_discovered"]
         + total_candidates,
         "total_papers_relevant": diffusion["total_papers_relevant"]
-        + len(all_relevant_dois),
+        + len(llm_relevant),
         "total_papers_rejected": diffusion["total_papers_rejected"] + len(llm_rejected),
     }
 
@@ -136,5 +86,4 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
         "current_stage_relevant": [],
         "current_stage_rejected": [],
         "new_citation_edges": [],
-        "cocitation_included": [],
     }

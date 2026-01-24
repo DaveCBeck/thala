@@ -88,7 +88,6 @@ async def run_diffusion(
         current_stage_relevant=[],
         current_stage_rejected=[],
         new_citation_edges=[],
-        cocitation_included=[],
         final_corpus_dois=[],
         saturation_reason=None,
     )

@@ -72,6 +72,20 @@ class CitationGraph:
         """
         return self._algorithms.identify_clusters(algorithm)
 
+    def get_corpus_overlap_count(
+        self, paper_doi: str, corpus_dois: set[str]
+    ) -> int:
+        """Count how many corpus papers this paper shares citations with.
+
+        Checks both directions:
+        - Papers this paper cites that are in corpus (backward overlap)
+        - Papers citing this paper that are in corpus (forward overlap)
+
+        Returns:
+            Total count of corpus papers connected to this paper.
+        """
+        return self._algorithms.get_corpus_overlap_count(paper_doi, corpus_dois)
+
     def get_cocitation_candidates(
         self, paper_doi: str, corpus_dois: set[str], threshold: int = 3
     ) -> bool:
