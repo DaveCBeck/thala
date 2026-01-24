@@ -3,6 +3,7 @@
 Reads a literature review from a file and transforms it into a Substack essay.
 """
 
+import argparse
 import asyncio
 import logging
 from datetime import datetime
@@ -122,10 +123,20 @@ status: {result.get("status")}
 
 async def main():
     """Main entry point."""
-    input_file = Path(
-        "/home/dave/thala/testing/test_data/lit_review_20260113_130154.md"
+    parser = argparse.ArgumentParser(
+        description="Transform a literature review into a Substack essay"
     )
-    output_dir = Path("/home/dave/thala/testing/test_data")
+    parser.add_argument("input_file", type=Path, help="Path to the literature review markdown file")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("/home/dave/thala/testing/test_data"),
+        help="Directory to write output files (default: testing/test_data)",
+    )
+    args = parser.parse_args()
+
+    input_file = args.input_file
+    output_dir = args.output_dir
 
     if not input_file.exists():
         logger.error(f"Input file not found: {input_file}")

@@ -86,12 +86,20 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
             f"(critical={analysis.critical_issues_count}, major={analysis.major_issues_count})"
         )
 
-        # Log issues at appropriate levels
+        # Log issues at appropriate levels with full details for debugging
         for issue in analysis.issues:
             log_fn = logger.warning if issue.severity in ("critical", "major") else logger.debug
             log_fn(
                 f"Issue {issue.issue_id} ({issue.issue_type}, {issue.severity}): "
                 f"{issue.description[:100]}"
+            )
+            # Always log full issue details at DEBUG level for troubleshooting
+            logger.debug(
+                f"  Issue {issue.issue_id} details: "
+                f"recommended_action={issue.recommended_action}, "
+                f"affected_sections={issue.affected_section_ids}, "
+                f"affected_blocks={issue.affected_block_ids}, "
+                f"action_details={issue.action_details[:200] if issue.action_details else 'None'}"
             )
 
         # Store baseline coherence on first iteration for regression detection

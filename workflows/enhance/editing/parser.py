@@ -13,6 +13,144 @@ from .document_model import DocumentModel, Section, ContentBlock
 logger = logging.getLogger(__name__)
 
 
+def _normalize_heading(text: str) -> str:
+    """Normalize heading for comparison (matches document_model version)."""
+    text = text.lower()
+    # Strip leading section/chapter numbers: "1.", "1.2.", "Chapter 1:", "Section 2.3"
+    text = re.sub(r'^(?:chapter|section)?\s*[\d.]+[.:)]*\s*', '', text)
+    # Remove remaining non-alphabetic characters
+    return re.sub(r'[^a-z]', '', text)
+
+
+def _merge_duplicate_sections(model: DocumentModel) -> int:
+    """Merge sections with matching normalized headings.
+
+    Handles malformed documents where the same section appears twice, e.g.:
+        ## 1. Introduction   (empty, level 2)
+        # Introduction       (with content, level 1)
+
+    The content is consolidated into one section and duplicates are removed.
+
+    Returns:
+        Number of sections merged/removed
+    """
+    merge_count = 0
+
+    def flatten_all_sections(sections: list[Section]) -> list[Section]:
+        """Get all sections in document order, flattened."""
+        result = []
+        for section in sections:
+            result.append(section)
+            result.extend(flatten_all_sections(section.subsections))
+        return result
+
+    def merge_in_list(sections: list[Section]) -> list[Section]:
+        """Process a list of sections, merging duplicates at same level."""
+        nonlocal merge_count
+
+        if not sections:
+            return sections
+
+        # First, recursively process subsections
+        for section in sections:
+            section.subsections = merge_in_list(section.subsections)
+
+        # Now merge duplicates at this level
+        heading_map: dict[str, int] = {}  # normalized_heading -> index in result
+        result: list[Section] = []
+
+        for section in sections:
+            norm_heading = _normalize_heading(section.heading)
+
+            if norm_heading in heading_map:
+                # Duplicate found - merge into the existing section
+                existing_idx = heading_map[norm_heading]
+                existing = result[existing_idx]
+
+                # Merge blocks (append to existing)
+                existing.blocks.extend(section.blocks)
+
+                # Merge subsections (append, then recursively dedupe)
+                existing.subsections.extend(section.subsections)
+                existing.subsections = merge_in_list(existing.subsections)
+
+                logger.debug(
+                    f"Merged duplicate section '{section.heading}' into '{existing.heading}'"
+                )
+                merge_count += 1
+            else:
+                # New heading - add to result
+                heading_map[norm_heading] = len(result)
+                result.append(section)
+
+        return result
+
+    # First pass: merge at same level
+    model.sections = merge_in_list(model.sections)
+
+    # Second pass: remove empty numbered sections that have a matching content section
+    # This handles the case where ## 1. Introduction (empty) is followed by # Introduction (with content)
+    all_sections = flatten_all_sections(model.sections)
+    headings_with_content = {
+        _normalize_heading(s.heading)
+        for s in all_sections
+        if s.blocks or s.subsections
+    }
+
+    def remove_empty_duplicates(sections: list[Section]) -> list[Section]:
+        """Remove empty sections whose heading matches a section with content."""
+        nonlocal merge_count
+        result = []
+
+        for section in sections:
+            # Recursively process subsections first
+            section.subsections = remove_empty_duplicates(section.subsections)
+
+            norm_heading = _normalize_heading(section.heading)
+            is_empty = not section.blocks and not section.subsections
+            has_content_elsewhere = norm_heading in headings_with_content
+
+            if is_empty and has_content_elsewhere:
+                # This empty section has a content-bearing duplicate elsewhere
+                logger.debug(
+                    f"Removing empty duplicate section '{section.heading}'"
+                )
+                merge_count += 1
+            else:
+                result.append(section)
+
+        return result
+
+    model.sections = remove_empty_duplicates(model.sections)
+
+    # Third pass: remove sections that just duplicate the document title
+    if model.title:
+        title_norm = _normalize_heading(model.title)
+
+        def remove_title_duplicates(sections: list[Section]) -> list[Section]:
+            """Remove sections whose heading matches the document title."""
+            nonlocal merge_count
+            result = []
+            for section in sections:
+                section.subsections = remove_title_duplicates(section.subsections)
+                if _normalize_heading(section.heading) == title_norm:
+                    # This section duplicates the title - merge its content into preamble
+                    model.preamble_blocks.extend(section.blocks)
+                    # Add any subsections as top-level sections
+                    for sub in section.subsections:
+                        sub.parent_id = None
+                    result.extend(section.subsections)
+                    logger.debug(f"Removed title-duplicate section '{section.heading}'")
+                    merge_count += 1
+                else:
+                    result.append(section)
+            return result
+
+        model.sections = remove_title_duplicates(model.sections)
+
+    return merge_count
+
+
 def detect_block_type(content: str) -> Literal["paragraph", "list", "code", "quote", "table", "metadata"]:
     """Detect the type of content block."""
     stripped = content.strip()
@@ -160,6 +298,13 @@ def parse_markdown_to_model(text: str) -> DocumentModel:
         sections=sections,
         preamble_blocks=preamble_blocks,
     )
+
+    # Post-process: merge duplicate sections with matching normalized headings
+    # This handles malformed documents with both "## 1. Introduction" and "# Introduction"
+    merge_count = _merge_duplicate_sections(model)
+    if merge_count > 0:
+        logger.info(f"Merged {merge_count} duplicate sections during parsing")
+        model._build_indexes()  # Rebuild after modifications
 
     logger.info(
         f"Parsed document: {model.total_words} words, "

@@ -1,4 +1,8 @@
-"""Graph construction for the editing workflow."""
+"""Graph construction for the editing workflow.
+
+Uses V2 structure phase (analyze → rewrite → reassemble) followed by
+V1 Enhancement and Polish phases via bridge node.
+"""
 
 import logging
 
@@ -6,33 +10,25 @@ from langgraph.graph import StateGraph, START, END
 
 from workflows.enhance.editing.state import EditingState
 from workflows.enhance.editing.nodes import (
-    # Phase 1: Parse
-    parse_document_node,
-    # Phase 2: Analyze
-    analyze_structure_node,
-    # Phase 3: Plan
-    plan_edits_node,
-    # Phase 4: Execute
-    route_to_edit_workers,
-    execute_structure_edits_worker,
-    execute_generation_edit_worker,
-    execute_removal_edit_worker,
-    assemble_edits_node,
-    # Phase 5: Verify Structure
-    verify_structure_node,
-    check_structure_complete,
-    # Phase 6: Detect Citations
-    detect_citations_node,
+    # V2 Structure Phase
+    v2_analyze_node,
+    v2_rewrite_router_node,
+    v2_route_to_rewriters,
+    v2_rewrite_section_node,
+    v2_reassemble_node,
+    # Bridge (V2 -> V1)
+    v2_to_v1_bridge_node,
+    # Citation routing
     route_to_enhance_or_polish,
-    # Phase 7: Enhance (when has_citations)
+    # V1 Enhancement Phase
     route_to_enhance_sections,
     enhance_section_worker,
     assemble_enhancements_node,
     enhance_coherence_review_node,
     route_enhance_iteration,
-    # Phase 8: Polish
+    # V1 Polish Phase
     polish_node,
-    # Phase 9: Finalize
+    # V1 Finalize
     finalize_node,
 )
 
@@ -43,118 +39,88 @@ def create_editing_graph() -> StateGraph:
     """Create the editing workflow graph.
 
     Graph structure:
-    1. Parse document into structured model
-    2. Analyze structure to identify issues
-    3. Plan edits based on issues
-    4. Execute edits (parallel workers for generation, sequential for structure)
-    5. Assemble edits and verify structure
-    6. Loop back if more structure work needed
-    7. Detect citations in document
-    8. If citations found: Enhance sections (with iteration loop)
-    9. Polish for flow and coherence
-    10. Finalize and output
+    1. V2 Structure Phase:
+       - analyze: Identify sections needing work
+       - rewrite_router -> rewrite_section (parallel): Rewrite flagged sections
+       - reassemble: Combine results and verify coherence
 
-    Note: Fact-check and reference-check are now in a separate workflow
-    (workflows.enhance.fact_check) that runs after editing.
+    2. Bridge: Convert V2 markdown output to V1 DocumentModel
+
+    3. Citation-based routing:
+       - If citations: Enhancement phase
+       - If no citations: Skip to Polish
+
+    4. V1 Enhancement Phase (when has_citations):
+       - enhance_router -> enhance_section (parallel)
+       - assemble_enhancements -> enhance_coherence_review
+       - Loop if more iterations needed
+
+    5. V1 Polish Phase:
+       - polish: Final language and flow improvements
+
+    6. Finalize:
+       - finalize: Package output
 
     Returns:
         Compiled StateGraph
     """
     builder = StateGraph(EditingState)
 
-    # === Add Nodes ===
+    # === V2 Structure Phase Nodes ===
+    builder.add_node("analyze", v2_analyze_node)
+    builder.add_node("rewrite_router", v2_rewrite_router_node)
+    builder.add_node("rewrite_section", v2_rewrite_section_node)
+    builder.add_node("reassemble", v2_reassemble_node)
 
-    # Phase 1: Parse
-    builder.add_node("parse_document", parse_document_node)
+    # === Bridge Node ===
+    builder.add_node("bridge", v2_to_v1_bridge_node)
 
-    # Phase 2: Analyze
-    builder.add_node("analyze_structure", analyze_structure_node)
-
-    # Phase 3: Plan
-    builder.add_node("plan_edits", plan_edits_node)
-
-    # Phase 4: Execute (workers)
-    builder.add_node("execute_structure_edits", execute_structure_edits_worker)
-    builder.add_node("execute_generation_edit", execute_generation_edit_worker)
-    builder.add_node("execute_removal_edit", execute_removal_edit_worker)
-    builder.add_node("assemble_edits", assemble_edits_node)
-
-    # Phase 5: Verify Structure
-    builder.add_node("verify_structure", verify_structure_node)
-
-    # Phase 6: Detect Citations
-    builder.add_node("detect_citations", detect_citations_node)
-
-    # Phase 7: Enhance (when has_citations)
-    builder.add_node("enhance_section", enhance_section_worker)
-    builder.add_node("assemble_enhancements", assemble_enhancements_node)
-    builder.add_node("enhance_coherence_review", enhance_coherence_review_node)
-
-    # Phase 8: Polish
-    builder.add_node("polish", polish_node)
-
-    # Phase 9: Finalize
-    builder.add_node("finalize", finalize_node)
-
-    # === Add Edges ===
-
-    # Linear flow: start -> parse -> analyze -> plan
-    builder.add_edge(START, "parse_document")
-    builder.add_edge("parse_document", "analyze_structure")
-    builder.add_edge("analyze_structure", "plan_edits")
-
-    # Conditional routing to edit workers
-    builder.add_conditional_edges(
-        "plan_edits",
-        route_to_edit_workers,
-        [
-            "execute_structure_edits",
-            "execute_generation_edit",
-            "execute_removal_edit",
-            "assemble_edits",
-        ],
-    )
-
-    # Workers -> assemble
-    builder.add_edge("execute_structure_edits", "assemble_edits")
-    builder.add_edge("execute_generation_edit", "assemble_edits")
-    builder.add_edge("execute_removal_edit", "assemble_edits")
-
-    # Assemble -> verify
-    builder.add_edge("assemble_edits", "verify_structure")
-
-    # Structure iteration loop - routes to detect_citations when done
-    builder.add_conditional_edges(
-        "verify_structure",
-        check_structure_complete,
-        {
-            "continue_structure": "analyze_structure",  # Loop back
-            "proceed_to_polish": "detect_citations",  # Go to citation detection
-        },
-    )
-
-    # === Citation Detection & Routing ===
-    # Detect if document has citations -> route to enhance or polish
-    builder.add_conditional_edges(
-        "detect_citations",
-        route_to_enhance_or_polish,
-        {
-            "enhance": "enhance_router",  # Has citations -> enhance phase
-            "polish": "polish",  # No citations -> skip to polish
-        },
-    )
-
-    # === Enhancement Phase (when has_citations) ===
-    # Add an empty router node that just passes through state
-    # This is needed because we can't route directly from detect_citations
-    # to the Send-based routing
+    # === V1 Enhancement Phase Nodes ===
     def enhance_router_node(state: dict) -> dict:
         """Pass-through node for enhancement routing."""
         return {}
 
     builder.add_node("enhance_router", enhance_router_node)
+    builder.add_node("enhance_section", enhance_section_worker)
+    builder.add_node("assemble_enhancements", assemble_enhancements_node)
+    builder.add_node("enhance_coherence_review", enhance_coherence_review_node)
 
-    # Route from enhance_router to section workers (parallel via Send)
+    # === V1 Polish Phase Nodes ===
+    builder.add_node("polish", polish_node)
+
+    # === Finalize Node ===
+    builder.add_node("finalize", finalize_node)
+
+    # === V2 Structure Phase Edges ===
+    # START -> analyze -> rewrite_router
+    builder.add_edge(START, "analyze")
+    builder.add_edge("analyze", "rewrite_router")
+
+    # rewrite_router conditionally routes to rewrite_section workers or reassemble
+    builder.add_conditional_edges(
+        "rewrite_router",
+        v2_route_to_rewriters,
+        ["rewrite_section", "reassemble"],
+    )
+
+    # rewrite_section workers -> reassemble
+    builder.add_edge("rewrite_section", "reassemble")
+
+    # reassemble -> bridge
+    builder.add_edge("reassemble", "bridge")
+
+    # === Bridge -> Citation Routing ===
+    builder.add_conditional_edges(
+        "bridge",
+        route_to_enhance_or_polish,
+        {
+            "enhance": "enhance_router",
+            "polish": "polish",
+        },
+    )
+
+    # === V1 Enhancement Phase Edges ===
+    # enhance_router -> enhance_section workers (parallel via Send)
     builder.add_conditional_edges(
         "enhance_router",
         route_to_enhance_sections,
@@ -164,12 +130,11 @@ def create_editing_graph() -> StateGraph:
         ],
     )
 
-    # Enhance section workers -> assemble -> coherence review
+    # enhance_section workers -> assemble_enhancements -> enhance_coherence_review
     builder.add_edge("enhance_section", "assemble_enhancements")
     builder.add_edge("assemble_enhancements", "enhance_coherence_review")
 
-    # Coherence review routes to continue enhancing or proceed to polish
-    # (Fact-check is now a separate workflow that runs after editing)
+    # enhance_coherence_review routes to continue or polish
     def route_enhance_to_polish(state: dict) -> str:
         """Route to continue enhancing or proceed to polish."""
         result = route_enhance_iteration(state)
@@ -181,13 +146,12 @@ def create_editing_graph() -> StateGraph:
         "enhance_coherence_review",
         route_enhance_to_polish,
         {
-            "enhance_router": "enhance_router",  # More iterations needed
-            "polish": "polish",  # Enhancement complete -> polish
+            "enhance_router": "enhance_router",
+            "polish": "polish",
         },
     )
 
-    # === Final Phases ===
-    # Polish -> finalize -> end
+    # === V1 Polish and Finalize Edges ===
     builder.add_edge("polish", "finalize")
     builder.add_edge("finalize", END)
 

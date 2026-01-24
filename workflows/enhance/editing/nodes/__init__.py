@@ -1,53 +1,59 @@
-"""Node implementations for the editing workflow."""
+"""Node implementations for the editing workflow.
 
-from .parse_document import parse_document_node
-from .analyze_structure import analyze_structure_node
-from .plan_edits import plan_edits_node
-from .execute_edits import (
-    route_to_edit_workers,
-    execute_structure_edits_worker,
-    execute_generation_edit_worker,
-    execute_removal_edit_worker,
-    assemble_edits_node,
+V2 structure nodes handle analyze → rewrite → reassemble.
+V1 Enhancement and Polish nodes handle citation enhancement and polishing.
+Bridge node connects V2 output to V1 phases.
+"""
+
+# V2 Structure Phase nodes
+from .v2_analyze import v2_analyze_node
+from .v2_rewrite_section import v2_rewrite_section_node
+from .v2_reassemble import v2_reassemble_node
+from .v2_router import v2_route_to_rewriters, v2_rewrite_router_node
+
+# Bridge node (V2 -> V1)
+from .bridge import v2_to_v1_bridge_node
+
+# Citation detection (used in bridge, also exported for routing)
+from .detect_citations import (
+    extract_citation_keys,
+    route_to_enhance_or_polish,
 )
-from .verify_structure import verify_structure_node, check_structure_complete
-from .detect_citations import detect_citations_node, route_to_enhance_or_polish
+
+# V1 Enhancement Phase nodes
 from .enhance_section import (
     route_to_enhance_sections,
     enhance_section_worker,
     assemble_enhancements_node,
 )
 from .enhance_coherence import enhance_coherence_review_node, route_enhance_iteration
+
+# V1 Polish Phase nodes
 from .polish import polish_node
+
+# V1 Finalize nodes
 from .finalize import finalize_node
 
 __all__ = [
-    # Phase 1: Parse
-    "parse_document_node",
-    # Phase 2: Analyze
-    "analyze_structure_node",
-    # Phase 3: Plan
-    "plan_edits_node",
-    # Phase 4: Execute
-    "route_to_edit_workers",
-    "execute_structure_edits_worker",
-    "execute_generation_edit_worker",
-    "execute_removal_edit_worker",
-    "assemble_edits_node",
-    # Phase 5: Verify Structure
-    "verify_structure_node",
-    "check_structure_complete",
-    # Phase 6: Detect Citations
-    "detect_citations_node",
+    # V2 Structure Phase
+    "v2_analyze_node",
+    "v2_rewrite_router_node",
+    "v2_route_to_rewriters",
+    "v2_rewrite_section_node",
+    "v2_reassemble_node",
+    # Bridge
+    "v2_to_v1_bridge_node",
+    # Citation routing
+    "extract_citation_keys",
     "route_to_enhance_or_polish",
-    # Phase 7: Enhance (when has_citations)
+    # V1 Enhancement Phase
     "route_to_enhance_sections",
     "enhance_section_worker",
     "assemble_enhancements_node",
     "enhance_coherence_review_node",
     "route_enhance_iteration",
-    # Phase 8: Polish
+    # V1 Polish Phase
     "polish_node",
-    # Phase 9: Finalize
+    # V1 Finalize
     "finalize_node",
 ]

@@ -328,6 +328,11 @@ async def plan_edits_node(state: dict) -> dict[str, Any]:
         f"{len(edit_plan.removal_edits)} removal"
     )
 
+    # Log detailed edit information for debugging
+    for edit in valid_edits:
+        edit_dict = edit.model_dump()
+        logger.debug(f"  Edit: {edit.edit_type} - {edit_dict}")
+
     return {
         "edit_plan": edit_plan.model_dump(),
         "plan_complete": True,

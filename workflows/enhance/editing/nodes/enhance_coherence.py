@@ -21,7 +21,7 @@ async def enhance_coherence_review_node(state: dict) -> dict[str, Any]:
     that may need additional enhancement in the next iteration.
     """
     document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
+        state["updated_document_model"]
     )
     topic = state["input"]["topic"]
     iteration = state.get("enhance_iteration", 0)

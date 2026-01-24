@@ -10,7 +10,7 @@ from langsmith import traceable
 from workflows.shared.quality_config import QualityTier
 
 from ..quality_presets import EDITING_QUALITY_PRESETS
-from ..state import EditingState, build_initial_state
+from ..state import build_initial_state
 from .construction import editing_graph
 
 logger = logging.getLogger(__name__)
@@ -113,13 +113,17 @@ async def editing(
         elif errors and status == "success":
             status = "partial"
 
-        # Count sections processed
-        document_model = result.get("document_model", {})
-        source_count = document_model.get("section_count", 0) if document_model else 0
+        # Count sections from V2 state
+        sections = result.get("sections", [])
+        source_count = len(sections)
+
+        # Track sections modified during V2 structure phase
+        rewritten_sections = result.get("rewritten_sections", [])
+        sections_modified = len(rewritten_sections)
 
         logger.info(
             f"Editing workflow completed: status={status}, "
-            f"sections={source_count}, errors={len(errors)}"
+            f"sections={source_count}, modified={sections_modified}, errors={len(errors)}"
         )
 
         return {
@@ -131,9 +135,10 @@ async def editing(
             "started_at": initial_state["started_at"],
             "completed_at": result.get("completed_at", datetime.utcnow()),
             "changes_summary": result.get("changes_summary", ""),
-            # Additional context
-            "structure_iterations": result.get("structure_iteration", 0),
-            "final_verification": result.get("final_verification", {}),
+            # V2 verification
+            "verification": result.get("verification", {}),
+            # Section stats
+            "sections_modified": sections_modified,
         }
 
     except Exception as e:

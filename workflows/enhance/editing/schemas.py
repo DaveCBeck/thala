@@ -1,7 +1,9 @@
 """Pydantic schemas for structured LLM outputs in editing workflow."""
 
+import re
 from typing import Literal, Optional, Union
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, computed_field
 
 
 # =============================================================================
@@ -499,3 +501,240 @@ class FinalVerification(BaseModel):
         return (
             self.coherence_score + self.completeness_score + self.flow_score
         ) / 3.0
+
+
+# =============================================================================
+# V2 Structure Phase Schemas
+# =============================================================================
+
+
+class TopLevelSection(BaseModel):
+    """Top-level section (H1) with full content including subsections.
+
+    The document is split into top-level sections only. Subsections are
+    included in their parent's full_content. This makes:
+    - Section identification trivial (just split on `\n# `)
+    - Rewriting holistic (entire chapter with context)
+    - Reassembly simple (concatenate in order)
+    """
+
+    index: int = Field(description="Position in document (0-based)")
+    heading: str = Field(description="H1 heading text (without the # prefix)")
+    full_content: str = Field(description="Full markdown including all subsections")
+
+    @computed_field
+    @property
+    def word_count(self) -> int:
+        """Count words in the section content."""
+        return len(self.full_content.split())
+
+    @computed_field
+    @property
+    def citations(self) -> list[str]:
+        """Extract all [@KEY] citation patterns from content."""
+        # Match [@anything] but not [^footnotes]
+        pattern = r"\[@[^\]]+\]"
+        return list(set(re.findall(pattern, self.full_content)))
+
+
+class EditInstruction(BaseModel):
+    """Instruction for editing a section.
+
+    Each instruction specifies what to do with a section:
+    - rewrite: Improve flow, clarity, structure
+    - expand: Add content (intro, conclusion, synthesis)
+    - condense: Remove redundancy, tighten prose
+    - merge_into: Merge another section into this one
+    - delete: Remove entirely
+    """
+
+    section_index: int = Field(description="Index of the section to modify")
+    instruction_type: Literal["rewrite", "expand", "condense", "merge_into", "delete"] = Field(
+        description="Type of edit to perform"
+    )
+    details: str = Field(description="Specific guidance for the LLM")
+    merge_source_index: int | None = Field(
+        default=None, description="For merge_into: index of section to merge from"
+    )
+
+
+class GlobalAnalysisResult(BaseModel):
+    """Result from V2 Phase 1 global analysis.
+
+    The LLM analyzes the full document and outputs:
+    - A list of sections that need work
+    - What kind of work each section needs
+    - Specific instructions for each change
+    """
+
+    document_summary: str = Field(description="Brief summary of document purpose and structure")
+    overall_assessment: str = Field(
+        description="Assessment of document's structural quality (1-2 sentences)"
+    )
+    instructions: list[EditInstruction] = Field(
+        default_factory=list, description="List of edit instructions for sections needing work"
+    )
+
+
+class SectionValidation(BaseModel):
+    """Validation result for a rewritten section.
+
+    Checks:
+    - Length within tolerance (warnings for aggressive changes, failures only for extreme cases)
+    - All citations preserved
+    - No hallucinated citations added
+    """
+
+    original_word_count: int
+    rewritten_word_count: int
+
+    @computed_field
+    @property
+    def length_ratio(self) -> float:
+        """Ratio of rewritten to original length."""
+        if self.original_word_count == 0:
+            return 1.0
+        return self.rewritten_word_count / self.original_word_count
+
+    original_citations: list[str] = Field(default_factory=list)
+    rewritten_citations: list[str] = Field(default_factory=list)
+
+    # Warning for aggressive length changes (doesn't fail validation)
+    length_warning: str | None = Field(default=None)
+
+    @computed_field
+    @property
+    def citations_preserved(self) -> bool:
+        """Check if all original citations are preserved."""
+        return set(self.original_citations).issubset(set(self.rewritten_citations))
+
+    @computed_field
+    @property
+    def citations_added(self) -> list[str]:
+        """Citations in rewritten that weren't in original (potential hallucinations)."""
+        return list(set(self.rewritten_citations) - set(self.original_citations))
+
+    passes_validation: bool = False
+    rejection_reason: str | None = None
+
+
+class RewrittenSection(BaseModel):
+    """Output from section rewriting in V2 Phase 2."""
+
+    section_index: int = Field(description="Index of the original section")
+    instruction_type: str = Field(description="Type of edit that was performed")
+    original_heading: str = Field(description="Original section heading")
+    new_content: str = Field(description="Rewritten section content (full markdown)")
+    validation: SectionValidation = Field(description="Validation results")
+    merge_source_index: int | None = Field(
+        default=None, description="If merge: index of merged section"
+    )
+
+
+class V2FinalVerification(BaseModel):
+    """Final verification result for the V2 reassembled document."""
+
+    coherence_score: float = Field(
+        ge=0.0, le=1.0, description="Overall coherence (0-1)"
+    )
+    flow_assessment: str = Field(description="Assessment of document flow")
+    issues_found: list[str] = Field(
+        default_factory=list, description="Any remaining issues detected"
+    )
+    recommendation: Literal["accept", "review", "reject"] = Field(
+        description="Recommendation for the final document"
+    )
+
+
+def _parse_sections_at_level(document: str, level: int) -> list[TopLevelSection]:
+    """Parse sections at a specific heading level.
+
+    Args:
+        document: Full markdown document
+        level: Heading level (1 for H1, 2 for H2)
+
+    Returns:
+        List of TopLevelSection objects
+    """
+    sections = []
+    prefix = "#" * level + " "
+    pattern = rf"\n(?={re.escape(prefix[:-1])} )"  # Match \n followed by ## (for H2)
+
+    parts = re.split(pattern, document)
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        if part.startswith(prefix):
+            # Extract heading from first line
+            lines = part.split("\n", 1)
+            heading = lines[0][len(prefix):].strip()
+            content = part
+        elif part.startswith("#" * level + " "):
+            # Handle case where first char is already the heading marker
+            lines = part.split("\n", 1)
+            heading = lines[0][level + 1:].strip()
+            content = part
+        else:
+            # Content before first heading at this level
+            heading = "Preamble"
+            content = part
+
+        sections.append(
+            TopLevelSection(
+                index=len(sections),
+                heading=heading,
+                full_content=content,
+            )
+        )
+
+    return sections
+
+
+def parse_sections(document: str, min_sections: int = 3) -> list[TopLevelSection]:
+    """Parse a markdown document into top-level sections.
+
+    First attempts to split on H1 (`# `). If fewer than min_sections H1
+    sections are found, falls back to H2 (`## `) - useful for documents
+    that use H1 for title only with H2 for substantive sections.
+
+    Content before the first heading is included as "Preamble".
+
+    Args:
+        document: Full markdown document
+        min_sections: Minimum sections needed before falling back to H2
+
+    Returns:
+        List of TopLevelSection objects
+    """
+    # Try H1 sections first
+    sections = _parse_sections_at_level(document, level=1)
+
+    # Count substantive sections (excluding preamble)
+    substantive_h1 = [s for s in sections if s.heading != "Preamble"]
+
+    if len(substantive_h1) < min_sections:
+        # Fall back to H2 sections
+        h2_sections = _parse_sections_at_level(document, level=2)
+        substantive_h2 = [s for s in h2_sections if s.heading != "Preamble"]
+
+        if len(substantive_h2) >= len(substantive_h1):
+            # H2 gives us more sections, use it
+            return h2_sections
+
+    return sections
+
+
+def extract_v2_citations(text: str) -> list[str]:
+    """Extract all [@KEY] citation patterns from text.
+
+    Args:
+        text: Text to search for citations
+
+    Returns:
+        Deduplicated list of citation patterns found
+    """
+    pattern = r"\[@[^\]]+\]"
+    return list(set(re.findall(pattern, text)))

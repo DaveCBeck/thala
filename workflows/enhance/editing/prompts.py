@@ -82,6 +82,9 @@ CRITICAL CONSTRAINTS:
 3. Focus on the MOST CRITICAL issues first
 4. Do NOT propose duplicate edits (e.g., two generate_conclusion edits)
 5. For document-level edits (like document conclusion), propose only ONE
+6. Do NOT consolidate Abstract and Introduction sections - they serve different purposes
+   (Abstract summarizes findings, Introduction provides context and research questions)
+7. Prefer trim_redundancy over consolidate for removing duplicate content while preserving section structure
 
 Ordering principles:
 1. Structure additions (intro/conclusion) before moves
@@ -208,7 +211,7 @@ Task: Generate a {transition_type} transition between these sections.
 
 Target length: approximately {target_words} words
 
-Write a smooth transition paragraph. Output only the transition text."""
+Write a smooth transition paragraph. Output only the transition text, no markdown headers or formatting."""
 
 # =============================================================================
 # Phase 4: Consolidation
@@ -238,7 +241,7 @@ Create a unified section that:
 - Organizes content logically
 - Reads as coherent prose
 
-Output only the consolidated content, no commentary."""
+Output only the consolidated content as plain prose, no commentary or markdown headers."""
 
 # =============================================================================
 # Phase 5: Structure Verification
@@ -535,3 +538,216 @@ If coherence is high enough and no sections need work, the enhancement phase is 
 
 # Note: Fact-check and reference-check prompts are now in
 # workflows.enhance.fact_check.prompts
+
+
+# =============================================================================
+# V2 STRUCTURE PHASE PROMPTS
+# =============================================================================
+
+# V2 Phase 1: Global Analysis
+V2_GLOBAL_ANALYSIS_SYSTEM = """You are an expert document structure analyst specializing in academic and technical writing.
+
+Your task is to analyze a document and identify sections that need structural improvements. Focus on issues that affect readability, flow, and comprehension.
+
+ANALYSIS FOCUS AREAS:
+1. Missing introductions - Sections that dive into content without context
+2. Missing conclusions - Sections that end abruptly without synthesis
+3. Content sprawl - The same topic discussed in multiple disconnected places
+4. Duplicate discussions - Redundant content that should be consolidated
+5. Weak transitions - Abrupt shifts between sections
+6. Sections that should be merged - Related content artificially separated
+7. Overly long sections - Content that would benefit from splitting or condensing
+
+INSTRUCTION TYPES:
+- "rewrite": Improve flow, clarity, and structure of the section
+- "expand": Add synthesis content ONLY (introductions, conclusions, transitions that summarize/connect existing content - NO new factual claims)
+- "condense": Remove redundancy, tighten prose, improve density
+- "merge_into": Combine this section with content from another section
+- "delete": Remove the section entirely (rare, only for truly redundant content)
+
+CRITICAL CONSTRAINT FOR "expand":
+The "expand" instruction is ONLY for adding meta-content that synthesizes or connects existing cited content:
+- Opening paragraphs that preview what the section will cover
+- Closing paragraphs that summarize the section's key points
+- Transitional sentences that connect ideas already present
+- Framing that helps readers understand the significance of existing content
+
+"expand" must NEVER add:
+- New factual claims or data not already in the document
+- New citations or references
+- New arguments or conclusions not supported by existing cited content
+
+GUIDELINES:
+- Be conservative - only flag sections with clear structural issues
+- Provide specific, actionable instructions in the 'details' field
+- For merges, identify both the target section (section_index) and source (merge_source_index)
+- Consider the document's overall narrative flow when making recommendations
+- Preserve the author's voice and intent"""
+
+V2_GLOBAL_ANALYSIS_USER = """Analyze the following document and identify sections that need structural improvements.
+
+## Document Topic
+{topic}
+
+## Full Document
+{document}
+
+## Sections Found
+{sections_summary}
+
+## Instructions
+1. Assess the document's overall structure and flow
+2. Identify specific sections that have structural issues
+3. For each problematic section, specify:
+   - The section index (0-based, as shown in Sections Found)
+   - The type of edit needed (rewrite, expand, condense, merge_into, delete)
+   - Specific instructions for improvement
+
+Focus on structural issues like:
+- Missing introductions or conclusions
+- Content sprawl (same topic in multiple places)
+- Duplicate or redundant discussions
+- Weak transitions between sections
+- Sections that should be merged
+
+Be conservative - only flag sections with clear issues that significantly impact readability."""
+
+# V2 Phase 2: Section Rewriting
+V2_SECTION_REWRITE_SYSTEM = """You are an expert academic editor specializing in structural improvements to documents.
+
+Your task is to rewrite a section following specific instructions while maintaining:
+- All citations exactly as written ([@Key] format)
+- The document's academic tone and voice
+- Smooth flow with preceding and following sections
+- Appropriate length (within ±30% of original unless instructed otherwise)
+
+CITATION RULES (CRITICAL):
+- You MUST preserve every citation from the original section
+- Citations look like [@AuthorYear] or [@Key1; @Key2]
+- Copy citations exactly - do not modify, combine, or fabricate citations
+- If the original has [@Smith2023], your output must have [@Smith2023]
+- NEVER add new citations that weren't in the original
+
+REWRITING GUIDELINES:
+- Read the instruction carefully and follow it precisely
+- Consider how the section flows from the previous section
+- Consider how the section leads into the next section
+- Improve clarity and structure while preserving key content
+- Do not add new factual claims - only synthesize existing cited content
+- Maintain consistent terminology throughout
+
+SPECIAL RULES FOR "expand" INSTRUCTIONS:
+When the instruction type is "expand", you may ONLY add:
+- Introductory paragraphs that preview/frame the section's existing content
+- Concluding paragraphs that summarize the section's key points
+- Transitional sentences connecting ideas already present in the text
+- Meta-commentary that helps readers navigate the existing content
+
+You must NOT add:
+- New factual claims, data, or findings
+- New citations or references
+- New arguments not directly derivable from existing cited content
+- Speculative content or opinions"""
+
+V2_SECTION_REWRITE_USER = """Rewrite the following section according to the instructions provided.
+
+## Document Context
+Topic: {topic}
+
+## Previous Section (ending ~500 words for context)
+{prev_section_context}
+
+## Current Section to Rewrite
+Heading: {section_heading}
+Original content:
+{section_content}
+
+## Next Section (beginning ~500 words for context)
+{next_section_context}
+
+## Edit Instructions
+Type: {instruction_type}
+Details: {instruction_details}
+
+## Requirements
+- Original word count: {original_word_count} words
+- Target word count: {target_min}-{target_max} words
+- Citations that MUST be preserved: {citations}
+
+## Output Format
+Output ONLY the rewritten section content in markdown format.
+- Start with the section heading (# Heading)
+- Include all subsections if present
+- Do not include any commentary or explanations
+- Do not include any meta-text like "Here is the rewritten section"
+
+Begin the rewritten section now:"""
+
+# V2 Phase 2 Variant: Merge Rewriting
+V2_SECTION_MERGE_USER = """Merge two sections into a single cohesive section.
+
+## Document Context
+Topic: {topic}
+
+## Previous Section (ending ~500 words for context)
+{prev_section_context}
+
+## Primary Section (to keep and expand)
+Heading: {primary_heading}
+Content:
+{primary_content}
+
+## Section to Merge Into Primary
+Heading: {merge_heading}
+Content:
+{merge_content}
+
+## Next Section (beginning ~500 words for context)
+{next_section_context}
+
+## Instructions
+{instruction_details}
+
+## Requirements
+- Target word count: {target_min}-{target_max} words (combined sections were {combined_word_count} words)
+- All citations from BOTH sections MUST be preserved: {all_citations}
+- Create a unified section that integrates content from both sources
+- Eliminate redundancy while keeping all unique information
+- Use the primary section's heading unless a new heading better captures the merged content
+
+## Output Format
+Output ONLY the merged section content in markdown format.
+- Start with the section heading (# Heading)
+- Do not include any commentary or explanations
+
+Begin the merged section now:"""
+
+# V2 Phase 3: Final Verification
+V2_VERIFICATION_SYSTEM = """You are a document quality assessor. Your task is to evaluate the coherence and flow of a document after structural edits.
+
+ASSESSMENT CRITERIA:
+1. Coherence (0.0-1.0): Does the document flow logically from section to section?
+2. Completeness: Are there any obvious gaps or missing elements?
+3. Consistency: Is the tone, terminology, and level of detail consistent?
+4. Transitions: Do sections connect smoothly or are there abrupt shifts?
+
+Provide an honest, critical assessment. Do not inflate scores."""
+
+V2_VERIFICATION_USER = """Assess the coherence and quality of this document after structural editing.
+
+## Document Topic
+{topic}
+
+## Document After Editing
+{document}
+
+## Changes Made
+{changes_summary}
+
+## Assessment Instructions
+1. Rate the overall coherence (0.0 to 1.0)
+2. Assess the document's flow and transitions
+3. Identify any remaining issues
+4. Provide a recommendation: accept (publish-ready), review (minor issues), or reject (major issues)
+
+Be critical and honest in your assessment."""

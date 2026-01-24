@@ -19,50 +19,37 @@ class EditingState(TypedDict, total=False):
 
     Follows the standard workflow state pattern with reducers
     for accumulating results from parallel operations.
+
+    V2 Structure Phase: Uses simplified 3-phase approach (analyze → rewrite → reassemble)
+    before transitioning to V1 Enhancement and Polish phases via bridge node.
     """
 
     # === Input ===
     input: EditingInput
     quality_settings: dict[str, Any]  # Quality tier configuration
 
-    # === Phase 1: Parse ===
-    document_model: dict  # Serialized DocumentModel
-    parse_complete: bool
-    parse_warnings: list[str]
-
-    # === Phase 2: Analyze ===
-    structural_analysis: dict  # Serialized StructuralAnalysis
+    # === V2 Structure Phase 1: Analyze ===
+    sections: list[dict]  # V2 TopLevelSection list
+    edit_instructions: list[dict]  # V2 EditInstruction list
     analysis_complete: bool
 
-    # === Phase 3: Plan ===
-    edit_plan: dict  # Serialized EditPlan
-    plan_complete: bool
+    # === V2 Structure Phase 2: Rewrite ===
+    # Accumulates results from parallel rewriters using add reducer
+    rewritten_sections: Annotated[list[dict], add]  # V2 RewrittenSection results
+    rewriting_complete: bool
 
-    # === Phase 4: Execute ===
-    # Accumulates results from parallel workers using add reducer
-    completed_edits: Annotated[list[dict], add]
-    execution_complete: bool
+    # === V2 Structure Phase 3: Reassemble ===
+    final_document: str  # V2 output (markdown) before bridge
+    verification: dict  # V2 coherence verification
 
-    # === Phase 5: Verify Structure ===
-    updated_document_model: dict  # After structural edits
-    structure_verification: dict
-    needs_more_structure_work: bool
-
-    # Coherence regression detection
-    baseline_coherence_score: Optional[float]  # From initial structural analysis
-    coherence_regression_detected: bool
-    coherence_regression_warning: Optional[str]
-    coherence_regression_retry_used: bool  # Track if we've already retried after a regression
-
-    # === Iteration Tracking (Structure) ===
-    structure_iteration: int
-    max_structure_iterations: int
+    # === Bridge (V2 → V1) ===
+    updated_document_model: dict  # DocumentModel for Enhancement phase
 
     # === Citation Detection ===
     has_citations: bool  # Auto-detected from document
     citation_keys: list[str]  # All [@KEY] found
 
-    # === Phase 6: Enhance (when has_citations=True) ===
+    # === Enhancement Phase (when has_citations=True) ===
     enhance_iteration: int  # Current iteration (0-based)
     max_enhance_iterations: int  # From quality settings
     section_enhancements: Annotated[list[dict], add]  # Results from parallel workers
@@ -70,16 +57,9 @@ class EditingState(TypedDict, total=False):
     enhance_flagged_sections: list[str]  # Section IDs needing re-enhancement
     enhance_complete: bool
 
-    # Note: Fact-check and reference-check are now in a separate workflow
-    # (workflows.enhance.fact_check) that runs after editing.
-
-    # === Phase 7: Polish ===
+    # === Polish Phase ===
     polish_results: list[dict]
     polish_complete: bool
-
-    # === Phase 8: Finalize ===
-    final_document: str
-    final_verification: dict
 
     # === Metadata (standard workflow fields) ===
     langsmith_run_id: str
@@ -107,37 +87,29 @@ def build_initial_state(
     Returns:
         Initialized EditingState
     """
-    max_structure_iterations = quality_settings.get("max_structure_iterations", 3)
     max_enhance_iterations = quality_settings.get("max_enhance_iterations", 3)
 
     return EditingState(
         input=EditingInput(document=document, topic=topic),
         quality_settings=quality_settings,
-        # Phase tracking
-        parse_complete=False,
+        # V2 Structure Phase tracking
         analysis_complete=False,
-        plan_complete=False,
-        execution_complete=False,
-        enhance_complete=False,
-        polish_complete=False,
-        # Structure iteration control
-        structure_iteration=0,
-        max_structure_iterations=max_structure_iterations,
-        needs_more_structure_work=False,
-        # Coherence regression detection
-        baseline_coherence_score=None,
-        coherence_regression_detected=False,
-        coherence_regression_warning=None,
-        coherence_regression_retry_used=False,
-        # Citation detection (set during parse)
+        rewriting_complete=False,
+        # V2 Structure Phase accumulators
+        sections=[],
+        edit_instructions=[],
+        rewritten_sections=[],
+        # Citation detection (set by bridge node)
         has_citations=False,
         citation_keys=[],
         # Enhancement iteration control
         enhance_iteration=0,
         max_enhance_iterations=max_enhance_iterations,
         enhance_flagged_sections=[],
+        enhance_complete=False,
+        # Polish tracking
+        polish_complete=False,
         # Accumulators (start empty, use add reducer)
-        completed_edits=[],
         section_enhancements=[],
         errors=[],
         # Metadata

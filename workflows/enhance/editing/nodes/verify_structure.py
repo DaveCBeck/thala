@@ -118,6 +118,9 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
     )
 
     logger.info("Verifying structure after edits")
+    logger.debug(f"  Original model: {original_model.section_count} sections, {original_model.total_words} words")
+    logger.debug(f"  Updated model: {updated_model.section_count} sections, {updated_model.total_words} words")
+    logger.debug(f"  Edits summary:\n{edits_summary}")
 
     try:
         verification = await get_structured_output(
@@ -199,11 +202,24 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
                         }
 
         # === Normal flow (no regression or regression not confirmed) ===
-        needs_more = (
+        # Consider another iteration if:
+        # - Coherence is below threshold, OR regressions were detected
+        # - AND verification indicates more work is needed
+        # - AND we haven't hit max iterations
+        has_issues = (
             verification.coherence_score < min_coherence
+            or len(verification.regressions) > 0
+        )
+        needs_more = (
+            has_issues
             and verification.needs_another_iteration
             and iteration < max_iterations - 1
         )
+
+        if verification.regressions and not needs_more:
+            logger.warning(
+                f"Regressions detected but not iterating: {verification.regressions[:3]}"
+            )
 
         return {
             "structure_verification": verification.model_dump(),

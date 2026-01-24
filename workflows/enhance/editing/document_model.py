@@ -38,11 +38,16 @@ def _normalize_heading(text: str) -> str:
     return re.sub(r'[^a-z]', '', text)
 
 
-def _strip_leading_header(content: str, section_heading: str) -> str:
-    """Strip leading markdown header if it matches section heading.
+def _strip_leading_header(content: str, section_heading: str | None = None) -> str:
+    """Strip leading markdown header from content.
 
-    When LLM-generated content includes a header that duplicates the section's
-    own heading, this removes the duplicate to avoid double headers in output.
+    Args:
+        content: The content to process
+        section_heading: If provided, only strip header if it matches this heading.
+                        If None, strip ANY leading markdown header.
+
+    When LLM-generated content includes a header (despite instructions not to),
+    this removes it to avoid breaking document structure.
     """
     # Match markdown header at start of content
     header_match = re.match(r'^(#{1,6})\s+(.+?)(?:\n|$)', content.strip())
@@ -51,9 +56,13 @@ def _strip_leading_header(content: str, section_heading: str) -> str:
 
     header_text = header_match.group(2).strip()
 
-    # Compare normalized headings
+    # If no section_heading provided, strip any header unconditionally
+    if section_heading is None:
+        stripped = content.strip()[header_match.end():].lstrip('\n')
+        return stripped
+
+    # Otherwise only strip if it matches the section heading
     if _normalize_heading(header_text) == _normalize_heading(section_heading):
-        # Strip the duplicate header line
         stripped = content.strip()[header_match.end():].lstrip('\n')
         return stripped
 
@@ -367,9 +376,9 @@ class DocumentModel:
             lines.append("")
             for i, block in enumerate(section.blocks):
                 content = block.content
-                # Strip leading header from first block if it duplicates section heading
-                if i == 0:
-                    content = _strip_leading_header(content, section.heading)
+                # Strip any leading markdown headers from blocks
+                # (LLMs sometimes add headers even when instructed not to)
+                content = _strip_leading_header(content, section.heading)
                 if content.strip():  # Only add non-empty content
                     lines.append(content)
                     lines.append("")

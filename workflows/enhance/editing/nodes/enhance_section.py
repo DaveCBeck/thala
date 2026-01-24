@@ -271,7 +271,7 @@ async def assemble_enhancements_node(state: dict) -> dict[str, Any]:
     """
     logger.info("[DIAG] assemble_enhancements_node STARTING")
     document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
+        state["updated_document_model"]
     )
     enhancements = state.get("section_enhancements", [])
     logger.info(f"[DIAG] assemble_enhancements_node got {len(enhancements)} enhancements")

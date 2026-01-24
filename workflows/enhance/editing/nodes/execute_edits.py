@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import re
 from typing import Any
 
 from langsmith import traceable
@@ -24,6 +25,20 @@ from workflows.enhance.editing.prompts import (
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_generated_header(content: str, edit_type: str) -> str:
+    """Strip any leading markdown header from LLM-generated content.
+
+    LLMs sometimes add headers like "# Synthesis" or "# Transition" even when
+    instructed not to. This removes them to prevent document structure issues.
+    """
+    header_match = re.match(r'^#{1,6}\s+.+?\n', content)
+    if header_match:
+        stripped = content[header_match.end():].lstrip()
+        logger.debug(f"Stripped unwanted header from {edit_type} output")
+        return stripped
+    return content
 
 
 def _flatten_sections(sections: list[Section]) -> list[Section]:
@@ -142,7 +157,7 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 {"role": "system", "content": GENERATE_INTRODUCTION_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ])
-            generated = response.content.strip()
+            generated = _strip_generated_header(response.content.strip(), edit_type)
 
         elif edit_type == "generate_conclusion":
             context_content = ""
@@ -164,7 +179,7 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 {"role": "system", "content": GENERATE_CONCLUSION_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ])
-            generated = response.content.strip()
+            generated = _strip_generated_header(response.content.strip(), edit_type)
 
         elif edit_type == "generate_synthesis":
             section = document_model.get_section(edit_data["target_section_id"])
@@ -184,7 +199,7 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 {"role": "system", "content": GENERATE_SYNTHESIS_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ])
-            generated = response.content.strip()
+            generated = _strip_generated_header(response.content.strip(), edit_type)
 
         elif edit_type == "generate_transition":
             from_section = document_model.get_section(edit_data["from_section_id"])
@@ -210,7 +225,7 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 {"role": "system", "content": GENERATE_TRANSITION_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ])
-            generated = response.content.strip()
+            generated = _strip_generated_header(response.content.strip(), edit_type)
 
         else:
             logger.warning(f"Unknown generation edit type: {edit_type}")
@@ -332,6 +347,7 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
                         {"role": "system", "content": CONSOLIDATE_CONTENT_SYSTEM},
                         {"role": "user", "content": user_prompt},
                     ])
+                    consolidated = _strip_generated_header(response.content.strip(), edit_type)
 
                     results.append({
                         "edit_type": edit_type,
@@ -339,7 +355,7 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
                         "operation": "consolidate",
                         "source_block_ids": edit_data["source_block_ids"],
                         "target_section_id": edit_data["target_section_id"],
-                        "consolidated_content": response.content.strip(),
+                        "consolidated_content": consolidated,
                     })
                 else:
                     results.append({
@@ -447,6 +463,38 @@ def _find_section_in_list(sections: list[Section], section_id: str) -> Section |
     return None
 
 
+def _remove_empty_sections(sections: list[Section]) -> tuple[list[Section], int]:
+    """Remove sections that have no content and no subsections with content.
+
+    Returns:
+        Tuple of (cleaned sections list, count of removed sections)
+    """
+    removed_count = 0
+    result = []
+
+    for section in sections:
+        # Recursively clean subsections first
+        section.subsections, sub_removed = _remove_empty_sections(section.subsections)
+        removed_count += sub_removed
+
+        # Keep section if it has blocks or non-empty subsections
+        has_content = bool(section.blocks) or bool(section.subsections)
+
+        # Also keep reference sections even if empty (they may be placeholders)
+        is_reference = any(
+            kw in section.heading.lower()
+            for kw in ["reference", "bibliography", "works cited"]
+        )
+
+        if has_content or is_reference:
+            result.append(section)
+        else:
+            logger.debug(f"Removing empty section: {section.heading} ({section.section_id})")
+            removed_count += 1
+
+    return result, removed_count
+
+
 @traceable(run_type="chain", name="EditingAssembleEdits")
 async def assemble_edits_node(state: dict) -> dict[str, Any]:
     """Assemble completed edits into updated document model.
@@ -478,6 +526,7 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
 
     for edit in successful_edits:
         edit_type = edit.get("edit_type", "")
+        logger.debug(f"  Processing edit: {edit_type} - {edit}")
 
         if edit_type == "generate_introduction":
             # Add introduction to preamble or section
@@ -612,8 +661,42 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
                     placement_issues.append(f"Could not find from_section_id {from_id} for transition")
                     logger.warning(f"Could not find from_section {from_id} for transition")
 
-        # Note: section_move, section_merge, consolidate, delete would need
+        elif edit_type == "consolidate":
+            content = edit.get("consolidated_content", "")
+            target_id = edit.get("target_section_id")
+            source_block_ids = set(edit.get("source_block_ids", []))
+
+            if content and target_id:
+                # Find target section and add consolidated content
+                target_section = _find_section_in_list(new_sections, target_id)
+                if target_section:
+                    # Add consolidated content as new block at start of section
+                    new_block = ContentBlock.from_content(content, "paragraph")
+                    target_section.blocks.insert(0, new_block)
+                    logger.debug(f"Added consolidated content to section {target_id}")
+
+                    # Remove source blocks from ALL sections
+                    def remove_source_blocks(sections: list[Section]):
+                        for section in sections:
+                            section.blocks = [
+                                b for b in section.blocks
+                                if b.block_id not in source_block_ids
+                            ]
+                            remove_source_blocks(section.subsections)
+
+                    remove_source_blocks(new_sections)
+                    logger.debug(f"Removed {len(source_block_ids)} source blocks after consolidation")
+                else:
+                    placement_issues.append(f"Could not find target_section_id {target_id} for consolidate")
+                    logger.warning(f"Could not find target section {target_id} for consolidate")
+
+        # Note: section_move, section_merge, delete would need
         # more complex handling - for now we log them
+
+    # Clean up empty sections (formatting artifacts, emptied by consolidation, etc.)
+    new_sections, removed_count = _remove_empty_sections(new_sections)
+    if removed_count > 0:
+        logger.info(f"Removed {removed_count} empty sections during assembly")
 
     # Create updated model from deep-copied sections
     updated_model = DocumentModel(

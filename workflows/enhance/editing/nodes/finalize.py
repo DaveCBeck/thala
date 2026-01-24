@@ -25,7 +25,7 @@ async def finalize_node(state: dict) -> dict[str, Any]:
     performs final quality verification.
     """
     document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
+        state["updated_document_model"]
     )
     topic = state["input"]["topic"]
 
@@ -42,35 +42,25 @@ async def finalize_node(state: dict) -> dict[str, Any]:
         f"{document_model.section_count} sections"
     )
 
-    # Build changes summary
-    completed_edits = state.get("completed_edits", [])
+    # Build changes summary (V2 structure + V1 enhancement/polish)
+    rewritten_sections = state.get("rewritten_sections", [])
+    section_enhancements = state.get("section_enhancements", [])
     polish_results = state.get("polish_results", [])
-    structure_iteration = state.get("structure_iteration", 1)
 
-    successful_structure = sum(
-        1 for e in completed_edits
-        if e.get("success") and e.get("edit_type") in (
-            "section_move", "section_merge", "consolidate"
-        )
-    )
-    successful_generation = sum(
-        1 for e in completed_edits
-        if e.get("success") and e.get("edit_type", "").startswith("generate_")
-    )
-    successful_removal = sum(
-        1 for e in completed_edits
-        if e.get("success") and e.get("edit_type") in (
-            "delete_redundant", "trim_redundancy"
-        )
-    )
+    # Count V2 structure phase changes
+    sections_rewritten = len(rewritten_sections)
+    sections_deleted = sum(1 for r in rewritten_sections if r.get("instruction_type") == "delete")
+    sections_merged = sum(1 for r in rewritten_sections if r.get("instruction_type") == "merge_into")
+
+    # Count V1 enhancement/polish changes
+    successful_enhance = sum(1 for e in section_enhancements if e.get("success"))
     successful_polish = sum(1 for r in polish_results if r.get("success"))
 
     changes_summary = (
-        f"Structural edits: {successful_structure} moves/merges/consolidations. "
-        f"Generated: {successful_generation} intros/conclusions/transitions. "
-        f"Removed: {successful_removal} redundant sections. "
-        f"Polish: {successful_polish} flow improvements. "
-        f"Iterations: {structure_iteration} structure, 1 polish."
+        f"V2 Structure: {sections_rewritten} sections rewritten "
+        f"({sections_deleted} deleted, {sections_merged} merged). "
+        f"Enhancement: {successful_enhance} sections improved. "
+        f"Polish: {successful_polish} flow improvements."
     )
 
     # Final verification - pass full document for accurate assessment

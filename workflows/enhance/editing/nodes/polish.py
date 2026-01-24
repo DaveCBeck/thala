@@ -28,7 +28,7 @@ async def polish_node(state: dict) -> dict[str, Any]:
     3. Replace section content with polished version
     """
     document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
+        state["updated_document_model"]
     )
     quality_settings = state.get("quality_settings", {})
     max_polish_sections = quality_settings.get("max_polish_sections", 10)
