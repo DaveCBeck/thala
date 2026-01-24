@@ -1,7 +1,7 @@
 """
 Embedding generation service for stores.
 
-Supports OpenAI and Ollama providers.
+Supports Voyage AI, OpenAI, and Ollama providers.
 """
 
 import logging
@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import numpy as np
+import voyageai
 from dotenv import load_dotenv
 
 from core.utils import generate_cache_key
@@ -23,10 +24,21 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_CACHE_TTL_DAYS = 90
 
-# OpenAI text-embedding-3-small has 8192 token limit
+# Token limits vary by provider
 # Use conservative estimate: ~4 chars per token
-OPENAI_MAX_TOKENS = 8192
+VOYAGE_MAX_TOKENS = 32000  # Voyage AI models have 32K context
+OPENAI_MAX_TOKENS = 8192  # OpenAI text-embedding-3-small
 CHARS_PER_TOKEN_ESTIMATE = 4
+
+
+def get_safe_char_limit(provider: str) -> int:
+    """Get safe character limit based on provider's token limit."""
+    if provider == "voyage":
+        return (VOYAGE_MAX_TOKENS - 500) * CHARS_PER_TOKEN_ESTIMATE  # ~126k chars
+    return (OPENAI_MAX_TOKENS - 200) * CHARS_PER_TOKEN_ESTIMATE  # ~32k chars
+
+
+# Default safe limit for backward compatibility
 SAFE_CHAR_LIMIT = (OPENAI_MAX_TOKENS - 200) * CHARS_PER_TOKEN_ESTIMATE  # ~32k chars
 
 
@@ -216,6 +228,92 @@ class OpenAIEmbeddings(EmbeddingProvider):
         await self._client.aclose()
 
 
+class VoyageAIEmbeddings(EmbeddingProvider):
+    """Voyage AI embeddings provider with native async support."""
+
+    def __init__(
+        self,
+        model: str = "voyage-4-large",
+        api_key: str | None = None,
+    ):
+        self.model = model
+        api_key = api_key or os.environ.get("VOYAGE_API_KEY")
+        if not api_key:
+            raise EmbeddingError(
+                "VOYAGE_API_KEY not set. Set the environment variable or pass api_key.",
+                provider="voyage",
+            )
+        self._client = voyageai.AsyncClient(
+            api_key=api_key,
+            max_retries=3,
+            timeout=60.0,
+        )
+
+    async def embed(self, text: str) -> list[float]:
+        """Generate embedding for text."""
+        cache_key = generate_cache_key(self.model, text)
+        cached = get_cached("embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS)
+        if cached is not None:
+            logger.debug(f"Cache hit for embedding (model={self.model})")
+            return cached
+
+        logger.debug(f"Cache miss, generating embedding (model={self.model})")
+        results = await self.embed_batch([text])
+        embedding = results[0]
+        set_cached("embeddings", cache_key, embedding)
+        return embedding
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts (max 1000 per batch)."""
+        cache_keys = [generate_cache_key(self.model, text) for text in texts]
+        results = [None] * len(texts)
+        uncached_indices = []
+        uncached_texts = []
+
+        # Check cache for each text
+        for i, (text, cache_key) in enumerate(zip(texts, cache_keys)):
+            cached = get_cached(
+                "embeddings", cache_key, ttl_days=EMBEDDING_CACHE_TTL_DAYS
+            )
+            if cached is not None:
+                results[i] = cached
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text)
+
+        if uncached_texts:
+            logger.debug(
+                f"Generating {len(uncached_texts)}/{len(texts)} embeddings "
+                f"({len(texts) - len(uncached_texts)} cached, model={self.model})"
+            )
+        else:
+            logger.debug(f"All {len(texts)} embeddings from cache (model={self.model})")
+
+        # Generate embeddings for uncached texts
+        if uncached_texts:
+            try:
+                response = await self._client.embed(
+                    texts=uncached_texts,
+                    model=self.model,
+                    truncation=True,
+                )
+                new_embeddings = response.embeddings
+
+                # Cache and insert new embeddings
+                for idx, embedding in zip(uncached_indices, new_embeddings):
+                    results[idx] = embedding
+                    set_cached("embeddings", cache_keys[idx], embedding)
+            except Exception as e:
+                logger.error(f"Voyage AI API error: {e}")
+                raise EmbeddingError(str(e), provider="voyage")
+
+        return results
+
+    async def close(self):
+        """Close the client (no-op for Voyage, matches interface)."""
+        pass
+
+
 class OllamaEmbeddings(EmbeddingProvider):
     """Ollama local embeddings provider."""
 
@@ -276,8 +374,9 @@ class EmbeddingService:
     Configurable embedding service.
 
     Configuration via environment variables:
-    - THALA_EMBEDDING_PROVIDER: 'openai' or 'ollama' (default: 'openai')
+    - THALA_EMBEDDING_PROVIDER: 'voyage', 'openai', or 'ollama' (default: 'voyage')
     - THALA_EMBEDDING_MODEL: model name (default depends on provider)
+    - VOYAGE_API_KEY: required for Voyage provider
     - OPENAI_API_KEY: required for OpenAI provider
     - THALA_OLLAMA_HOST: Ollama host (default: http://localhost:11434)
     """
@@ -287,10 +386,17 @@ class EmbeddingService:
         provider: str | None = None,
         model: str | None = None,
     ):
-        provider = provider or os.environ.get("THALA_EMBEDDING_PROVIDER", "openai")
+        provider = provider or os.environ.get("THALA_EMBEDDING_PROVIDER", "voyage")
         self.provider_name = provider
 
-        if provider == "openai":
+        if provider == "voyage":
+            model = model or os.environ.get(
+                "THALA_EMBEDDING_MODEL", "voyage-4-large"
+            )
+            self.model = model
+            self._provider = VoyageAIEmbeddings(model=model)
+            logger.info(f"Initialized Voyage AI embeddings with model={model}")
+        elif provider == "openai":
             model = model or os.environ.get(
                 "THALA_EMBEDDING_MODEL", "text-embedding-3-small"
             )
@@ -307,7 +413,7 @@ class EmbeddingService:
             )
         else:
             raise EmbeddingError(
-                f"Unknown embedding provider: {provider}. Use 'openai' or 'ollama'."
+                f"Unknown embedding provider: {provider}. Use 'voyage', 'openai', or 'ollama'."
             )
 
     async def embed(self, text: str) -> list[float]:
@@ -325,11 +431,13 @@ class EmbeddingService:
         If text exceeds token limits, chunks it and averages the embeddings.
         This preserves semantic information from all parts of the document.
         """
-        if len(text) <= SAFE_CHAR_LIMIT:
+        safe_limit = get_safe_char_limit(self.provider_name)
+
+        if len(text) <= safe_limit:
             return await self.embed(text)
 
-        # Chunk the text
-        chunks = chunk_text_by_sections(text)
+        # Chunk the text using provider-specific limit
+        chunks = chunk_text_by_sections(text, max_chars=safe_limit)
         logger.info(
             f"Text too long for single embedding ({len(text)} chars, ~{estimate_tokens(text)} tokens). "
             f"Chunking into {len(chunks)} parts and averaging."
