@@ -15,6 +15,12 @@ You MUST preserve these citations in your essay where they support claims.
 - Place citations naturally after claims they support
 - You may cite multiple sources: [@key1; @key2]
 - Do not invent new citation keys
+
+## Literature Review Integration
+Beyond your anchor sources, draw in 2-4 additional citations from the literature review excerpt to provide context or corroborate key points. For each:
+- Add a brief explanatory sentence situating the reference
+- Use it to strengthen or qualify a claim, not to introduce new topics
+- Keep these additions minimal—a sentence or two per reference
 """
 
 # =============================================================================
@@ -163,11 +169,11 @@ DEEP_DIVE_USER_TEMPLATE = """## Relevant Source Material:
 
 {source_content}
 
-## Literature Review Context (for additional context only):
+## Literature Review Context (draw 2-4 supporting references from here):
 
 {literature_review_excerpt}
 
-Write the deep-dive article. Remember to preserve [@KEY] citations and stay focused on your assigned theme without duplicating the other deep-dives."""
+Write the deep-dive article. Remember to preserve [@KEY] citations and stay focused on your assigned theme without duplicating the other deep-dives. Weave in a few references from the literature review to strengthen your argument."""
 
 
 # =============================================================================

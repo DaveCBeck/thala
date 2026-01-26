@@ -85,9 +85,25 @@ class OverlapCheckResult(BaseModel):
     overlap_pairs: list[tuple[str, str]] = Field(
         default_factory=list, description="Pairs of overlapping text labels"
     )
+    text_shape_overlaps: list[str] = Field(
+        default_factory=list,
+        description="Text labels that overlap with shapes (e.g., circles, dots)",
+    )
     suggestion: Optional[str] = Field(
         default=None, description="Suggestion for fixing overlaps if found"
     )
+
+
+class BoundsCheckResult(BaseModel):
+    """Result of checking if elements exceed SVG bounds."""
+
+    has_violations: bool = Field(description="Whether any elements exceed bounds")
+    violations: list[str] = Field(
+        default_factory=list,
+        description="Descriptions of elements that exceed bounds",
+    )
+    svg_width: float = Field(default=800, description="SVG viewBox width")
+    svg_height: float = Field(default=600, description="SVG viewBox height")
 
 
 class QualityIssue(BaseModel):
@@ -194,6 +210,7 @@ __all__ = [
     "DiagramAnalysis",
     "DiagramConfig",
     "OverlapCheckResult",
+    "BoundsCheckResult",
     "QualityIssue",
     "DiagramQualityAssessment",
     "DiagramCandidate",

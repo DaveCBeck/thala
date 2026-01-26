@@ -36,10 +36,11 @@ Example with quality refinement:
 from .conversion import convert_svg_to_png
 from .core import generate_diagram
 from .generation import analyze_content_for_diagram, generate_svg_diagram
-from .overlap import check_text_overlaps
+from .overlap import check_bounds_violations, check_text_overlaps, check_text_shape_overlaps
 from .quality_assessment import assess_diagram_quality, generate_refinement_feedback
 from .refinement import refine_diagram_quality
 from .schemas import (
+    BoundsCheckResult,
     DiagramAnalysis,
     DiagramCandidate,
     DiagramConfig,
@@ -61,6 +62,7 @@ __all__ = [
     "DiagramType",
     "DiagramAnalysis",
     "OverlapCheckResult",
+    "BoundsCheckResult",
     # Quality assessment
     "DiagramQualityAssessment",
     "QualityIssue",
@@ -71,5 +73,7 @@ __all__ = [
     "analyze_content_for_diagram",
     "generate_svg_diagram",
     "check_text_overlaps",
+    "check_bounds_violations",
+    "check_text_shape_overlaps",
     "convert_svg_to_png",
 ]

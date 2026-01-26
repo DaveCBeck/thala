@@ -20,7 +20,8 @@ class ImageLocationPlan(BaseModel):
     image_type: Literal["generated", "public_domain", "diagram"] = Field(
         description="Which generation method to use",
     )
-    type_rationale: str = Field(
+    type_rationale: str | None = Field(
+        default=None,
         description="Brief explanation of why this image type was chosen",
     )
     brief: str = Field(

@@ -9,7 +9,7 @@ import logging
 
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 
-from .overlap import check_text_overlaps
+from .overlap import check_bounds_violations, check_text_overlaps, check_text_shape_overlaps
 from .prompts import DIAGRAM_QUALITY_SYSTEM, DIAGRAM_QUALITY_USER
 from .schemas import DiagramAnalysis, DiagramConfig, DiagramQualityAssessment
 
@@ -37,16 +37,48 @@ async def assess_diagram_quality(
         DiagramQualityAssessment with scores and issues, or None on failure
     """
     try:
-        # Run programmatic overlap check
+        # Run programmatic checks to inform the LLM
         overlap_result = check_text_overlaps(svg_content)
+        bounds_result = check_bounds_violations(svg_content)
+        text_shape_overlaps = check_text_shape_overlaps(svg_content)
+
+        # Build comprehensive report for the LLM
+        report_sections = []
+
+        # Text-text overlaps
         if overlap_result.has_overlaps:
-            overlap_report = f"Found {len(overlap_result.overlap_pairs)} overlaps:\n"
+            section = f"⚠️ TEXT OVERLAPS ({len(overlap_result.overlap_pairs)} found):\n"
             for t1, t2 in overlap_result.overlap_pairs[:5]:
-                overlap_report += f'  - "{t1}" overlaps with "{t2}"\n'
+                section += f'  - "{t1}" overlaps with "{t2}"\n'
             if len(overlap_result.overlap_pairs) > 5:
-                overlap_report += f"  - ... and {len(overlap_result.overlap_pairs) - 5} more"
+                section += f"  - ... and {len(overlap_result.overlap_pairs) - 5} more"
+            report_sections.append(section)
         else:
-            overlap_report = "No text overlaps detected programmatically."
+            report_sections.append("✓ No text-text overlaps detected.")
+
+        # Text-shape overlaps (circles/dots over text)
+        if text_shape_overlaps:
+            section = f"⚠️ TEXT OBSCURED BY SHAPES ({len(text_shape_overlaps)} found):\n"
+            for desc in text_shape_overlaps[:5]:
+                section += f"  - {desc}\n"
+            if len(text_shape_overlaps) > 5:
+                section += f"  - ... and {len(text_shape_overlaps) - 5} more"
+            report_sections.append(section)
+        else:
+            report_sections.append("✓ No text obscured by shapes.")
+
+        # Bounds violations (text cut off at edges)
+        if bounds_result.has_violations:
+            section = f"⚠️ ELEMENTS EXCEED BOUNDS ({len(bounds_result.violations)} found):\n"
+            for desc in bounds_result.violations[:5]:
+                section += f"  - {desc}\n"
+            if len(bounds_result.violations) > 5:
+                section += f"  - ... and {len(bounds_result.violations) - 5} more"
+            report_sections.append(section)
+        else:
+            report_sections.append("✓ All elements within SVG bounds.")
+
+        overlap_report = "\n".join(report_sections)
 
         # Encode PNG for vision
         b64_image = base64.b64encode(png_bytes).decode("utf-8")

@@ -186,39 +186,53 @@ No explanation, no markdown code fences."""
 
 DIAGRAM_QUALITY_SYSTEM = """You are an expert visual designer evaluating SVG diagrams for quality.
 
+## CRITICAL: Legibility is Non-Negotiable
+
+**Any text that cannot be read is a SEVERE issue.** This includes:
+- Text overlapped by shapes (circles, dots, lines, other elements)
+- Text cut off at image boundaries
+- Text overlapped by other text
+- Text too small or low contrast to read
+
+If the programmatic check reports overlaps or bounds violations, **verify them visually** and score accordingly. These issues make the diagram unusable for its core purpose of communication.
+
 ## Evaluation Criteria (score each 1-5)
 
-1. **text_legibility** (1-5)
-   - All text readable at display size
+1. **text_legibility** (1-5) - HIGHEST PRIORITY
+   - All text must be fully readable at display size
    - Font sizes appropriate (min 14px for labels)
    - Sufficient contrast with background
-   - Text not truncated or cut off
+   - Text not truncated or cut off at edges
+   - Text not obscured by shapes, dots, or other elements
+   - **Score ≤4 if ANY text is illegible or cut off**
 
-2. **overlap** (1-5)
-   - No unintended text overlapping text
-   - No text overlapping shapes inappropriately
+2. **overlap_free** (1-5) - HIGHEST PRIORITY
+   - No text overlapping other text
+   - No shapes (circles, dots, markers) overlapping text labels
    - No shapes overlapping that shouldn't
    - Connector lines don't cross text
+   - **Score ≤4 if ANY overlaps make content unreadable**
 
-3. **hierarchy** (1-5)
+3. **visual_hierarchy** (1-5)
    - Clear distinction between title/headers and body
    - Primary elements visually prominent
    - Secondary elements appropriately subdued
    - Natural reading flow (top-to-bottom or left-to-right)
 
-4. **spacing** (1-5)
+4. **spacing_balance** (1-5)
    - Even distribution of whitespace
    - Adequate margins from edges (30px minimum)
    - Consistent spacing between similar elements
    - No cramped or overly sparse areas
+   - **Score ≤3 if elements are too close to edges**
 
-5. **layout** (1-5)
+5. **layout_logic** (1-5)
    - Elements arranged to convey relationships correctly
    - Flow direction matches diagram type
    - Related items grouped together
    - Connections/arrows follow logical paths
 
-6. **shape** (1-5)
+6. **shape_appropriateness** (1-5)
    - Rectangles for processes/actions
    - Diamonds for decisions
    - Circles/ovals for start/end
@@ -232,16 +246,18 @@ DIAGRAM_QUALITY_SYSTEM = """You are an expert visual designer evaluating SVG dia
 
 ## Scoring Guide
 - 5: Excellent, no issues
-- 4: Good, minor issues only
+- 4: Good, minor issues only (all text fully readable)
 - 3: Acceptable, some noticeable issues
-- 2: Below standard, significant issues
-- 1: Poor, major problems
+- 2: Below standard, significant issues affecting usability
+- 1: Poor, major problems (text illegible, diagram fails its purpose)
+
+**A diagram with ANY illegible text should NOT score above 4 overall.**
 
 Calculate overall_score as the average of all 7 scores.
 
 For each issue found, specify:
 - category: which criterion it falls under
-- severity: minor/moderate/severe
+- severity: minor/moderate/severe (overlaps and cutoffs are ALWAYS severe)
 - description: what the problem is
 - affected_elements: which elements are affected (can be empty list if general)
 - suggested_fix: how to address it"""
@@ -255,12 +271,23 @@ DIAGRAM_QUALITY_USER = """Evaluate this diagram for visual quality.
 - Expected Elements: {elements}
 - Expected Relationships: {relationships}
 
-**Programmatic Overlap Check Result:**
+**Programmatic Checks (verify visually):**
 {overlap_report}
+
+**CRITICAL EVALUATION RULES:**
+1. If ANY text is illegible (overlapped, cut off, obscured by shapes), score text_legibility ≤ 2
+2. If ANY elements overlap inappropriately, score overlap_free ≤ 2
+3. These severe issues cap the overall score at 3.5 maximum
+4. Verify the programmatic findings in the image - they indicate real problems
 
 **Quality Threshold:** {threshold}/5.0
 
 [The diagram image is attached below]
+
+Carefully examine the image for:
+- Text cut off at edges (especially right and bottom edges)
+- Circles/dots placed over text labels
+- Overlapping text that's hard to read
 
 Provide your assessment with scores for all 7 criteria. Set meets_threshold to true if overall_score >= {threshold}."""
 

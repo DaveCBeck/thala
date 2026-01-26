@@ -56,11 +56,17 @@ def _extract_relevant_sections(
     """
     if not section_names:
         # No sections specified, return truncated review
-        return lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
+        result = lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
+        if len(lit_review) > max_chars:
+            logger.warning(
+                f"No sections specified; truncated lit review from {len(lit_review)} to {max_chars} chars"
+            )
+        return result
 
     # Try to find markdown headers matching the section names
     lines = lit_review.split("\n")
     relevant_lines = []
+    matched_headers = []
     in_relevant_section = False
     current_header_level = 0
 
@@ -79,6 +85,7 @@ def _extract_relevant_sections(
             if matches_section:
                 in_relevant_section = True
                 current_header_level = level
+                matched_headers.append(header_text)
                 relevant_lines.append(line)
             elif in_relevant_section and level <= current_header_level:
                 # We've moved to a sibling or parent section
@@ -90,12 +97,28 @@ def _extract_relevant_sections(
 
     if relevant_lines:
         excerpt = "\n".join(relevant_lines)
-        if len(excerpt) > max_chars:
+        original_len = len(excerpt)
+        if original_len > max_chars:
+            logger.warning(
+                f"Truncating lit review excerpt from {original_len} to {max_chars} chars"
+            )
             excerpt = excerpt[:max_chars] + "\n\n[... truncated ...]"
+        logger.info(
+            f"Extracted {len(excerpt)} chars from {len(matched_headers)} sections: {matched_headers}"
+        )
         return excerpt
 
     # Fallback: return truncated full review
-    return lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
+    result = lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
+    if len(lit_review) > max_chars:
+        logger.warning(
+            f"No matching sections found; truncated full review from {len(lit_review)} to {max_chars} chars"
+        )
+    else:
+        logger.info(
+            f"No matching sections found; returning full review ({len(lit_review)} chars)"
+        )
+    return result
 
 
 async def write_deep_dive_node(state: dict) -> dict[str, Any]:

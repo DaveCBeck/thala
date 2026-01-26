@@ -1,13 +1,13 @@
 """Text overlap detection for SVG diagrams.
 
 Provides utilities for detecting overlapping text elements in SVG content
-using bounding box analysis.
+using bounding box analysis, as well as bounds violation detection.
 """
 
 import logging
 from typing import NamedTuple
 
-from .schemas import OverlapCheckResult
+from .schemas import BoundsCheckResult, OverlapCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +174,196 @@ def check_text_overlaps(svg_content: str) -> OverlapCheckResult:
     )
 
 
+def check_bounds_violations(svg_content: str) -> "BoundsCheckResult":
+    """Check if any text or shape elements exceed or are near SVG bounds.
+
+    Detects elements that are cut off at edges or have insufficient margin,
+    which makes them illegible or unprofessional.
+
+    Args:
+        svg_content: Raw SVG string
+
+    Returns:
+        BoundsCheckResult with violation information
+    """
+    from .schemas import BoundsCheckResult
+
+    try:
+        from lxml import etree
+    except ImportError:
+        logger.error("lxml not installed")
+        return BoundsCheckResult(has_violations=False, violations=[])
+
+    try:
+        root = etree.fromstring(svg_content.encode())
+    except etree.XMLSyntaxError as e:
+        logger.error(f"Invalid SVG: {e}")
+        return BoundsCheckResult(has_violations=False, violations=[])
+
+    # Get SVG dimensions from viewBox or width/height attributes
+    viewbox = root.get("viewBox")
+    if viewbox:
+        parts = viewbox.split()
+        if len(parts) >= 4:
+            svg_width = float(parts[2])
+            svg_height = float(parts[3])
+        else:
+            svg_width = float(root.get("width", 800))
+            svg_height = float(root.get("height", 600))
+    else:
+        svg_width = float(root.get("width", "800").replace("px", ""))
+        svg_height = float(root.get("height", "600").replace("px", ""))
+
+    violations: list[str] = []
+    min_margin = 15  # Minimum margin from edges
+
+    namespaces = {"svg": "http://www.w3.org/2000/svg"}
+
+    # Check text elements
+    text_elements = root.xpath("//svg:text", namespaces=namespaces)
+    if not text_elements:
+        text_elements = root.xpath("//text")
+
+    for elem in text_elements:
+        text = elem.text or ""
+        for child in elem:
+            if child.text:
+                text += " " + child.text
+        text = text.strip()[:25]  # Truncate for reporting
+        if not text:
+            continue
+
+        try:
+            x = float(elem.get("x", 0))
+            y = float(elem.get("y", 0))
+        except (ValueError, TypeError):
+            continue
+
+        font_size = _parse_font_size(elem.get("font-size"))
+        text_anchor = elem.get("text-anchor", "start")
+
+        bbox = _estimate_text_bbox(text, x, y, font_size, text_anchor)
+
+        # Check for bounds violations
+        if bbox.x < min_margin:
+            violations.append(f'Text "{text}" too close to left edge (x={bbox.x:.0f})')
+        if bbox.x + bbox.width > svg_width - min_margin:
+            violations.append(
+                f'Text "{text}" exceeds right edge '
+                f"(extends to {bbox.x + bbox.width:.0f}, max={svg_width - min_margin:.0f})"
+            )
+        if bbox.y < min_margin:
+            violations.append(f'Text "{text}" too close to top edge (y={bbox.y:.0f})')
+        if bbox.y + bbox.height > svg_height - min_margin:
+            violations.append(
+                f'Text "{text}" exceeds bottom edge '
+                f"(extends to {bbox.y + bbox.height:.0f}, max={svg_height - min_margin:.0f})"
+            )
+
+    return BoundsCheckResult(
+        has_violations=bool(violations),
+        violations=violations,
+        svg_width=svg_width,
+        svg_height=svg_height,
+    )
+
+
+def check_text_shape_overlaps(svg_content: str) -> list[str]:
+    """Check if text elements overlap with shapes like circles or dots.
+
+    This detects the common issue where data points or decorative circles
+    are placed over text labels, making them illegible.
+
+    Args:
+        svg_content: Raw SVG string
+
+    Returns:
+        List of descriptions of text-shape overlaps found
+    """
+    try:
+        from lxml import etree
+    except ImportError:
+        logger.error("lxml not installed")
+        return []
+
+    try:
+        root = etree.fromstring(svg_content.encode())
+    except etree.XMLSyntaxError:
+        return []
+
+    namespaces = {"svg": "http://www.w3.org/2000/svg"}
+    overlaps: list[str] = []
+
+    # Get all text bounding boxes
+    text_elements = root.xpath("//svg:text", namespaces=namespaces)
+    if not text_elements:
+        text_elements = root.xpath("//text")
+
+    text_boxes: list[tuple[str, BoundingBox]] = []
+    for elem in text_elements:
+        text = elem.text or ""
+        for child in elem:
+            if child.text:
+                text += " " + child.text
+        text = text.strip()[:25]
+        if not text:
+            continue
+
+        try:
+            x = float(elem.get("x", 0))
+            y = float(elem.get("y", 0))
+        except (ValueError, TypeError):
+            continue
+
+        font_size = _parse_font_size(elem.get("font-size"))
+        text_anchor = elem.get("text-anchor", "start")
+        bbox = _estimate_text_bbox(text, x, y, font_size, text_anchor)
+        text_boxes.append((text, bbox))
+
+    # Get all circles
+    circles = root.xpath("//svg:circle", namespaces=namespaces)
+    if not circles:
+        circles = root.xpath("//circle")
+
+    circle_boxes: list[BoundingBox] = []
+    for elem in circles:
+        try:
+            cx = float(elem.get("cx", 0))
+            cy = float(elem.get("cy", 0))
+            r = float(elem.get("r", 5))
+        except (ValueError, TypeError):
+            continue
+        # Convert circle to bounding box
+        circle_boxes.append(BoundingBox(x=cx - r, y=cy - r, width=2 * r, height=2 * r))
+
+    # Get all ellipses
+    ellipses = root.xpath("//svg:ellipse", namespaces=namespaces)
+    if not ellipses:
+        ellipses = root.xpath("//ellipse")
+
+    for elem in ellipses:
+        try:
+            cx = float(elem.get("cx", 0))
+            cy = float(elem.get("cy", 0))
+            rx = float(elem.get("rx", 5))
+            ry = float(elem.get("ry", 5))
+        except (ValueError, TypeError):
+            continue
+        circle_boxes.append(BoundingBox(x=cx - rx, y=cy - ry, width=2 * rx, height=2 * ry))
+
+    # Check for overlaps between text and circles/ellipses
+    for text, text_bbox in text_boxes:
+        for shape_bbox in circle_boxes:
+            if text_bbox.overlaps(shape_bbox, margin=2.0):
+                overlaps.append(f'Text "{text}" overlapped by circle/dot')
+                break  # Only report each text once
+
+    return overlaps
+
+
 __all__ = [
     "BoundingBox",
     "check_text_overlaps",
+    "check_bounds_violations",
+    "check_text_shape_overlaps",
 ]
