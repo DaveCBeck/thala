@@ -10,7 +10,7 @@ LangGraph-based research and knowledge workflows. Each workflow uses composable 
 | `web_research` | Web research with supervisor/researcher agents | `web_research()` | [README](research/web_research/README.md) |
 | `book_finding` | Book discovery across three categories | `book_finding()` | [README](research/book_finding/README.md) |
 | `document_processing` | PDF/document extraction and summarization | `process_document()` | [README](document_processing/README.md) |
-| `substack_review` | Essay generation from literature reviews | `substack_review()` | [README](output/substack_review/README.md) |
+| `evening_reads` | 4-part article series from literature reviews | `evening_reads_graph` | [README](output/evening_reads/README.md) |
 | `enhance` | Two-phase document enhancement | `enhance()` | [README](enhance/README.md) |
 | `multi_lang` | Cross-language research with synthesis | `multi_lang_research()` | — |
 

@@ -209,12 +209,14 @@ This document catalogues ALL LLM calls across the Thala codebase with their mode
 
 ---
 
-## 17. Output & Essay Generation
+## 17. Output & Article Series Generation
 
 | Location | Description | Tokens (out) | Structured | Tools | Batched | Tier |
 |----------|-------------|--------------|------------|-------|---------|------|
-| `workflows/output/substack_review/nodes/choose_essay.py:50` | Select best essay variant | 2048 | Yes | No | No | **OPUS** |
-| `workflows/output/substack_review/nodes/write_essay.py:36` | Write Substack essay | 8192 | No | No | No | **OPUS** |
+| `workflows/output/evening_reads/nodes/plan_content.py:42` | Plan 4-part series structure (overview + 3 deep-dives) | 4096 | Yes | No | No | **OPUS** |
+| `workflows/output/evening_reads/nodes/write_deep_dive.py:33` | Write deep-dive article (puzzle/finding/contrarian approach) | 14000 | No | No | No | **OPUS** |
+| `workflows/output/evening_reads/nodes/write_overview.py:21` | Write overview article | 12000 | No | No | No | **OPUS** |
+| `workflows/shared/image_utils.py:79` | Generate image prompt for article header | 500 | No | No | No | **SONNET** |
 
 ---
 

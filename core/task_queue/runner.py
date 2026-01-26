@@ -34,13 +34,13 @@ QUEUE_PROJECT = os.getenv("THALA_QUEUE_PROJECT", "thala-queue")
 OUTPUT_DIR = Path(__file__).parent.parent.parent / ".outputs"
 
 
-def _save_outputs(topic: TopicTask, lit_result: dict, essay_result: dict) -> dict:
-    """Save literature review and essay to .outputs/ directory.
+def _save_outputs(topic: TopicTask, lit_result: dict, series_result: dict) -> dict:
+    """Save literature review and article series to .outputs/ directory.
 
     Args:
         topic: The topic task
         lit_result: Literature review result
-        essay_result: Substack essay result
+        series_result: Evening reads series result (4 articles)
 
     Returns:
         Dict with paths to saved files
@@ -63,19 +63,22 @@ def _save_outputs(topic: TopicTask, lit_result: dict, essay_result: dict) -> dic
             f.write("\n---\n\n")
         f.write(lit_result["final_review"])
 
-    # Save Substack essay
-    essay_path = OUTPUT_DIR / f"substack_{topic_slug}_{timestamp}.md"
-    with open(essay_path, "w") as f:
-        f.write(f"# {topic['topic']}\n\n")
-        f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-        f.write(f"*Angle: {essay_result.get('selected_angle', 'unknown')}*\n\n")
-        f.write("---\n\n")
-        f.write(essay_result["final_essay"])
+    # Save article series
+    series_dir = OUTPUT_DIR / f"series_{topic_slug}_{timestamp}"
+    series_dir.mkdir(exist_ok=True)
 
-    return {
-        "lit_review": str(lit_review_path),
-        "essay": str(essay_path),
-    }
+    output_paths = {"lit_review": str(lit_review_path), "series_dir": str(series_dir)}
+
+    for output in series_result.get("final_outputs", []):
+        article_path = series_dir / f"{output['id']}.md"
+        with open(article_path, "w") as f:
+            f.write(f"# {output['title']}\n\n")
+            f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+            f.write("---\n\n")
+            f.write(output["content"])
+        output_paths[output["id"]] = str(article_path)
+
+    return output_paths
 
 
 async def run_topic_workflow(
@@ -108,7 +111,7 @@ async def run_topic_workflow(
 
     # Import workflows here to avoid circular imports
     from workflows.research.academic_lit_review import academic_lit_review
-    from workflows.output.substack_review import substack_review_graph
+    from workflows.output.evening_reads import evening_reads_graph
 
     topic_id = topic["id"]
 
@@ -160,30 +163,30 @@ async def run_topic_workflow(
 
         logger.info(f"Lit review complete: {len(lit_result.get('paper_corpus', {}))} papers")
 
-        # Step 2: Generate substack essay
-        checkpoint_mgr.update_checkpoint(topic_id, "substack_essay")
-        logger.info("Generating substack essay...")
+        # Step 2: Generate article series
+        checkpoint_mgr.update_checkpoint(topic_id, "article_series")
+        logger.info("Generating article series...")
 
-        essay_result = await substack_review_graph.ainvoke({
+        series_result = await evening_reads_graph.ainvoke({
             "input": {"literature_review": lit_result["final_review"]}
         })
 
-        if not essay_result.get("final_essay"):
-            raise RuntimeError(f"Essay generation failed: {essay_result.get('errors', 'Unknown error')}")
+        if not series_result.get("final_outputs"):
+            raise RuntimeError(f"Series generation failed: {series_result.get('errors', 'Unknown error')}")
 
-        logger.info(f"Essay complete: {essay_result.get('selected_angle', 'unknown')} angle")
+        logger.info(f"Series complete: {len(series_result.get('final_outputs', []))} articles")
 
         # Step 3: Save outputs
         checkpoint_mgr.update_checkpoint(topic_id, "saving")
-        output_paths = _save_outputs(topic, lit_result, essay_result)
-        logger.info(f"Saved outputs to {output_paths['essay']}")
+        output_paths = _save_outputs(topic, lit_result, series_result)
+        logger.info(f"Saved outputs to {output_paths['series_dir']}")
 
         # Combine results
         result = {
             "status": "success",
             "topic": topic["topic"],
             "lit_review": lit_result,
-            "essay": essay_result,
+            "series": series_result,
             "output_paths": output_paths,
         }
 
