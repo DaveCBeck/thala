@@ -8,9 +8,7 @@ import logging
 import re
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
-
-from workflows.shared.llm_utils import ModelTier
+from workflows.shared.llm_utils import ModelTier, get_llm
 
 from ..prompts import OVERVIEW_SYSTEM_PROMPT_FULL, OVERVIEW_USER_TEMPLATE
 from ..state import DeepDiveDraft, OverviewDraft, EveningReadsState
@@ -103,10 +101,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     )
 
     try:
-        llm = ChatAnthropic(
-            model=ModelTier.OPUS.value,
-            max_tokens=MAX_TOKENS,
-        )
+        llm = get_llm(tier=ModelTier.OPUS, max_tokens=MAX_TOKENS)
 
         response = await llm.ainvoke(
             [

@@ -6,7 +6,7 @@ and generating SVG diagrams using Claude.
 
 import logging
 
-from ..llm_utils import ModelTier, get_structured_output
+from ..llm_utils import ModelTier, get_llm, get_structured_output
 from .prompts import (
     DIAGRAM_ANALYSIS_SYSTEM,
     DIAGRAM_ANALYSIS_USER,
@@ -74,13 +74,8 @@ async def generate_svg_diagram(
     Returns:
         SVG code string if successful, None on failure
     """
-    from langchain_anthropic import ChatAnthropic
-
     try:
-        llm = ChatAnthropic(
-            model=tier.value,
-            max_tokens=4000,
-        )
+        llm = get_llm(tier=tier, max_tokens=4000)
 
         # Format the system prompt with dimensions
         system_prompt = SVG_GENERATION_SYSTEM.format(
@@ -147,13 +142,8 @@ async def regenerate_svg_with_feedback(
     tier: ModelTier = ModelTier.SONNET,
 ) -> str | None:
     """Regenerate SVG with feedback about overlap issues."""
-    from langchain_anthropic import ChatAnthropic
-
     try:
-        llm = ChatAnthropic(
-            model=tier.value,
-            max_tokens=4000,
-        )
+        llm = get_llm(tier=tier, max_tokens=4000)
 
         # Format overlap issues for feedback
         overlap_issues = "\n".join(

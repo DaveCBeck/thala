@@ -135,7 +135,7 @@ async def select_and_improve(
     Returns:
         Tuple of (improved_svg, selected_id, rationale) or None on failure
     """
-    from langchain_anthropic import ChatAnthropic
+    from workflows.shared.llm_utils import ModelTier, get_llm
 
     if not candidates:
         logger.error("No candidates to select from")
@@ -147,7 +147,7 @@ async def select_and_improve(
         return (candidates[0].svg_content, candidates[0].candidate_id, "Only one candidate available")
 
     try:
-        llm = ChatAnthropic(model="claude-sonnet-4-20250514", max_tokens=8000)
+        llm = get_llm(tier=ModelTier.SONNET, max_tokens=8000)
 
         # Build candidate details for the prompt
         content_parts = []

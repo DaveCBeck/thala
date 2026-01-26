@@ -3,7 +3,7 @@
 import logging
 import os
 
-from langchain_anthropic import ChatAnthropic
+from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +75,7 @@ async def generate_image_prompt(
         Generated image prompt string, or None if generation fails
     """
     try:
-        llm = ChatAnthropic(
-            model="claude-sonnet-4-20250514",
-            max_tokens=500,
-        )
+        llm = get_llm(tier=ModelTier.SONNET, max_tokens=500)
 
         # Truncate content if too long (keep first ~8000 chars)
         truncated_content = content[:8000] if len(content) > 8000 else content

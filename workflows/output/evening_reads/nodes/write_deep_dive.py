@@ -8,9 +8,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from langchain_anthropic import ChatAnthropic
-
-from workflows.shared.llm_utils import ModelTier
+from workflows.shared.llm_utils import ModelTier, get_llm
 
 from ..prompts import (
     DEEP_DIVE_PUZZLE_PROMPT_FULL,
@@ -203,10 +201,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     )
 
     try:
-        llm = ChatAnthropic(
-            model=ModelTier.OPUS.value,
-            max_tokens=MAX_TOKENS,
-        )
+        llm = get_llm(tier=ModelTier.OPUS, max_tokens=MAX_TOKENS)
 
         response = await llm.ainvoke(
             [
