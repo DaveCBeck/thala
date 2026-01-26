@@ -44,6 +44,9 @@ MESSAGE_OVERHEAD_PER_TURN = 50  # Tokens per message wrapper (role, metadata)
 DEFAULT_RESPONSE_BUFFER = 4096
 EXTENDED_RESPONSE_BUFFER = 16384
 
+# Maximum output tokens (Opus 4.5 limit)
+OPUS_MAX_OUTPUT_TOKENS = 64_000
+
 
 # =============================================================================
 # Token Counting Functions

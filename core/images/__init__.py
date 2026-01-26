@@ -32,6 +32,7 @@ async def get_image(
     use_llm_selection: bool = False,
     context: str | None = None,
     orientation: str | None = None,
+    custom_selection_criteria: str | None = None,
 ) -> ImageResult:
     """Search for a public domain image.
 
@@ -40,6 +41,8 @@ async def get_image(
         use_llm_selection: Use LLM to select from candidates (requires context)
         context: Article/document context for LLM selection
         orientation: "landscape", "portrait", or "square"
+        custom_selection_criteria: Detailed criteria for LLM selection.
+            Use this for more specific matching requirements beyond context.
 
     Returns:
         ImageResult with URL, attribution, and metadata
@@ -54,6 +57,7 @@ async def get_image(
         use_llm_selection=use_llm_selection,
         context=context,
         orientation=orientation,
+        custom_selection_criteria=custom_selection_criteria,
     )
 
 

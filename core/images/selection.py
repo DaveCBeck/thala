@@ -33,11 +33,27 @@ Image candidates:
 
 Choose the image index (0-based) that best matches the context."""
 
+SELECTION_USER_WITH_CRITERIA = """Select the best image based on the following criteria.
+
+**Selection Criteria:**
+{criteria}
+
+**Document Context:**
+{context}
+
+**Search query:** {query}
+
+**Image candidates:**
+{candidates}
+
+Choose the image index (0-based) that best matches the criteria."""
+
 
 async def select_best_image(
     candidates: list[ImageResult],
     query: str,
     context: str,
+    custom_selection_criteria: str | None = None,
 ) -> ImageResult:
     """Use LLM to select best image from candidates.
 
@@ -45,6 +61,9 @@ async def select_best_image(
         candidates: List of image results to choose from
         query: Original search query
         context: Article/document context
+        custom_selection_criteria: If provided, use these detailed criteria
+            for selection instead of the generic selection prompt. Useful
+            for more specific matching requirements.
 
     Returns:
         Best matching ImageResult
@@ -61,13 +80,24 @@ async def select_best_image(
     )
 
     try:
-        result = await get_structured_output(
-            output_schema=ImageSelection,
-            user_prompt=SELECTION_USER.format(
-                context=context[:2000],  # Truncate long context
+        # Use custom criteria prompt if provided
+        if custom_selection_criteria:
+            user_prompt = SELECTION_USER_WITH_CRITERIA.format(
+                criteria=custom_selection_criteria,
+                context=context[:1500],  # Less context since criteria is detailed
                 query=query,
                 candidates=candidate_text,
-            ),
+            )
+        else:
+            user_prompt = SELECTION_USER.format(
+                context=context[:2000],
+                query=query,
+                candidates=candidate_text,
+            )
+
+        result = await get_structured_output(
+            output_schema=ImageSelection,
+            user_prompt=user_prompt,
             system_prompt=SELECTION_SYSTEM,
             tier=ModelTier.HAIKU,  # Cheapest tier for simple selection
         )

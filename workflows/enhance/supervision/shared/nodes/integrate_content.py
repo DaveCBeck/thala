@@ -94,11 +94,10 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         new_citation_keys=citation_keys_text,
     )
 
-    # Use Opus for complex integration
+    # Use Opus for complex integration (no max_tokens - use full output capacity)
     llm = get_llm(
         tier=ModelTier.OPUS,
         thinking_budget=8000,
-        max_tokens=16000,  # Large enough for full review
     )
 
     try:

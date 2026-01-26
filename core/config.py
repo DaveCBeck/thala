@@ -35,6 +35,7 @@ THIRD_PARTY_LOGGERS = [
     "fsspec",
     "huggingface_hub",
     "numba",
+    "voyage",
 ]
 
 # Loggers that should be set to WARNING to avoid race conditions during cleanup

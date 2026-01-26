@@ -69,9 +69,9 @@ Extract structured information from this paper."""
         system_prompt = PAPER_SUMMARY_EXTRACTION_SYSTEM
 
     # Use SONNET_1M for large content (>400k chars ≈ >100k tokens)
-    # This threshold accounts for ~100k tokens of overhead (system prompt, metadata, response)
-    # ensuring we stay under 200k limit for standard context, or use 1M for larger
-    tier = ModelTier.SONNET_1M if len(content) > 400_000 else ModelTier.HAIKU
+    # DeepSeek V3 has 128K context (~400k chars), so use Sonnet 1M for larger
+    # DeepSeek V3 is ~5x cheaper than Haiku with comparable quality for extraction
+    tier = ModelTier.SONNET_1M if len(content) > 400_000 else ModelTier.DEEPSEEK_V3
 
     try:
         extracted = await get_structured_output(
@@ -167,7 +167,7 @@ Extract structured information based on this metadata."""
             output_schema=PaperSummarySchema,
             user_prompt=user_prompt,
             system_prompt=METADATA_SUMMARY_EXTRACTION_SYSTEM,
-            tier=ModelTier.HAIKU,
+            tier=ModelTier.DEEPSEEK_V3,
             enable_prompt_cache=True,
         )
 
@@ -408,7 +408,7 @@ async def _extract_all_summaries_batched(
         return {}, {}, {}, failed_dois
 
     # Build batch requests, separated by tier
-    haiku_requests = []
+    deepseek_requests = []
     sonnet_1m_requests = []
     doi_to_data = {}
 
@@ -439,22 +439,22 @@ Extract structured information from this paper."""
             sonnet_1m_requests.append(request)
             doi_to_data[doi] = (data, ModelTier.SONNET_1M)
         else:
-            haiku_requests.append(request)
-            doi_to_data[doi] = (data, ModelTier.HAIKU)
+            deepseek_requests.append(request)
+            doi_to_data[doi] = (data, ModelTier.DEEPSEEK_V3)
 
     # Run batches for each tier
     all_results = {}
 
-    if haiku_requests:
-        logger.debug(f"Submitting batch of {len(haiku_requests)} papers (HAIKU)")
-        haiku_results = await get_structured_output(
+    if deepseek_requests:
+        logger.debug(f"Submitting batch of {len(deepseek_requests)} papers (DEEPSEEK_V3)")
+        deepseek_results = await get_structured_output(
             output_schema=PaperSummarySchema,
-            requests=haiku_requests,
+            requests=deepseek_requests,
             system_prompt=system_prompt,
-            tier=ModelTier.HAIKU,
+            tier=ModelTier.DEEPSEEK_V3,
             max_tokens=2048,
         )
-        all_results.update(haiku_results.results)
+        all_results.update(deepseek_results.results)
 
     if sonnet_1m_requests:
         logger.debug(

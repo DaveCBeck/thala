@@ -81,6 +81,7 @@ class ImageService:
         context: str | None = None,
         orientation: str | None = None,
         preferred_provider: ImageSource | None = None,
+        custom_selection_criteria: str | None = None,
     ) -> ImageResult:
         """Search for best-fit image across providers.
 
@@ -92,6 +93,10 @@ class ImageService:
             context: Article/document context for LLM selection
             orientation: "landscape", "portrait", or "square"
             preferred_provider: Force specific provider (skip fallback)
+            custom_selection_criteria: If provided, use these detailed criteria
+                for LLM selection instead of the generic selection prompt.
+                Enables more specific matching (e.g., "must show collaborative
+                work in modern office, warm lighting, professional aesthetic").
 
         Returns:
             Best matching ImageResult
@@ -142,7 +147,9 @@ class ImageService:
                 f"LLM selecting from {len(all_results)} candidates across "
                 f"{sum(1 for r in results_lists if r)} providers"
             )
-            result = await select_best_image(all_results, query, context)
+            result = await select_best_image(
+                all_results, query, context, custom_selection_criteria
+            )
             set_cached("images", cache_key, result.model_dump())
             return result
 
