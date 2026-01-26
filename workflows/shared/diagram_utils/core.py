@@ -6,7 +6,7 @@ Contains the main entry point for generating diagrams from content.
 import logging
 
 from .conversion import convert_svg_to_png
-from .generation import analyze_content_for_diagram
+from .generation import analyze_content_for_diagram, parse_instructions_to_analysis
 from .overlap import check_text_overlaps
 from .schemas import DiagramConfig, DiagramResult, DiagramType
 from .selection import generate_candidates, select_and_improve
@@ -19,6 +19,7 @@ async def generate_diagram(
     content: str,
     config: DiagramConfig | None = None,
     force_type: DiagramType | None = None,
+    custom_instructions: str | None = None,
 ) -> DiagramResult:
     """Generate a diagram from content (main entry point).
 
@@ -34,6 +35,9 @@ async def generate_diagram(
         content: Full content text
         config: Optional configuration (dimensions, colors, etc.)
         force_type: Force a specific diagram type (skip analysis decision)
+        custom_instructions: If provided, parse these instructions into a
+            DiagramAnalysis instead of analyzing the content. Use this when
+            you have detailed diagram specifications from an external source.
 
     Returns:
         DiagramResult with SVG bytes, PNG bytes, and metadata
@@ -46,11 +50,22 @@ async def generate_diagram(
         if result.success:
             with open("diagram.png", "wb") as f:
                 f.write(result.png_bytes)
+
+        # With custom instructions (skips content analysis):
+        result = await generate_diagram(
+            title="",
+            content="",
+            custom_instructions="Create a flowchart showing: Input -> Processing -> Output",
+        )
     """
     config = config or DiagramConfig()
 
-    # Stage 1: Analyze content
-    analysis = await analyze_content_for_diagram(title, content)
+    # Stage 1: Parse custom instructions or analyze content
+    if custom_instructions:
+        logger.info("Using custom instructions instead of content analysis")
+        analysis = await parse_instructions_to_analysis(custom_instructions)
+    else:
+        analysis = await analyze_content_for_diagram(title, content)
 
     if not analysis:
         return DiagramResult(
@@ -112,7 +127,29 @@ async def generate_diagram(
     else:
         svg_content, selected_id, rationale = selection_result
 
-    # Stage 4: Final overlap check and PNG conversion
+    # Stage 4: Iterative quality refinement (if enabled)
+    refinement_iterations = None
+    final_quality_score = None
+    quality_history = None
+
+    if config.enable_refinement_loop:
+        from .refinement import refine_diagram_quality
+
+        logger.info("Starting iterative quality refinement")
+        svg_content, final_assessment, quality_history = await refine_diagram_quality(
+            svg_content=svg_content,
+            analysis=analysis,
+            config=config,
+        )
+        refinement_iterations = len(quality_history) if quality_history else 0
+        if final_assessment:
+            final_quality_score = final_assessment.overall_score
+            logger.info(
+                f"Refinement complete: {refinement_iterations} iterations, "
+                f"final score={final_quality_score:.2f}"
+            )
+
+    # Stage 5: Final overlap check and PNG conversion
     final_overlap_check = check_text_overlaps(svg_content)
     svg_bytes = svg_content.encode("utf-8")
     png_bytes = convert_svg_to_png(
@@ -156,6 +193,9 @@ async def generate_diagram(
         improvements_made=improvements_made if improvements_made else None,
         success=True,
         error=error_msg,
+        refinement_iterations=refinement_iterations,
+        final_quality_score=final_quality_score,
+        quality_history=quality_history,
     )
 
 

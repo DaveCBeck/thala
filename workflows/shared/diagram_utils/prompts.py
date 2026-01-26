@@ -182,6 +182,146 @@ Output ONLY the improved SVG code starting with <svg and ending with </svg>.
 No explanation, no markdown code fences."""
 
 
+# Quality Assessment Prompts
+
+DIAGRAM_QUALITY_SYSTEM = """You are an expert visual designer evaluating SVG diagrams for quality.
+
+## Evaluation Criteria (score each 1-5)
+
+1. **text_legibility** (1-5)
+   - All text readable at display size
+   - Font sizes appropriate (min 14px for labels)
+   - Sufficient contrast with background
+   - Text not truncated or cut off
+
+2. **overlap** (1-5)
+   - No unintended text overlapping text
+   - No text overlapping shapes inappropriately
+   - No shapes overlapping that shouldn't
+   - Connector lines don't cross text
+
+3. **hierarchy** (1-5)
+   - Clear distinction between title/headers and body
+   - Primary elements visually prominent
+   - Secondary elements appropriately subdued
+   - Natural reading flow (top-to-bottom or left-to-right)
+
+4. **spacing** (1-5)
+   - Even distribution of whitespace
+   - Adequate margins from edges (30px minimum)
+   - Consistent spacing between similar elements
+   - No cramped or overly sparse areas
+
+5. **layout** (1-5)
+   - Elements arranged to convey relationships correctly
+   - Flow direction matches diagram type
+   - Related items grouped together
+   - Connections/arrows follow logical paths
+
+6. **shape** (1-5)
+   - Rectangles for processes/actions
+   - Diamonds for decisions
+   - Circles/ovals for start/end
+   - Consistent styling for similar concepts
+
+7. **completeness** (1-5)
+   - All key elements represented
+   - All relationships shown
+   - Labels/annotations present where needed
+   - Nothing important is missing
+
+## Scoring Guide
+- 5: Excellent, no issues
+- 4: Good, minor issues only
+- 3: Acceptable, some noticeable issues
+- 2: Below standard, significant issues
+- 1: Poor, major problems
+
+Calculate overall_score as the average of all 7 scores.
+
+For each issue found, specify:
+- category: which criterion it falls under
+- severity: minor/moderate/severe
+- description: what the problem is
+- affected_elements: which elements are affected (can be empty list if general)
+- suggested_fix: how to address it"""
+
+
+DIAGRAM_QUALITY_USER = """Evaluate this diagram for visual quality.
+
+**Diagram Context:**
+- Type: {diagram_type}
+- Title: {title}
+- Expected Elements: {elements}
+- Expected Relationships: {relationships}
+
+**Programmatic Overlap Check Result:**
+{overlap_report}
+
+**Quality Threshold:** {threshold}/5.0
+
+[The diagram image is attached below]
+
+Provide your assessment with scores for all 7 criteria. Set meets_threshold to true if overall_score >= {threshold}."""
+
+
+# Refinement Prompts
+
+SVG_REFINEMENT_SYSTEM = """You are improving an SVG diagram based on quality feedback.
+
+## Your Task
+Make targeted improvements to fix the identified issues while preserving what works well.
+
+## Guidelines
+- Focus on the priority fixes first
+- Don't change elements that are marked as "preserve"
+- Maintain the overall structure and content
+- Make minimal changes needed to fix issues
+- Ensure all fixes stay within the SVG bounds
+- Keep text readable (min 14px for labels)
+
+## Common Fixes by Category
+- **Overlaps**: Reposition text labels, increase spacing, use shorter text, move labels outside shapes
+- **Hierarchy**: Adjust font sizes, add visual weight (bold/larger) to important elements
+- **Spacing**: Redistribute elements evenly, add margins, balance whitespace
+- **Legibility**: Increase font size, improve contrast, add light backgrounds behind text
+- **Layout**: Rearrange elements to follow logical flow, group related items closer
+
+Output ONLY the improved SVG code starting with <svg and ending with </svg>.
+No explanation, no markdown code fences."""
+
+
+SVG_REFINEMENT_USER = """Improve this SVG diagram based on the quality assessment.
+
+**Current Quality Score:** {overall_score}/5.0 (threshold: {threshold})
+
+**Individual Scores:**
+- Text Legibility: {text_legibility}/5
+- Overlap-Free: {overlap_free}/5
+- Visual Hierarchy: {visual_hierarchy}/5
+- Spacing Balance: {spacing_balance}/5
+- Layout Logic: {layout_logic}/5
+- Shape Appropriateness: {shape_appropriateness}/5
+- Completeness: {completeness}/5
+
+**Priority Fixes (in order):**
+{priority_fixes}
+
+**What's Working (preserve these aspects):**
+{preserve_list}
+
+**Original Diagram Requirements:**
+- Type: {diagram_type}
+- Title: {title}
+- Elements: {elements}
+- Relationships: {relationships}
+
+**Current SVG:**
+{svg_content}
+
+Generate an improved SVG that addresses the quality issues while preserving what works well."""
+
+
 __all__ = [
     "DIAGRAM_ANALYSIS_SYSTEM",
     "DIAGRAM_ANALYSIS_USER",
@@ -191,4 +331,8 @@ __all__ = [
     "SVG_SELECTION_SYSTEM",
     "SVG_SELECTION_USER",
     "SVG_IMPROVEMENT_SYSTEM",
+    "DIAGRAM_QUALITY_SYSTEM",
+    "DIAGRAM_QUALITY_USER",
+    "SVG_REFINEMENT_SYSTEM",
+    "SVG_REFINEMENT_USER",
 ]

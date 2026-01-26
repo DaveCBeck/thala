@@ -213,8 +213,58 @@ async def regenerate_svg_with_feedback(
         return None
 
 
+INSTRUCTIONS_PARSE_SYSTEM = """You are an expert at interpreting diagram specifications.
+Given detailed instructions for a diagram, extract the structured components needed for SVG generation.
+
+Determine the most appropriate diagram type from: flowchart, concept_map, process_diagram, hierarchy, comparison, timeline, cycle.
+
+Extract all key elements (concepts, entities, steps) that should appear in the diagram.
+Extract all relationships or flows between elements."""
+
+
+async def parse_instructions_to_analysis(
+    instructions: str,
+    tier: ModelTier = ModelTier.SONNET,
+) -> DiagramAnalysis | None:
+    """Parse custom instructions into a DiagramAnalysis schema.
+
+    Used when the illustrate workflow provides detailed diagram instructions
+    instead of raw content for analysis.
+
+    Args:
+        instructions: Detailed instructions describing the desired diagram
+        tier: Model tier for parsing
+
+    Returns:
+        DiagramAnalysis with should_generate=True, or None on failure
+    """
+    try:
+        result = await get_structured_output(
+            output_schema=DiagramAnalysis,
+            user_prompt=f"""Parse these diagram instructions into structured components:
+
+INSTRUCTIONS:
+{instructions}
+
+Extract the diagram type, title, key elements, and relationships.""",
+            system_prompt=INSTRUCTIONS_PARSE_SYSTEM,
+            tier=tier,
+            max_tokens=1000,
+        )
+        # Custom instructions always mean we should generate
+        result.should_generate = True
+        logger.info(
+            f"Parsed custom instructions into analysis: type={result.diagram_type}"
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Failed to parse diagram instructions: {e}")
+        return None
+
+
 __all__ = [
     "analyze_content_for_diagram",
     "generate_svg_diagram",
     "regenerate_svg_with_feedback",
+    "parse_instructions_to_analysis",
 ]
