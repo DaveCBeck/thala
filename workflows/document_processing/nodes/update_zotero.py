@@ -1,5 +1,8 @@
 """
 Update Zotero item with extracted data node.
+
+Merges OpenAlex baseline metadata with document-extracted metadata,
+validates fields, and updates the Zotero item.
 """
 
 import logging
@@ -10,17 +13,51 @@ from langsmith import traceable
 from core.stores.zotero import ZoteroCreator, ZoteroItemUpdate
 from langchain_tools.base import get_store_manager
 from workflows.document_processing.state import DocumentProcessingState
+from workflows.shared.metadata_utils import (
+    merge_metadata_with_baseline,
+    parse_author_name,
+    validate_year,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _get_baseline_metadata(state: DocumentProcessingState) -> dict[str, Any]:
+    """
+    Extract baseline metadata from OpenAlex/extra_metadata.
+
+    OpenAlex data is generally reliable and serves as the trusted baseline.
+    """
+    doc_input = state.get("input", {})
+    extra_metadata = doc_input.get("extra_metadata", {})
+
+    # Convert OpenAlex authors format if needed
+    # OpenAlex uses list of dicts with 'name' key
+    baseline_authors = extra_metadata.get("authors", [])
+    if baseline_authors and isinstance(baseline_authors[0], dict):
+        baseline_authors = [a.get("name", "") for a in baseline_authors if a.get("name")]
+
+    return {
+        "authors": baseline_authors,
+        "date": extra_metadata.get("publication_date") or extra_metadata.get("date"),
+        "year": extra_metadata.get("year"),
+        "title": extra_metadata.get("title") or doc_input.get("title"),
+        "publisher": extra_metadata.get("publisher"),
+    }
 
 
 @traceable(run_type="chain", name="UpdateZotero")
 async def update_zotero(state: DocumentProcessingState) -> dict[str, Any]:
     """
-    Update Zotero item with summary and extracted metadata.
+    Update Zotero item with summary and validated metadata.
 
-    Sets abstractNote to short_summary, updates authors/date/publisher
-    from metadata_updates, removes "pending" tag and adds "processed" tag.
+    Merge strategy (fill gaps only):
+    - OpenAlex baseline is trusted for dates and authors
+    - Document extraction fills in missing fields
+    - All dates validated to ensure valid years
+    - Author names properly parsed into firstName/lastName
+
+    Sets abstractNote to short_summary, removes "pending" tag and adds "processed" tag.
 
     Returns current_status.
     """
@@ -33,45 +70,58 @@ async def update_zotero(state: DocumentProcessingState) -> dict[str, Any]:
         short_summary = state.get("short_summary")
         metadata_updates = state.get("metadata_updates", {})
 
+        # Get baseline from OpenAlex
+        baseline = _get_baseline_metadata(state)
+
+        # Merge extracted metadata with baseline (OpenAlex preferred for dates/authors)
+        merged = merge_metadata_with_baseline(baseline, metadata_updates)
+
         store_manager = get_store_manager()
 
         # Build update payload
         update = ZoteroItemUpdate()
 
         # Update fields
-        fields = {}
+        fields: dict[str, Any] = {}
         if short_summary:
             fields["abstractNote"] = short_summary
-        if "title" in metadata_updates:
-            fields["title"] = metadata_updates["title"]
-        if "date" in metadata_updates:
-            fields["date"] = metadata_updates["date"]
-        if "publisher" in metadata_updates:
-            fields["publisher"] = metadata_updates["publisher"]
-        if "isbn" in metadata_updates:
-            fields["ISBN"] = metadata_updates["isbn"]
+        if "title" in merged:
+            fields["title"] = merged["title"]
+
+        # Validate and set date - prefer year field, fall back to date
+        date_to_validate = merged.get("year") or merged.get("date")
+        if date_to_validate:
+            validated_year = validate_year(date_to_validate)
+            if validated_year:
+                fields["date"] = validated_year
+            else:
+                logger.warning(f"Invalid year value, not updating: {date_to_validate}")
+
+        if "publisher" in merged:
+            fields["publisher"] = merged["publisher"]
+        if "isbn" in merged:
+            fields["ISBN"] = merged["isbn"]
 
         if fields:
             update.fields = fields
 
-        # Update authors if present
-        if "authors" in metadata_updates and metadata_updates["authors"]:
+        # Update authors if present - use proper name parsing
+        if "authors" in merged and merged["authors"]:
             creators = []
-            for author_name in metadata_updates["authors"]:
-                # Parse name (simple approach: assume "First Last" format)
-                parts = author_name.strip().split(" ", 1)
-                if len(parts) == 2:
-                    creators.append(
-                        ZoteroCreator(
-                            firstName=parts[0], lastName=parts[1], creatorType="author"
-                        )
+            for author_name in merged["authors"]:
+                if not author_name or not author_name.strip():
+                    continue
+                parsed = parse_author_name(author_name)
+                creators.append(
+                    ZoteroCreator(
+                        firstName=parsed.firstName,
+                        lastName=parsed.lastName,
+                        name=parsed.name,
+                        creatorType="author",
                     )
-                else:
-                    # Single name or complex format
-                    creators.append(
-                        ZoteroCreator(name=author_name, creatorType="author")
-                    )
-            update.creators = creators
+                )
+            if creators:
+                update.creators = creators
 
         # Update tags: remove "pending", add "processed"
         # First, get current item to preserve other tags

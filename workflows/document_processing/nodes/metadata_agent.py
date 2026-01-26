@@ -8,9 +8,10 @@ import logging
 from typing import Any, Optional
 
 from langsmith import traceable
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from workflows.document_processing.state import DocumentProcessingState
+from workflows.shared.metadata_utils import extract_year
 from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM
 from workflows.shared.llm_utils import ModelTier, get_structured_output
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
@@ -19,12 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentMetadata(BaseModel):
-    """Extracted document metadata."""
+    """Extracted document metadata with validation."""
 
     title: Optional[str] = Field(default=None, description="Full document title")
-    authors: list[str] = Field(default_factory=list, description="List of author names")
+    authors: list[str] = Field(
+        default_factory=list,
+        description="List of author names in 'First Last' or 'Last, First' format",
+    )
+    year: Optional[str] = Field(
+        default=None, description="Publication year (4-digit, e.g., '2023')"
+    )
     date: Optional[str] = Field(
-        default=None, description="Publication date (any format)"
+        default=None, description="Full publication date if available (YYYY-MM-DD)"
     )
     publisher: Optional[str] = Field(default=None, description="Publisher name")
     isbn: Optional[str] = Field(default=None, description="ISBN if present")
@@ -35,6 +42,21 @@ class DocumentMetadata(BaseModel):
         default_factory=dict,
         description="Mapping of chapter titles to author names (for multi-author books)",
     )
+
+    @model_validator(mode="after")
+    def ensure_valid_year(self) -> "DocumentMetadata":
+        """Ensure year field has valid value; extract from date if needed."""
+        # If year is set, validate it's a proper 4-digit year (1500-2099)
+        if self.year:
+            extracted = extract_year(self.year)
+            self.year = str(extracted) if extracted else None
+
+        # If no year but date is set, extract year from date
+        if not self.year and self.date:
+            extracted = extract_year(self.date)
+            self.year = str(extracted) if extracted else None
+
+        return self
 
 
 @traceable(run_type="chain", name="CheckMetadata")
@@ -71,8 +93,9 @@ Task: Extract bibliographic metadata from the document above.
 
 Extract:
 - title: Full document title
-- authors: List of author names (can be empty list)
-- date: Publication date (any format)
+- authors: List of author names in 'First Last' format (can be empty list)
+- year: Publication year as 4-digit number (e.g., "2023")
+- date: Full publication date if available (YYYY-MM-DD format preferred)
 - publisher: Publisher name
 - isbn: ISBN if present
 - is_multi_author: true if multi-author edited volume (look for "edited by" or chapter authors)

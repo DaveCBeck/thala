@@ -46,6 +46,22 @@ from .token_utils import (
     CHARS_PER_TOKEN,
     DEFAULT_RESPONSE_BUFFER,
 )
+from .diagram_utils import (
+    generate_diagram,
+    DiagramResult,
+    DiagramConfig,
+    DiagramType,
+    DiagramAnalysis,
+    OverlapCheckResult,
+)
+from .metadata_utils import (
+    extract_year,
+    validate_year,
+    parse_author_name,
+    normalize_author_list,
+    merge_metadata_with_baseline,
+    ParsedAuthorName,
+)
 
 __all__ = [
     # Text utilities
@@ -92,4 +108,18 @@ __all__ = [
     "SONNET_1M_SAFE_LIMIT",
     "CHARS_PER_TOKEN",
     "DEFAULT_RESPONSE_BUFFER",
+    # Diagram utilities
+    "generate_diagram",
+    "DiagramResult",
+    "DiagramConfig",
+    "DiagramType",
+    "DiagramAnalysis",
+    "OverlapCheckResult",
+    # Metadata utilities
+    "extract_year",
+    "validate_year",
+    "parse_author_name",
+    "normalize_author_list",
+    "merge_metadata_with_baseline",
+    "ParsedAuthorName",
 ]
