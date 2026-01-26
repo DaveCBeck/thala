@@ -34,19 +34,19 @@ print(f"Sources: {result['source_count']}")
 
 ```bash
 # Test quality for development
-python -m testing.test_web_research "climate change impacts" --quality test
+python testing/test_research_workflow.py "climate change impacts" test
 
 # Quick research (2 iterations, ~5 min)
-python -m testing.test_web_research "renewable energy trends" --quality quick
+python testing/test_research_workflow.py "renewable energy trends" quick
 
 # Standard research (4 iterations, ~15 min) - recommended
-python -m testing.test_web_research "AI in healthcare" --quality standard
+python testing/test_research_workflow.py "AI in healthcare" standard
 
 # Comprehensive research (8 iterations, 30+ min)
-python -m testing.test_web_research "blockchain scalability" --quality comprehensive
+python testing/test_research_workflow.py "blockchain scalability" comprehensive
 
 # Research in Japanese
-python -m testing.test_web_research "人工知能の未来" --language ja
+python testing/test_research_workflow.py "人工知能の未来" standard --language ja
 ```
 
 ## Input/Output
@@ -124,10 +124,21 @@ flowchart TD
 | Max iterations | 1 | 2 | 4 | 8 | 12 |
 | Recursion limit | 25 | 50 | 100 | 200 | 300 |
 | Duration | ~1 min | ~5 min | ~15 min | 30+ min | 45+ min |
-| Use Opus (plan) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Use Opus (supervisor) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Use Opus (final) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Completeness threshold | 0.85 | 0.85 | 0.85 | 0.85 | 0.85 |
+
+### Model Tiers by Node
+
+| Node | Model | Purpose |
+|------|-------|---------|
+| Clarify Intent | DeepSeek V3 | Query disambiguation |
+| Create Brief | DeepSeek V3 | Research brief generation |
+| Iterate Plan | Opus | Plan customization with memory context |
+| Supervisor | Opus | Research coordination and diffusion algorithm |
+| Refine Draft | Sonnet | Iterative draft refinement |
+| Final Report | Opus | Comprehensive report synthesis |
+| Query Generation | DeepSeek V3 | Search query generation |
+| Compress Findings | Haiku | Fast finding summarization |
+| Citation Metadata | Haiku | Metadata extraction |
 
 **Recommended**: Use `quick` for initial exploration, `standard` for most research, `comprehensive` or `high_quality` for exhaustive deep dives.
 

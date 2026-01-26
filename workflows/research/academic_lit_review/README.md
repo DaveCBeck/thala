@@ -25,13 +25,16 @@ final_review = result["final_report"]
 
 ```bash
 # Quick review for exploratory research
-python -m testing.test_academic_lit_review "Attention mechanisms" --quality quick
+python testing/test_academic_lit_review.py "Attention mechanisms" quick
 
 # Standard quality (recommended)
-python -m testing.test_academic_lit_review "Transformer architectures" --quality standard
+python testing/test_academic_lit_review.py "Transformer architectures" standard
 
 # Comprehensive review for publication
-python -m testing.test_academic_lit_review "Vision transformers" --quality comprehensive
+python testing/test_academic_lit_review.py "Vision transformers" comprehensive
+
+# With language option
+python testing/test_academic_lit_review.py "Transformer architectures" standard --language es
 ```
 
 ## Input/Output
@@ -107,14 +110,14 @@ flowchart TD
 |---------|------|-------|----------|---------------|--------------|
 | Max diffusion stages | 1 | 2 | 3 | 4 | 5 |
 | Max papers processed | 5 | 50 | 100 | 200 | 300 |
-| Target word count | 500 | 3000 | 6000 | 10000 | 12500 |
+| Target word count | 2000 | 8000 | 12000 | 17500 | 25000 |
 | Min citations filter | 0 | 5 | 10 | 10 | 10 |
 | Saturation threshold | 0.50 | 0.15 | 0.12 | 0.10 | 0.10 |
 | Recency quota | 0% | 25% | 25% | 25% | 25% |
 | Use Batch API | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Supervision loops | all | all | all | all | all |
 
-**Recency quota** ensures ~25% of papers come from the past 3 years (if available), balancing seminal works with recent research. Recent papers bypass the citation filter during discovery.
+**Recency quota** ensures ~25% of papers come from the past 3 years (if available), balancing seminal works with recent research. Recent papers bypass the citation filter during discovery. The `test` tier disables recency quota for faster iteration.
 
 **Recommended**: Use `quick` for exploratory research, `standard` for most reviews, `comprehensive` or `high_quality` for publication-ready work.
 
@@ -143,15 +146,16 @@ Dual-strategy approach synthesized by Opus:
 
 ### Synthesis Pipeline
 Multi-stage document construction:
-1. Thematic sections (one per cluster, written in parallel)
-2. Introduction and methodology sections
+1. Introduction and methodology sections
+2. Thematic sections (one per cluster, written in parallel)
 3. Discussion and conclusions
 4. Document integration with transitions
 5. Citation processing (Pandoc format via Zotero)
 6. Quality verification (word count, citation density, coherence)
+7. PRISMA documentation generation
 
 ## Notes
 
-- This workflow does NOT include supervision loops. For supervised reviews with iterative quality improvement, use `workflows.supervised_lit_review`.
-- Non-English papers require `language_config` for proper processing overhead estimation.
-- Full state is saved to workflow state store for downstream use by supervision or editing workflows.
+- This workflow includes supervision loops for iterative quality improvement (configured via `supervision_loops` setting in quality presets).
+- Non-English papers require `language` parameter (ISO 639-1 code) for proper processing.
+- Full state is saved to workflow state store for downstream use by editing workflows.

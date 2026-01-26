@@ -49,6 +49,9 @@ FIRECRAWL_LOCAL_URL=http://localhost:3002
 # Cloud API key (required for stealth fallback)
 FIRECRAWL_API_KEY=fc-...
 
+# Request timeout in seconds (default: 45)
+FIRECRAWL_TIMEOUT=45
+
 # Skip local and use cloud only (for debugging)
 FIRECRAWL_SKIP_LOCAL=false
 ```

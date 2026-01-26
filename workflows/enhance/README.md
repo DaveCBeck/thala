@@ -221,7 +221,7 @@ Control how many iterations each supervision loop can run:
 ```python
 result = await enhance_report(
     ...,
-    max_iterations_per_loop=5,  # Default: 3
+    max_iterations_per_loop=5,  # Default: 3 (increase for deeper exploration)
 )
 ```
 
@@ -240,9 +240,11 @@ result = await enhance_report(
 
 | Setting | Supervision | Editing | Use Case |
 |---------|-------------|---------|----------|
-| `quick` | 2 diffusion stages, 50 papers | 2 iterations, Sonnet only | Drafts, testing |
-| `standard` | 3 diffusion stages, 100 papers | 3 iterations, Opus analysis | Most documents |
-| `comprehensive` | 4 diffusion stages, 200 papers | 4 iterations, Opus analysis | Thorough coverage |
-| `high_quality` | 5 diffusion stages, 300 papers | 5 iterations, Opus generation | Final publication |
+| `quick` | 2 diffusion stages, 25 papers* | 2 iterations, Sonnet only | Drafts, testing |
+| `standard` | 3 diffusion stages, 50 papers* | 3 iterations, Opus analysis | Most documents |
+| `comprehensive` | 4 diffusion stages, 100 papers* | 4 iterations, Opus analysis + generation | Thorough coverage |
+| `high_quality` | 5 diffusion stages, 150 papers* | 5 iterations, Opus analysis + generation | Final publication |
+
+*Paper counts reflect the default 0.5x supervision factor. The base quality presets define max_papers (50/100/200/300), but supervision uses half by default.
 
 See subworkflow READMEs for detailed quality settings.

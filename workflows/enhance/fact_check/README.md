@@ -78,8 +78,16 @@ flowchart TD
 |-------|------|-------------|
 | `final_report` | str | Verified document with corrections |
 | `status` | str | `"success"`, `"partial"`, `"failed"`, or `"skipped"` |
+| `langsmith_run_id` | str | LangSmith tracing ID |
+| `errors` | list | Any errors encountered during workflow |
+| `started_at` | datetime | Workflow start timestamp |
+| `completed_at` | datetime | Workflow completion timestamp |
+| `changes_summary` | str | Summary of verification results |
 | `fact_check_results` | list | Per-section fact-check results |
 | `reference_check_results` | list | Per-section reference validation results |
 | `applied_edits` | list | Corrections that were applied |
 | `skipped_edits` | list | Edits that couldn't be applied (logged) |
 | `unresolved_items` | list | Issues logged for manual review |
+| `document_model` | dict | Updated document model (for downstream workflows) |
+| `has_citations` | bool | Whether citations were detected |
+| `citation_keys` | list | Citation keys found in document |

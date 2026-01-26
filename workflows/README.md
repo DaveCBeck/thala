@@ -7,19 +7,22 @@ LangGraph-based research and knowledge workflows. Each workflow uses composable 
 | Workflow | Purpose | Entry Point | Docs |
 |----------|---------|-------------|------|
 | `academic_lit_review` | PhD-equivalent literature reviews | `academic_lit_review()` | [README](research/academic_lit_review/README.md) |
-| `web_research` | Web research with supervisor/researcher agents | `web_research()` | [README](research/web_research/README.md) |
+| `web_research` | Web research with supervisor/researcher agents | `deep_research()` | [README](research/web_research/README.md) |
 | `book_finding` | Book discovery across three categories | `book_finding()` | [README](research/book_finding/README.md) |
 | `document_processing` | PDF/document extraction and summarization | `process_document()` | [README](document_processing/README.md) |
 | `evening_reads` | 4-part article series from literature reviews | `evening_reads_graph` | [README](output/evening_reads/README.md) |
-| `enhance` | Two-phase document enhancement | `enhance()` | [README](enhance/README.md) |
-| `multi_lang` | Cross-language research with synthesis | `multi_lang_research()` | — |
+| `illustrate` | Document illustration with images and diagrams | `illustrate_graph` | [README](output/illustrate/README.md) |
+| `enhance` | Three-phase document enhancement | `enhance_report()` | [README](enhance/README.md) |
+| `multi_lang` | Cross-language research with synthesis | `multi_lang_research()` | [README](wrappers/multi_lang/README.md) |
+| `synthesis` | Multi-workflow orchestration for comprehensive reports | `synthesis()` | — |
 
 ### Enhancement Subworkflows
 
 | Subworkflow | Purpose | Docs |
 |-------------|---------|------|
 | `enhance.supervision` | Multi-loop paper corpus expansion | [README](enhance/supervision/README.md) |
-| `enhance.editing` | Structural editing with fact-checking | [README](enhance/editing/README.md) |
+| `enhance.editing` | Structural editing and flow polishing | [README](enhance/editing/README.md) |
+| `enhance.fact_check` | Fact verification and citation validation | [README](enhance/fact_check/README.md) |
 
 ### Utilities
 
@@ -54,11 +57,15 @@ result = await academic_lit_review(
 
 ```
 shared/
-├── llm_utils/           # Structured output, model tiers
+├── llm_utils/           # Structured output, model tiers, caching
 ├── language/            # Multi-language support (30+ languages)
+├── batch_processor/     # Async batch processing with Anthropic API
+├── diagram_utils/       # SVG diagram generation and validation
+├── image_utils.py       # Image handling and processing
+├── token_utils.py       # Token counting and context management
+├── metadata_utils.py    # Metadata extraction utilities
 ├── persistent_cache.py  # File-based cache with TTL
 ├── text_utils.py        # Chunking, word counting
-├── batch_processor.py   # Async batch processing
 └── wrappers/            # Workflow registry, result types
 ```
 

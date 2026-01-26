@@ -1,6 +1,6 @@
 # Workflows Shared Utilities
 
-Shared utilities and infrastructure for document processing workflows. Provides common tools for LLM integration, caching, batch processing, language support, and workflow orchestration.
+Shared utilities and infrastructure for document processing workflows. Provides common tools for LLM integration, caching, batch processing, language support, diagram generation, and workflow orchestration.
 
 ## Modules
 
@@ -17,6 +17,9 @@ Key exports:
 - `get_llm(tier: ModelTier)` - Get LLM instance by tier
 - `get_structured_output()` - Extract structured data from LLM
 - `invoke_with_cache()` - LLM calls with prompt caching
+- `get_structured_output_with_result()` - Structured output with metadata
+- `extract_from_text()` - Extract structured data from existing text
+- `classify_content()` - Content classification helper
 
 ### Token Utilities (`token_utils.py`)
 
@@ -33,6 +36,10 @@ from workflows.shared import (
     count_tokens_accurate,
     check_token_budget,
     select_model_for_context,
+    get_safe_limit_for_model,
+    TokenBudgetExceeded,
+    HAIKU_SAFE_LIMIT,
+    SONNET_SAFE_LIMIT,
 )
 
 # Quick estimate for budget tracking
@@ -41,11 +48,14 @@ tokens = estimate_tokens_fast(text)
 # Accurate count for model selection
 tokens = count_tokens_accurate(text)
 
-# Check if within budget
+# Check if within budget (raises TokenBudgetExceeded if exceeded)
 check_token_budget(tokens, SONNET_SAFE_LIMIT)
 
 # Auto-select model tier
 tier = select_model_for_context(tokens)
+
+# Get safe limit for a specific model
+limit = get_safe_limit_for_model(ModelTier.SONNET)
 ```
 
 ### Batch Processing (`batch_processor/`)
@@ -53,9 +63,17 @@ tier = select_model_for_context(tokens)
 Async batch processing via Anthropic Message Batches API. 50% cost reduction, ~1 hour completion time.
 
 ```python
-from workflows.shared import BatchProcessor, ModelTier
+from workflows.shared import (
+    BatchProcessor,
+    BatchRequest,
+    BatchResult,
+    get_batch_processor,
+    ModelTier,
+)
 
 processor = BatchProcessor()
+# Or use the singleton getter
+processor = get_batch_processor()
 
 # Queue requests
 processor.add_request("task-1", "Summarize...", ModelTier.SONNET)
@@ -71,13 +89,28 @@ summary = results["task-1"]
 File-based caching for expensive operations with TTL support.
 
 ```python
-from workflows.shared import get_cached, set_cached
+from workflows.shared import (
+    get_cached,
+    set_cached,
+    clear_cache,
+    get_cache_stats,
+    compute_file_hash,
+)
 
 # Check cache
 result = get_cached("openalex", doi, ttl_days=30)
 if result is None:
     result = await fetch_from_api(doi)
     set_cached("openalex", doi, result)
+
+# Get cache statistics
+stats = get_cache_stats("openalex")  # Or None for all caches
+
+# Clear specific cache type
+clear_cache("openalex")
+
+# Compute file hash for cache keys
+file_hash = compute_file_hash("/path/to/file.pdf")
 ```
 
 Decorator usage:
@@ -241,7 +274,12 @@ Workflow orchestration infrastructure for dynamic registration and invocation.
 ```python
 from workflows.shared.wrappers import (
     register_workflow,
+    unregister_workflow,
     invoke_workflow,
+    get_workflow,
+    get_available_workflows,
+    get_quality_tiers,
+    WorkflowConfig,
     WorkflowResult,
 )
 
@@ -252,11 +290,116 @@ register_workflow(
     supported_qualities=["quick", "standard", "comprehensive"],
 )
 
+# Get available workflows
+workflows = get_available_workflows()
+
 # Invoke registered workflow
 result = await invoke_workflow(
     workflow_name="lit_review",
     quality_tier="standard",
     **params,
+)
+```
+
+### Diagram Utilities (`diagram_utils/`)
+
+SVG diagram generation using LLM with multi-stage pipeline: analysis, generation, overlap checking, and quality refinement.
+
+```python
+from workflows.shared import (
+    generate_diagram,
+    DiagramResult,
+    DiagramConfig,
+    DiagramType,
+    DiagramAnalysis,
+    OverlapCheckResult,
+)
+
+# Generate a diagram from content
+result = await generate_diagram(
+    title="Paper Processing Pipeline",
+    content="The pipeline has three stages: extraction, validation...",
+)
+
+if result.success:
+    with open("diagram.png", "wb") as f:
+        f.write(result.png_bytes)
+
+# With quality refinement loop
+result = await generate_diagram(
+    title="Process Flow",
+    content="...",
+    config=DiagramConfig(
+        enable_refinement_loop=True,
+        quality_threshold=3.5,
+        max_refinement_iterations=3,
+    ),
+)
+```
+
+### Metadata Utilities (`metadata_utils.py`)
+
+Metadata validation, author name parsing, and metadata merging utilities.
+
+```python
+from workflows.shared import (
+    extract_year,
+    validate_year,
+    parse_author_name,
+    normalize_author_list,
+    merge_metadata_with_baseline,
+    ParsedAuthorName,
+)
+
+# Extract year from date string
+year = extract_year("2024-03-15")  # Returns 2024
+
+# Parse author names (handles various formats)
+author = parse_author_name("van der Berg, Johannes")
+# -> ParsedAuthorName(firstName="Johannes", lastName="van der Berg")
+
+# Normalize list of authors
+authors = normalize_author_list(["John Doe", "Jane Smith"])
+
+# Merge extracted metadata with baseline (e.g., OpenAlex)
+merged = merge_metadata_with_baseline(
+    baseline=openalex_data,
+    extracted=llm_extracted_data,
+)
+```
+
+### Tracing Utilities (`tracing/`)
+
+LangSmith tracing integration for tool calls and workflow debugging.
+
+```python
+from workflows.shared.tracing import (
+    traced_tool_call,
+    traced_search_papers,
+    traced_get_paper_content,
+    traced_web_search,
+    traced_scrape_url,
+)
+
+# Wrap tool calls with tracing
+result = await traced_tool_call("search", search_fn, query)
+```
+
+### Image Utilities (`image_utils.py`)
+
+Image generation using Google Imagen with LLM-generated prompts.
+
+```python
+from workflows.shared.image_utils import (
+    generate_image_prompt,
+    generate_article_header,
+)
+
+# Generate article header image
+image_bytes, prompt = await generate_article_header(
+    title="AI in Healthcare",
+    content="Article content...",
+    aspect_ratio="16:9",
 )
 ```
 
@@ -273,15 +416,24 @@ from workflows.shared import (
     # Tokens
     estimate_tokens_fast,
     check_token_budget,
+    TokenBudgetExceeded,
     # Caching
     get_cached,
     set_cached,
+    clear_cache,
+    get_cache_stats,
     # Text
     count_words,
     chunk_by_headings,
     # Async
     run_with_concurrency,
     with_retry,
+    # Diagrams
+    generate_diagram,
+    DiagramConfig,
+    # Metadata
+    parse_author_name,
+    merge_metadata_with_baseline,
 )
 ```
 
@@ -305,7 +457,7 @@ from workflows.shared import (
 **LLM Integration:**
 - `get_llm(tier: ModelTier)` - Get LLM by tier
 - `get_structured_output()` - Unified structured output interface
-- `invoke_with_cache()` - LLM with prompt caching
+- `invoke_with_cache()` - LLM with prompt caching (via `llm_utils`)
 
 **Token Management:**
 - `estimate_tokens_fast(text: str)` - Quick estimate
@@ -313,11 +465,15 @@ from workflows.shared import (
 - `estimate_request_tokens()` - Full request estimation
 - `check_token_budget(tokens, limit)` - Budget validation
 - `select_model_for_context(tokens)` - Auto tier selection
+- `get_safe_limit_for_model(tier)` - Get safe limit for model tier
+- `TokenBudgetExceeded` - Exception for budget violations
 
 **Caching:**
 - `get_cached(cache_type, key, ttl_days)` - Retrieve cached value
 - `set_cached(cache_type, key, value)` - Save to cache
 - `clear_cache(cache_type)` - Clear cache by type
+- `get_cache_stats(cache_type)` - Get cache statistics
+- `compute_file_hash(file_path)` - Compute file hash for cache keys
 
 **Text Processing:**
 - `count_words(text)` - Word count
@@ -334,3 +490,22 @@ from workflows.shared import (
 - `safe_node_execution(node_name, logger)` - Decorator for safe nodes
 - `StateUpdater.success(status, **kwargs)` - Success state
 - `StateUpdater.error(node_name, error)` - Error state
+
+**Diagrams:**
+- `generate_diagram(title, content, config)` - Generate SVG/PNG diagram
+- `DiagramConfig` - Configuration for diagram generation
+- `DiagramResult` - Result container with PNG bytes and metadata
+- `DiagramType` - Enum for diagram types (flowchart, sequence, etc.)
+
+**Metadata:**
+- `extract_year(date_str)` - Extract year from date string
+- `validate_year(year)` - Validate year string
+- `parse_author_name(name)` - Parse author name into first/last
+- `normalize_author_list(authors)` - Normalize list of author names
+- `merge_metadata_with_baseline(baseline, extracted)` - Merge metadata sources
+
+**Batch Processing:**
+- `BatchProcessor` - Main batch processor class
+- `get_batch_processor()` - Get singleton processor instance
+- `BatchRequest` - Request model for batch items
+- `BatchResult` - Result model for batch responses

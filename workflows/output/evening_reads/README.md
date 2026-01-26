@@ -47,13 +47,13 @@ if result["status"] == "success":
 ## Pipeline
 
 ```
-extract_citations → plan_content → enrich_sources (parallel)
-                                 ↓
-                  write_deep_dive (3x parallel via Send)
-                                 ↓
-              collect_drafts → write_overview → generate_images
-                                 ↓
-                          format_references → END
+validate_input → plan_content → fetch_content (3x parallel via Send)
+                                      ↓
+                          sync_before_write (barrier)
+                                      ↓
+                      write_deep_dive (3x parallel via Send)
+                                      ↓
+                   write_overview → generate_images → format_references → END
 ```
 
 ## Image Generation
@@ -64,12 +64,12 @@ Header images are generated for each article using a two-step process:
 
 ## Model Usage
 
-| Node | Model | Tokens |
-|------|-------|--------|
+| Node | Model | Max Tokens |
+|------|-------|------------|
 | plan_content | OPUS | 4,096 |
 | write_deep_dive | OPUS | 14,000 |
 | write_overview | OPUS | 12,000 |
-| generate_image_prompt | SONNET | 500 |
+| generate_images | SONNET + Imagen | (via shared image_utils) |
 
 ## Input Requirements
 

@@ -13,6 +13,11 @@ result = await enhance_report(
     research_questions=["How do attention mechanisms improve model performance?"],
     quality="standard",
     loops="all",
+    max_iterations_per_loop=3,  # optional, default 3
+    supervision_paper_factor=0.5,  # optional, multiplier for max_papers
+    paper_corpus=existing_papers,  # optional, DOI -> PaperMetadata
+    paper_summaries=existing_summaries,  # optional, DOI -> PaperSummary
+    zotero_keys=existing_keys,  # optional, DOI -> Zotero key
 )
 
 enhanced_document = result["final_report"]
@@ -42,10 +47,14 @@ result = await enhance_report(..., loops="none")
 | **Output** | Markdown | Enhanced document with deeper theory and broader literature |
 
 The workflow also returns:
-- `paper_corpus`: Newly discovered papers (DOI → metadata)
-- `paper_summaries`: Summaries of integrated papers
-- `zotero_keys`: Citation keys for bibliography management
+- `paper_corpus`: Merged paper corpus including newly discovered papers (DOI → metadata)
+- `paper_summaries`: Merged summaries of integrated papers
+- `zotero_keys`: Merged citation keys for bibliography management
 - `loops_run`: Which loops executed successfully
+- `review_loop1`: Report state after Loop 1 (if run)
+- `review_loop2`: Report state after Loop 2 (if run)
+- `completion_reason`: Summary of how enhancement completed
+- `errors`: List of any errors encountered during processing
 
 ## Workflow
 

@@ -16,12 +16,14 @@ result = await synthesis(
     ],
     synthesis_brief="Focus on practical applications in resource-limited settings",
     quality="standard",
+    language="en",  # Optional: ISO 639-1 code, default "en"
 )
 
 # Access results
 print(f"Report length: {len(result['final_report'])} chars")
 print(f"Status: {result['status']}")
 print(f"Sources used: {result['source_count']}")
+print(f"Duration: {result['completed_at'] - result['started_at']}")
 
 # Save to file
 with open("synthesis.md", "w") as f:
@@ -32,15 +34,17 @@ with open("synthesis.md", "w") as f:
 
 | | Format | Description |
 |---|--------|-------------|
-| **Input** | Parameters | Topic, research questions, optional synthesis brief, quality tier |
+| **Input** | Parameters | Topic, research questions, optional synthesis brief, quality tier, language code |
 | **Output** | Markdown | Comprehensive synthesis integrating academic, web, and book sources |
 
 The workflow returns:
 - `final_report`: Complete synthesis document with citations
 - `status`: "success", "partial", or "failed"
-- `source_count`: Total sources integrated
+- `source_count`: Total sources integrated (papers + web sources + books)
 - `langsmith_run_id`: LangSmith tracing ID
 - `errors`: Any errors encountered
+- `started_at`: Workflow start timestamp
+- `completed_at`: Workflow completion timestamp
 
 ## Workflow
 
@@ -130,6 +134,7 @@ Runs `enhance.editing` to polish the final document, improving transitions, cohe
 | book_finding runs | 1 | 2 | 3 | 4 | 5 |
 | Simple synthesis | ✓ | ✗ | ✗ | ✗ | ✗ |
 | Max books selected | 2 | 3 | 4 | 5 | 6 |
+| Target word count | 3,000 | 12,000 | 18,000 | 26,250 | 37,500 |
 | Opus for structure | ✗ | ✓ | ✓ | ✓ | ✓ |
 | Opus for sections | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Section quality threshold | 0.5 | 0.6 | 0.7 | 0.75 | 0.8 |

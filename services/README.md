@@ -30,7 +30,7 @@ This directory contains Docker-based services that support the thala workflow sy
 
 ## Service Categories
 
-### Regular Services
+### Regular Services (auto-started by services.sh)
 - **elasticsearch-coherence**: Identity, beliefs, and main content storage
 - **elasticsearch-forgotten**: Historical snapshots and archived content
 - **chroma**: Vector embeddings for semantic search
@@ -42,6 +42,9 @@ This directory contains Docker-based services that support the thala workflow sy
 
 ### VPN Services (require credentials and submodule init)
 - **retrieve-academic**: Full-text academic document retrieval
+
+### Manual Services (start separately)
+- **translation-server**: Bibliographic metadata extraction (start with `docker compose -f services/translation-server/docker-compose.yml up -d`)
 
 ## retrieve-academic Contract
 

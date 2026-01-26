@@ -22,13 +22,13 @@ edited_document = result["final_report"]
 
 ```bash
 # Quick edit for fast iteration
-python -m testing.test_editing_workflow my_doc.md --quality quick
+python testing/test_editing_workflow.py my_doc.md --quality quick
 
 # Standard quality (recommended)
-python -m testing.test_editing_workflow my_doc.md --quality standard
+python testing/test_editing_workflow.py my_doc.md --quality standard
 
 # High quality for final output
-python -m testing.test_editing_workflow my_doc.md --quality high_quality
+python testing/test_editing_workflow.py my_doc.md --quality high_quality
 ```
 
 ## Input/Output
@@ -66,9 +66,7 @@ flowchart TD
 
     subgraph polish ["Polish Phase"]
         E -->|no citations| I
-        I --> J[Screen for Polish]
-        J --> K[Polish Sections]
-        K --> L[Finalize]
+        I --> L[Finalize]
     end
 
     style structure fill:#e8f4e8
@@ -85,7 +83,7 @@ flowchart TD
 | **Reassemble** | Combines rewritten sections, verifies coherence | Single step |
 | **Bridge** | Parses markdown to DocumentModel, detects citations | Single step |
 | **Enhancement** | Strengthens arguments with evidence from paper corpus | Parallel workers |
-| **Polish** | Improves sentence-level flow and transitions | Sequential |
+| **Polish** | Improves sentence-level flow and transitions | Single pass |
 
 ### V2 Structure Phase Details
 
@@ -108,10 +106,11 @@ The V2 structure phase operates at the **top-level section** (H1) granularity:
 
 | Setting | test | quick | standard | comprehensive | high_quality |
 |---------|------|-------|----------|---------------|--------------|
+| Structure iterations | 1 | 2 | 3 | 4 | 5 |
 | Enhance iterations | 1 | 2 | 3 | 4 | 5 |
-| Polish sections | 3 | 5 | 10 | 15 | 20 |
-| Use Opus for analysis | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Use Opus for generation | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Max polish edits | 3 | 5 | 10 | 15 | 20 |
+| Use Opus for analysis | no | no | yes | yes | yes |
+| Use Opus for generation | no | no | no | yes | yes |
 | Coherence threshold | 0.60 | 0.70 | 0.75 | 0.80 | 0.85 |
 
 **Recommended**: Use `quick` for drafts, `standard` for most documents, `comprehensive` or `high_quality` for final publication.
@@ -128,16 +127,19 @@ editing/
 ├── prompts.py            # LLM prompts (including V2 prompts)
 ├── quality_presets.py    # Quality tier configurations
 ├── graph/
+│   ├── __init__.py       # Graph exports
 │   ├── construction.py   # LangGraph workflow definition
 │   └── api.py            # Main entry point (editing function)
 └── nodes/
+    ├── __init__.py       # Node exports
     ├── v2_analyze.py     # V2 structure analysis
     ├── v2_rewrite_section.py  # V2 parallel section rewriting
     ├── v2_reassemble.py  # V2 reassembly and verification
     ├── v2_router.py      # V2 Send-based routing
     ├── bridge.py         # V2 → V1 bridge node
-    ├── enhance_section.py
-    ├── enhance_coherence.py
-    ├── polish.py
-    └── finalize.py
+    ├── detect_citations.py    # Citation detection and routing
+    ├── enhance_section.py     # Section enhancement workers
+    ├── enhance_coherence.py   # Coherence review after enhancement
+    ├── polish.py              # Flow and clarity polishing
+    └── finalize.py            # Final output packaging
 ```

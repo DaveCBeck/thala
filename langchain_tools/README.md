@@ -8,7 +8,7 @@ LangChain 1.x tools for integrating Thala stores, web search, and research workf
 
 | Tool | Purpose |
 |------|---------|
-| `search_memory` | Cross-store semantic search (all 5 stores) |
+| `search_memory` | Cross-store semantic search (top_of_mind, coherence, store, optionally who_i_was) |
 | `expand_context` | Deep-dive retrieval for follow-up questions |
 | `search_store` | Main store with language/type filters |
 | `search_coherence` | Beliefs/preferences with confidence filters |
@@ -33,6 +33,8 @@ LangChain 1.x tools for integrating Thala stores, web search, and research workf
 | `openalex_search` | Academic literature (240M+ works) |
 | `book_search` | Book/textbook discovery |
 | `process_document` | Document extraction pipeline |
+| `search_papers` | Hybrid search for papers in the corpus |
+| `get_paper_content` | Fetch detailed paper content by Zotero key |
 
 ## Usage
 
@@ -66,14 +68,23 @@ await manager.cleanup()  # Proper async cleanup
 
 ## OpenAlex Integration (`openalex/`)
 
-Async client for academic literature:
+Academic literature search and citation tracking:
 
 ```python
-from langchain_tools.openalex import OpenAlexClient
+from langchain_tools.openalex import (
+    openalex_search,
+    get_forward_citations,
+    get_backward_citations,
+    get_author_works,
+    get_work_by_doi,
+)
 
-client = OpenAlexClient()
-works = await client.search_works("machine learning", per_page=25)
-citations = await client.get_citations(work_id)
+# Search tool (for LangChain agents)
+results = await openalex_search.ainvoke({"query": "machine learning", "limit": 10})
+
+# Direct query functions (for programmatic use)
+citations = await get_forward_citations(doi="10.1234/example")
+author_works = await get_author_works(author_id="A1234567890")
 ```
 
 ## Output Types
@@ -82,9 +93,17 @@ Each tool returns a typed output:
 
 - `SearchMemoryOutput` - Cross-store results
 - `ExpandedContext` - Deep retrieval results
+- `StoreSearchOutput` - Store-specific search results
 - `WebSearchOutput` - Web search results
+- `ScrapeOutput` - Scraped webpage content
+- `MapOutput` - Website URL discovery results
+- `PerplexitySearchOutput` - Perplexity search results
+- `FactCheckOutput` - Fact verification results
 - `OpenAlexSearchOutput` - Academic results
 - `BookSearchOutput` - Book results
+- `DocumentProcessingOutput` - Document processing results
+- `PaperSearchOutput` - Paper corpus search results
+- `PaperContentOutput` - Paper content retrieval results
 
 ## Environment Variables
 

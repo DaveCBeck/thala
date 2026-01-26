@@ -1,6 +1,6 @@
 # Book Finding Workflow
 
-A research workflow that discovers books related to a theme across three distinct categories: analogous domain (exploring the theme from different fields), inspiring action (books that inspire change), and expressive fiction (fiction capturing the theme's essence). The workflow generates recommendations via LLM, searches for books via the book_search API, downloads and processes PDFs through Marker, and synthesizes a comprehensive markdown report with theme-relevant summaries.
+A research workflow that discovers books related to a theme across three distinct categories: analogous domain (exploring the theme from different fields), inspiring action (books that inspire change), and expressive fiction (fiction capturing the theme's essence). The workflow generates recommendations via LLM, searches for books via the book_search API, downloads and processes PDFs through the document_processing workflow (creating Zotero entries and 10:1 summaries), and synthesizes a comprehensive markdown report.
 
 ## Usage
 
@@ -43,7 +43,7 @@ python -m testing.test_book_finding "innovación radical" --quality high_quality
 | | `language: str` | ISO 639-1 language code (default: "en") |
 | **Output** | Markdown | Structured report with book recommendations organized by category, including summaries of processed books and unprocessed recommendations |
 
-The workflow returns a dict with `final_report` (markdown), `status` (success/partial/failed), `source_count` (books processed), `errors`, and timing metadata.
+The workflow returns a dict with `final_report` (markdown), `status` (success/partial/failed), `source_count` (books processed), `errors`, `langsmith_run_id`, and timing metadata (`started_at`, `completed_at`).
 
 ## Workflow
 
@@ -59,7 +59,7 @@ flowchart TD
         B1 & B2 & B3 --> C[Search Books]
     end
 
-    subgraph process ["Processing · VPN + Marker PDF conversion"]
+    subgraph process ["Processing · document_processing workflow"]
         C --> D[Process Books]
     end
 
@@ -84,9 +84,8 @@ flowchart TD
 
 1. **Recommendation Generation**: Three parallel LLM calls (Opus or Sonnet based on quality) generate book recommendations for each category
 2. **Book Search**: Multi-query fallback strategy searches book_search API (title+author, title only, author only) with language filtering and PDF prioritization
-3. **Book Processing**: Downloads PDFs via VPN, converts to markdown via Marker, truncates content based on quality settings
-4. **Summary Generation**: Sonnet creates theme-relevant summaries for each processed book
-5. **Output Synthesis**: Assembles markdown report with processed books (with summaries) and unprocessed recommendations
+3. **Book Processing**: Downloads PDFs via VPN, then processes through the document_processing workflow which creates Zotero library entries, 10:1 summaries (stored in Elasticsearch), and store records
+4. **Output Synthesis**: Assembles markdown report with processed books (with 10:1 summaries and Zotero citation keys) and unprocessed recommendations
 
 ## Quality Settings
 
@@ -94,9 +93,9 @@ flowchart TD
 |---------|------|-------|----------|---------------|--------------|
 | Recommendations per category | 1 | 2 | 3 | 5 | 7 |
 | Max concurrent downloads | 1 | 2 | 3 | 5 | 7 |
-| Max content for summary | 10K | 25K | 50K | 100K | 150K |
 | Use Opus for recommendations | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Recommendation max tokens | 512 | 1024 | 2048 | 4096 | 8192 |
-| Summary max tokens | 256 | 512 | 1024 | 2048 | 4096 |
+
+Note: Summary generation is now handled by the document_processing workflow, which creates 10:1 summaries using its own quality settings.
 
 **Recommended**: Use `quick` for testing themes, `standard` for most research, `comprehensive` or `high_quality` for in-depth exploration requiring more recommendations per category.
