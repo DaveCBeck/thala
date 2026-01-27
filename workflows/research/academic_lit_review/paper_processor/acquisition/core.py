@@ -532,7 +532,10 @@ async def run_paper_pipeline(
                     except Exception as e:
                         # Other marker failure - log error, add to failed
                         processing_failed.append(doi)
-                        logger.error(f"Marker error for {doi}: {e}")
+                        logger.error(
+                            f"Marker error for {doi}: {type(e).__name__}: {e}",
+                            exc_info=True,
+                        )
 
             while True:
                 item = await marker_queue.get()
