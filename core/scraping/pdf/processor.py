@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Marker service configuration
 MARKER_BASE_URL = os.getenv("MARKER_BASE_URL", "http://localhost:8001")
 MARKER_INPUT_DIR = Path(os.getenv("MARKER_INPUT_DIR", "/data/input"))
-MARKER_POLL_INTERVAL = float(os.getenv("MARKER_POLL_INTERVAL", "2.0"))
+MARKER_POLL_INTERVAL = float(os.getenv("MARKER_POLL_INTERVAL", "15.0"))
 
 # Module-level Playwright instances for reuse
 _playwright: "Playwright | None" = None
@@ -314,6 +314,7 @@ async def _submit_marker_job(
     file_path: str,
     quality: str = "balanced",
     langs: Optional[list[str]] = None,
+    max_retries: int = 3,
 ) -> str:
     """Submit a PDF conversion job to Marker.
 
@@ -321,11 +322,12 @@ async def _submit_marker_job(
         file_path: Path relative to Marker input directory
         quality: Quality preset (fast, balanced, quality)
         langs: Languages for OCR
+        max_retries: Max retries for transient network errors
 
     Returns:
         Job ID for polling
     """
-    async with httpx.AsyncClient(base_url=MARKER_BASE_URL, timeout=30.0) as client:
+    async with httpx.AsyncClient(base_url=MARKER_BASE_URL, timeout=60.0) as client:
         payload = {
             "file_path": file_path,
             "quality": quality,
@@ -333,22 +335,41 @@ async def _submit_marker_job(
             "langs": langs or ["English"],
         }
 
-        response = await client.post("/convert", json=payload)
-        response.raise_for_status()
+        backoff_multipliers = (2, 5, 10)  # Longer backoffs for busy service
+        for attempt in range(max_retries):
+            try:
+                response = await client.post("/convert", json=payload)
+                response.raise_for_status()
+                data = response.json()
+                return data["job_id"]
+            except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2.0 * backoff_multipliers[attempt]  # 4s, 10s, 20s
+                    logger.warning(
+                        f"Marker submit timeout (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {wait_time}s"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise MarkerProcessingError(
+                        f"Marker job submission failed after {max_retries} retries: {e}"
+                    ) from e
 
-        data = response.json()
-        return data["job_id"]
+        # Should never reach here, but satisfy type checker
+        raise MarkerProcessingError("Marker job submission failed")
 
 
 async def _poll_marker_job(
     job_id: str,
     max_wait: Optional[float] = None,
+    max_retries: int = 3,
 ) -> str:
     """Poll Marker job until completion.
 
     Args:
         job_id: Job ID to poll
         max_wait: Maximum wait time in seconds (None = no limit)
+        max_retries: Max retries for transient network errors per poll attempt
 
     Returns:
         Markdown content
@@ -358,7 +379,8 @@ async def _poll_marker_job(
     """
     start_time = asyncio.get_event_loop().time()
 
-    async with httpx.AsyncClient(base_url=MARKER_BASE_URL, timeout=30.0) as client:
+    # Use longer timeout for poll requests - Marker can be slow under load
+    async with httpx.AsyncClient(base_url=MARKER_BASE_URL, timeout=60.0) as client:
         while True:
             elapsed = asyncio.get_event_loop().time() - start_time
             if max_wait is not None and elapsed > max_wait:
@@ -366,8 +388,25 @@ async def _poll_marker_job(
                     f"Marker job {job_id} did not complete within {max_wait}s"
                 )
 
-            response = await client.get(f"/jobs/{job_id}")
-            response.raise_for_status()
+            # Retry transient network errors with longer backoffs for busy service
+            backoff_multipliers = (2, 5, 10)  # 30s, 75s, 150s
+            for attempt in range(max_retries):
+                try:
+                    response = await client.get(f"/jobs/{job_id}")
+                    response.raise_for_status()
+                    break
+                except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = MARKER_POLL_INTERVAL * backoff_multipliers[attempt]
+                        logger.warning(
+                            f"Marker poll timeout for job {job_id} (attempt {attempt + 1}/{max_retries}), "
+                            f"retrying in {wait_time}s"
+                        )
+                        await asyncio.sleep(wait_time)
+                    else:
+                        raise MarkerProcessingError(
+                            f"Marker poll failed after {max_retries} retries: {e}"
+                        ) from e
 
             data = response.json()
             status = data["status"]
