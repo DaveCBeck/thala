@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 MARKER_BASE_URL = os.getenv("MARKER_BASE_URL", "http://localhost:8001")
 MARKER_INPUT_DIR = Path(os.getenv("MARKER_INPUT_DIR", "/data/input"))
 MARKER_POLL_INTERVAL = float(os.getenv("MARKER_POLL_INTERVAL", "15.0"))
+MARKER_MAX_FILE_SIZE = int(os.getenv("MARKER_MAX_FILE_SIZE", str(350 * 1024 * 1024)))  # 350MB
 
 # Module-level Playwright instances for reuse
 _playwright: "Playwright | None" = None
@@ -482,6 +483,14 @@ async def process_pdf_bytes(
     """
     if not validate_pdf_bytes(content):
         raise MarkerProcessingError("Content is not a valid PDF")
+
+    # Check file size limit
+    if len(content) > MARKER_MAX_FILE_SIZE:
+        size_mb = len(content) / (1024 * 1024)
+        limit_mb = MARKER_MAX_FILE_SIZE / (1024 * 1024)
+        raise MarkerProcessingError(
+            f"PDF too large ({size_mb:.1f}MB > {limit_mb:.0f}MB limit)"
+        )
 
     # Save to Marker input directory
     file_path = _save_to_marker_input(content, filename)

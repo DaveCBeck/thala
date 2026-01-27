@@ -9,7 +9,7 @@ Supports batch processing for 50% cost reduction when processing
 multiple documents together.
 """
 
-from core.config import configure_langsmith
+from core.config import configure_langsmith, truncate_for_trace
 
 configure_langsmith()
 
@@ -128,7 +128,12 @@ def create_document_processing_graph():
     return builder.compile()
 
 
-@traceable(run_type="chain", name="DocumentProcessing")
+@traceable(
+    run_type="chain",
+    name="DocumentProcessing",
+    process_inputs=truncate_for_trace,
+    process_outputs=truncate_for_trace,
+)
 async def process_document(
     source: str,
     title: str = None,

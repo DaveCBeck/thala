@@ -10,6 +10,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.config import truncate_for_trace
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM, TRANSLATION_SYSTEM
 from workflows.shared.language import LANGUAGE_NAMES
@@ -21,7 +22,12 @@ from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
 logger = logging.getLogger(__name__)
 
 
-@traceable(run_type="chain", name="GenerateSummary")
+@traceable(
+    run_type="chain",
+    name="GenerateSummary",
+    process_inputs=truncate_for_trace,
+    process_outputs=truncate_for_trace,
+)
 async def generate_summary(state: DocumentProcessingState) -> dict[str, Any]:
     """
     Generate summary of the document.

@@ -7,10 +7,14 @@ including development mode detection, LangSmith tracing setup, and logging.
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# LangSmith trace size limit (bytes) - API limit is 20MB, use 15MB for safety margin
+LANGSMITH_MAX_TRACE_SIZE = int(os.getenv("LANGSMITH_MAX_TRACE_SIZE", str(15 * 1024 * 1024)))
 
 # Logging defaults
 DEFAULT_CONSOLE_LEVEL = "WARNING"
@@ -234,3 +238,33 @@ def configure_langsmith() -> None:
         os.environ.setdefault("LANGSMITH_PROJECT", "thala-dev")
     else:
         os.environ["LANGSMITH_TRACING"] = "false"
+
+
+def truncate_for_trace(data: Any, max_str_len: int = 50000) -> Any:
+    """Truncate large strings in data structures for LangSmith tracing.
+
+    Use with @traceable(process_inputs=truncate_for_trace, process_outputs=truncate_for_trace)
+    to prevent oversized trace payloads that exceed LangSmith's 20MB limit.
+
+    Args:
+        data: Input/output data from a traced function
+        max_str_len: Maximum length for string fields (default 50KB)
+
+    Returns:
+        Data with large strings truncated
+    """
+    if isinstance(data, str):
+        if len(data) > max_str_len:
+            return data[:max_str_len] + f"\n\n[TRUNCATED - {len(data):,} chars total]"
+        return data
+    elif isinstance(data, dict):
+        return {k: truncate_for_trace(v, max_str_len) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [truncate_for_trace(item, max_str_len) for item in data]
+    elif hasattr(data, "__dict__"):
+        # Handle dataclasses/objects - return dict representation
+        try:
+            return {k: truncate_for_trace(v, max_str_len) for k, v in data.__dict__.items()}
+        except Exception:
+            return str(data)[:max_str_len] if len(str(data)) > max_str_len else data
+    return data

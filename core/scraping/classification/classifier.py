@@ -43,6 +43,28 @@ def _quick_paywall_check(markdown: str) -> bool:
     return matches >= 1
 
 
+def _is_doi_error_page(markdown: str) -> bool:
+    """Check if content is a DOI resolver error page."""
+    markdown_lower = markdown.lower()
+    # DOI error pages are typically short and contain specific error messages
+    if len(markdown) > 5000:
+        return False  # Error pages are short
+
+    error_indicators = [
+        "doi not found",
+        "the doi system",
+        "doi.org",
+        "handle not found",
+        "invalid doi",
+        "doi could not be resolved",
+        "resource not found",
+        "the requested doi",
+        "doi resolution failed",
+    ]
+    matches = sum(1 for indicator in error_indicators if indicator in markdown_lower)
+    return matches >= 2  # Need at least 2 indicators
+
+
 def _has_article_structure(markdown: str) -> bool:
     """Check if markdown has typical article section headers."""
     section_patterns = [
@@ -82,6 +104,15 @@ async def classify_content(
         ClassificationResult with classification and optional PDF URL
     """
     # Fast path: heuristic detection for obvious cases
+    if _is_doi_error_page(markdown):
+        logger.debug("Quick DOI error page detection")
+        return ClassificationResult(
+            classification="paywall",  # Treat as paywall to trigger fallback
+            confidence=0.95,
+            pdf_url=None,
+            reasoning="Content is a DOI resolver error page (DOI not found)",
+        )
+
     if _quick_paywall_check(markdown):
         logger.debug("Quick paywall detection")
         return ClassificationResult(
