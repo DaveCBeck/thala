@@ -16,10 +16,11 @@ testing/traces/
 # Task queue data (local state, not committed)
 topic_queue/
 
-# Environment variables
+# Environment variables and credentials
 .env
 .env.*
 !.env.example
+.substack-cookies.json
 
 # Service data directories
 services/chroma/data/
@@ -75,3 +76,4 @@ temp/
 # Cache
 .cache/
 .lit-review-state/
+.substack-cookies.json
