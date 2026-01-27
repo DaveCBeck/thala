@@ -5,10 +5,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKUP_DIR="${SCRIPT_DIR}/backups"
-MONITOR_PID_FILE="${SCRIPT_DIR}/monitor.pid"
-MONITOR_LOG_FILE="${SCRIPT_DIR}/monitor.log"
-LOGS_DIR="${SCRIPT_DIR}/logs"
-LOG_COLLECTOR_PID_FILE="${SCRIPT_DIR}/log_collector.pid"
+
+# Consolidated logs directory structure: /logs/services/
+SERVICES_LOGS_DIR="${PROJECT_DIR}/logs/services"
+MONITOR_PID_FILE="${SERVICES_LOGS_DIR}/monitor.pid"
+MONITOR_LOG_FILE="${SERVICES_LOGS_DIR}/monitor.log"
+LOG_COLLECTOR_PID_FILE="${SERVICES_LOGS_DIR}/log_collector.pid"
 RUNNING_MARKER="${SCRIPT_DIR}/.running"
 
 # Load THALA_MODE from .env if not already set
@@ -56,6 +58,35 @@ log()   { echo -e "${GREEN}[+]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; }
 
+# Rotate log file: current -> previous/name.1.log, shift .1->.2, etc.
+# Usage: rotate_log <log_file> [keep_count]
+rotate_log() {
+    local log_file="$1"
+    local keep="${2:-4}"
+    local log_dir
+    log_dir="$(dirname "$log_file")"
+    local previous_dir="${log_dir}/previous"
+    local base
+    base="$(basename "$log_file")"
+    local stem="${base%.*}"
+    local ext="${base##*.}"
+
+    [[ ! -f "$log_file" ]] && return 0
+
+    mkdir -p "$previous_dir"
+
+    # Delete oldest, shift others (.4 deleted, .3->.4, .2->.3, .1->.2)
+    for ((i=keep; i>=1; i--)); do
+        local src="${previous_dir}/${stem}.${i}.${ext}"
+        local dst="${previous_dir}/${stem}.$((i+1)).${ext}"
+        [[ $i -eq $keep ]] && rm -f "$src"
+        [[ -f "$src" ]] && mv "$src" "$dst"
+    done
+
+    # Move current to .1
+    mv "$log_file" "${previous_dir}/${stem}.1.${ext}"
+}
+
 check_nvidia() {
     if ! command -v nvidia-smi &>/dev/null; then
         return 1
@@ -79,6 +110,25 @@ check_vpn_config() {
     return 1
 }
 
+clear_marker_queue() {
+    # Clear Celery queue in marker's Redis to start fresh
+    # Wait for Redis to be healthy first
+    local max_wait=30
+    local waited=0
+    log "Waiting for marker Redis to be ready..."
+    while ! docker compose -f "${SCRIPT_DIR}/marker/docker-compose.yml" exec -T redis redis-cli ping &>/dev/null; do
+        sleep 1
+        waited=$((waited + 1))
+        if [[ $waited -ge $max_wait ]]; then
+            warn "Marker Redis not ready after ${max_wait}s, skipping queue clear"
+            return 1
+        fi
+    done
+    log "Clearing marker Celery queue..."
+    docker compose -f "${SCRIPT_DIR}/marker/docker-compose.yml" exec -T redis redis-cli FLUSHDB >/dev/null
+    log "Marker queue cleared - starting fresh"
+}
+
 cmd_up() {
     log "Starting all services..."
     # Use --force-recreate to avoid stale Docker networks after unclean WSL shutdown
@@ -93,6 +143,8 @@ cmd_up() {
             log "Starting GPU service: $svc..."
             docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" up -d --force-recreate
         done
+        # Clear marker queue to start fresh (avoids stale jobs from previous runs)
+        clear_marker_queue || true
     else
         warn "Skipping GPU services (nvidia-container-toolkit not available)"
         warn "GPU services: ${GPU_SERVICES[*]}"
@@ -290,6 +342,9 @@ start_background_monitor() {
         return 0
     fi
 
+    # Ensure logs directory exists
+    mkdir -p "$SERVICES_LOGS_DIR"
+
     # Start monitor in background with JSON output (saves to files)
     if [[ -f "$MONITOR_PID_FILE" ]]; then
         local pid=$(cat "$MONITOR_PID_FILE")
@@ -301,8 +356,11 @@ start_background_monitor() {
         rm -f "$MONITOR_PID_FILE"
     fi
 
+    # Rotate existing monitor log before starting new one
+    rotate_log "$MONITOR_LOG_FILE" 4
+
     log "Starting background monitor (using $PYTHON)..."
-    # Log to file so we can debug failures, truncate on each start
+    # Log to file so we can debug failures
     nohup "$PYTHON" "${SCRIPT_DIR}/monitor.py" --json > "$MONITOR_LOG_FILE" 2>&1 &
     local monitor_pid=$!
     echo $monitor_pid > "$MONITOR_PID_FILE"
@@ -346,8 +404,7 @@ start_log_collector() {
         rm -f "$LOG_COLLECTOR_PID_FILE"
     fi
 
-    mkdir -p "$LOGS_DIR"
-    local timestamp=$(date +%Y%m%d-%H%M%S)
+    mkdir -p "$SERVICES_LOGS_DIR"
 
     log "Starting docker log collection (dev mode)..."
 
@@ -357,7 +414,9 @@ start_log_collector() {
     rm -f "$pids_file"
 
     for container in $(docker ps --format '{{.Names}}' 2>/dev/null); do
-        local log_file="${LOGS_DIR}/${container}-${timestamp}.log"
+        # Use stable names (container.log), rotate existing before collecting
+        local log_file="${SERVICES_LOGS_DIR}/${container}.log"
+        rotate_log "$log_file" 4
         # Start log streaming in background for each container
         nohup docker logs -f "$container" > "$log_file" 2>&1 &
         echo $! >> "$pids_file"
@@ -365,7 +424,7 @@ start_log_collector() {
 
     # Count how many we started
     local count=$(wc -l < "$pids_file" 2>/dev/null || echo 0)
-    log "Log collector started ($count containers -> $LOGS_DIR/*-${timestamp}.log)"
+    log "Log collector started ($count containers -> $SERVICES_LOGS_DIR/*.log)"
 }
 
 stop_log_collector() {

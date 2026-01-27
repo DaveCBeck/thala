@@ -22,6 +22,7 @@ Example usage:
 from .converter import (
     build_citation_mappings,
     convert_horizontal_rules,
+    convert_paywall_markers,
     extract_citation_order,
     find_local_images,
     inject_footnotes,
@@ -52,6 +53,7 @@ __all__ = [
     "strip_references_section",
     "strip_frontmatter",
     "convert_horizontal_rules",
+    "convert_paywall_markers",
     "find_local_images",
     "replace_image_urls",
     "build_citation_mappings",

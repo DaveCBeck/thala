@@ -82,7 +82,7 @@ def get_llm(
         llm = get_llm(ModelTier.SONNET_1M)
 
         # Complex analysis with Opus and extended thinking
-        llm = get_llm(ModelTier.OPUS, thinking_budget=8000)
+        llm = get_llm(ModelTier.OPUS, thinking_budget=8000, max_tokens=16000)
 
         # Cost-effective task with DeepSeek
         llm = get_llm(ModelTier.DEEPSEEK_V3)

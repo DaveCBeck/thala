@@ -14,6 +14,7 @@ from .converter import (
     build_citation_mappings,
     convert_horizontal_rules,
     convert_markdown_links,
+    convert_paywall_markers,
     extract_citation_order,
     find_local_images,
     inject_footnotes,
@@ -175,6 +176,9 @@ class SubstackPublisher:
 
         # Step 9: Convert horizontal rules (--- paragraphs to proper dividers)
         draft_body = convert_horizontal_rules(draft_body)
+
+        # Step 10: Convert paywall markers (---paywall--- to paywall nodes)
+        draft_body = convert_paywall_markers(draft_body)
 
         return ConversionResult(
             draft_body=draft_body,

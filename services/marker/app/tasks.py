@@ -82,6 +82,20 @@ def convert_document(
     Returns:
         Dict with markdown, json, chunks, and metadata
     """
+    # Idempotency check: if this task already completed successfully, return cached result.
+    # This prevents duplicate processing if the same task ID ends up in the queue twice
+    # (e.g., due to HTTP timeout/retry during submission or Redis redelivery edge cases).
+    from celery.result import AsyncResult
+
+    existing = AsyncResult(self.request.id, app=celery)
+    if existing.state == "SUCCESS" and existing.result:
+        cached = existing.result
+        if cached.get("status") == "completed":
+            logger.warning(
+                f"[{file_path}] Skipped - task {self.request.id} already completed (idempotency)"
+            )
+            return cached
+
     # Check blocklist first
     if _is_blocklisted(file_path):
         logger.warning(f"[{file_path}] Skipped - file is blocklisted")

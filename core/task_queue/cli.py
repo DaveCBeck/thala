@@ -3,7 +3,14 @@
 CLI for task queue management.
 
 Usage:
+    # Add tasks (default: lit_review_full)
     python -m core.task_queue.cli add "topic text" -c science
+    python -m core.task_queue.cli add "topic text" -c science --type lit_review_full
+
+    # Add web research task
+    python -m core.task_queue.cli add "research query" -c technology --type web_research
+
+    # Other commands
     python -m core.task_queue.cli list
     python -m core.task_queue.cli status
     python -m core.task_queue.cli run [-y]
@@ -37,11 +44,22 @@ from core.task_queue.queue_manager import (  # noqa: E402
     TaskQueueManager,
     TaskStatus,
 )
+from core.task_queue.workflows import get_available_types, DEFAULT_WORKFLOW_TYPE  # noqa: E402
 
 
 def cmd_add(args):
-    """Add topic to queue."""
+    """Add task to queue."""
     manager = TaskQueueManager()
+
+    # Determine task type
+    task_type = getattr(args, "type", None) or DEFAULT_WORKFLOW_TYPE
+
+    # Validate task type
+    available_types = get_available_types()
+    if task_type not in available_types:
+        print(f"Invalid task type: {task_type}")
+        print(f"Valid: {', '.join(available_types)}")
+        sys.exit(1)
 
     # Parse category
     try:
@@ -64,35 +82,66 @@ def cmd_add(args):
         print(f"Valid: {', '.join(p.name.lower() for p in TaskPriority)}")
         sys.exit(1)
 
-    # Parse research questions
-    questions = None
-    if args.questions:
-        questions = [q.strip() for q in args.questions.split("|") if q.strip()]
-
-    # Parse date range
-    date_range = None
-    if args.from_year or args.to_year:
-        date_range = (args.from_year or 2000, args.to_year or 2026)
-
     # Parse tags
     tags = None
     if args.tags:
         tags = [t.strip() for t in args.tags.split(",") if t.strip()]
 
-    task_id = manager.add_task(
-        topic=args.topic,
-        category=category,
-        priority=priority,
-        research_questions=questions,
-        quality=args.quality,
-        language=args.language,
-        date_range=date_range,
-        notes=args.notes,
-        tags=tags,
-    )
+    # Build task based on type
+    if task_type == "lit_review_full":
+        # Parse research questions (lit_review only)
+        questions = None
+        if args.questions:
+            questions = [q.strip() for q in args.questions.split("|") if q.strip()]
+
+        # Parse date range (lit_review only)
+        date_range = None
+        if args.from_year or args.to_year:
+            date_range = (args.from_year or 2000, args.to_year or 2026)
+
+        task_id = manager.add_task(
+            task_type=task_type,
+            topic=args.topic,
+            category=category,
+            priority=priority,
+            research_questions=questions,
+            quality=args.quality,
+            language=args.language,
+            date_range=date_range,
+            notes=args.notes,
+            tags=tags,
+        )
+        identifier = args.topic
+
+    elif task_type == "web_research":
+        task_id = manager.add_task(
+            task_type=task_type,
+            query=args.topic,  # Reuse positional arg as query
+            category=category,
+            priority=priority,
+            quality=args.quality,
+            language=args.language if args.language != "en" else None,
+            notes=args.notes,
+            tags=tags,
+        )
+        identifier = args.topic
+
+    else:
+        # Generic fallback
+        task_id = manager.add_task(
+            task_type=task_type,
+            topic=args.topic,
+            category=category,
+            priority=priority,
+            quality=args.quality,
+            notes=args.notes,
+            tags=tags,
+        )
+        identifier = args.topic
 
     print(f"Added task: {task_id}")
-    print(f"  Topic: {args.topic[:60]}{'...' if len(args.topic) > 60 else ''}")
+    print(f"  Type: {task_type}")
+    print(f"  {'Query' if task_type == 'web_research' else 'Topic'}: {identifier[:60]}{'...' if len(identifier) > 60 else ''}")
     print(f"  Category: {category}")
     print(f"  Priority: {priority.name}")
     print(f"  Quality: {args.quality}")
@@ -144,7 +193,11 @@ def cmd_list(args):
             except ValueError:
                 priority = str(task["priority"])
 
-            print(f"  [{task['id'][:8]}] {task['topic'][:50]}...")
+            task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+            task_identifier = task.get("topic") or task.get("query", "unknown")
+            type_badge = f"[{task_type}]" if task_type != DEFAULT_WORKFLOW_TYPE else ""
+
+            print(f"  [{task['id'][:8]}] {type_badge} {task_identifier[:50]}...")
             print(f"           Category: {task['category']}, Priority: {priority}")
 
             if task.get("started_at"):
@@ -171,13 +224,22 @@ def cmd_run(args):
     incomplete = checkpoint_mgr.get_incomplete_work()
     if incomplete and not args.skip_resume:
         checkpoint = incomplete[0]
-        task = manager.get_task(checkpoint["topic_id"])
+        task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")  # backward compat
+        task = manager.get_task(task_id)
 
-        print(f"Found incomplete work: {checkpoint['topic_id'][:8]}")
+        task_type = checkpoint.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        print(f"Found incomplete work: {task_id[:8]} ({task_type})")
         if task:
-            print(f"  Topic: {task['topic'][:50]}...")
+            task_identifier = task.get("topic") or task.get("query", "unknown")
+            print(f"  {'Query' if task_type == 'web_research' else 'Topic'}: {task_identifier[:50]}...")
         print(f"  Phase: {checkpoint['phase']}")
-        print(f"  Papers: {checkpoint['papers_processed']}/{checkpoint['papers_discovered']}")
+
+        # Show counters if available
+        counters = checkpoint.get("counters", {})
+        if counters:
+            counter_str = ", ".join(f"{k}: {v}" for k, v in counters.items())
+            print(f"  Progress: {counter_str}")
+
         print(f"  Last checkpoint: {checkpoint['last_checkpoint_at'][:19]}")
 
         resume_phase = checkpoint_mgr.can_resume_from_phase(checkpoint)
@@ -213,8 +275,11 @@ def cmd_run(args):
                 print(f"  (Max concurrent reached: {in_progress}/{config['max_concurrent']})")
         sys.exit(0)
 
-    print(f"Selected task: {task['id'][:8]}")
-    print(f"  Topic: {task['topic'][:60]}...")
+    task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+    task_identifier = task.get("topic") or task.get("query", "unknown")
+
+    print(f"Selected task: {task['id'][:8]} ({task_type})")
+    print(f"  {'Query' if task_type == 'web_research' else 'Topic'}: {task_identifier[:60]}...")
     print(f"  Category: {task['category']}")
     print(f"  Quality: {task['quality']}")
 
@@ -267,15 +332,22 @@ def cmd_status(args):
     else:
         for task in in_progress:
             checkpoint = checkpoint_mgr.get_checkpoint(task["id"])
-            print(f"  [{task['id'][:8]}] {task['topic'][:40]}...")
+            task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+            task_identifier = task.get("topic") or task.get("query", "unknown")
+            print(f"  [{task['id'][:8]}] ({task_type}) {task_identifier[:40]}...")
             if checkpoint:
                 print(f"           Phase: {checkpoint['phase']}")
-                print(f"           Papers: {checkpoint['papers_processed']}/{checkpoint['papers_discovered']}")
+                counters = checkpoint.get("counters", {})
+                if counters:
+                    counter_str = ", ".join(f"{k}: {v}" for k, v in counters.items())
+                    print(f"           Progress: {counter_str}")
 
         if incomplete:
             print("\n  Incomplete (resumable):")
             for cp in incomplete:
-                print(f"    [{cp['topic_id'][:8]}] Phase: {cp['phase']}")
+                task_id = cp.get("task_id") or cp.get("topic_id", "unknown")
+                task_type = cp.get("task_type", DEFAULT_WORKFLOW_TYPE)
+                print(f"    [{task_id[:8]}] ({task_type}) Phase: {cp['phase']}")
 
     # Queue summary
     print("\n=== QUEUE SUMMARY ===")
@@ -300,7 +372,9 @@ def cmd_status(args):
     print("\n=== NEXT ELIGIBLE ===")
     next_task = manager.get_next_eligible_task()
     if next_task:
-        print(f"  [{next_task['id'][:8]}] {next_task['topic'][:40]}...")
+        task_type = next_task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        task_identifier = next_task.get("topic") or next_task.get("query", "unknown")
+        print(f"  [{next_task['id'][:8]}] ({task_type}) {task_identifier[:40]}...")
         print(f"           Category: {next_task['category']}")
         print(f"           Priority: {TaskPriority(next_task['priority']).name}")
     else:
@@ -483,11 +557,17 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # add command
-    add_parser = subparsers.add_parser("add", help="Add topic to queue")
-    add_parser.add_argument("topic", help="Topic text")
+    add_parser = subparsers.add_parser("add", help="Add task to queue")
+    add_parser.add_argument("topic", help="Topic text (or query for web_research)")
+    add_parser.add_argument(
+        "--type", "-t",
+        choices=get_available_types(),
+        default=DEFAULT_WORKFLOW_TYPE,
+        help=f"Workflow type (default: {DEFAULT_WORKFLOW_TYPE})"
+    )
     add_parser.add_argument(
         "--category", "-c", required=True,
-        help="Topic category (philosophy, science, technology, society, culture, or custom)"
+        help="Task category (philosophy, science, technology, society, culture, or custom)"
     )
     add_parser.add_argument(
         "--priority", "-p", default="normal",
@@ -495,15 +575,15 @@ def main():
     )
     add_parser.add_argument(
         "--questions", "-q",
-        help="Research questions (pipe-separated, e.g., 'Q1|Q2|Q3')"
+        help="Research questions for lit_review_full (pipe-separated, e.g., 'Q1|Q2|Q3')"
     )
     add_parser.add_argument(
         "--quality", default="standard",
         help="Quality tier (test, quick, standard, comprehensive, high_quality)"
     )
     add_parser.add_argument("--language", "-l", default="en", help="Language code")
-    add_parser.add_argument("--from-year", type=int, help="Start year for papers")
-    add_parser.add_argument("--to-year", type=int, help="End year for papers")
+    add_parser.add_argument("--from-year", type=int, help="Start year for papers (lit_review_full only)")
+    add_parser.add_argument("--to-year", type=int, help="End year for papers (lit_review_full only)")
     add_parser.add_argument("--notes", help="Notes for this task")
     add_parser.add_argument("--tags", help="Tags (comma-separated)")
     add_parser.set_defaults(func=cmd_add)

@@ -98,7 +98,9 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
     """Download PDF using Playwright browser (for sites that block direct downloads).
 
     Uses a real browser context to bypass anti-bot measures that redirect
-    httpx requests to login pages.
+    httpx requests to login pages. Handles both:
+    - PDF served inline (captured via response interception)
+    - PDF served as download (captured via expect_download)
 
     Args:
         url: URL to download from
@@ -124,6 +126,7 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
 
     page = await context.new_page()
     content: bytes | None = None
+    download_triggered = False
 
     try:
         # Set up response interception to capture PDF bytes
@@ -141,9 +144,18 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
 
         # Navigate to the PDF URL
         logger.debug("Playwright navigating to PDF URL")
-        response = await page.goto(
-            url, timeout=int(timeout * 1000), wait_until="networkidle"
-        )
+        timeout_ms = int(timeout * 1000)
+
+        try:
+            response = await page.goto(
+                url, timeout=timeout_ms, wait_until="networkidle"
+            )
+        except Exception as nav_error:
+            error_str = str(nav_error)
+            if "Download is starting" in error_str:
+                download_triggered = True
+            else:
+                raise
 
         # Check if we captured the PDF via response interception
         if content and validate_pdf_bytes(content):
@@ -152,8 +164,17 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
             )
             return content
 
-        # If not captured via response, check if browser downloaded it
-        # or if we can get it from the response directly
+        # If download was triggered, use expect_download to capture it
+        if download_triggered:
+            logger.debug("Download triggered, using expect_download to capture")
+            content = await _capture_download_with_expect(page, url, timeout_ms)
+            if content and validate_pdf_bytes(content):
+                return content
+            raise MarkerProcessingError(
+                "Playwright download triggered but content is not a valid PDF"
+            )
+
+        # If not captured via response, check if we can get it from the response directly
         if response:
             content_type = response.headers.get("content-type", "")
             if "application/pdf" in content_type:
@@ -175,6 +196,55 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
     finally:
         await page.close()
         await context.close()
+
+
+async def _capture_download_with_expect(page, url: str, timeout_ms: int) -> bytes:
+    """Capture a PDF download using Playwright's expect_download.
+
+    This is used when navigation triggers a download instead of loading a page.
+
+    Args:
+        page: Playwright page object
+        url: URL that triggers the download
+        timeout_ms: Timeout in milliseconds
+
+    Returns:
+        PDF content bytes
+    """
+    download_path: str | None = None
+
+    try:
+        async with page.expect_download(timeout=timeout_ms) as download_info:
+            # Navigate again - this time we're ready for the download
+            try:
+                await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+            except Exception:
+                # Navigation will "fail" when download starts, that's expected
+                pass
+
+        # Wait for download to complete
+        download = await download_info.value
+        logger.debug(f"Download started: {download.suggested_filename}")
+
+        # Save to temp file and read content
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            download_path = tmp.name
+
+        # save_as waits for download to complete
+        await download.save_as(download_path)
+        content = Path(download_path).read_bytes()
+        logger.debug(
+            f"Playwright captured download via expect_download: {len(content)} bytes"
+        )
+        return content
+
+    finally:
+        # Cleanup temp file
+        if download_path:
+            try:
+                Path(download_path).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 async def _download_pdf(url: str, timeout: float = 60.0) -> bytes:

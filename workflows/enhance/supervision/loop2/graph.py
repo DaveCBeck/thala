@@ -283,8 +283,8 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             new_citation_keys=citation_keys or "None",
         )
 
-        # No max_tokens - use full output capacity for large reviews
-        llm = get_llm(ModelTier.OPUS, thinking_budget=8000)
+        # Use large max_tokens for full output capacity on large reviews
+        llm = get_llm(ModelTier.OPUS, thinking_budget=8000, max_tokens=32000)
         response = await llm.ainvoke(
             [
                 {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},

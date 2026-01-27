@@ -134,50 +134,15 @@ class PlaywrightScraper:
             accept_downloads=True,
         )
         page = await context.new_page()
-        download_content: bytes | None = None
         download_path: str | None = None
-
-        async def handle_download(download: "Download") -> None:
-            """Handle file downloads (e.g., PDF files)."""
-            nonlocal download_content, download_path
-            try:
-                # Save download to temp file
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    download_path = tmp.name
-                await download.save_as(download_path)
-                download_content = Path(download_path).read_bytes()
-                logger.debug(
-                    f"Playwright captured download: {len(download_content)} bytes"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to capture download: {e}")
-
-        page.on("download", handle_download)
 
         try:
             logger.debug(f"Playwright navigating to {url}")
 
-            # Use domcontentloaded instead of networkidle for initial navigation
-            # This allows us to detect downloads before they timeout
-            try:
-                await page.goto(
-                    url,
-                    timeout=self._timeout,
-                    wait_until="domcontentloaded",
-                )
-            except Exception:
-                # Check if we captured a download (PDF URL case)
-                if download_content:
-                    logger.debug(
-                        "Navigation failed but download captured - likely PDF URL"
-                    )
-                    raise PDFDownloadDetected(download_content, url)
-                raise
+            # Try navigation with download detection
+            # Use expect_download to properly wait for downloads if they occur
+            download_content = await self._navigate_with_download_detection(page, url)
 
-            # Give a moment for any downloads to start
-            await asyncio.sleep(0.5)
-
-            # Check if a download was triggered instead of a page
             if download_content:
                 raise PDFDownloadDetected(download_content, url)
 
@@ -215,6 +180,85 @@ class PlaywrightScraper:
                     pass
             await page.close()
             await context.close()
+
+    async def _navigate_with_download_detection(
+        self, page, url: str
+    ) -> bytes | None:
+        """Navigate to URL and handle potential downloads.
+
+        Uses expect_download() to properly wait for downloads when they occur.
+        Falls back to normal navigation if no download is triggered.
+
+        Args:
+            page: Playwright page object
+            url: URL to navigate to
+
+        Returns:
+            PDF content bytes if a download was triggered, None otherwise
+        """
+        from playwright.async_api import TimeoutError as PlaywrightTimeout
+
+        # First, try normal navigation
+        try:
+            await page.goto(
+                url,
+                timeout=self._timeout,
+                wait_until="domcontentloaded",
+            )
+            # Navigation succeeded without triggering a download
+            return None
+        except Exception as nav_error:
+            error_str = str(nav_error)
+            # Check if this is a download-triggered error
+            if "Download is starting" not in error_str:
+                # Not a download error, re-raise
+                raise
+
+        # Navigation failed because a download started
+        # Re-navigate with expect_download to capture it properly
+        logger.debug("Download detected, re-navigating with expect_download")
+
+        try:
+            # Use expect_download with a reasonable timeout
+            async with page.expect_download(timeout=self._timeout) as download_info:
+                # Navigate again - this time we're ready for the download
+                try:
+                    await page.goto(
+                        url,
+                        timeout=self._timeout,
+                        wait_until="domcontentloaded",
+                    )
+                except Exception:
+                    # Navigation will "fail" when download starts, that's expected
+                    pass
+
+            # Wait for download to complete
+            download = await download_info.value
+            logger.debug(f"Download started: {download.suggested_filename}")
+
+            # Save to temp file and read content
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                download_path = tmp.name
+
+            try:
+                # save_as waits for download to complete
+                await download.save_as(download_path)
+                content = Path(download_path).read_bytes()
+                logger.debug(f"Playwright captured download: {len(content)} bytes")
+                return content
+            finally:
+                # Cleanup temp file
+                try:
+                    Path(download_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        except PlaywrightTimeout:
+            logger.warning("expect_download timed out after detecting download")
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to capture download: {e}")
+            raise
 
     async def close(self) -> None:
         """Clean up browser resources."""

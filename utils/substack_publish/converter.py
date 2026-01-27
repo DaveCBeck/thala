@@ -47,6 +47,9 @@ LEADING_H1_PATTERN = re.compile(r"^(#\s+[^\n]+\n+)+", re.MULTILINE)
 # Pattern to match horizontal rules (standalone --- on a line)
 HORIZONTAL_RULE_PATTERN = re.compile(r"^\n*---\n*$", re.MULTILINE)
 
+# Pattern to match paywall marker (---paywall--- on a line)
+PAYWALL_MARKER = "---paywall---"
+
 
 def strip_frontmatter(markdown: str) -> str:
     """Remove YAML frontmatter from markdown.
@@ -240,6 +243,37 @@ def convert_horizontal_rules(draft_body: dict) -> dict:
                 and content[0].get("text", "").strip() == "---"
             ):
                 new_content.append({"type": "horizontal_rule"})
+            else:
+                new_content.append(node)
+        else:
+            new_content.append(node)
+    return {"type": "doc", "content": new_content}
+
+
+def convert_paywall_markers(draft_body: dict) -> dict:
+    """Convert paragraphs containing '---paywall---' to paywall nodes.
+
+    The paywall node marks where subscriber-only content begins.
+    Free subscribers see everything above the paywall.
+
+    Args:
+        draft_body: ProseMirror document
+
+    Returns:
+        Document with paywall markers converted to paywall nodes
+    """
+    new_content = []
+    for node in draft_body.get("content", []):
+        if node.get("type") == "paragraph":
+            content = node.get("content", [])
+            # Check if paragraph is just "---paywall---"
+            if (
+                len(content) == 1
+                and content[0].get("type") == "text"
+                and content[0].get("text", "").strip().lower() == PAYWALL_MARKER
+            ):
+                new_content.append({"type": "paywall"})
+                logger.info("Inserted paywall marker")
             else:
                 new_content.append(node)
         else:

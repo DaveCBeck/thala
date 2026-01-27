@@ -31,7 +31,8 @@ import httpx
 # === Configuration ===
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-METRICS_DIR = SCRIPT_DIR / "metrics"
+PROJECT_ROOT = SCRIPT_DIR.parent.resolve()
+METRICS_DIR = PROJECT_ROOT / "logs" / "services" / "metrics"
 
 
 @dataclass

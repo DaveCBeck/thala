@@ -2,7 +2,8 @@
 Workflow runner with checkpoint and budget integration.
 
 Provides:
-- Run topics from queue with checkpoint callbacks
+- Run tasks from queue with checkpoint callbacks
+- Registry-based dispatch to workflow implementations
 - Resume incomplete work
 - Budget-aware execution with adaptive delays
 - Continuous queue processing loop
@@ -15,7 +16,6 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -23,122 +23,66 @@ from .budget_tracker import BudgetTracker
 from .checkpoint_manager import CheckpointManager
 from .pricing import format_cost
 from .queue_manager import TaskQueueManager
-from .schemas import TopicTask, WorkflowCheckpoint
+from .schemas import Task, WorkflowCheckpoint
+from .workflows import get_workflow, DEFAULT_WORKFLOW_TYPE
 
 logger = logging.getLogger(__name__)
 
 # Queue uses a dedicated LangSmith project for budget isolation
 QUEUE_PROJECT = os.getenv("THALA_QUEUE_PROJECT", "thala-queue")
 
-# Output directory for generated content
-OUTPUT_DIR = Path(__file__).parent.parent.parent / ".outputs"
 
-
-def _save_outputs(topic: TopicTask, lit_result: dict, series_result: dict) -> dict:
-    """Save literature review and article series to .outputs/ directory.
-
-    Args:
-        topic: The topic task
-        lit_result: Literature review result
-        series_result: Evening reads series result (4 articles)
-
-    Returns:
-        Dict with paths to saved files
-    """
-    OUTPUT_DIR.mkdir(exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    topic_slug = topic["topic"][:50].replace(" ", "_").replace("/", "-")
-
-    # Save literature review
-    lit_review_path = OUTPUT_DIR / f"lit_review_{topic_slug}_{timestamp}.md"
-    with open(lit_review_path, "w") as f:
-        f.write(f"# Literature Review: {topic['topic']}\n\n")
-        f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-        f.write(f"*Quality: {topic['quality']}*\n\n")
-        if topic.get("research_questions"):
-            f.write("## Research Questions\n\n")
-            for q in topic["research_questions"]:
-                f.write(f"- {q}\n")
-            f.write("\n---\n\n")
-        f.write(lit_result["final_review"])
-
-    # Save article series
-    series_dir = OUTPUT_DIR / f"series_{topic_slug}_{timestamp}"
-    series_dir.mkdir(exist_ok=True)
-
-    output_paths = {"lit_review": str(lit_review_path), "series_dir": str(series_dir)}
-
-    for output in series_result.get("final_outputs", []):
-        article_path = series_dir / f"{output['id']}.md"
-        with open(article_path, "w") as f:
-            f.write(f"# {output['title']}\n\n")
-            f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-            f.write("---\n\n")
-            f.write(output["content"])
-        output_paths[output["id"]] = str(article_path)
-
-    return output_paths
-
-
-async def run_topic_workflow(
-    topic: TopicTask,
+async def run_task_workflow(
+    task: Task,
     queue_manager: TaskQueueManager,
     checkpoint_mgr: CheckpointManager,
     budget_tracker: BudgetTracker,
     resume_from: Optional[WorkflowCheckpoint] = None,
 ) -> dict:
-    """Run a literature review workflow for a topic.
+    """Run a workflow for any task type via registry dispatch.
 
-    Wraps the academic_lit_review workflow with:
-    - Checkpoint updates at key phases
-    - Budget checks between phases
-    - Proper status updates to queue
+    Dispatches to the appropriate workflow based on task_type field.
+    Handles checkpoint updates, budget checks, and status management.
 
     Args:
-        topic: Topic task to process
+        task: Task to process (TopicTask, WebResearchTask, etc.)
         queue_manager: Queue manager instance
         checkpoint_mgr: Checkpoint manager instance
         budget_tracker: Budget tracker instance
         resume_from: Optional checkpoint to resume from
 
     Returns:
-        Workflow result dict
+        Workflow result dict with status, outputs, etc.
     """
     # Set LangSmith project for queue runs (isolates budget from manual testing)
     os.environ["LANGSMITH_PROJECT"] = QUEUE_PROJECT
     logger.info(f"Using LangSmith project: {QUEUE_PROJECT}")
 
-    # Import workflows here to avoid circular imports
-    from workflows.research.academic_lit_review import academic_lit_review
-    from workflows.output.evening_reads import evening_reads_graph
+    # Get task type and workflow
+    task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+    workflow = get_workflow(task_type)
 
-    topic_id = topic["id"]
+    task_id = task["id"]
+    task_identifier = workflow.get_task_identifier(task)
 
     # Generate langsmith_run_id (or use existing if resuming)
     if resume_from:
         langsmith_run_id = resume_from["langsmith_run_id"]
-        logger.info(f"Resuming topic {topic_id} from phase {resume_from['phase']}")
+        logger.info(f"Resuming task {task_id[:8]} from phase {resume_from['phase']}")
     else:
         langsmith_run_id = str(uuid.uuid4())
-        logger.info(f"Starting topic {topic_id}")
+        logger.info(f"Starting task {task_id[:8]} ({task_type}): {task_identifier}")
 
     # Mark as started
-    queue_manager.mark_started(topic_id, langsmith_run_id)
-    checkpoint_mgr.start_work(topic_id, langsmith_run_id)
+    queue_manager.mark_started(task_id, langsmith_run_id)
+    checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
 
     try:
-        # Prepare research questions
-        research_questions = topic.get("research_questions")
-        if not research_questions:
-            # Will be generated by the workflow
-            research_questions = None
-
         # Create checkpoint callback
         def checkpoint_callback(phase: str, **kwargs):
             """Update checkpoint during workflow execution."""
-            checkpoint_mgr.update_checkpoint(topic_id, phase, **kwargs)
-            queue_manager.update_phase(topic_id, phase)
+            checkpoint_mgr.update_checkpoint(task_id, phase, **kwargs)
+            queue_manager.update_phase(task_id, phase)
 
             # Check budget between phases
             should_proceed, reason = budget_tracker.should_proceed()
@@ -146,67 +90,39 @@ async def run_topic_workflow(
                 logger.warning(f"Budget limit reached during {phase}: {reason}")
                 # Don't raise - let the current phase complete
 
-        # Step 1: Run literature review
-        checkpoint_mgr.update_checkpoint(topic_id, "lit_review")
-        logger.info(f"Running literature review for: {topic['topic'][:50]}...")
+        # Run the workflow
+        result = await workflow.run(task, checkpoint_callback, resume_from)
 
-        lit_result = await academic_lit_review(
-            topic=topic["topic"],
-            research_questions=research_questions,
-            quality=topic["quality"],
-            language=topic["language"],
-            date_range=topic.get("date_range"),
-        )
+        # Save outputs
+        checkpoint_callback("saving")
+        output_paths = workflow.save_outputs(task, result)
+        result["output_paths"] = output_paths
 
-        if not lit_result.get("final_review"):
-            raise RuntimeError(f"Literature review failed: {lit_result.get('errors', 'Unknown error')}")
+        if output_paths:
+            logger.info(f"Saved outputs: {list(output_paths.keys())}")
 
-        logger.info(f"Lit review complete: {len(lit_result.get('paper_corpus', {}))} papers")
-
-        # Step 2: Generate article series
-        checkpoint_mgr.update_checkpoint(topic_id, "article_series")
-        logger.info("Generating article series...")
-
-        series_result = await evening_reads_graph.ainvoke({
-            "input": {"literature_review": lit_result["final_review"]}
-        })
-
-        if not series_result.get("final_outputs"):
-            raise RuntimeError(f"Series generation failed: {series_result.get('errors', 'Unknown error')}")
-
-        logger.info(f"Series complete: {len(series_result.get('final_outputs', []))} articles")
-
-        # Step 3: Save outputs
-        checkpoint_mgr.update_checkpoint(topic_id, "saving")
-        output_paths = _save_outputs(topic, lit_result, series_result)
-        logger.info(f"Saved outputs to {output_paths['series_dir']}")
-
-        # Combine results
-        result = {
-            "status": "success",
-            "topic": topic["topic"],
-            "lit_review": lit_result,
-            "series": series_result,
-            "output_paths": output_paths,
-        }
-
-        # Mark complete
+        # Mark complete or failed
         if result.get("status") == "success":
-            queue_manager.mark_completed(topic_id)
-            checkpoint_mgr.complete_work(topic_id)
-            logger.info(f"Topic {topic_id} completed successfully")
+            queue_manager.mark_completed(task_id)
+            checkpoint_mgr.complete_work(task_id)
+            logger.info(f"Task {task_id[:8]} completed successfully")
+        elif result.get("status") == "partial":
+            # Partial success - mark complete but log warnings
+            queue_manager.mark_completed(task_id)
+            checkpoint_mgr.complete_work(task_id)
+            logger.warning(f"Task {task_id[:8]} completed with errors: {result.get('errors')}")
         else:
             error = str(result.get("errors", "Unknown error"))
-            queue_manager.mark_failed(topic_id, error)
-            checkpoint_mgr.fail_work(topic_id)
-            logger.error(f"Topic {topic_id} failed: {error}")
+            queue_manager.mark_failed(task_id, error)
+            checkpoint_mgr.fail_work(task_id)
+            logger.error(f"Task {task_id[:8]} failed: {error}")
 
         return result
 
     except Exception as e:
-        logger.error(f"Topic {topic_id} failed with exception: {e}")
-        queue_manager.mark_failed(topic_id, str(e))
-        checkpoint_mgr.fail_work(topic_id)
+        logger.error(f"Task {task_id[:8]} failed with exception: {e}")
+        queue_manager.mark_failed(task_id, str(e))
+        checkpoint_mgr.fail_work(task_id)
         raise
 
 
@@ -234,28 +150,25 @@ async def run_single_task(
         incomplete = checkpoint_mgr.get_incomplete_work()
         if incomplete:
             checkpoint = incomplete[0]
-            topic = queue_manager.get_task(checkpoint["topic_id"])
+            task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")  # backward compat
+            task = queue_manager.get_task(task_id)
 
-            if topic:
-                logger.info(f"Resuming incomplete work: {checkpoint['topic_id'][:8]}")
+            if task:
+                task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+                task_identifier = task.get("topic") or task.get("query", "unknown")
+                logger.info(f"Resuming incomplete work: {task_id[:8]} ({task_type})")
 
                 if dry_run:
-                    logger.info(f"Would resume: {topic['topic'][:50]}...")
+                    logger.info(f"Would resume: {task_identifier[:50]}...")
                     return None
 
-                return await run_topic_workflow(
-                    topic,
+                return await run_task_workflow(
+                    task,
                     queue_manager,
                     checkpoint_mgr,
                     budget_tracker,
                     resume_from=checkpoint,
                 )
-
-    # Check budget
-    should_proceed, reason = budget_tracker.should_proceed()
-    if not should_proceed:
-        logger.warning(f"Cannot proceed: {reason}")
-        return None
 
     # Get next eligible task
     task = queue_manager.get_next_eligible_task()
@@ -264,12 +177,28 @@ async def run_single_task(
         logger.info("No eligible tasks to run")
         return None
 
+    task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+    task_identifier = task.get("topic") or task.get("query", "unknown")
+
+    # Check if zero-cost workflow (skip budget check)
+    workflow = get_workflow(task_type)
+    is_zero_cost = getattr(workflow, "is_zero_cost", False)
+
+    if not is_zero_cost:
+        # Check budget for workflows that incur costs
+        should_proceed, reason = budget_tracker.should_proceed()
+        if not should_proceed:
+            logger.warning(f"Cannot proceed: {reason}")
+            return None
+    else:
+        logger.info(f"Skipping budget check for zero-cost workflow: {task_type}")
+
     if dry_run:
-        logger.info(f"Would run: {task['topic'][:50]}...")
+        logger.info(f"Would run ({task_type}): {task_identifier[:50]}...")
         return None
 
     # Run the task
-    return await run_topic_workflow(
+    return await run_task_workflow(
         task,
         queue_manager,
         checkpoint_mgr,
@@ -302,13 +231,15 @@ async def run_queue_loop(
         incomplete = checkpoint_mgr.get_incomplete_work()
         if incomplete:
             checkpoint = incomplete[0]
-            task = queue_manager.get_task(checkpoint["topic_id"])
+            task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")  # backward compat
+            task = queue_manager.get_task(task_id)
 
             if task:
-                logger.info(f"Resuming incomplete work: {checkpoint['topic_id'][:8]}")
+                task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+                logger.info(f"Resuming incomplete work: {task_id[:8]} ({task_type})")
 
                 if not dry_run:
-                    await run_topic_workflow(
+                    await run_task_workflow(
                         task,
                         queue_manager,
                         checkpoint_mgr,
@@ -322,14 +253,6 @@ async def run_queue_loop(
                         break
                 continue
 
-        # Check budget
-        should_proceed, reason = budget_tracker.should_proceed()
-        if not should_proceed:
-            logger.warning(f"Pausing due to budget: {reason}")
-            # Sleep for an hour and retry
-            await asyncio.sleep(3600)
-            continue
-
         # Get next eligible task
         task = queue_manager.get_next_eligible_task()
 
@@ -338,13 +261,31 @@ async def run_queue_loop(
             await asyncio.sleep(check_interval)
             continue
 
+        task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        task_identifier = task.get("topic") or task.get("query", "unknown")
+
+        # Check if zero-cost workflow (skip budget check)
+        workflow = get_workflow(task_type)
+        is_zero_cost = getattr(workflow, "is_zero_cost", False)
+
+        if not is_zero_cost:
+            # Check budget for workflows that incur costs
+            should_proceed, reason = budget_tracker.should_proceed()
+            if not should_proceed:
+                logger.warning(f"Pausing due to budget: {reason}")
+                # Sleep for an hour and retry
+                await asyncio.sleep(3600)
+                continue
+        else:
+            logger.info(f"Skipping budget check for zero-cost workflow: {task_type}")
+
         if dry_run:
-            logger.info(f"Would run: {task['topic'][:50]}...")
+            logger.info(f"Would run ({task_type}): {task_identifier[:50]}...")
             break
 
         # Run the task
         try:
-            await run_topic_workflow(
+            await run_task_workflow(
                 task,
                 queue_manager,
                 checkpoint_mgr,
@@ -359,18 +300,19 @@ async def run_queue_loop(
             logger.info(f"Processed {tasks_processed} tasks, stopping")
             break
 
-        # Get adaptive delay based on budget
-        config = queue_manager.get_concurrency_config()
-        if config["mode"] == "stagger_hours":
-            base_hours = config["stagger_hours"]
-            adaptive_hours = budget_tracker.get_adaptive_stagger_hours(base_hours)
-            sleep_seconds = adaptive_hours * 3600
+        # Get adaptive delay based on budget (skip for zero-cost workflows)
+        if not is_zero_cost:
+            config = queue_manager.get_concurrency_config()
+            if config["mode"] == "stagger_hours":
+                base_hours = config["stagger_hours"]
+                adaptive_hours = budget_tracker.get_adaptive_stagger_hours(base_hours)
+                sleep_seconds = adaptive_hours * 3600
 
-            logger.info(
-                f"Sleeping {adaptive_hours:.1f} hours before next task "
-                f"(base: {base_hours}h, budget-adjusted)"
-            )
-            await asyncio.sleep(sleep_seconds)
+                logger.info(
+                    f"Sleeping {adaptive_hours:.1f} hours before next task "
+                    f"(base: {base_hours}h, budget-adjusted)"
+                )
+                await asyncio.sleep(sleep_seconds)
 
 
 def print_status():
@@ -398,10 +340,14 @@ def print_status():
     if active:
         print(f"\n=== ACTIVE ({len(active)}) ===")
         for cp in active:
-            print(f"  {cp['topic_id'][:8]}: {cp['phase']}")
+            task_id = cp.get("task_id") or cp.get("topic_id", "unknown")
+            task_type = cp.get("task_type", DEFAULT_WORKFLOW_TYPE)
+            print(f"  {task_id[:8]} ({task_type}): {cp['phase']}")
 
     # Next eligible
     next_task = queue_manager.get_next_eligible_task()
     if next_task:
         print("\n=== NEXT ===")
-        print(f"  {next_task['topic'][:50]}...")
+        task_type = next_task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        task_identifier = next_task.get("topic") or next_task.get("query", "unknown")
+        print(f"  [{task_type}] {task_identifier[:50]}...")

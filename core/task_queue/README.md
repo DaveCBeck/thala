@@ -1,15 +1,27 @@
 # Task Queue
 
-Persistent queue infrastructure for managing long-running literature review workflows with budget awareness and checkpoint/resume capability.
+Persistent queue infrastructure for managing long-running workflows with budget awareness and checkpoint/resume capability. Supports multiple workflow types via a registry pattern.
+
+## Workflow Types
+
+| Type | Pipeline | Use Case |
+|------|----------|----------|
+| `lit_review_full` | lit_review → enhance → evening_reads → illustrate → spawn_publish | Academic research with full enhancement and publishing |
+| `web_research` | deep_research → evening_reads | Web-based research and article generation |
+| `publish_series` | checking → publishing | Schedule-aware draft publishing to Substack |
 
 ## Usage
 
 ### CLI Commands
 
 ```bash
-# Add task to queue
+# Add literature review task (default)
 python -m core.task_queue.cli add "quantum computing applications" \
   -c technology --priority high --quality standard
+
+# Add web research task
+python -m core.task_queue.cli add "AI impact on employment 2025" \
+  -c technology --type web_research --quality standard
 
 # Show status (budget, queue, next task)
 python -m core.task_queue.cli status
@@ -30,17 +42,25 @@ python -m core.task_queue.cli stop
 ```python
 from core.task_queue import TaskQueueManager, TaskCategory, TaskPriority
 
-# Initialize manager
 queue = TaskQueueManager()
 
-# Add task
+# Add literature review task
 task_id = queue.add_task(
+    task_type="lit_review_full",
     topic="quantum computing applications",
     category=TaskCategory.TECHNOLOGY,
     priority=TaskPriority.HIGH,
     quality="standard",
     language="en",
     date_range=(2020, 2026),
+)
+
+# Add web research task
+task_id = queue.add_task(
+    task_type="web_research",
+    query="AI impact on employment trends",
+    category=TaskCategory.TECHNOLOGY,
+    quality="standard",
 )
 
 # Get next eligible task (respects concurrency constraints)
@@ -57,7 +77,7 @@ queue.mark_completed(task_id)
 ```python
 from core.task_queue.runner import run_single_task, run_queue_loop
 
-# Run next eligible task
+# Run next eligible task (dispatches to correct workflow automatically)
 result = await run_single_task()
 
 # Continuous processing loop
@@ -93,12 +113,12 @@ from core.task_queue import CheckpointManager
 
 checkpoint = CheckpointManager()
 
-# Start work
-checkpoint.start_work(topic_id, langsmith_run_id)
+# Start work (now includes task_type)
+checkpoint.start_work(task_id, task_type="lit_review_full", langsmith_run_id="...")
 
 # Update checkpoint during workflow
 checkpoint.update_checkpoint(
-    topic_id,
+    task_id,
     phase="processing",
     papers_discovered=50,
     papers_processed=25,
@@ -111,69 +131,203 @@ if incomplete:
     resume_phase = checkpoint.can_resume_from_phase(cp)
 ```
 
-## Input/Output
+## Task Structure
 
-### Task Structure
+### Common Fields (all types)
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | str | UUID |
-| `topic` | str | Main topic text |
+| `task_type` | str | Workflow type identifier |
 | `category` | str | philosophy, science, technology, society, culture |
 | `priority` | int | 1-4 (low, normal, high, urgent) |
 | `status` | str | pending, in_progress, paused, completed, failed |
 | `quality` | str | test, quick, standard, comprehensive, high_quality |
-| `research_questions` | list[str] | Optional pre-defined questions |
 | `langsmith_run_id` | str | For cost attribution and trace lookup |
 
-### File Storage
+### lit_review_full Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `topic` | str | Main topic text |
+| `research_questions` | list[str] | Optional pre-defined questions |
+| `language` | str | ISO 639-1 code |
+| `date_range` | tuple[int, int] | (start_year, end_year) for papers |
+
+### web_research Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | str | Research query |
+| `language` | str | Optional language override |
+
+### publish_series Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `base_date` | str | ISO datetime (Monday 3pm local) |
+| `items` | list[PublishItem] | The 5 items to publish |
+| `source_task_id` | str | ID of lit_review_full task that spawned this |
+
+### PublishItem Structure
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | str | "overview", "lit_review", "deep_dive_1", etc. |
+| `title` | str | Article title |
+| `path` | str | Path to illustrated markdown file |
+| `day_offset` | int | Days from base_date to publish |
+| `audience` | str | "everyone" or "only_paid" |
+| `published` | bool | Has this item been published? |
+| `draft_id` | str | Substack draft ID once created |
+| `draft_url` | str | URL to draft in Substack |
+
+## Publication Schedule
+
+When a `lit_review_full` task completes, it spawns a `publish_series` task with this schedule:
+
+| Day Offset | Item | Audience |
+|------------|------|----------|
+| 0 | Overview | everyone |
+| +1 | Lit Review | only_paid |
+| +4 | Deep Dive 1 | everyone |
+| +7 | Deep Dive 2 | everyone |
+| +11 | Deep Dive 3 | everyone |
+
+The base date is calculated as the next Monday at 3pm local time that doesn't conflict with existing `publish_series` tasks in the same category.
+
+## File Storage
+
 - `topic_queue/queue.json` - Persistent task queue (LLM-editable JSON)
 - `topic_queue/current_work.json` - Active work with checkpoints
 - `topic_queue/cost_cache.json` - Monthly cost aggregations (1hr TTL)
-- `.outputs/` - Generated literature reviews and article series
+- `topic_queue/publications.json` - Category → Substack publication mapping
+- `.outputs/` - Generated reports and article series
+
+### Publications Config (Source of Truth for Categories)
+
+The `topic_queue/publications.json` file is the **source of truth for categories**. The top-level keys define which categories exist in the system, and the values map each category to its Substack publication:
+
+```json
+{
+  "philosophy": {
+    "publication_url": "davecbeck.substack.com",
+    "subdomain": "davecbeck"
+  },
+  "science": {
+    "publication_url": "davecbeck.substack.com",
+    "subdomain": "davecbeck"
+  }
+}
+```
+
+**To add a new category:** Add a new key to `publications.json` with its publication config.
+
+**To remove a category:** Delete the key from `publications.json`.
+
+Categories are loaded from this file when the queue manager initializes. The `publish_series` workflow also uses this config to route drafts to the correct Substack publication.
 
 ## Architecture
 
 ### Key Components
 
-**TaskQueueManager**: Thread-safe queue management with fcntl-based file locking. Implements:
+**TaskQueueManager**: Thread-safe queue management with fcntl-based file locking.
 - Round-robin category selection for thematic diversity
 - Priority within category
 - Flexible concurrency (max_concurrent or stagger_hours modes)
 - Atomic writes via temp file + rename
 
-**CheckpointManager**: Workflow progress tracking with PID-based process locking. Phases:
-- `discovery` - Research questions + keyword search
-- `diffusion` - Citation network expansion
-- `processing` - Paper summarization
-- `clustering` - Thematic grouping
-- `synthesis` - Literature review generation
+**CheckpointManager**: Workflow progress tracking with PID-based process locking.
+- Dynamic phases per workflow type
+- Generic counters storage
+- Resume capability for crashed processes
 
-**BudgetTracker**: LangSmith cost aggregation with adaptive behavior:
+**BudgetTracker**: LangSmith cost aggregation with adaptive behavior.
 - Queries `list_runs()` for monthly totals (root traces only)
 - 1-hour cache TTL to minimize API calls
 - Three actions: `pause` (100%), `slowdown` (90%), `warn` (75%)
-- Adaptive stagger calculation based on budget pace
 
-**Runner**: Orchestrates workflows with checkpoint callbacks and budget checks. Uses dedicated LangSmith project for budget isolation from manual testing.
+**Runner**: Dispatches tasks to workflow implementations via registry.
+- Uses dedicated LangSmith project for budget isolation
+- Automatic checkpoint callbacks
+- Output saving handled by workflow class
 
-### Concurrency Control
+### Workflow Registry
 
-**stagger_hours** mode (default): Minimum time between task starts
-- Prevents overwhelming Semantic Scholar API
-- Adaptive stagger adjusts based on budget pace
-- Default: 36 hours
+Workflows are registered in `core/task_queue/workflows/__init__.py`:
 
-**max_concurrent** mode: Maximum simultaneous tasks
-- Simple parallel execution
-- No built-in API rate limiting
+```python
+WORKFLOW_REGISTRY = {
+    "lit_review_full": LitReviewFullWorkflow,
+    "publish_series": PublishSeriesWorkflow,
+    "web_research": WebResearchWorkflow,
+}
+```
 
-### Round-Robin Scheduling
+Each workflow defines its own checkpoint phases.
 
-Tasks selected using category rotation with priority as tiebreaker:
-1. Next category in rotation
-2. Highest priority task in that category
-3. Oldest task if priorities equal
-4. Falls back to highest priority overall if rotation empty
+### Zero-Cost Workflows
+
+Some workflows (like `publish_series`) make no LLM calls and can be marked as zero-cost:
+
+```python
+class MyWorkflow(BaseWorkflow):
+    @property
+    def is_zero_cost(self) -> bool:
+        return True  # Skip budget checks
+```
+
+Zero-cost workflows bypass budget checks and don't trigger stagger delays.
+
+## Adding New Workflow Types
+
+1. **Create workflow class** at `core/task_queue/workflows/my_workflow.py`:
+
+```python
+from .base import BaseWorkflow
+
+class MyWorkflow(BaseWorkflow):
+    @property
+    def task_type(self) -> str:
+        return "my_workflow"
+
+    @property
+    def phases(self) -> list[str]:
+        return ["step1", "step2", "saving", "complete"]
+
+    async def run(self, task, checkpoint_callback, resume_from=None):
+        checkpoint_callback("step1")
+        # ... do step 1 ...
+
+        checkpoint_callback("step2")
+        # ... do step 2 ...
+
+        return {"status": "success", "output": result}
+
+    def save_outputs(self, task, result):
+        # Save to disk, return paths
+        return {"output": "/path/to/output.md"}
+```
+
+2. **Register in `workflows/__init__.py`**:
+
+```python
+from .my_workflow import MyWorkflow
+
+WORKFLOW_REGISTRY["my_workflow"] = MyWorkflow
+```
+
+3. **Add TypedDict to `schemas.py`** (if custom fields needed):
+
+```python
+class MyWorkflowTask(TypedDict):
+    id: str
+    task_type: str  # "my_workflow"
+    my_field: str
+    # ... common fields ...
+```
+
+4. **Update CLI** in `cli.py` (choices auto-update from registry).
 
 ## Configuration
 
@@ -187,44 +341,23 @@ THALA_BUDGET_ACTION=pause          # pause, slowdown, or warn
 # LangSmith integration
 THALA_QUEUE_PROJECT=thala-queue    # Dedicated project for queue runs
 LANGSMITH_API_KEY=...              # Required for cost tracking
-LANGSMITH_PROJECT=thala-queue      # Set automatically by runner
 ```
 
 ### Concurrency Tuning
 
-```python
+```bash
 # Via CLI
-python -m core.task_queue.cli config \
-  --mode stagger_hours --stagger-hours 24
+python -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
 
 # Via API
-queue.set_concurrency(
-    mode="stagger_hours",
-    stagger_hours=24.0,
-)
-```
-
-### Categories
-
-Edit categories in `topic_queue/queue.json` or via API:
-
-```python
-queue.set_categories([
-    "philosophy",
-    "science",
-    "technology",
-    "society",
-    "culture",
-    "custom_category",
-])
+queue.set_concurrency(mode="stagger_hours", stagger_hours=24.0)
 ```
 
 ## Related Modules
 
 - `workflows.research.academic_lit_review` - Literature review workflow
+- `workflows.research.web_research` - Web research workflow
+- `workflows.enhance` - Enhancement (supervision + editing)
 - `workflows.output.evening_reads` - Article series generation
-- `core.semantic_scholar` - Paper search and metadata
-- `core.diffusion` - Citation network expansion
-- `core.processing` - Paper processing and summarization
-- `core.clustering` - Thematic clustering
-- `core.synthesis` - Literature review synthesis
+- `workflows.output.illustrate` - Document illustration with images
+- `utils.substack_publish` - Substack draft/publish API

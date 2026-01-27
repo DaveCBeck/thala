@@ -6,7 +6,6 @@ including development mode detection, LangSmith tracing setup, and logging.
 
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -66,21 +65,39 @@ def _get_project_root() -> Path:
     return Path(__file__).parent.parent
 
 
-def _cleanup_old_logs(log_dir: Path, pattern: str, keep: int = 5) -> None:
-    """Remove old log files, keeping the most recent ones.
+def _rotate_log(log_dir: Path, base_name: str, keep: int = 4) -> None:
+    """Rotate log file: current -> previous/name.1.log, shift .1->.2, etc.
 
     Args:
-        log_dir: Directory containing log files
-        pattern: Glob pattern for log files (e.g., "thala_*.log")
-        keep: Number of recent files to keep
+        log_dir: Directory containing the log file
+        base_name: Name of the log file (e.g., "thala.log")
+        keep: Number of previous versions to keep (default: 4)
     """
-    log_files = sorted(
-        log_dir.glob(pattern),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    for old_file in log_files[keep:]:
-        old_file.unlink(missing_ok=True)
+    previous_dir = log_dir / "previous"
+    current = log_dir / base_name
+
+    if not current.exists():
+        return
+
+    previous_dir.mkdir(exist_ok=True)
+
+    # Parse stem and suffix
+    if "." in base_name:
+        stem, suffix = base_name.rsplit(".", 1)
+    else:
+        stem, suffix = base_name, "log"
+
+    # Delete oldest, shift others (.4 deleted, .3->.4, .2->.3, .1->.2)
+    for i in range(keep, 0, -1):
+        src = previous_dir / f"{stem}.{i}.{suffix}"
+        dst = previous_dir / f"{stem}.{i + 1}.{suffix}"
+        if i == keep and src.exists():
+            src.unlink()
+        elif src.exists():
+            src.rename(dst)
+
+    # Move current to .1
+    current.rename(previous_dir / f"{stem}.1.{suffix}")
 
 
 def configure_logging(name: str = "thala") -> Path:
@@ -94,15 +111,15 @@ def configure_logging(name: str = "thala") -> Path:
 
     Args:
         name: Base name for log files (default: "thala").
-              Creates {name}_{datetime}.log and {name}-3p_{datetime}.log
+              Creates {name}.log and {name}-3p.log with stable names.
 
     Environment variables:
         THALA_LOG_LEVEL_CONSOLE: Console log level (default: WARNING)
         THALA_LOG_LEVEL_FILE: File log level (default: INFO)
         THALA_LOG_DIR: Directory for log files (default: ./logs/)
 
-    Log files use datetime format: {name}_YYYYMMDD_HHMMSS.log
-    Keeps 5 most recent log files per name.
+    Log files use stable names (e.g., thala.log). Previous versions are
+    rotated to logs/previous/ (keeps 4 previous versions).
 
     Returns:
         Path to the main log file
@@ -128,14 +145,13 @@ def configure_logging(name: str = "thala") -> Path:
     console_level = os.getenv("THALA_LOG_LEVEL_CONSOLE", DEFAULT_CONSOLE_LEVEL).upper()
     file_level = os.getenv("THALA_LOG_LEVEL_FILE", DEFAULT_FILE_LEVEL).upper()
 
-    # Clean up old log files (keep 5 most recent of each type)
-    _cleanup_old_logs(log_dir, f"{name}_*.log", keep=5)
-    _cleanup_old_logs(log_dir, f"{name}-3p_*.log", keep=5)
+    # Rotate existing log files to previous/ subdirectory (keep 4 previous)
+    _rotate_log(log_dir, f"{name}.log", keep=4)
+    _rotate_log(log_dir, f"{name}-3p.log", keep=4)
 
-    # Create log files with datetime stamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    main_log_file = log_dir / f"{name}_{timestamp}.log"
-    third_party_log_file = log_dir / f"{name}-3p_{timestamp}.log"
+    # Use stable log file names
+    main_log_file = log_dir / f"{name}.log"
+    third_party_log_file = log_dir / f"{name}-3p.log"
 
     # Configure root logger
     root_logger = logging.getLogger()

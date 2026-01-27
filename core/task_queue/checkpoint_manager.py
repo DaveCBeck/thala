@@ -1,12 +1,8 @@
 """
 Checkpoint manager for workflow resumption.
 
-Tracks workflow progress at key phases:
-- discovery: Research questions generated
-- diffusion: Papers being fetched via citation network
-- processing: Papers being processed/summarized
-- clustering: Thematic clustering
-- synthesis: Draft synthesis complete
+Tracks workflow progress at key phases. Each workflow type defines its own
+phases - use get_workflow_phases() to retrieve them dynamically.
 
 Uses PID-based process locking to detect crashed processes.
 """
@@ -26,16 +22,23 @@ logger = logging.getLogger(__name__)
 QUEUE_DIR = Path(__file__).parent.parent.parent / "topic_queue"
 CURRENT_WORK_FILE = QUEUE_DIR / "current_work.json"
 
-# Workflow phases in order
-WORKFLOW_PHASES = [
-    "discovery",  # Research questions generated, keyword search
-    "diffusion",  # Papers being fetched via citation network
-    "processing",  # Papers being processed/summarized
-    "clustering",  # Thematic clustering
-    "synthesis",  # Draft synthesis complete
-    "supervision",  # Supervision loops (optional)
-    "complete",  # Fully done
-]
+# Default workflow type for backward compatibility
+DEFAULT_WORKFLOW_TYPE = "lit_review_full"
+
+
+def get_workflow_phases(task_type: str) -> list[str]:
+    """Get checkpoint phases for a workflow type.
+
+    Args:
+        task_type: Workflow type identifier
+
+    Returns:
+        Ordered list of phase names
+    """
+    # Import here to avoid circular imports
+    from .workflows import get_phases
+
+    return get_phases(task_type)
 
 
 class CheckpointManager:
@@ -56,10 +59,14 @@ class CheckpointManager:
         """Read current work from disk."""
         if self.current_work_file.exists():
             with open(self.current_work_file, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                # Handle backward compatibility: active_topics -> active_tasks
+                if "active_topics" in data and "active_tasks" not in data:
+                    data["active_tasks"] = data.pop("active_topics")
+                return data
         return {
             "version": "1.0",
-            "active_topics": [],
+            "active_tasks": [],
             "process_locks": {},
         }
 
@@ -72,108 +79,104 @@ class CheckpointManager:
 
     def start_work(
         self,
-        topic_id: str,
+        task_id: str,
+        task_type: str,
         langsmith_run_id: str,
     ) -> None:
-        """Record that work has started on a topic.
+        """Record that work has started on a task.
 
         Args:
-            topic_id: Task UUID
+            task_id: Task UUID
+            task_type: Workflow type (e.g., "lit_review_full", "web_research")
             langsmith_run_id: LangSmith run ID
         """
         work = self._read_current_work()
 
+        # Get first phase for this workflow type
+        phases = get_workflow_phases(task_type)
+        initial_phase = phases[0] if phases else "start"
+
         checkpoint: WorkflowCheckpoint = {
-            "topic_id": topic_id,
+            "task_id": task_id,
+            "task_type": task_type,
             "langsmith_run_id": langsmith_run_id,
-            "phase": "discovery",
+            "phase": initial_phase,
             "phase_progress": {},
             "started_at": datetime.utcnow().isoformat(),
             "last_checkpoint_at": datetime.utcnow().isoformat(),
-            "papers_discovered": 0,
-            "papers_processed": 0,
-            "diffusion_stage": 0,
-            "clusters_generated": False,
-            "synthesis_complete": False,
-            "supervision_loop": None,
+            "counters": {},
         }
 
-        # Remove any existing checkpoint for this topic
-        work["active_topics"] = [
-            c for c in work["active_topics"] if c["topic_id"] != topic_id
+        # Remove any existing checkpoint for this task
+        # Handle both task_id and topic_id for backward compat
+        work["active_tasks"] = [
+            c for c in work["active_tasks"]
+            if c.get("task_id", c.get("topic_id")) != task_id
         ]
-        work["active_topics"].append(checkpoint)
-        work["process_locks"][topic_id] = str(os.getpid())
+        work["active_tasks"].append(checkpoint)
+        work["process_locks"][task_id] = str(os.getpid())
 
         self._write_current_work(work)
-        logger.info(f"Started work on topic {topic_id}")
+        logger.info(f"Started work on task {task_id} ({task_type})")
 
     def update_checkpoint(
         self,
-        topic_id: str,
+        task_id: str,
         phase: str,
         **kwargs,
     ) -> None:
-        """Update checkpoint for a topic.
+        """Update checkpoint for a task.
 
         Args:
-            topic_id: Task being processed
+            task_id: Task being processed
             phase: Current phase name
-            **kwargs: Additional phase-specific data
-                (papers_discovered, papers_processed, etc.)
+            **kwargs: Additional phase-specific data stored in counters
         """
         work = self._read_current_work()
 
-        for checkpoint in work["active_topics"]:
-            if checkpoint["topic_id"] == topic_id:
+        for checkpoint in work["active_tasks"]:
+            cp_task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
+            if cp_task_id == task_id:
                 checkpoint["phase"] = phase
                 checkpoint["last_checkpoint_at"] = datetime.utcnow().isoformat()
 
-                # Update known fields directly
-                known_fields = {
-                    "papers_discovered",
-                    "papers_processed",
-                    "diffusion_stage",
-                    "clusters_generated",
-                    "synthesis_complete",
-                    "supervision_loop",
-                }
+                # Store all kwargs in counters
+                if "counters" not in checkpoint:
+                    checkpoint["counters"] = {}
 
                 for key, value in kwargs.items():
-                    if key in known_fields:
-                        checkpoint[key] = value
-                    else:
-                        checkpoint["phase_progress"][key] = value
+                    checkpoint["counters"][key] = value
 
                 break
 
         self._write_current_work(work)
-        logger.debug(f"Checkpoint: {topic_id} -> {phase}")
+        logger.debug(f"Checkpoint: {task_id} -> {phase}")
 
-    def complete_work(self, topic_id: str) -> None:
+    def complete_work(self, task_id: str) -> None:
         """Mark work as complete and remove checkpoint.
 
         Args:
-            topic_id: Task UUID
+            task_id: Task UUID
         """
         work = self._read_current_work()
 
-        work["active_topics"] = [
-            c for c in work["active_topics"] if c["topic_id"] != topic_id
+        work["active_tasks"] = [
+            c for c in work["active_tasks"]
+            if c.get("task_id", c.get("topic_id")) != task_id
         ]
-        work["process_locks"].pop(topic_id, None)
+        work["process_locks"].pop(task_id, None)
 
         self._write_current_work(work)
-        logger.info(f"Completed work on topic {topic_id}")
+        logger.info(f"Completed work on task {task_id}")
 
-    def fail_work(self, topic_id: str) -> None:
+    def fail_work(self, task_id: str) -> None:
         """Remove checkpoint after work failed.
 
         Args:
-            topic_id: Task UUID
+            task_id: Task UUID
         """
         # Same as complete_work - just remove the checkpoint
-        self.complete_work(topic_id)
+        self.complete_work(task_id)
 
     def get_incomplete_work(self) -> list[WorkflowCheckpoint]:
         """Get list of incomplete work items.
@@ -187,9 +190,9 @@ class CheckpointManager:
         work = self._read_current_work()
         incomplete = []
 
-        for checkpoint in work["active_topics"]:
-            topic_id = checkpoint["topic_id"]
-            lock_pid = work["process_locks"].get(topic_id)
+        for checkpoint in work["active_tasks"]:
+            task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
+            lock_pid = work["process_locks"].get(task_id)
 
             # Check if process is still alive
             if lock_pid:
@@ -212,21 +215,22 @@ class CheckpointManager:
             List of all active checkpoints
         """
         work = self._read_current_work()
-        return work["active_topics"]
+        return work["active_tasks"]
 
-    def get_checkpoint(self, topic_id: str) -> Optional[WorkflowCheckpoint]:
-        """Get checkpoint for a specific topic.
+    def get_checkpoint(self, task_id: str) -> Optional[WorkflowCheckpoint]:
+        """Get checkpoint for a specific task.
 
         Args:
-            topic_id: Task UUID
+            task_id: Task UUID
 
         Returns:
             Checkpoint if found, None otherwise
         """
         work = self._read_current_work()
 
-        for checkpoint in work["active_topics"]:
-            if checkpoint["topic_id"] == topic_id:
+        for checkpoint in work["active_tasks"]:
+            cp_task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
+            if cp_task_id == task_id:
                 return checkpoint
 
         return None
@@ -244,42 +248,37 @@ class CheckpointManager:
             Phase name to resume from
         """
         phase = checkpoint["phase"]
+        task_type = checkpoint.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        phases = get_workflow_phases(task_type)
 
-        # Discovery phase: restart from beginning
-        if phase == "discovery":
-            return "discovery"
+        # If phase is valid for this workflow, return it
+        if phase in phases:
+            return phase
 
-        # Diffusion: can resume if papers were discovered
-        if phase == "diffusion" and checkpoint["papers_discovered"] > 0:
-            return "diffusion"
+        # Otherwise return first phase
+        return phases[0] if phases else "start"
 
-        # Processing: can resume if some papers processed
-        if phase == "processing" and checkpoint["papers_processed"] > 0:
-            return "processing"
-
-        # Clustering onwards: can resume if papers were processed
-        if phase in ("clustering", "synthesis", "supervision"):
-            if checkpoint["papers_processed"] > 0:
-                return phase
-
-        # Default: restart from discovery
-        return "discovery"
-
-    def get_phase_index(self, phase: str) -> int:
+    def get_phase_index(self, phase: str, task_type: str = DEFAULT_WORKFLOW_TYPE) -> int:
         """Get index of a phase in the workflow.
 
         Args:
             phase: Phase name
+            task_type: Workflow type
 
         Returns:
             Index (0-based), or -1 if not found
         """
+        phases = get_workflow_phases(task_type)
         try:
-            return WORKFLOW_PHASES.index(phase)
+            return phases.index(phase)
         except ValueError:
             return -1
 
-    def is_phase_complete(self, checkpoint: WorkflowCheckpoint, phase: str) -> bool:
+    def is_phase_complete(
+        self,
+        checkpoint: WorkflowCheckpoint,
+        phase: str,
+    ) -> bool:
         """Check if a phase has been completed.
 
         Args:
@@ -289,8 +288,9 @@ class CheckpointManager:
         Returns:
             True if the checkpoint is past this phase
         """
-        current_idx = self.get_phase_index(checkpoint["phase"])
-        target_idx = self.get_phase_index(phase)
+        task_type = checkpoint.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        current_idx = self.get_phase_index(checkpoint["phase"], task_type)
+        target_idx = self.get_phase_index(phase, task_type)
 
         if current_idx < 0 or target_idx < 0:
             return False

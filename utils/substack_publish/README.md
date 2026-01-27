@@ -7,6 +7,8 @@ Publish illustrated markdown to Substack with native footnotes (hover-to-preview
 - **Native footnotes**: Converts `[@KEY]` citations to Substack's hover-preview footnotes
 - **Image uploads**: Automatically uploads local images to Substack's S3
 - **Multiple publications**: Supports publishing to any of your Substack publications
+- **Paywall support**: Use `---paywall---` to mark where free preview ends
+- **Audience control**: Restrict posts to paid subscribers, founding members, etc.
 - **Markdown cleanup**: Strips YAML frontmatter, duplicate titles, fixes links and horizontal rules
 
 ## Quick Start
@@ -124,9 +126,9 @@ status: success
 
 Body text with citations [@CITATION_KEY].
 
----
+---paywall---
 
-## Section Header
+## Section Header (paid content below here)
 
 More content [@ANOTHER_KEY; @THIRD_KEY].
 
@@ -148,8 +150,49 @@ More content [@ANOTHER_KEY; @THIRD_KEY].
 | `[@KEY]` citations | Footnote superscripts (hover to preview) |
 | `## References` section | Stripped (content moved to footnotes) |
 | `---` horizontal rules | Substack dividers |
+| `---paywall---` | Paywall boundary (free preview ends here) |
 | `[text](url)` links | Clickable links |
 | Local image paths | Uploaded to S3, URLs replaced |
+
+## Paywalls and Audience Control
+
+### Paywall cutoff
+
+Add `---paywall---` on its own line where the free preview should end:
+
+```markdown
+This content is visible to everyone.
+
+---paywall---
+
+This content is only visible to paid subscribers.
+```
+
+Free subscribers see everything above the marker; paid content appears below.
+
+### Audience options
+
+Control who can see the entire post:
+
+| Value | Who can read |
+|-------|--------------|
+| `everyone` | All subscribers (default) |
+| `only_paid` | Paid subscribers only |
+| `founding` | Founding members only |
+| `only_free` | Free subscribers only |
+
+```bash
+# Paid-only post (no free preview)
+python scripts/substack_publish.py article.md \
+  --title "Premium Content" \
+  --audience only_paid
+
+# Free preview with paywall cutoff
+python scripts/substack_publish.py article.md \
+  --title "Article with Preview" \
+  --audience everyone
+# (use ---paywall--- in the markdown to mark the cutoff)
+```
 
 ## Environment Variables
 
