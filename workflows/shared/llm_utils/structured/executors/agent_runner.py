@@ -70,6 +70,20 @@ async def run_tool_agent(
     working_messages = list(messages)
 
     while call_count < max_tool_calls:
+        # Check if this is the final allowed iteration
+        is_final_iteration = (call_count == max_tool_calls - 1) or (
+            total_chars >= max_total_chars * 0.9  # Within 90% of char limit
+        )
+
+        if is_final_iteration and call_count > 0:
+            working_messages.append({
+                "role": "user",
+                "content": "You have used most of your available tool calls. "
+                          "Please complete your research now and prepare to "
+                          "provide your final response. You may make one more "
+                          "tool call if essential, but prioritize completion."
+            })
+
         # Get LLM response
         response: AIMessage = await llm_with_tools.ainvoke(working_messages)
         working_messages.append(response)
