@@ -15,6 +15,7 @@ from ..prompts import (
     DEEP_DIVE_FINDING_PROMPT_FULL,
     DEEP_DIVE_CONTRARIAN_PROMPT_FULL,
     DEEP_DIVE_USER_TEMPLATE,
+    EDITORIAL_STANCE_SECTION,
 )
 from ..state import DeepDiveDraft, EnrichedContent
 
@@ -147,6 +148,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     must_avoid = state.get("must_avoid", [])
     enriched_content: list[EnrichedContent] = state.get("enriched_content", [])
     lit_review = state.get("literature_review", "")
+    editorial_stance = state.get("editorial_stance", "")
 
     if not deep_dive_id:
         return {
@@ -189,6 +191,10 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
         theme=theme,
         must_avoid=must_avoid_str,
     )
+
+    # Inject editorial stance if provided
+    if editorial_stance:
+        system_prompt += EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
 
     user_prompt = DEEP_DIVE_USER_TEMPLATE.format(
         source_content=source_content,

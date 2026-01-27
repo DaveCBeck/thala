@@ -156,9 +156,18 @@ class LitReviewFullWorkflow(BaseWorkflow):
         checkpoint_callback("evening_reads")
         logger.info("Phase 3: Generating evening reads series")
 
+        # Load editorial stance for the publication
+        from workflows.output.evening_reads.editorial import load_editorial_stance
+        editorial_stance = load_editorial_stance(task.get("category", ""))
+        if editorial_stance:
+            logger.info(f"Using editorial stance for category: {task.get('category')}")
+
         try:
             series_result = await evening_reads_graph.ainvoke({
-                "input": {"literature_review": final_report}
+                "input": {
+                    "literature_review": final_report,
+                    "editorial_stance": editorial_stance,
+                }
             })
 
             if not series_result.get("final_outputs"):
@@ -406,7 +415,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
         task: dict[str, Any],
         result: dict[str, Any],
     ) -> dict[str, str]:
-        """Save literature review and article series to .outputs/ directory.
+        """Save literature review and article series to .thala/output/ directory.
 
         Note: Illustrated versions are already saved during the illustrate phase.
         This method saves additional metadata and non-illustrated versions.

@@ -52,6 +52,7 @@ from .structured import (
     extract_from_text,
     classify_content,
 )
+from .response_parsing import extract_response_content
 
 __all__ = [
     # Model utilities
@@ -74,4 +75,6 @@ __all__ = [
     "invoke_with_cache",
     "batch_invoke_with_cache",
     "warm_deepseek_cache",
+    # Response parsing
+    "extract_response_content",
 ]

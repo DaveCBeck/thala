@@ -10,10 +10,11 @@ from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
 
-class EveningReadsInput(TypedDict):
+class EveningReadsInput(TypedDict, total=False):
     """Input for the workflow."""
 
-    literature_review: str  # Raw markdown with [@KEY] citations
+    literature_review: str  # Raw markdown with [@KEY] citations (required)
+    editorial_stance: str  # Optional editorial stance for publication context
 
 
 class CitationKeyMapping(TypedDict):

@@ -41,7 +41,7 @@ class TaskStatus(Enum):
 class TaskCategory(Enum):
     """Thematic categories for round-robin selection.
 
-    NOTE: The source of truth for categories is topic_queue/publications.json.
+    NOTE: The source of truth for categories is .thala/queue/publications.json.
     This enum provides type hints but categories are loaded dynamically from
     publications.json at runtime. To add/remove categories, edit publications.json.
     """

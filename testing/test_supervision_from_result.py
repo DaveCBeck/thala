@@ -105,8 +105,13 @@ def print_result_summary(result: dict, topic: str) -> None:
 
     final_report = result.get("final_report", "")
     if final_report:
-        word_count = len(final_report.split())
-        print(f"Final report: {len(final_report)} chars ({word_count} words)")
+        # Handle both string and list formats
+        if isinstance(final_report, list):
+            report_text = "\n\n".join(final_report)
+        else:
+            report_text = final_report
+        word_count = len(report_text.split())
+        print(f"Final report: {len(report_text)} chars ({word_count} words)")
 
     # Papers found during supervision
     paper_corpus = result.get("paper_corpus", {})

@@ -16,12 +16,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..paths import PUBLICATIONS_FILE, SUBSTACK_COOKIES_FILE
 from .base import BaseWorkflow
 
 logger = logging.getLogger(__name__)
 
 # Publication config location
-PUBLICATIONS_CONFIG = Path(__file__).parent.parent.parent.parent / "topic_queue" / "publications.json"
+PUBLICATIONS_CONFIG = PUBLICATIONS_FILE
 
 
 class PublishSeriesWorkflow(BaseWorkflow):
@@ -113,7 +114,7 @@ class PublishSeriesWorkflow(BaseWorkflow):
 
                 # Create publisher with per-item audience
                 item_config = SubstackConfig(
-                    cookies_path="~/.substack-cookies.json",
+                    cookies_path=str(SUBSTACK_COOKIES_FILE),
                     publication_url=pub_config.get("publication_url"),
                     audience=item.get("audience", "everyone"),
                 )

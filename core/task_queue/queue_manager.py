@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from .paths import PUBLICATIONS_FILE, QUEUE_DIR
 from .schemas import (
     ConcurrencyConfig,
     Task,
@@ -31,12 +32,6 @@ from .schemas import (
 DEFAULT_WORKFLOW_TYPE = "lit_review_full"
 
 logger = logging.getLogger(__name__)
-
-# Storage location (project root / topic_queue)
-QUEUE_DIR = Path(__file__).parent.parent.parent / "topic_queue"
-QUEUE_FILE = QUEUE_DIR / "queue.json"
-LOCK_FILE = QUEUE_DIR / "queue.lock"
-PUBLICATIONS_FILE = QUEUE_DIR / "publications.json"
 
 # Fallback categories if publications.json doesn't exist
 _FALLBACK_CATEGORIES = [

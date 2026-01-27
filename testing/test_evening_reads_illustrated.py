@@ -20,13 +20,19 @@ configure_logging("evening_reads_illustrated")
 logger = logging.getLogger(__name__)
 
 
-async def run_evening_reads(literature_review: str, output_dir: Path, source_name: str) -> dict:
+async def run_evening_reads(
+    literature_review: str,
+    output_dir: Path,
+    source_name: str,
+    editorial_stance: str | None = None,
+) -> dict:
     """Run the evening_reads workflow on a literature review.
 
     Args:
         literature_review: The literature review content
         output_dir: Directory to write output files
         source_name: Name of the source file for metadata
+        editorial_stance: Optional editorial stance content for publication context
 
     Returns:
         dict with workflow result and list of article paths
@@ -35,6 +41,8 @@ async def run_evening_reads(literature_review: str, output_dir: Path, source_nam
 
     word_count = len(literature_review.split())
     logger.info(f"Input: {word_count} words")
+    if editorial_stance:
+        logger.info("Using editorial stance context")
 
     # Run workflow
     logger.info("Starting evening_reads workflow...")
@@ -42,9 +50,12 @@ async def run_evening_reads(literature_review: str, output_dir: Path, source_nam
         "This will plan 3 deep-dive topics, fetch content, then write 4 articles in parallel with OPUS"
     )
 
-    result = await evening_reads_graph.ainvoke(
-        {"input": {"literature_review": literature_review}}
-    )
+    result = await evening_reads_graph.ainvoke({
+        "input": {
+            "literature_review": literature_review,
+            "editorial_stance": editorial_stance,
+        }
+    })
 
     # Log results
     logger.info(f"Evening reads workflow completed with status: {result.get('status')}")
@@ -384,18 +395,33 @@ async def run_illustrate(input_file: Path, output_dir: Path, article_id: str) ->
     }
 
 
-async def run_combined_workflow(input_file: Path, output_dir: Path) -> Path:
+async def run_combined_workflow(
+    input_file: Path,
+    output_dir: Path,
+    publication: str | None = None,
+) -> Path:
     """Run the complete evening_reads + illustrate workflow.
 
     Args:
         input_file: Path to the literature review markdown file
         output_dir: Base directory to write output files
+        publication: Optional publication slug for editorial stance (e.g., 'reasoning-under-uncertainty')
 
     Returns:
         Path to the output directory containing all articles and illustrations
     """
     logger.info(f"Reading literature review from {input_file}")
     literature_review = input_file.read_text()
+
+    # Load editorial stance if publication specified
+    editorial_stance = None
+    if publication:
+        from workflows.output.evening_reads.editorial import load_editorial_stance_by_slug
+        editorial_stance = load_editorial_stance_by_slug(publication)
+        if editorial_stance:
+            logger.info(f"Loaded editorial stance for publication: {publication}")
+        else:
+            logger.warning(f"No editorial stance found for publication: {publication}")
 
     # Create output directory with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -412,6 +438,7 @@ async def run_combined_workflow(input_file: Path, output_dir: Path) -> Path:
         literature_review=literature_review,
         output_dir=workflow_dir,
         source_name=input_file.name,
+        editorial_stance=editorial_stance,
     )
 
     article_paths = evening_reads_result["article_paths"]
@@ -505,10 +532,16 @@ async def main():
         default=Path("/home/dave/thala/testing/test_data"),
         help="Directory to write output files (default: testing/test_data)",
     )
+    parser.add_argument(
+        "--publication",
+        type=str,
+        help="Publication slug for editorial stance (e.g., 'reasoning-under-uncertainty')",
+    )
     args = parser.parse_args()
 
     input_file = args.input_file
     output_dir = args.output_dir
+    publication = args.publication
 
     if not input_file.exists():
         logger.error(f"Input file not found: {input_file}")
@@ -517,7 +550,7 @@ async def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        output_path = await run_combined_workflow(input_file, output_dir)
+        output_path = await run_combined_workflow(input_file, output_dir, publication)
         logger.info(f"Test complete! Output: {output_path}")
     except Exception as e:
         logger.exception(f"Workflow failed: {e}")

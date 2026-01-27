@@ -7,7 +7,7 @@ Example usage:
     from utils.substack_publish import SubstackPublisher, SubstackConfig
 
     config = SubstackConfig(
-        cookies_path="~/.substack-cookies.json",
+        cookies_path=".thala/.substack-cookies.json",
         publication_url="mysubstack.substack.com",
     )
 

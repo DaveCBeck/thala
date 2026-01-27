@@ -37,6 +37,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 from core.task_queue.budget_tracker import BudgetTracker  # noqa: E402
 from core.task_queue.checkpoint_manager import CheckpointManager  # noqa: E402
+from core.task_queue.paths import DAEMON_LOG_FILE, DAEMON_PID_FILE  # noqa: E402
 from core.task_queue.pricing import format_cost  # noqa: E402
 from core.task_queue.queue_manager import (  # noqa: E402
     TaskCategory,
@@ -454,8 +455,7 @@ def cmd_config(args):
         print(f"  Stagger hours: {config['stagger_hours']}")
 
 
-# Daemon management (project root / topic_queue)
-DAEMON_PID_FILE = PROJECT_ROOT / "topic_queue" / "daemon.pid"
+# Daemon management (uses paths from core.task_queue.paths)
 
 
 def _get_daemon_pid() -> int | None:
@@ -487,16 +487,18 @@ def cmd_start(args):
 
     # Start daemon in background
     env = os.environ.copy()
+    # Ensure parent directory exists
+    DAEMON_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.Popen(
         [sys.executable, "-m", "core.task_queue.cli", "daemon"],
-        stdout=open(Path.home() / ".thala" / "topic_queue" / "daemon.log", "a"),
+        stdout=open(DAEMON_LOG_FILE, "a"),
         stderr=subprocess.STDOUT,
         start_new_session=True,
         env=env,
     )
 
     print(f"Started daemon (PID {proc.pid})")
-    print("  Log: ~/.thala/topic_queue/daemon.log")
+    print(f"  Log: {DAEMON_LOG_FILE}")
     print("  Stop with: python -m core.task_queue.cli stop")
 
 

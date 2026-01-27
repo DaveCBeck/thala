@@ -29,6 +29,7 @@ from pathlib import Path
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.task_queue.paths import SUBSTACK_COOKIES_FILE
 from utils.substack_publish import SubstackConfig, SubstackPublisher
 
 logging.basicConfig(
@@ -103,7 +104,7 @@ def main():
     if cookies_path is None:
         cookies_path = os.environ.get("SUBSTACK_COOKIES_PATH")
     if cookies_path is None:
-        cookies_path = Path.home() / ".substack-cookies.json"
+        cookies_path = SUBSTACK_COOKIES_FILE
     else:
         cookies_path = Path(cookies_path).expanduser()
 

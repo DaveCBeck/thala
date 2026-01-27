@@ -15,14 +15,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
+from .paths import QUEUE_DIR
 from .pricing import format_cost
 from .schemas import CostCache, CostEntry
 
 logger = logging.getLogger(__name__)
-
-# Storage location (project root / topic_queue)
-QUEUE_DIR = Path(__file__).parent.parent.parent / "topic_queue"
-COST_CACHE_FILE = QUEUE_DIR / "cost_cache.json"
 
 # Cache validity duration
 CACHE_TTL_HOURS = 1.0

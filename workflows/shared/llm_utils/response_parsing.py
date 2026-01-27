@@ -27,10 +27,22 @@ def extract_json_from_response(content: str, default: Optional[dict] = None) -> 
 
 
 def extract_response_content(response: Any) -> str:
-    """Extract text content from various LLM response formats."""
+    """Extract text content from various LLM response formats.
+
+    Handles extended thinking responses by finding the text block,
+    not just taking the first block (which may be thinking).
+    """
     if isinstance(response.content, str):
         return response.content.strip()
     if isinstance(response.content, list) and response.content:
+        # Find text block (skip thinking blocks when extended thinking is enabled)
+        for block in response.content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    return block.get("text", "").strip()
+            elif hasattr(block, "type") and block.type == "text":
+                return block.text.strip()
+        # Fallback: return first block's text if no explicit text type found
         first_block = response.content[0]
         if isinstance(first_block, dict):
             return first_block.get("text", "").strip()

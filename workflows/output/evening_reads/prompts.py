@@ -24,6 +24,20 @@ Beyond your anchor sources, draw in 2-4 additional citations from the literature
 """
 
 # =============================================================================
+# Editorial Stance Injection (optional, appended when publication context provided)
+# =============================================================================
+
+EDITORIAL_STANCE_SECTION = """
+## Editorial Stance
+
+This piece is for a publication with a specific intellectual identity. Apply this as priors, not mandates:
+
+{editorial_stance}
+
+Let this inform your framing and what you find interesting, but don't force evidence to fit the frame. If findings challenge the stance, express genuine curiosity or update visibly.
+"""
+
+# =============================================================================
 # Planning Agent Prompt
 # =============================================================================
 

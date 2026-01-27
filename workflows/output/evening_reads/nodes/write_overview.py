@@ -10,7 +10,7 @@ from typing import Any
 
 from workflows.shared.llm_utils import ModelTier, get_llm
 
-from ..prompts import OVERVIEW_SYSTEM_PROMPT_FULL, OVERVIEW_USER_TEMPLATE
+from ..prompts import EDITORIAL_STANCE_SECTION, OVERVIEW_SYSTEM_PROMPT_FULL, OVERVIEW_USER_TEMPLATE
 from ..state import DeepDiveDraft, OverviewDraft, EveningReadsState
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
         State update with overview_draft
     """
     lit_review = state["input"]["literature_review"]
+    editorial_stance = state["input"].get("editorial_stance", "")
     deep_dive_drafts = state.get("deep_dive_drafts", [])
     overview_scope = state.get("overview_scope", "")
 
@@ -90,6 +91,10 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     system_prompt = OVERVIEW_SYSTEM_PROMPT_FULL.format(
         deep_dive_summaries=deep_dive_summaries,
     )
+
+    # Inject editorial stance if provided
+    if editorial_stance:
+        system_prompt += EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
 
     user_prompt = OVERVIEW_USER_TEMPLATE.format(
         literature_review=lit_review,

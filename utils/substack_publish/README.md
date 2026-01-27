@@ -29,7 +29,7 @@ Export cookies while logged into Substack:
 1. Install [Cookie-Editor](https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) browser extension
 2. Go to substack.com (logged in)
 3. Click extension → Export → Export as JSON
-4. Save to `.substack-cookies.json` in project root
+4. Save to `.thala/.substack-cookies.json` in project root
 
 Or manually create the file:
 ```json

@@ -52,7 +52,7 @@ async def analyze_document_node(state: IllustrateState) -> dict:
             output_schema=DocumentAnalysis,
             user_prompt=ANALYSIS_USER.format(
                 title=title,
-                document=document[:12000],  # Truncate for token limits
+                document=document,
                 generate_header=config.generate_header_image,
                 additional_count=config.additional_image_count,
                 prefer_pd_header=config.header_prefer_public_domain,

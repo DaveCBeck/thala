@@ -18,7 +18,7 @@ from workflows.research.academic_lit_review.state import (
     LitReviewInput,
     QualitySettings,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, get_structured_output, extract_response_content
 
 from workflows.enhance.supervision.shared.mini_review import (
     run_mini_review,
@@ -292,7 +292,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             ]
         )
 
-        updated_review = response.content
+        updated_review = extract_response_content(response)
 
         merged_summaries = {**state["paper_summaries"], **new_paper_summaries}
         merged_zotero = {**state["zotero_keys"], **new_zotero_keys}

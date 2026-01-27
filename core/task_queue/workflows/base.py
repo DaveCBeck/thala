@@ -9,8 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-# Output directory for generated content
-OUTPUT_DIR = Path(__file__).parent.parent.parent.parent / ".outputs"
+from ..paths import OUTPUT_DIR
 
 
 class BaseWorkflow(ABC):
@@ -132,7 +131,7 @@ class BaseWorkflow(ABC):
         Creates the directory if it doesn't exist.
 
         Returns:
-            Path to .outputs/ directory
+            Path to .thala/output/ directory
         """
         OUTPUT_DIR.mkdir(exist_ok=True)
         return OUTPUT_DIR

@@ -198,15 +198,18 @@ The base date is calculated as the next Monday at 3pm local time that doesn't co
 
 ## File Storage
 
-- `topic_queue/queue.json` - Persistent task queue (LLM-editable JSON)
-- `topic_queue/current_work.json` - Active work with checkpoints
-- `topic_queue/cost_cache.json` - Monthly cost aggregations (1hr TTL)
-- `topic_queue/publications.json` - Category → Substack publication mapping
-- `.outputs/` - Generated reports and article series
+All local state is stored under `.thala/`:
+
+- `.thala/queue/queue.json` - Persistent task queue (LLM-editable JSON)
+- `.thala/queue/current_work.json` - Active work with checkpoints
+- `.thala/queue/cost_cache.json` - Monthly cost aggregations (1hr TTL)
+- `.thala/queue/publications.json` - Category → Substack publication mapping
+- `.thala/output/` - Generated reports and article series
+- `.thala/.substack-cookies.json` - Substack authentication cookies
 
 ### Publications Config (Source of Truth for Categories)
 
-The `topic_queue/publications.json` file is the **source of truth for categories**. The top-level keys define which categories exist in the system, and the values map each category to its Substack publication:
+The `.thala/queue/publications.json` file is the **source of truth for categories**. The top-level keys define which categories exist in the system, and the values map each category to its Substack publication:
 
 ```json
 {
@@ -221,9 +224,9 @@ The `topic_queue/publications.json` file is the **source of truth for categories
 }
 ```
 
-**To add a new category:** Add a new key to `publications.json` with its publication config.
+**To add a new category:** Add a new key to `.thala/queue/publications.json` with its publication config.
 
-**To remove a category:** Delete the key from `publications.json`.
+**To remove a category:** Delete the key from `.thala/queue/publications.json`.
 
 Categories are loaded from this file when the queue manager initializes. The `publish_series` workflow also uses this config to route drafts to the correct Substack publication.
 

@@ -14,13 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from .paths import QUEUE_DIR
 from .schemas import CurrentWork, WorkflowCheckpoint
 
 logger = logging.getLogger(__name__)
-
-# Storage location (project root / topic_queue)
-QUEUE_DIR = Path(__file__).parent.parent.parent / "topic_queue"
-CURRENT_WORK_FILE = QUEUE_DIR / "current_work.json"
 
 # Default workflow type for backward compatibility
 DEFAULT_WORKFLOW_TYPE = "lit_review_full"

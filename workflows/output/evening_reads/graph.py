@@ -78,6 +78,7 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
     assignments = state.get("deep_dive_assignments", [])
     enriched_content = state.get("enriched_content", [])
     lit_review = state["input"]["literature_review"]
+    editorial_stance = state["input"].get("editorial_stance", "")
 
     if not assignments:
         return END
@@ -113,6 +114,7 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
                     "must_avoid": must_avoid,
                     "enriched_content": dd_content,
                     "literature_review": lit_review,
+                    "editorial_stance": editorial_stance,
                 },
             )
         )

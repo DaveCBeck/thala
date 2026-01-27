@@ -7,20 +7,18 @@ dev.md
 claude.md
 todo.md
 logs/
-.outputs/
 testing/test_data/
 testing/logs/
 testing/traces/
 **/claude.md
 
-# Task queue data (local state, not committed)
-topic_queue/
+# Thala local state (queue, outputs, credentials)
+.thala/
 
 # Environment variables and credentials
 .env
 .env.*
 !.env.example
-.substack-cookies.json
 
 # Service data directories
 services/chroma/data/
@@ -75,5 +73,3 @@ temp/
 
 # Cache
 .cache/
-.lit-review-state/
-.substack-cookies.json
