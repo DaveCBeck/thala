@@ -2,9 +2,11 @@
 
 Provides functions to convert PDFs to markdown using the Marker service.
 Includes Playwright fallback for sites that block direct downloads.
+Supports automatic chunking for large PDFs to prevent memory exhaustion.
 """
 
 import asyncio
+import gc
 import hashlib
 import logging
 import os
@@ -13,6 +15,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import httpx
+
+from utils.pdf_chunking import (
+    assemble_markdown_chunks,
+    should_chunk_pdf,
+    split_pdf_by_pages,
+)
 
 from .detector import validate_pdf_bytes
 
@@ -25,7 +33,11 @@ logger = logging.getLogger(__name__)
 MARKER_BASE_URL = os.getenv("MARKER_BASE_URL", "http://localhost:8001")
 MARKER_INPUT_DIR = Path(os.getenv("MARKER_INPUT_DIR", "/data/input"))
 MARKER_POLL_INTERVAL = float(os.getenv("MARKER_POLL_INTERVAL", "15.0"))
-MARKER_MAX_FILE_SIZE = int(os.getenv("MARKER_MAX_FILE_SIZE", str(350 * 1024 * 1024)))  # 350MB
+MARKER_MAX_FILE_SIZE = int(os.getenv("MARKER_MAX_FILE_SIZE", str(1024 * 1024 * 1024)))  # 1GB
+
+# Chunking configuration for large PDFs
+MARKER_CHUNK_PAGE_THRESHOLD = int(os.getenv("MARKER_CHUNK_PAGE_THRESHOLD", "100"))
+MARKER_CHUNK_SIZE = int(os.getenv("MARKER_CHUNK_SIZE", "100"))
 
 # Module-level Playwright instances for reuse
 _playwright: "Playwright | None" = None
@@ -468,6 +480,9 @@ async def process_pdf_bytes(
 ) -> str:
     """Convert PDF bytes to markdown via Marker.
 
+    Automatically chunks large PDFs (>100 pages by default) to prevent
+    memory exhaustion. Chunks are processed sequentially and reassembled.
+
     Args:
         content: PDF content bytes
         quality: Quality preset (fast, balanced, quality)
@@ -492,6 +507,44 @@ async def process_pdf_bytes(
             f"PDF too large ({size_mb:.1f}MB > {limit_mb:.0f}MB limit)"
         )
 
+    # Check if PDF needs chunking
+    if should_chunk_pdf(content, MARKER_CHUNK_PAGE_THRESHOLD):
+        return await _process_chunked_pdf(
+            content,
+            quality=quality,
+            langs=langs,
+            timeout=timeout,
+        )
+
+    # Standard single-PDF processing
+    return await _process_single_pdf(
+        content,
+        quality=quality,
+        langs=langs,
+        timeout=timeout,
+        filename=filename,
+    )
+
+
+async def _process_single_pdf(
+    content: bytes,
+    quality: str = "balanced",
+    langs: Optional[list[str]] = None,
+    timeout: Optional[float] = None,
+    filename: Optional[str] = None,
+) -> str:
+    """Process a single PDF (internal helper).
+
+    Args:
+        content: PDF content bytes
+        quality: Quality preset
+        langs: Languages for OCR
+        timeout: Maximum processing time
+        filename: Optional filename
+
+    Returns:
+        Markdown content
+    """
     # Save to Marker input directory
     file_path = _save_to_marker_input(content, filename)
 
@@ -504,6 +557,84 @@ async def process_pdf_bytes(
     logger.debug(f"Marker conversion complete: {len(markdown)} chars")
 
     return markdown
+
+
+async def _process_chunked_pdf(
+    content: bytes,
+    quality: str = "balanced",
+    langs: Optional[list[str]] = None,
+    timeout: Optional[float] = None,
+) -> str:
+    """Process a large PDF in chunks to prevent memory exhaustion.
+
+    Splits the PDF into smaller chunks, processes each sequentially,
+    then reassembles the markdown output.
+
+    Args:
+        content: PDF content bytes
+        quality: Quality preset
+        langs: Languages for OCR
+        timeout: Maximum processing time per chunk
+
+    Returns:
+        Assembled markdown content
+    """
+    # Split PDF into chunks
+    chunks = split_pdf_by_pages(content, MARKER_CHUNK_SIZE)
+    logger.info(
+        f"Processing large PDF in {len(chunks)} chunks of ~{MARKER_CHUNK_SIZE} pages"
+    )
+
+    markdown_chunks = []
+    page_ranges = []
+
+    for i, (chunk_bytes, page_range) in enumerate(chunks):
+        chunk_num = i + 1
+        logger.info(
+            f"Processing chunk {chunk_num}/{len(chunks)} (pages {page_range[0]}-{page_range[1]})"
+        )
+
+        try:
+            # Process this chunk
+            chunk_filename = f"chunk_{chunk_num}_of_{len(chunks)}.pdf"
+            markdown = await _process_single_pdf(
+                chunk_bytes,
+                quality=quality,
+                langs=langs,
+                timeout=timeout,
+                filename=chunk_filename,
+            )
+            markdown_chunks.append(markdown)
+            page_ranges.append(page_range)
+
+            logger.debug(
+                f"Chunk {chunk_num}/{len(chunks)} complete: {len(markdown)} chars"
+            )
+
+        except Exception as e:
+            logger.error(f"Chunk {chunk_num}/{len(chunks)} failed: {e}")
+            raise MarkerProcessingError(
+                f"Failed processing chunk {chunk_num} (pages {page_range[0]}-{page_range[1]}): {e}"
+            ) from e
+
+        finally:
+            # Aggressive memory cleanup between chunks
+            gc.collect()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass  # torch not available in this context
+
+    # Reassemble chunks
+    assembled = assemble_markdown_chunks(markdown_chunks, page_ranges)
+    logger.info(
+        f"Assembled {len(chunks)} chunks into {len(assembled)} chars of markdown"
+    )
+
+    return assembled
 
 
 async def process_pdf_file(

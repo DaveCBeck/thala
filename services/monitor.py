@@ -94,6 +94,17 @@ SERVICES = [
         health_url="http://localhost:8002/health",
         requires_vpn=True,
     ),
+    ServiceConfig(
+        name="firecrawl",
+        container_names=[
+            "firecrawl-firecrawl-api-1",
+            "firecrawl-playwright-service-1",
+            "firecrawl-redis-1",
+            "firecrawl-rabbitmq-1",
+            "firecrawl-nuq-postgres-1",
+        ],
+        health_url="http://localhost:3002/",
+    ),
 ]
 
 

@@ -129,6 +129,9 @@ def convert_document(
             f"GPU: {after['gpu_used_gb']:.1f}/{after['gpu_total_gb']:.1f}GB"
         )
 
+        # Cleanup intermediate memory (keeps models loaded, schedules idle unload)
+        processor.cleanup()
+
         return {
             "status": "completed",
             "result": result,
@@ -136,6 +139,7 @@ def convert_document(
         }
     except FileNotFoundError as e:
         logger.error(f"[{file_path}] File not found: {e}")
+        processor.cleanup()
         return {
             "status": "failed",
             "result": None,
@@ -148,6 +152,7 @@ def convert_document(
             f"[{file_path}] Failed - RAM: {after['ram_gb']:.1f}GB, "
             f"GPU: {after['gpu_used_gb']:.1f}/{after['gpu_total_gb']:.1f}GB - Error: {e}"
         )
+        processor.cleanup()
         return {
             "status": "failed",
             "result": None,

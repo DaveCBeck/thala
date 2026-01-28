@@ -1,16 +1,25 @@
 """Marker document processor wrapper."""
 
+import gc
+import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
+import torch
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
 from marker.renderers.markdown import MarkdownRenderer
 from marker.renderers.chunk import ChunkRenderer
 
 from app.config import QUALITY_PRESETS, get_settings
+
+logger = logging.getLogger(__name__)
+
+# Idle timeout before unloading models (30 minutes)
+MODEL_IDLE_TIMEOUT_SEC = 30 * 60
 
 
 class MarkerProcessor:
@@ -19,12 +28,59 @@ class MarkerProcessor:
     def __init__(self):
         self.settings = get_settings()
         self._models = None
+        self._last_used = None
+        self._lock = threading.Lock()
+        self._unload_timer = None
 
     def _get_models(self) -> dict:
         """Lazy-load models (expensive operation)."""
-        if self._models is None:
-            self._models = create_model_dict()
-        return self._models
+        with self._lock:
+            self._cancel_unload_timer()
+            if self._models is None:
+                logger.info("Loading marker models into memory...")
+                self._models = create_model_dict()
+                logger.info("Marker models loaded successfully")
+            self._last_used = time.time()
+            return self._models
+
+    def _cancel_unload_timer(self) -> None:
+        """Cancel any pending unload timer."""
+        if self._unload_timer is not None:
+            self._unload_timer.cancel()
+            self._unload_timer = None
+
+    def _schedule_unload(self) -> None:
+        """Schedule model unload after idle timeout."""
+        self._cancel_unload_timer()
+        self._unload_timer = threading.Timer(MODEL_IDLE_TIMEOUT_SEC, self._unload_models)
+        self._unload_timer.daemon = True
+        self._unload_timer.start()
+        logger.debug(f"Scheduled model unload in {MODEL_IDLE_TIMEOUT_SEC}s")
+
+    def _unload_models(self) -> None:
+        """Unload models from memory after idle timeout."""
+        with self._lock:
+            if self._models is None:
+                return
+            # Check if still idle
+            if self._last_used and (time.time() - self._last_used) < MODEL_IDLE_TIMEOUT_SEC:
+                # Used recently, reschedule
+                self._schedule_unload()
+                return
+            logger.info("Unloading marker models after idle timeout...")
+            self._models = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            logger.info("Marker models unloaded, memory freed")
+
+    def cleanup(self) -> None:
+        """Clean up intermediate memory after a job (keeps models loaded)."""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        # Schedule unload timer
+        self._schedule_unload()
 
     def convert(
         self,

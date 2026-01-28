@@ -27,6 +27,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    mem_limit: 2g
+    memswap_limit: 4g
     deploy:
       resources:
         reservations:
@@ -67,6 +69,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # Memory: 30GB RAM soft target, can swap up to 32GB more before OOM
+    mem_limit: 30g
+    memswap_limit: 62g  # total RAM+swap ceiling
+    mem_swappiness: 60  # moderate preference to swap when under pressure
     deploy:
       replicas: 1
       resources:
