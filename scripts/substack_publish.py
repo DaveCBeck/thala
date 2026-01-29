@@ -8,15 +8,20 @@ section) to Substack posts with hover-preview footnotes.
 Usage:
     python scripts/substack_publish.py article.md --title "My Post"
     python scripts/substack_publish.py article.md --title "My Post" --draft-only
-    python scripts/substack_publish.py article.md --title "My Post" --cookies ~/.substack.json
 
 The script expects:
 - Markdown with [@KEY] style citations in the body
 - A "## References" section at the end with citation definitions
 - Local image paths (which will be uploaded to Substack's S3)
 
+Authentication (in priority order):
+1. Email/password via --email/--password or SUBSTACK_EMAIL/SUBSTACK_PASSWORD env vars
+2. Cookies via --cookies or SUBSTACK_COOKIES_PATH env var
+
 Environment variables:
-- SUBSTACK_COOKIES_PATH: Default path to cookies JSON file
+- SUBSTACK_EMAIL: Account email (recommended for multi-publication)
+- SUBSTACK_PASSWORD: Account password
+- SUBSTACK_COOKIES_PATH: Path to cookies JSON file (fallback)
 - SUBSTACK_PUBLICATION_URL: Default publication URL (e.g., "mysubstack.substack.com")
 """
 
@@ -26,11 +31,16 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.task_queue.paths import SUBSTACK_COOKIES_FILE
-from utils.substack_publish import SubstackConfig, SubstackPublisher
+# Load .env file
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+from core.task_queue.paths import SUBSTACK_COOKIES_FILE  # noqa: E402
+from utils.substack_publish import SubstackConfig, SubstackPublisher  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,6 +93,16 @@ def main():
         help="Post audience (default: everyone)",
     )
     parser.add_argument(
+        "--email",
+        default=None,
+        help="Substack account email (or set SUBSTACK_EMAIL)",
+    )
+    parser.add_argument(
+        "--password",
+        default=None,
+        help="Substack account password (or set SUBSTACK_PASSWORD)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -99,22 +119,14 @@ def main():
         logger.error(f"Markdown file not found: {args.markdown_file}")
         sys.exit(1)
 
-    # Resolve cookies path
+    # Resolve cookies path (optional, used as fallback)
     cookies_path = args.cookies
     if cookies_path is None:
-        cookies_path = os.environ.get("SUBSTACK_COOKIES_PATH")
-    if cookies_path is None:
-        cookies_path = SUBSTACK_COOKIES_FILE
-    else:
-        cookies_path = Path(cookies_path).expanduser()
-
-    if not cookies_path.exists():
-        logger.error(
-            f"Cookies file not found: {cookies_path}\n"
-            "Export cookies from your browser while logged into Substack.\n"
-            "See: https://github.com/ma2za/python-substack#authentication"
-        )
-        sys.exit(1)
+        env_cookies = os.environ.get("SUBSTACK_COOKIES_PATH")
+        if env_cookies:
+            cookies_path = Path(env_cookies).expanduser()
+        elif SUBSTACK_COOKIES_FILE.exists():
+            cookies_path = SUBSTACK_COOKIES_FILE
 
     # Resolve publication URL
     publication_url = args.publication
@@ -126,9 +138,23 @@ def main():
         )
         sys.exit(1)
 
-    # Build config
+    # Check auth availability (warn if neither configured)
+    email = args.email or os.environ.get("SUBSTACK_EMAIL")
+    password = args.password or os.environ.get("SUBSTACK_PASSWORD")
+    has_email_auth = email and password
+    has_cookies = cookies_path and cookies_path.exists()
+
+    if not has_email_auth and not has_cookies:
+        logger.warning(
+            "No authentication configured. "
+            "Set SUBSTACK_EMAIL/SUBSTACK_PASSWORD or provide valid cookies."
+        )
+
+    # Build config (publisher handles auth cascade)
     config = SubstackConfig(
-        cookies_path=str(cookies_path),
+        email=args.email,
+        password=args.password,
+        cookies_path=str(cookies_path) if cookies_path and cookies_path.exists() else None,
         publication_url=publication_url,
         audience=args.audience,
     )

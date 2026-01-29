@@ -5,6 +5,7 @@ to Substack, handling image uploads and footnote conversion.
 """
 
 import logging
+import os
 from pathlib import Path
 
 from substack import Api
@@ -36,37 +37,85 @@ class SubstackPublisher:
         """Initialize publisher with configuration.
 
         Args:
-            config: SubstackConfig with cookies_path, publication_url, etc.
+            config: SubstackConfig with email/password or cookies_path, publication_url, etc.
         """
         self.config = config
         self._api: Api | None = None
 
+    def _create_api(self) -> Api:
+        """Create API instance with authentication cascade.
+
+        Priority:
+        1. Email/password from config
+        2. Email/password from environment
+        3. Cookies from config
+        4. Cookies from environment
+
+        Returns:
+            Authenticated Api instance
+
+        Raises:
+            ValueError: If no valid authentication method available
+        """
+        # Try email/password first (works for multi-publication)
+        email = self.config.get("email") or os.getenv("SUBSTACK_EMAIL")
+        password = self.config.get("password") or os.getenv("SUBSTACK_PASSWORD")
+
+        if email and password:
+            try:
+                logger.info(f"Authenticating with email: {email}")
+                api = Api(email=email, password=password)
+                self._set_publication(api)
+                return api
+            except Exception as e:
+                logger.warning(
+                    f"Email/password auth failed: {e}. "
+                    "Falling back to cookie authentication."
+                )
+
+        # Fall back to cookies
+        cookies_path = self.config.get("cookies_path") or os.getenv("SUBSTACK_COOKIES_PATH")
+        if cookies_path:
+            path = Path(cookies_path).expanduser()
+            if path.exists():
+                logger.info(f"Authenticating with cookies: {path}")
+                api = Api(cookies_path=str(path))
+                self._set_publication(api)
+                return api
+            else:
+                logger.warning(f"Cookies file not found: {path}")
+
+        raise ValueError(
+            "No valid Substack authentication. "
+            "Set SUBSTACK_EMAIL/SUBSTACK_PASSWORD or provide cookies_path."
+        )
+
+    def _set_publication(self, api: Api) -> None:
+        """Set the target publication on the API instance."""
+        publication_url = self.config.get("publication_url") or os.getenv(
+            "SUBSTACK_PUBLICATION_URL"
+        )
+        if not publication_url:
+            return
+
+        pubs = api.get_user_publications()
+        subdomain = publication_url.replace(".substack.com", "")
+        for pub in pubs:
+            if (
+                pub.get("subdomain") == subdomain
+                or publication_url in pub.get("publication_url", "")
+            ):
+                api.change_publication(pub)
+                logger.info(f"Set publication: {pub.get('name', subdomain)}")
+                return
+
+        logger.warning(f"Publication not found: {publication_url}")
+
     @property
     def api(self) -> Api:
-        """Lazy-load Substack API client."""
+        """Get or create API instance."""
         if self._api is None:
-            cookies_path = self.config.get("cookies_path")
-            if cookies_path:
-                self._api = Api(cookies_path=str(Path(cookies_path).expanduser()))
-            else:
-                raise ValueError("cookies_path required in config")
-
-            # Set publication if specified
-            publication_url = self.config.get("publication_url")
-            if publication_url:
-                # Find the matching publication from user's list
-                pubs = self._api.get_user_publications()
-                for pub in pubs:
-                    if (
-                        pub.get("subdomain") == publication_url.replace(".substack.com", "")
-                        or pub.get("publication_url", "").rstrip("/") == f"https://{publication_url}".rstrip("/")
-                        or publication_url in pub.get("publication_url", "")
-                    ):
-                        self._api.change_publication(pub)
-                        break
-                else:
-                    logger.warning(f"Publication not found: {publication_url}")
-
+            self._api = self._create_api()
         return self._api
 
     @property

@@ -6,7 +6,14 @@ from typing import Literal, TypedDict
 class SubstackConfig(TypedDict, total=False):
     """Configuration for Substack publishing."""
 
+    # Authentication - email/password (preferred for multi-publication)
+    email: str | None
+    password: str | None
+
+    # Authentication - cookies (fallback, rotates per publication)
     cookies_path: str | None
+
+    # Publication settings
     publication_url: str | None
     audience: Literal["everyone", "only_paid", "founding", "only_free"]
 
