@@ -41,6 +41,11 @@ class PublishSeriesWorkflow(BaseWorkflow):
         """This workflow makes no LLM calls, skip budget check."""
         return True
 
+    @property
+    def bypass_concurrency(self) -> bool:
+        """Low-overhead publishing can run anytime, bypass stagger limits."""
+        return True
+
     def get_task_identifier(self, task: dict[str, Any]) -> str:
         """Get identifier for logging."""
         source_id = task.get("source_task_id", "unknown")[:8]

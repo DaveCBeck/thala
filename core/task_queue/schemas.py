@@ -203,6 +203,7 @@ class WorkflowCheckpoint(TypedDict):
     """Checkpoint data for workflow resumption.
 
     Now workflow-aware: task_type determines valid phases.
+    Stores phase_outputs for resumption after interruption.
     """
 
     task_id: str  # Renamed from topic_id for genericity
@@ -210,6 +211,7 @@ class WorkflowCheckpoint(TypedDict):
     langsmith_run_id: str
     phase: str  # Current phase (workflow-specific)
     phase_progress: dict  # Phase-specific progress data
+    phase_outputs: dict  # Outputs from completed phases for resumption
     started_at: str
     last_checkpoint_at: str
 

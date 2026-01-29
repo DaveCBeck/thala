@@ -125,6 +125,27 @@ class BaseWorkflow(ABC):
                 return task[field][:50]
         return task.get("id", "unknown")[:8]
 
+    @property
+    def is_zero_cost(self) -> bool:
+        """Return True if this workflow makes no LLM calls.
+
+        Zero-cost workflows skip budget checks.
+        Default is False (most workflows incur LLM costs).
+        """
+        return False
+
+    @property
+    def bypass_concurrency(self) -> bool:
+        """Return True if this workflow should bypass concurrency limits.
+
+        Bypass workflows can run regardless of stagger_hours or max_concurrent
+        settings. Useful for low-overhead tasks like publishing that shouldn't
+        block or be blocked by expensive workflows.
+
+        Default is False (respects concurrency limits).
+        """
+        return False
+
     def get_output_dir(self) -> Path:
         """Get the output directory for this workflow.
 

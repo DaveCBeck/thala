@@ -40,6 +40,15 @@ class LitReviewFullWorkflow(BaseWorkflow):
             "complete",
         ]
 
+    def _get_completed_phases(self, checkpoint: dict) -> set[str]:
+        """Get phases completed before the checkpoint phase."""
+        current_phase = checkpoint.get("phase", "")
+        try:
+            current_idx = self.phases.index(current_phase)
+            return set(self.phases[:current_idx])
+        except ValueError:
+            return set()
+
     async def run(
         self,
         task: dict[str, Any],
@@ -68,159 +77,231 @@ class LitReviewFullWorkflow(BaseWorkflow):
         language = task.get("language", "en")
         date_range = task.get("date_range")
 
-        logger.info(f"Starting lit_review_full workflow: {topic[:50]}...")
+        # Determine which phases to skip if resuming
+        completed_phases: set[str] = set()
+        phase_outputs: dict[str, Any] = {}
+
+        if resume_from:
+            completed_phases = self._get_completed_phases(resume_from)
+            phase_outputs = resume_from.get("phase_outputs", {})
+            logger.info(
+                f"Resuming lit_review_full from {resume_from['phase']}, "
+                f"skipping completed phases: {completed_phases}"
+            )
+        else:
+            logger.info(f"Starting lit_review_full workflow: {topic[:50]}...")
 
         errors = []
         lit_result = None
         enhance_result = None
         series_result = None
+        final_report = None
         illustrated_paths = {}
         publish_task_id = None
 
         # Phase 1: Literature review
-        checkpoint_callback("lit_review")
-        logger.info("Phase 1: Running academic literature review")
+        if "lit_review" in completed_phases:
+            lit_result = phase_outputs.get("lit_result")
+            logger.info("Skipping lit_review phase (already complete)")
+        else:
+            checkpoint_callback("lit_review")
+            logger.info("Phase 1: Running academic literature review")
 
-        try:
-            lit_result = await academic_lit_review(
-                topic=topic,
-                research_questions=research_questions,
-                quality=quality,
-                language=language,
-                date_range=date_range,
-            )
-
-            if not lit_result.get("final_review"):
-                raise RuntimeError(
-                    f"Literature review failed: {lit_result.get('errors', 'Unknown error')}"
+            try:
+                lit_result = await academic_lit_review(
+                    topic=topic,
+                    research_questions=research_questions,
+                    quality=quality,
+                    language=language,
+                    date_range=date_range,
                 )
 
-            logger.info(
-                f"Lit review complete: {len(lit_result.get('paper_corpus', {}))} papers"
-            )
+                if not lit_result.get("final_review"):
+                    raise RuntimeError(
+                        f"Literature review failed: {lit_result.get('errors', 'Unknown error')}"
+                    )
 
-        except Exception as e:
-            logger.error(f"Literature review failed: {e}", exc_info=True)
-            errors.append({"phase": "lit_review", "error": str(e)})
-            return {"status": "failed", "errors": errors}
+                logger.info(
+                    f"Lit review complete: {len(lit_result.get('paper_corpus', {}))} papers"
+                )
+
+                # Save outputs for potential resume
+                checkpoint_callback("lit_review", phase_outputs={"lit_result": lit_result})
+
+            except Exception as e:
+                logger.error(f"Literature review failed: {e}", exc_info=True)
+                errors.append({"phase": "lit_review", "error": str(e)})
+                return {"status": "failed", "errors": errors}
 
         # Phase 2: Enhancement (supervision + editing)
-        checkpoint_callback("supervision")
-        logger.info("Phase 2: Running enhancement workflow")
+        if "supervision" in completed_phases and "editing" in completed_phases:
+            enhance_result = phase_outputs.get("enhance_result")
+            final_report = phase_outputs.get("final_report") or enhance_result.get("final_report")
+            logger.info("Skipping supervision/editing phases (already complete)")
+        else:
+            checkpoint_callback("supervision")
+            logger.info("Phase 2: Running enhancement workflow")
 
-        try:
-            # Get research questions for enhancement
-            # Use generated ones from lit review if not provided
-            enhance_questions = research_questions or lit_result.get("research_questions", [])
-            if not enhance_questions:
-                enhance_questions = [f"What are the key findings regarding {topic}?"]
+            try:
+                # Get research questions for enhancement
+                # Use generated ones from lit review if not provided
+                enhance_questions = research_questions or lit_result.get("research_questions", [])
+                if not enhance_questions:
+                    enhance_questions = [f"What are the key findings regarding {topic}?"]
 
-            enhance_result = await enhance_report(
-                report=lit_result["final_review"],
-                topic=topic,
-                research_questions=enhance_questions,
-                quality=quality,
-                loops="all",  # Run both supervision loops
-                paper_corpus=lit_result.get("paper_corpus"),
-                paper_summaries=lit_result.get("paper_summaries"),
-                zotero_keys=lit_result.get("zotero_keys"),
-                run_editing=True,
-                run_fact_check=False,  # Disabled - adds latency without value
-            )
+                enhance_result = await enhance_report(
+                    report=lit_result["final_review"],
+                    topic=topic,
+                    research_questions=enhance_questions,
+                    quality=quality,
+                    loops="all",  # Run both supervision loops
+                    paper_corpus=lit_result.get("paper_corpus"),
+                    paper_summaries=lit_result.get("paper_summaries"),
+                    zotero_keys=lit_result.get("zotero_keys"),
+                    run_editing=True,
+                    run_fact_check=False,  # Disabled - adds latency without value
+                )
 
-            # Update checkpoint as we progress through enhancement phases
-            if enhance_result.get("supervision_result"):
-                checkpoint_callback("editing")
+                # Update checkpoint as we progress through enhancement phases
+                if enhance_result.get("supervision_result"):
+                    checkpoint_callback("editing")
 
-            if enhance_result.get("status") == "failed":
-                logger.warning("Enhancement failed, using original lit review")
+                if enhance_result.get("status") == "failed":
+                    logger.warning("Enhancement failed, using original lit review")
+                    final_report = lit_result["final_review"]
+                else:
+                    final_report = enhance_result.get("final_report", lit_result["final_review"])
+
+                if enhance_result.get("errors"):
+                    errors.extend(enhance_result["errors"])
+
+                logger.info(
+                    f"Enhancement complete: status={enhance_result.get('status')}, "
+                    f"report_length={len(final_report)}"
+                )
+
+                # Save outputs for potential resume
+                checkpoint_callback(
+                    "editing",
+                    phase_outputs={
+                        "lit_result": lit_result,
+                        "enhance_result": enhance_result,
+                        "final_report": final_report,
+                    },
+                )
+
+            except Exception as e:
+                logger.error(f"Enhancement failed: {e}", exc_info=True)
+                errors.append({"phase": "enhancement", "error": str(e)})
+                # Fall back to original lit review
                 final_report = lit_result["final_review"]
-            else:
-                final_report = enhance_result.get("final_report", lit_result["final_review"])
-
-            if enhance_result.get("errors"):
-                errors.extend(enhance_result["errors"])
-
-            logger.info(
-                f"Enhancement complete: status={enhance_result.get('status')}, "
-                f"report_length={len(final_report)}"
-            )
-
-        except Exception as e:
-            logger.error(f"Enhancement failed: {e}", exc_info=True)
-            errors.append({"phase": "enhancement", "error": str(e)})
-            # Fall back to original lit review
-            final_report = lit_result["final_review"]
 
         # Phase 3: Evening reads article series
-        checkpoint_callback("evening_reads")
-        logger.info("Phase 3: Generating evening reads series")
+        if "evening_reads" in completed_phases:
+            series_result = phase_outputs.get("series_result")
+            logger.info("Skipping evening_reads phase (already complete)")
+        else:
+            checkpoint_callback("evening_reads")
+            logger.info("Phase 3: Generating evening reads series")
 
-        # Load editorial stance for the publication
-        from workflows.output.evening_reads.editorial import load_editorial_stance
-        editorial_stance = load_editorial_stance(task.get("category", ""))
-        if editorial_stance:
-            logger.info(f"Using editorial stance for category: {task.get('category')}")
+            # Load editorial stance for the publication
+            from workflows.output.evening_reads.editorial import load_editorial_stance
+            editorial_stance = load_editorial_stance(task.get("category", ""))
+            if editorial_stance:
+                logger.info(f"Using editorial stance for category: {task.get('category')}")
 
-        try:
-            series_result = await evening_reads_graph.ainvoke({
-                "input": {
-                    "literature_review": final_report,
-                    "editorial_stance": editorial_stance,
-                }
-            })
+            try:
+                series_result = await evening_reads_graph.ainvoke({
+                    "input": {
+                        "literature_review": final_report,
+                        "editorial_stance": editorial_stance,
+                    }
+                })
 
-            if not series_result.get("final_outputs"):
-                raise RuntimeError(
-                    f"Series generation failed: {series_result.get('errors', 'Unknown error')}"
+                if not series_result.get("final_outputs"):
+                    raise RuntimeError(
+                        f"Series generation failed: {series_result.get('errors', 'Unknown error')}"
+                    )
+
+                logger.info(
+                    f"Series complete: {len(series_result.get('final_outputs', []))} articles"
                 )
 
-            logger.info(
-                f"Series complete: {len(series_result.get('final_outputs', []))} articles"
-            )
+                # Save outputs for potential resume
+                checkpoint_callback(
+                    "evening_reads",
+                    phase_outputs={
+                        "lit_result": lit_result,
+                        "enhance_result": enhance_result,
+                        "final_report": final_report,
+                        "series_result": series_result,
+                    },
+                )
 
-        except Exception as e:
-            logger.error(f"Evening reads failed: {e}", exc_info=True)
-            errors.append({"phase": "evening_reads", "error": str(e)})
-            series_result = {"final_outputs": []}
+            except Exception as e:
+                logger.error(f"Evening reads failed: {e}", exc_info=True)
+                errors.append({"phase": "evening_reads", "error": str(e)})
+                series_result = {"final_outputs": []}
 
         # Phase 4: Illustrate articles
-        checkpoint_callback("illustrate")
-        logger.info("Phase 4: Illustrating articles")
+        if "illustrate" in completed_phases:
+            illustrated_paths = phase_outputs.get("illustrated_paths", {})
+            logger.info("Skipping illustrate phase (already complete)")
+        else:
+            checkpoint_callback("illustrate")
+            logger.info("Phase 4: Illustrating articles")
 
-        final_outputs = series_result.get("final_outputs", [])
-        if final_outputs:
-            try:
-                illustrated_paths = await self._illustrate_articles(
-                    task=task,
-                    final_report=final_report,
-                    final_outputs=final_outputs,
-                    illustrate_graph=illustrate_graph,
-                )
-                logger.info(f"Illustrated {len(illustrated_paths)} articles")
-            except Exception as e:
-                logger.error(f"Illustration failed: {e}", exc_info=True)
-                errors.append({"phase": "illustrate", "error": str(e)})
+            final_outputs = series_result.get("final_outputs", [])
+            if final_outputs:
+                try:
+                    illustrated_paths = await self._illustrate_articles(
+                        task=task,
+                        final_report=final_report,
+                        final_outputs=final_outputs,
+                        illustrate_graph=illustrate_graph,
+                    )
+                    logger.info(f"Illustrated {len(illustrated_paths)} articles")
+
+                    # Save outputs for potential resume
+                    checkpoint_callback(
+                        "illustrate",
+                        phase_outputs={
+                            "lit_result": lit_result,
+                            "enhance_result": enhance_result,
+                            "final_report": final_report,
+                            "series_result": series_result,
+                            "illustrated_paths": illustrated_paths,
+                        },
+                    )
+
+                except Exception as e:
+                    logger.error(f"Illustration failed: {e}", exc_info=True)
+                    errors.append({"phase": "illustrate", "error": str(e)})
 
         # Phase 5: Spawn publish_series task
-        checkpoint_callback("spawn_publish")
-        logger.info("Phase 5: Spawning publish_series task")
+        if "spawn_publish" in completed_phases:
+            publish_task_id = phase_outputs.get("publish_task_id")
+            logger.info("Skipping spawn_publish phase (already complete)")
+        else:
+            checkpoint_callback("spawn_publish")
+            logger.info("Phase 5: Spawning publish_series task")
 
-        if illustrated_paths and not errors:
-            try:
-                publish_task_id = self._spawn_publish_task(
-                    task=task,
-                    lit_review_path=illustrated_paths.get("lit_review"),
-                    illustrated_paths=illustrated_paths,
-                    final_outputs=final_outputs,
-                )
-                logger.info(f"Spawned publish_series task: {publish_task_id}")
-            except Exception as e:
-                logger.error(f"Failed to spawn publish task: {e}", exc_info=True)
-                errors.append({"phase": "spawn_publish", "error": str(e)})
+            final_outputs = series_result.get("final_outputs", []) if series_result else []
+            if illustrated_paths and not errors:
+                try:
+                    publish_task_id = self._spawn_publish_task(
+                        task=task,
+                        lit_review_path=illustrated_paths.get("lit_review"),
+                        illustrated_paths=illustrated_paths,
+                        final_outputs=final_outputs,
+                    )
+                    logger.info(f"Spawned publish_series task: {publish_task_id}")
+                except Exception as e:
+                    logger.error(f"Failed to spawn publish task: {e}", exc_info=True)
+                    errors.append({"phase": "spawn_publish", "error": str(e)})
 
         # Determine status
-        if not lit_result.get("final_review"):
+        if not lit_result or not lit_result.get("final_review"):
             status = "failed"
         elif errors:
             status = "partial"

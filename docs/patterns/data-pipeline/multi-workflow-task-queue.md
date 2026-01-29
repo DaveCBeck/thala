@@ -176,6 +176,11 @@ class BaseWorkflow(ABC):
         """Return True to bypass budget checks."""
         return False
 
+    @property
+    def bypass_concurrency(self) -> bool:
+        """Return True to bypass stagger_hours/max_concurrent limits."""
+        return False
+
     # Helper methods for all workflows
     def get_task_identifier(self, task: dict[str, Any]) -> str:
         """Get a human-readable identifier for the task."""
@@ -316,6 +321,11 @@ class PublishSeriesWorkflow(BaseWorkflow):
     def is_zero_cost(self) -> bool:
         """This workflow makes no LLM calls, skip budget check."""
         return True
+
+    @property
+    def bypass_concurrency(self) -> bool:
+        """Low-overhead publishing can run anytime, bypass stagger limits."""
+        return True
 ```
 
 ### Step 4: Generic Counter Storage in Checkpoints
@@ -327,6 +337,7 @@ class WorkflowCheckpoint(TypedDict):
     """Checkpoint data for workflow resumption.
 
     Now workflow-aware: task_type determines valid phases.
+    Stores phase_outputs for resumption after interruption.
     """
 
     task_id: str           # Renamed from topic_id for genericity
@@ -334,6 +345,7 @@ class WorkflowCheckpoint(TypedDict):
     langsmith_run_id: str
     phase: str             # Current phase (workflow-specific)
     phase_progress: dict   # Phase-specific progress data
+    phase_outputs: dict    # Outputs from completed phases for resumption
     started_at: str
     last_checkpoint_at: str
 
@@ -475,11 +487,26 @@ class MyCustomWorkflow(BaseWorkflow):
         return False  # Uses LLM budget
 
     async def run(self, task, checkpoint_callback, resume_from=None):
-        checkpoint_callback("step1")
-        result1 = await do_step1(task)
+        # Track completed phases for resumption
+        completed_phases = set()
+        phase_outputs = {}
+        if resume_from:
+            completed_phases = self._get_completed_phases(resume_from)
+            phase_outputs = resume_from.get("phase_outputs", {})
 
-        checkpoint_callback("step2")
-        result2 = await do_step2(result1)
+        if "step1" in completed_phases:
+            result1 = phase_outputs.get("result1")
+        else:
+            checkpoint_callback("step1")
+            result1 = await do_step1(task)
+            checkpoint_callback("step1", phase_outputs={"result1": result1})
+
+        if "step2" in completed_phases:
+            result2 = phase_outputs.get("result2")
+        else:
+            checkpoint_callback("step2")
+            result2 = await do_step2(result1)
+            checkpoint_callback("step2", phase_outputs={"result1": result1, "result2": result2})
 
         checkpoint_callback("step3")
         final = await do_step3(result2)
@@ -523,6 +550,8 @@ Task = Union[TopicTask, WebResearchTask, PublishSeriesTask, MyCustomTask]
 - **Polymorphic dispatch**: Single runner handles multiple workflow types cleanly
 - **Independent phases**: Each workflow defines its own checkpoint sequence
 - **Zero-cost bypass**: Non-LLM workflows skip budget checks automatically
+- **Concurrency bypass**: Low-overhead workflows skip stagger/concurrency limits
+- **Phase resumption**: Store phase_outputs to skip completed phases on resume
 - **Parent-child linking**: Multi-stage pipelines via source_task_id
 - **Generic counters**: No hardcoded fields, workflows define their own metrics
 - **Backward compatibility**: DEFAULT_WORKFLOW_TYPE preserves existing behavior

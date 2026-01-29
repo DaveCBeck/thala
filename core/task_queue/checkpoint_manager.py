@@ -99,6 +99,7 @@ class CheckpointManager:
             "langsmith_run_id": langsmith_run_id,
             "phase": initial_phase,
             "phase_progress": {},
+            "phase_outputs": {},
             "started_at": datetime.utcnow().isoformat(),
             "last_checkpoint_at": datetime.utcnow().isoformat(),
             "counters": {},
@@ -120,6 +121,7 @@ class CheckpointManager:
         self,
         task_id: str,
         phase: str,
+        phase_outputs: Optional[dict] = None,
         **kwargs,
     ) -> None:
         """Update checkpoint for a task.
@@ -127,6 +129,7 @@ class CheckpointManager:
         Args:
             task_id: Task being processed
             phase: Current phase name
+            phase_outputs: Outputs from completed phases for resumption
             **kwargs: Additional phase-specific data stored in counters
         """
         work = self._read_current_work()
@@ -136,6 +139,12 @@ class CheckpointManager:
             if cp_task_id == task_id:
                 checkpoint["phase"] = phase
                 checkpoint["last_checkpoint_at"] = datetime.utcnow().isoformat()
+
+                # Store phase outputs for resumption
+                if phase_outputs is not None:
+                    if "phase_outputs" not in checkpoint:
+                        checkpoint["phase_outputs"] = {}
+                    checkpoint["phase_outputs"].update(phase_outputs)
 
                 # Store all kwargs in counters
                 if "counters" not in checkpoint:
@@ -293,3 +302,25 @@ class CheckpointManager:
             return False
 
         return current_idx > target_idx
+
+    def get_completed_phases(
+        self,
+        checkpoint: WorkflowCheckpoint,
+    ) -> set[str]:
+        """Get set of phases that completed before the checkpoint phase.
+
+        Args:
+            checkpoint: Workflow checkpoint
+
+        Returns:
+            Set of phase names that are complete
+        """
+        task_type = checkpoint.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        phases = get_workflow_phases(task_type)
+        current_phase = checkpoint.get("phase", "")
+
+        try:
+            current_idx = phases.index(current_phase)
+            return set(phases[:current_idx])
+        except ValueError:
+            return set()

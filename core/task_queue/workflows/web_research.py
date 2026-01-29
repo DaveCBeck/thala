@@ -31,6 +31,15 @@ class WebResearchWorkflow(BaseWorkflow):
             "complete",
         ]
 
+    def _get_completed_phases(self, checkpoint: dict) -> set[str]:
+        """Get phases completed before the checkpoint phase."""
+        current_phase = checkpoint.get("phase", "")
+        try:
+            current_idx = self.phases.index(current_phase)
+            return set(self.phases[:current_idx])
+        except ValueError:
+            return set()
+
     async def run(
         self,
         task: dict[str, Any],
@@ -55,78 +64,110 @@ class WebResearchWorkflow(BaseWorkflow):
         quality = task.get("quality", "standard")
         language = task.get("language")
 
-        logger.info(f"Starting web_research workflow: {query[:50]}...")
+        # Determine which phases to skip if resuming
+        completed_phases: set[str] = set()
+        phase_outputs: dict[str, Any] = {}
+
+        if resume_from:
+            completed_phases = self._get_completed_phases(resume_from)
+            phase_outputs = resume_from.get("phase_outputs", {})
+            logger.info(
+                f"Resuming web_research from {resume_from['phase']}, "
+                f"skipping completed phases: {completed_phases}"
+            )
+        else:
+            logger.info(f"Starting web_research workflow: {query[:50]}...")
 
         errors = []
         research_result = None
         series_result = None
 
         # Phase 1: Deep research
-        checkpoint_callback("research")
-        logger.info("Phase 1: Running deep web research")
+        if "research" in completed_phases:
+            research_result = phase_outputs.get("research_result")
+            logger.info("Skipping research phase (already complete)")
+        else:
+            checkpoint_callback("research")
+            logger.info("Phase 1: Running deep web research")
 
-        try:
-            research_result = await deep_research(
-                query=query,
-                quality=quality,
-                language=language,
-            )
-
-            if not research_result.get("final_report"):
-                raise RuntimeError(
-                    f"Web research failed: {research_result.get('errors', 'Unknown error')}"
+            try:
+                research_result = await deep_research(
+                    query=query,
+                    quality=quality,
+                    language=language,
                 )
 
-            logger.info(
-                f"Research complete: {research_result.get('source_count', 0)} sources, "
-                f"status={research_result.get('status')}"
-            )
+                if not research_result.get("final_report"):
+                    raise RuntimeError(
+                        f"Web research failed: {research_result.get('errors', 'Unknown error')}"
+                    )
 
-            if research_result.get("errors"):
-                errors.extend([
-                    {"phase": "research", **err} if isinstance(err, dict) else {"phase": "research", "error": str(err)}
-                    for err in research_result["errors"]
-                ])
+                logger.info(
+                    f"Research complete: {research_result.get('source_count', 0)} sources, "
+                    f"status={research_result.get('status')}"
+                )
 
-        except Exception as e:
-            logger.error(f"Web research failed: {e}", exc_info=True)
-            errors.append({"phase": "research", "error": str(e)})
-            return {"status": "failed", "errors": errors}
+                if research_result.get("errors"):
+                    errors.extend([
+                        {"phase": "research", **err} if isinstance(err, dict) else {"phase": "research", "error": str(err)}
+                        for err in research_result["errors"]
+                    ])
+
+                # Save outputs for potential resume
+                checkpoint_callback("research", phase_outputs={"research_result": research_result})
+
+            except Exception as e:
+                logger.error(f"Web research failed: {e}", exc_info=True)
+                errors.append({"phase": "research", "error": str(e)})
+                return {"status": "failed", "errors": errors}
 
         # Phase 2: Evening reads article series
-        checkpoint_callback("evening_reads")
-        logger.info("Phase 2: Generating evening reads series")
+        if "evening_reads" in completed_phases:
+            series_result = phase_outputs.get("series_result")
+            logger.info("Skipping evening_reads phase (already complete)")
+        else:
+            checkpoint_callback("evening_reads")
+            logger.info("Phase 2: Generating evening reads series")
 
-        # Load editorial stance for the publication
-        from workflows.output.evening_reads.editorial import load_editorial_stance
-        editorial_stance = load_editorial_stance(task.get("category", ""))
-        if editorial_stance:
-            logger.info(f"Using editorial stance for category: {task.get('category')}")
+            # Load editorial stance for the publication
+            from workflows.output.evening_reads.editorial import load_editorial_stance
+            editorial_stance = load_editorial_stance(task.get("category", ""))
+            if editorial_stance:
+                logger.info(f"Using editorial stance for category: {task.get('category')}")
 
-        try:
-            series_result = await evening_reads_graph.ainvoke({
-                "input": {
-                    "literature_review": research_result["final_report"],
-                    "editorial_stance": editorial_stance,
-                }
-            })
+            try:
+                series_result = await evening_reads_graph.ainvoke({
+                    "input": {
+                        "literature_review": research_result["final_report"],
+                        "editorial_stance": editorial_stance,
+                    }
+                })
 
-            if not series_result.get("final_outputs"):
-                raise RuntimeError(
-                    f"Series generation failed: {series_result.get('errors', 'Unknown error')}"
+                if not series_result.get("final_outputs"):
+                    raise RuntimeError(
+                        f"Series generation failed: {series_result.get('errors', 'Unknown error')}"
+                    )
+
+                logger.info(
+                    f"Series complete: {len(series_result.get('final_outputs', []))} articles"
                 )
 
-            logger.info(
-                f"Series complete: {len(series_result.get('final_outputs', []))} articles"
-            )
+                # Save outputs for potential resume
+                checkpoint_callback(
+                    "evening_reads",
+                    phase_outputs={
+                        "research_result": research_result,
+                        "series_result": series_result,
+                    },
+                )
 
-        except Exception as e:
-            logger.error(f"Evening reads failed: {e}", exc_info=True)
-            errors.append({"phase": "evening_reads", "error": str(e)})
-            series_result = {"final_outputs": []}
+            except Exception as e:
+                logger.error(f"Evening reads failed: {e}", exc_info=True)
+                errors.append({"phase": "evening_reads", "error": str(e)})
+                series_result = {"final_outputs": []}
 
         # Determine status
-        if not research_result.get("final_report"):
+        if not research_result or not research_result.get("final_report"):
             status = "failed"
         elif errors:
             status = "partial"
@@ -138,7 +179,7 @@ class WebResearchWorkflow(BaseWorkflow):
             "query": query,
             "research": research_result,
             "series": series_result,
-            "final_report": research_result.get("final_report"),
+            "final_report": research_result.get("final_report") if research_result else None,
             "errors": errors,
         }
 

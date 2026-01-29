@@ -32,6 +32,31 @@ logger = logging.getLogger(__name__)
 QUEUE_PROJECT = os.getenv("THALA_QUEUE_PROJECT", "thala-queue")
 
 
+def _find_bypass_task(queue_manager: TaskQueueManager) -> Optional[Task]:
+    """Find a pending task that bypasses concurrency limits.
+
+    Bypass tasks (like publish_series) can run regardless of stagger_hours
+    or max_concurrent settings.
+
+    Args:
+        queue_manager: Queue manager instance
+
+    Returns:
+        First eligible bypass task, or None
+    """
+    from .schemas import TaskStatus
+
+    pending_tasks = queue_manager.list_tasks(status=TaskStatus.PENDING)
+
+    for task in pending_tasks:
+        task_type = task.get("task_type", "lit_review_full")
+        workflow = get_workflow(task_type)
+        if getattr(workflow, "bypass_concurrency", False):
+            return task
+
+    return None
+
+
 async def run_task_workflow(
     task: Task,
     queue_manager: TaskQueueManager,
@@ -79,9 +104,11 @@ async def run_task_workflow(
 
     try:
         # Create checkpoint callback
-        def checkpoint_callback(phase: str, **kwargs):
+        def checkpoint_callback(phase: str, phase_outputs: dict = None, **kwargs):
             """Update checkpoint during workflow execution."""
-            checkpoint_mgr.update_checkpoint(task_id, phase, **kwargs)
+            checkpoint_mgr.update_checkpoint(
+                task_id, phase, phase_outputs=phase_outputs, **kwargs
+            )
             queue_manager.update_phase(task_id, phase)
 
             # Check budget between phases
@@ -170,8 +197,14 @@ async def run_single_task(
                     resume_from=checkpoint,
                 )
 
-    # Get next eligible task
-    task = queue_manager.get_next_eligible_task()
+    # First check for bypass tasks (ignore concurrency limits)
+    task = _find_bypass_task(queue_manager)
+    if task:
+        task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+        logger.info(f"Found bypass task: {task_type} (ignoring concurrency limits)")
+    else:
+        # Get next eligible task (respects concurrency)
+        task = queue_manager.get_next_eligible_task()
 
     if not task:
         logger.info("No eligible tasks to run")
@@ -253,8 +286,14 @@ async def run_queue_loop(
                         break
                 continue
 
-        # Get next eligible task
-        task = queue_manager.get_next_eligible_task()
+        # First check for bypass tasks (ignore concurrency limits)
+        task = _find_bypass_task(queue_manager)
+        if task:
+            task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+            logger.info(f"Found bypass task: {task_type} (ignoring concurrency limits)")
+        else:
+            # Get next eligible task (respects concurrency)
+            task = queue_manager.get_next_eligible_task()
 
         if not task:
             logger.info(f"No eligible tasks. Checking again in {check_interval}s...")
