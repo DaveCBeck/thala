@@ -165,6 +165,7 @@ async def run_loop1_standalone(
     source_count: int = 0,
     quality_settings: dict[str, Any] | None = None,
     config: dict | None = None,
+    checkpoint_callback: callable | None = None,
 ) -> Loop1Result:
     """Run Loop 1 (theoretical depth supervision) as a standalone operation.
 
@@ -176,6 +177,8 @@ async def run_loop1_standalone(
         source_count: Number of sources currently in corpus (for context)
         quality_settings: Quality settings for focused expansion
         config: Optional LangGraph config for tracing
+        checkpoint_callback: Optional callback for incremental checkpointing.
+            Called with (iteration_count, partial_results_dict) after each iteration.
 
     Returns:
         Loop1Result with improved review and metadata
@@ -202,6 +205,7 @@ async def run_loop1_standalone(
         "expansion_failed": False,
         "integration_failed": False,
         "consecutive_failures": 0,
+        "checkpoint_callback": checkpoint_callback,
     }
 
     logger.info(

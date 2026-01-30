@@ -5,7 +5,7 @@ markdown report with theoretical depth (Loop 1) and literature expansion (Loop 2
 """
 
 import logging
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from langsmith import traceable
 
@@ -29,6 +29,7 @@ async def enhance_report(
     paper_summaries: dict[str, Any] | None = None,
     zotero_keys: dict[str, str] | None = None,
     config: dict | None = None,
+    checkpoint_callback: Callable[[int, dict], None] | None = None,
 ) -> EnhanceResult:
     """Enhance an existing report with theoretical depth and literature expansion.
 
@@ -54,6 +55,8 @@ async def enhance_report(
         paper_summaries: Optional existing paper summaries (DOI -> PaperSummary)
         zotero_keys: Optional existing Zotero keys (DOI -> Zotero key)
         config: Optional LangGraph config for tracing
+        checkpoint_callback: Optional callback for incremental checkpointing.
+            Called with (iteration_count, partial_results_dict) after each iteration.
 
     Returns:
         EnhanceResult with:
@@ -112,6 +115,7 @@ async def enhance_report(
         "completion_reason": "",
         "is_complete": False,
         "errors": [],
+        "checkpoint_callback": checkpoint_callback,
     }
 
     logger.info(

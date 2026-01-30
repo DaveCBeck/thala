@@ -463,6 +463,7 @@ async def run_loop2_standalone(
     quality_settings: QualitySettings,
     max_iterations: int = 3,
     config: dict | None = None,
+    checkpoint_callback: callable | None = None,
 ) -> dict:
     """Run Loop 2 as standalone operation for testing.
 
@@ -475,6 +476,8 @@ async def run_loop2_standalone(
         quality_settings: Quality tier settings
         max_iterations: Maximum expansion iterations (default: 3)
         config: Optional LangGraph config with run_id and run_name for tracing
+        checkpoint_callback: Optional callback for incremental checkpointing.
+            Called with (iteration_count, partial_results_dict) after each iteration.
 
     Returns:
         Dict with:
@@ -504,6 +507,8 @@ async def run_loop2_standalone(
         consecutive_failures=0,
         integration_failed=False,
         mini_review_failed=False,
+        # Checkpointing
+        checkpoint_callback=checkpoint_callback,
     )
 
     if config:

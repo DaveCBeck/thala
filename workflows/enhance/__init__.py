@@ -7,7 +7,7 @@ The main entry point is `enhance_report()` which runs:
 """
 
 import logging
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from langsmith import traceable
 
@@ -44,6 +44,7 @@ async def enhance_report(
     run_editing: bool = True,
     run_fact_check: bool = True,
     config: dict | None = None,
+    checkpoint_callback: Callable[[int, dict], None] | None = None,
 ) -> dict[str, Any]:
     """Enhance an existing report with supervision loops, structural editing, and fact-checking.
 
@@ -80,6 +81,8 @@ async def enhance_report(
         run_editing: Whether to run the editing workflow after supervision (default: True)
         run_fact_check: Whether to run the fact-check workflow after editing (default: True)
         config: Optional LangGraph config for tracing
+        checkpoint_callback: Optional callback for incremental checkpointing during supervision.
+            Called with (iteration_count, partial_results_dict) after each supervision iteration.
 
     Returns:
         Dict with:
@@ -143,6 +146,7 @@ async def enhance_report(
                 paper_summaries=paper_summaries,
                 zotero_keys=zotero_keys,
                 config=config,
+                checkpoint_callback=checkpoint_callback,
             )
 
             current_report = supervision_result["final_report"]

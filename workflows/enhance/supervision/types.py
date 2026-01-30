@@ -1,6 +1,6 @@
 """Type definitions for the enhancement supervision workflow."""
 
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -45,6 +45,9 @@ class EnhanceState(TypedDict, total=False):
     completion_reason: str
     is_complete: bool
     errors: list[dict]
+
+    # Checkpointing (for task queue interruption handling)
+    checkpoint_callback: Optional[Callable[[int, dict], None]]
 
 
 class EnhanceResult(TypedDict):

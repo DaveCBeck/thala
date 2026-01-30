@@ -15,6 +15,8 @@ import logging
 from datetime import datetime
 from typing import Any, Callable, Optional
 
+from core.task_queue.incremental_state import IncrementalStateManager
+
 from .base import BaseWorkflow
 
 logger = logging.getLogger(__name__)
@@ -76,16 +78,33 @@ class LitReviewFullWorkflow(BaseWorkflow):
         quality = task.get("quality", "standard")
         language = task.get("language", "en")
         date_range = task.get("date_range")
+        task_id = task["id"]
 
         # Determine which phases to skip if resuming
         completed_phases: set[str] = set()
         phase_outputs: dict[str, Any] = {}
 
+        # Create incremental state manager for mid-phase checkpointing
+        incremental_mgr = IncrementalStateManager()
+
+        # Load incremental state if resuming (for mid-phase progress)
+        incremental_state = None
+
         if resume_from:
             completed_phases = self._get_completed_phases(resume_from)
             phase_outputs = resume_from.get("phase_outputs", {})
+            current_phase = resume_from.get("phase", "")
+
+            # Load incremental state for the current phase (mid-phase progress)
+            incremental_state = incremental_mgr.load_progress(task_id, current_phase)
+            if incremental_state:
+                logger.info(
+                    f"Loaded incremental state for phase '{current_phase}': "
+                    f"iteration {incremental_state.get('iteration_count', 0)}"
+                )
+
             logger.info(
-                f"Resuming lit_review_full from {resume_from['phase']}, "
+                f"Resuming lit_review_full from {current_phase}, "
                 f"skipping completed phases: {completed_phases}"
             )
         else:
@@ -149,6 +168,17 @@ class LitReviewFullWorkflow(BaseWorkflow):
                 if not enhance_questions:
                     enhance_questions = [f"What are the key findings regarding {topic}?"]
 
+                # Create incremental checkpoint callback for supervision loops
+                def supervision_checkpoint(iteration: int, partial_results: dict) -> None:
+                    """Save incremental progress during supervision loops."""
+                    incremental_mgr.save_progress(
+                        task_id=task_id,
+                        phase="supervision",
+                        iteration_count=iteration,
+                        partial_results=partial_results,
+                        checkpoint_interval=1,  # N=1 for supervision loops
+                    )
+
                 enhance_result = await enhance_report(
                     report=lit_result["final_review"],
                     topic=topic,
@@ -160,7 +190,11 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     zotero_keys=lit_result.get("zotero_keys"),
                     run_editing=True,
                     run_fact_check=False,  # Disabled - adds latency without value
+                    checkpoint_callback=supervision_checkpoint,
                 )
+
+                # Clear incremental state on phase completion
+                incremental_mgr.clear_progress(task_id)
 
                 # Update checkpoint as we progress through enhancement phases
                 if enhance_result.get("supervision_result"):
