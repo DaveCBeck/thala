@@ -101,7 +101,13 @@ class IncrementalStateManager:
             # Write with gzip compression (~10-30x size reduction for JSON)
             with gzip.open(temp_file, "wt", encoding="utf-8") as f:
                 json.dump(state, f, indent=2, default=str)
-            temp_file.rename(state_file)
+            try:
+                temp_file.rename(state_file)
+            except FileNotFoundError:
+                # Temp file may have been deleted by concurrent cleanup
+                logger.warning(f"Temp file {temp_file} disappeared before rename - retrying write")
+                with gzip.open(state_file, "wt", encoding="utf-8") as f:
+                    json.dump(state, f, indent=2, default=str)
 
             # Log checkpoint with file size for monitoring
             size_kb = state_file.stat().st_size / 1024

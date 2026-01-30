@@ -8,17 +8,17 @@ Provides:
 - Flexible concurrency control (max_concurrent or stagger_hours)
 """
 
-import fcntl
-import json
 import logging
 import uuid
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from zoneinfo import ZoneInfo
 
+from .categories import get_default_categories
 from .paths import PUBLICATIONS_FILE, QUEUE_DIR
+from .persistence import QueuePersistence
+from .publishing import PublishingScheduler
+from .scheduler import TaskScheduler
 from .schemas import (
     ConcurrencyConfig,
     Task,
@@ -33,42 +33,6 @@ DEFAULT_WORKFLOW_TYPE = "lit_review_full"
 
 logger = logging.getLogger(__name__)
 
-# Fallback categories if publications.json doesn't exist
-_FALLBACK_CATEGORIES = [
-    "philosophy",
-    "science",
-    "technology",
-    "society",
-    "culture",
-]
-
-
-def load_categories_from_publications(publications_file: Path = PUBLICATIONS_FILE) -> list[str]:
-    """Load category names from publications.json.
-
-    publications.json is the source of truth for categories.
-    Categories are derived from the top-level keys in the file.
-
-    Args:
-        publications_file: Path to publications.json
-
-    Returns:
-        List of category names
-    """
-    if publications_file.exists():
-        try:
-            with open(publications_file) as f:
-                pubs = json.load(f)
-            return list(pubs.keys())
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Failed to load publications.json: {e}")
-
-    return _FALLBACK_CATEGORIES
-
-
-# Load categories from publications.json (source of truth)
-DEFAULT_CATEGORIES = load_categories_from_publications()
-
 
 class TaskQueueManager:
     """Manages the task queue with safe concurrent access."""
@@ -82,6 +46,12 @@ class TaskQueueManager:
         self.queue_dir = queue_dir or QUEUE_DIR
         self.queue_file = self.queue_dir / "queue.json"
         self.lock_file = self.queue_dir / "queue.lock"
+        self.publications_file = self.queue_dir / "publications.json"
+
+        # Initialize components
+        self.persistence = QueuePersistence(self.queue_file, self.lock_file)
+        self.scheduler = TaskScheduler(self.publications_file)
+        self.publishing = PublishingScheduler()
 
         self.queue_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_queue_exists()
@@ -89,6 +59,9 @@ class TaskQueueManager:
     def _ensure_queue_exists(self) -> None:
         """Create queue file if it doesn't exist."""
         if not self.queue_file.exists():
+            # Use PUBLICATIONS_FILE for default categories (global source of truth)
+            default_categories = get_default_categories(PUBLICATIONS_FILE)
+
             initial_queue: TaskQueue = {
                 "version": "1.0",
                 "concurrency": {
@@ -96,42 +69,12 @@ class TaskQueueManager:
                     "max_concurrent": 1,
                     "stagger_hours": 36.0,
                 },
-                "categories": DEFAULT_CATEGORIES,
+                "categories": default_categories,
                 "last_category_index": -1,
                 "topics": [],
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }
-            self._write_queue(initial_queue)
-
-    @contextmanager
-    def _lock(self):
-        """Acquire exclusive lock on queue file.
-
-        Uses fcntl.flock for cross-process coordination.
-        """
-        self.lock_file.touch(exist_ok=True)
-        lock_fd = open(self.lock_file, "w")
-        try:
-            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
-            lock_fd.close()
-
-    def _read_queue(self) -> TaskQueue:
-        """Read queue from disk."""
-        with open(self.queue_file, "r") as f:
-            return json.load(f)
-
-    def _write_queue(self, queue: TaskQueue) -> None:
-        """Write queue to disk atomically."""
-        queue["last_updated"] = datetime.now(timezone.utc).isoformat()
-
-        # Write to temp file first, then rename for atomicity
-        temp_file = self.queue_file.with_suffix(".tmp")
-        with open(temp_file, "w") as f:
-            json.dump(queue, f, indent=2)
-        temp_file.rename(self.queue_file)
+            self.persistence.write_queue(initial_queue)
 
     def add_task(
         self,
@@ -221,10 +164,10 @@ class TaskQueueManager:
             }
             identifier = topic or query or ""
 
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             queue["topics"].append(new_task)
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
         logger.info(f"Added task {task_id} ({task_type}): {identifier[:50]}...")
         return task_id
@@ -238,8 +181,8 @@ class TaskQueueManager:
         Returns:
             Task if found, None otherwise
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     return task
@@ -256,93 +199,15 @@ class TaskQueueManager:
         Returns:
             Next eligible task, or None if none eligible
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
+            selected = self.scheduler.get_next_eligible_task(queue)
 
-            # Check concurrency constraints
-            if not self._can_start_new_task(queue):
-                return None
+            # Write back queue if scheduler modified it (category index update)
+            if selected:
+                self.persistence.write_queue(queue)
 
-            # Get pending tasks
-            pending = [
-                t for t in queue["topics"] if t["status"] == TaskStatus.PENDING.value
-            ]
-
-            if not pending:
-                return None
-
-            # Load categories fresh from publications.json (source of truth)
-            categories = load_categories_from_publications(
-                self.queue_dir / "publications.json"
-            )
-            last_idx = queue.get("last_category_index", -1)
-
-            # Sync queue categories if they've changed
-            if queue.get("categories") != categories:
-                queue["categories"] = categories
-                # Reset index if it's out of bounds
-                if last_idx >= len(categories):
-                    last_idx = -1
-                    queue["last_category_index"] = last_idx
-
-            # Try each category in round-robin order
-            for offset in range(len(categories)):
-                cat_idx = (last_idx + 1 + offset) % len(categories)
-                category = categories[cat_idx]
-
-                # Find highest priority task in this category
-                cat_tasks = [t for t in pending if t["category"] == category]
-
-                if cat_tasks:
-                    # Sort by priority (descending), then created_at (ascending)
-                    cat_tasks.sort(key=lambda t: (-t["priority"], t["created_at"]))
-                    selected = cat_tasks[0]
-
-                    # Update category index
-                    queue["last_category_index"] = cat_idx
-                    self._write_queue(queue)
-
-                    return selected
-
-            # If no tasks in current categories, fall back to highest priority overall
-            # This handles tasks with categories that were removed from publications.json
-            pending.sort(key=lambda t: (-t["priority"], t["created_at"]))
-            logger.info(
-                f"No tasks in current categories, falling back to task with "
-                f"category '{pending[0]['category']}' (may be deprecated)"
-            )
-            return pending[0]
-
-    def _can_start_new_task(self, queue: TaskQueue) -> bool:
-        """Check if concurrency constraints allow starting a new task."""
-        config = queue["concurrency"]
-        in_progress = [
-            t for t in queue["topics"] if t["status"] == TaskStatus.IN_PROGRESS.value
-        ]
-
-        if config["mode"] == "max_concurrent":
-            return len(in_progress) < config["max_concurrent"]
-
-        elif config["mode"] == "stagger_hours":
-            if not in_progress:
-                return True
-
-            # Find most recently started task
-            started_times = [
-                datetime.fromisoformat(t["started_at"])
-                for t in in_progress
-                if t["started_at"]
-            ]
-
-            if not started_times:
-                return True
-
-            latest_start = max(started_times)
-            hours_elapsed = (datetime.now(timezone.utc) - latest_start).total_seconds() / 3600
-
-            return hours_elapsed >= config["stagger_hours"]
-
-        return True
+            return selected
 
     def mark_started(self, task_id: str, langsmith_run_id: str) -> None:
         """Mark task as started.
@@ -351,26 +216,26 @@ class TaskQueueManager:
             task_id: Task UUID
             langsmith_run_id: LangSmith run ID for cost tracking
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["status"] = TaskStatus.IN_PROGRESS.value
                     task["started_at"] = datetime.now(timezone.utc).isoformat()
                     task["langsmith_run_id"] = langsmith_run_id
                     break
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def mark_completed(self, task_id: str) -> None:
         """Mark task as completed."""
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["status"] = TaskStatus.COMPLETED.value
                     task["completed_at"] = datetime.now(timezone.utc).isoformat()
                     break
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def mark_failed(self, task_id: str, error: str) -> None:
         """Mark task as failed.
@@ -379,15 +244,15 @@ class TaskQueueManager:
             task_id: Task UUID
             error: Error message
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["status"] = TaskStatus.FAILED.value
                     task["completed_at"] = datetime.now(timezone.utc).isoformat()
                     task["error_message"] = error
                     break
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def update_phase(self, task_id: str, phase: str) -> None:
         """Update current workflow phase for checkpointing.
@@ -396,13 +261,13 @@ class TaskQueueManager:
             task_id: Task UUID
             phase: Current phase name
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["current_phase"] = phase
                     break
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def list_tasks(
         self,
@@ -422,8 +287,8 @@ class TaskQueueManager:
         status_val = status.value if isinstance(status, TaskStatus) else status
         cat_val = category.value if isinstance(category, TaskCategory) else category
 
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             tasks = queue["topics"]
 
             if status_val:
@@ -442,8 +307,8 @@ class TaskQueueManager:
         Args:
             task_ids: Task IDs in desired order
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
 
             # Build lookup
             task_map = {t["id"]: t for t in queue["topics"]}
@@ -458,7 +323,7 @@ class TaskQueueManager:
                     reordered.append(task)
 
             queue["topics"] = reordered
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def set_concurrency(
         self,
@@ -473,25 +338,25 @@ class TaskQueueManager:
             max_concurrent: Max simultaneous tasks
             stagger_hours: Hours between task starts
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             queue["concurrency"] = {
                 "mode": mode,
                 "max_concurrent": max_concurrent,
                 "stagger_hours": stagger_hours,
             }
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def get_concurrency_config(self) -> ConcurrencyConfig:
         """Get current concurrency configuration."""
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             return queue["concurrency"]
 
     def get_categories(self) -> list[str]:
         """Get list of categories."""
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             return queue["categories"]
 
     def set_categories(self, categories: list[str]) -> None:
@@ -500,12 +365,12 @@ class TaskQueueManager:
         Args:
             categories: New category list
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             queue["categories"] = categories
             # Reset rotation if categories changed
             queue["last_category_index"] = -1
-            self._write_queue(queue)
+            self.persistence.write_queue(queue)
 
     def get_queue_stats(self) -> dict:
         """Get queue statistics.
@@ -513,8 +378,8 @@ class TaskQueueManager:
         Returns:
             Dict with counts by status and category
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             tasks = queue["topics"]
 
             by_status = {}
@@ -553,47 +418,9 @@ class TaskQueueManager:
         Returns:
             datetime at next available Monday 3pm local time
         """
-        local_tz = ZoneInfo(timezone)
-
-        # Start from next Monday
-        now = datetime.now(local_tz)
-        days_until_monday = (7 - now.weekday()) % 7
-        if days_until_monday == 0:
-            days_until_monday = 7  # Next Monday, not today
-
-        candidate = now.replace(hour=15, minute=0, second=0, microsecond=0)
-        candidate += timedelta(days=days_until_monday)
-
-        # Get existing publish_series tasks for this category
-        with self._lock():
-            queue = self._read_queue()
-            publish_tasks = [
-                t for t in queue["topics"]
-                if t.get("task_type") == "publish_series"
-                and t.get("category") == category
-                and t.get("status") != TaskStatus.COMPLETED.value
-            ]
-
-        # Extract existing base_dates
-        existing_dates = set()
-        for t in publish_tasks:
-            base_date_str = t.get("base_date")
-            if base_date_str:
-                try:
-                    bd = datetime.fromisoformat(base_date_str)
-                    existing_dates.add(bd.date())
-                except ValueError:
-                    pass
-
-        # Find first available Monday
-        max_attempts = 52  # Don't look more than a year ahead
-        for _ in range(max_attempts):
-            if candidate.date() not in existing_dates:
-                return candidate
-            candidate += timedelta(days=7)
-
-        # Fallback (shouldn't happen)
-        return candidate
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
+            return self.publishing.find_next_available_monday(queue, category, timezone)
 
     def update_task(self, task_id: str, **updates) -> bool:
         """Update arbitrary fields on a task.
@@ -605,11 +432,11 @@ class TaskQueueManager:
         Returns:
             True if task was found and updated
         """
-        with self._lock():
-            queue = self._read_queue()
+        with self.persistence.lock():
+            queue = self.persistence.read_queue()
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task.update(updates)
-                    self._write_queue(queue)
+                    self.persistence.write_queue(queue)
                     return True
         return False

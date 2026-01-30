@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from core.config import configure_logging
-from core.task_queue.checkpoint_manager import CheckpointManager
+from core.task_queue.checkpoint import CheckpointManager
 from core.task_queue.incremental_state import IncrementalStateManager
 from core.task_queue.shutdown import ShutdownCoordinator
 

@@ -25,7 +25,7 @@ from .schemas import (
     CostCache,
 )
 from .queue_manager import TaskQueueManager
-from .checkpoint_manager import CheckpointManager
+from .checkpoint import CheckpointManager
 from .budget_tracker import BudgetTracker
 
 __all__ = [
