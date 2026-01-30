@@ -173,6 +173,8 @@ async def run_paper_pipeline(
     max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
     use_batch_api: bool = True,
     fallback_manager: Optional["FallbackManager"] = None,
+    checkpoint_callback: Optional[callable] = None,
+    checkpoint_interval: int = 5,
 ) -> tuple[dict[str, str], dict[str, dict], list[str], list[str], list[FallbackSubstitution]]:
     """Run streaming acquire→process pipeline for all papers.
 
@@ -193,11 +195,16 @@ async def run_paper_pipeline(
     the fallback_manager provides alternative papers which are injected into
     a retry queue for processing.
 
+    Checkpointing: When checkpoint_callback is provided, saves progress every
+    checkpoint_interval papers to enable resumption after interruption.
+
     Args:
         papers: Papers to process
         max_concurrent: Maximum concurrent acquisitions (default: 2)
         use_batch_api: Whether to use batch API for LLM processing
         fallback_manager: Optional manager for paper substitution on failure
+        checkpoint_callback: Optional callback(iteration_count, partial_results) for mid-phase checkpointing
+        checkpoint_interval: How often to checkpoint (default: every 5 papers)
 
     Returns:
         Tuple of (acquired, processing_results, acquisition_failed, processing_failed, fallback_substitutions)
@@ -256,6 +263,7 @@ async def run_paper_pipeline(
         acquired_count = 0
         processed_count = 0
         total_to_acquire = len(papers_to_acquire)
+        last_checkpoint_count = 0  # Track last checkpoint for interval-based saving
 
         async def acquisition_producer():
             """Submit jobs with rate limiting, poll completions, push to queue."""
@@ -631,6 +639,19 @@ async def run_paper_pipeline(
                                 logger.warning(
                                     f"[{processed_count}/{total_to_acquire}] LLM failed: {doi}"
                                 )
+
+                        # Checkpoint every N papers (using nonlocal for counter)
+                        nonlocal last_checkpoint_count
+                        if (
+                            checkpoint_callback
+                            and processed_count - last_checkpoint_count >= checkpoint_interval
+                        ):
+                            last_checkpoint_count = processed_count
+                            # Create a copy of results for checkpoint (avoid mutation issues)
+                            checkpoint_callback(processed_count, dict(processing_results))
+                            logger.debug(
+                                f"Checkpoint: {processed_count}/{total_to_acquire} papers processed"
+                            )
 
                     except Exception as e:
                         # Batch processing failed - mark all as failed

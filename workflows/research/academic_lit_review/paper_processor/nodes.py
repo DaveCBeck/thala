@@ -64,11 +64,18 @@ async def acquire_and_process_papers_node(
 
     If a fallback_queue is provided in state, papers that fail acquisition or
     processing will be substituted with fallback candidates.
+
+    Supports incremental checkpointing: if checkpoint_callback is in state,
+    it will be called every 5 papers with (iteration_count, partial_results).
+    On resume, if incremental_state is in state, already-processed papers
+    will be skipped.
     """
     papers = state.get("papers_to_process", [])
     quality_settings = state["quality_settings"]
     use_batch_api = quality_settings.get("use_batch_api", True)
     fallback_queue = state.get("fallback_queue", [])
+    checkpoint_callback = state.get("checkpoint_callback")
+    incremental_state = state.get("incremental_state")
 
     if not papers:
         logger.warning("No papers to process")
@@ -81,6 +88,20 @@ async def acquire_and_process_papers_node(
             "fallback_queue": fallback_queue,
             "fallback_exhausted": [],
         }
+
+    # Handle resume from incremental state
+    resumed_results = {}
+    if incremental_state:
+        resumed_results = incremental_state.get("partial_results", {})
+        resumed_count = len(resumed_results)
+        if resumed_count > 0:
+            # Filter out already-processed papers
+            already_processed_dois = set(resumed_results.keys())
+            papers = [p for p in papers if p.get("doi") not in already_processed_dois]
+            logger.info(
+                f"Resuming from checkpoint: {resumed_count} papers already processed, "
+                f"{len(papers)} remaining"
+            )
 
     # Create FallbackManager if we have fallback candidates
     fallback_manager = None
@@ -114,7 +135,12 @@ async def acquire_and_process_papers_node(
         max_concurrent=MAX_PAPER_PIPELINE_CONCURRENT,
         use_batch_api=use_batch_api,
         fallback_manager=fallback_manager,
+        checkpoint_callback=checkpoint_callback,
     )
+
+    # Merge resumed results with new results
+    if resumed_results:
+        processing_results = {**resumed_results, **processing_results}
 
     # Get remaining fallback queue and exhausted DOIs
     remaining_fallback_queue: list[FallbackCandidate] = []
