@@ -8,6 +8,7 @@ All public methods are async to avoid blocking the event loop.
 import asyncio
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -28,6 +29,7 @@ class CheckpointStateManager:
             storage: Checkpoint storage instance
         """
         self.storage = storage
+        self._write_lock = threading.Lock()
 
     def _start_work_sync(
         self,
@@ -39,35 +41,39 @@ class CheckpointStateManager:
 
         This is the actual file I/O logic, called via asyncio.to_thread().
         """
-        work = self.storage._read_current_work_sync()
+        with self._write_lock:
+            # Archive before overwriting to preserve previous state
+            self.storage._archive_current_work_sync()
 
-        # Get first phase for this workflow type
-        phases = get_workflow_phases(task_type)
-        initial_phase = phases[0] if phases else "start"
+            work = self.storage._read_current_work_sync()
 
-        checkpoint: WorkflowCheckpoint = {
-            "task_id": task_id,
-            "task_type": task_type,
-            "langsmith_run_id": langsmith_run_id,
-            "phase": initial_phase,
-            "phase_progress": {},
-            "phase_outputs": {},
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "last_checkpoint_at": datetime.now(timezone.utc).isoformat(),
-            "counters": {},
-        }
+            # Get first phase for this workflow type
+            phases = get_workflow_phases(task_type)
+            initial_phase = phases[0] if phases else "start"
 
-        # Remove any existing checkpoint for this task
-        # Handle both task_id and topic_id for backward compat
-        work["active_tasks"] = [
-            c for c in work["active_tasks"]
-            if c.get("task_id", c.get("topic_id")) != task_id
-        ]
-        work["active_tasks"].append(checkpoint)
-        work["process_locks"][task_id] = str(os.getpid())
+            checkpoint: WorkflowCheckpoint = {
+                "task_id": task_id,
+                "task_type": task_type,
+                "langsmith_run_id": langsmith_run_id,
+                "phase": initial_phase,
+                "phase_progress": {},
+                "phase_outputs": {},
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "last_checkpoint_at": datetime.now(timezone.utc).isoformat(),
+                "counters": {},
+            }
 
-        self.storage._write_current_work_sync(work)
-        logger.info(f"Started work on task {task_id} ({task_type})")
+            # Remove any existing checkpoint for this task
+            # Handle both task_id and topic_id for backward compat
+            work["active_tasks"] = [
+                c for c in work["active_tasks"]
+                if c.get("task_id", c.get("topic_id")) != task_id
+            ]
+            work["active_tasks"].append(checkpoint)
+            work["process_locks"][task_id] = str(os.getpid())
+
+            self.storage._write_current_work_sync(work)
+            logger.info(f"Started work on task {task_id} ({task_type})")
 
     async def start_work(
         self,
@@ -101,32 +107,48 @@ class CheckpointStateManager:
         """Synchronous implementation of update_checkpoint.
 
         This is the actual file I/O logic, called via asyncio.to_thread().
+
+        Raises:
+            ValueError: If task_id is not found in active_tasks
         """
-        work = self.storage._read_current_work_sync()
+        with self._write_lock:
+            work = self.storage._read_current_work_sync()
 
-        for checkpoint in work["active_tasks"]:
-            cp_task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
-            if cp_task_id == task_id:
-                checkpoint["phase"] = phase
-                checkpoint["last_checkpoint_at"] = datetime.now(timezone.utc).isoformat()
+            task_found = False
+            for checkpoint in work["active_tasks"]:
+                cp_task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
+                if cp_task_id == task_id:
+                    task_found = True
+                    checkpoint["phase"] = phase
+                    checkpoint["last_checkpoint_at"] = datetime.now(timezone.utc).isoformat()
 
-                # Store phase outputs for resumption
-                if phase_outputs is not None:
-                    if "phase_outputs" not in checkpoint:
-                        checkpoint["phase_outputs"] = {}
-                    checkpoint["phase_outputs"].update(phase_outputs)
+                    # Store phase outputs for resumption
+                    if phase_outputs is not None:
+                        if "phase_outputs" not in checkpoint:
+                            checkpoint["phase_outputs"] = {}
+                        checkpoint["phase_outputs"].update(phase_outputs)
+                        logger.debug(
+                            f"Checkpoint {task_id[:8]}: saving phase_outputs keys = {list(phase_outputs.keys())}"
+                        )
 
-                # Store all kwargs in counters
-                if "counters" not in checkpoint:
-                    checkpoint["counters"] = {}
+                    # Store all kwargs in counters
+                    if "counters" not in checkpoint:
+                        checkpoint["counters"] = {}
 
-                for key, value in kwargs.items():
-                    checkpoint["counters"][key] = value
+                    for key, value in kwargs.items():
+                        checkpoint["counters"][key] = value
 
-                break
+                    break
 
-        self.storage._write_current_work_sync(work)
-        logger.debug(f"Checkpoint: {task_id} -> {phase}")
+            if not task_found:
+                logger.error(
+                    f"Checkpoint update failed: task {task_id} not found in active_tasks. "
+                    f"Available tasks: {[c.get('task_id', c.get('topic_id')) for c in work['active_tasks']]}"
+                )
+                raise ValueError(f"Task {task_id} not found in active_tasks")
+
+            self.storage._write_current_work_sync(work)
+            logger.debug(f"Checkpoint: {task_id[:8]} -> {phase}")
 
     async def update_checkpoint(
         self,
@@ -158,16 +180,20 @@ class CheckpointStateManager:
 
         This is the actual file I/O logic, called via asyncio.to_thread().
         """
-        work = self.storage._read_current_work_sync()
+        with self._write_lock:
+            # Archive before clearing to preserve final state
+            self.storage._archive_current_work_sync()
 
-        work["active_tasks"] = [
-            c for c in work["active_tasks"]
-            if c.get("task_id", c.get("topic_id")) != task_id
-        ]
-        work["process_locks"].pop(task_id, None)
+            work = self.storage._read_current_work_sync()
 
-        self.storage._write_current_work_sync(work)
-        logger.info(f"Completed work on task {task_id}")
+            work["active_tasks"] = [
+                c for c in work["active_tasks"]
+                if c.get("task_id", c.get("topic_id")) != task_id
+            ]
+            work["process_locks"].pop(task_id, None)
+
+            self.storage._write_current_work_sync(work)
+            logger.info(f"Completed work on task {task_id}")
 
     async def complete_work(self, task_id: str) -> None:
         """Mark work as complete and remove checkpoint.

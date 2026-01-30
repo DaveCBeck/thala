@@ -8,11 +8,37 @@ All public methods are async to avoid blocking the event loop.
 import asyncio
 import json
 import logging
+import uuid
+from datetime import date, datetime
 from pathlib import Path
 
 from ..schemas import CurrentWork
 
 logger = logging.getLogger(__name__)
+
+
+class CheckpointJSONEncoder(json.JSONEncoder):
+    """JSON encoder that handles non-serializable objects in checkpoint data.
+
+    Handles:
+    - datetime -> ISO format string
+    - date -> ISO format string
+    - bytes -> skipped (replaced with placeholder, too large for checkpoints)
+    - Path -> string
+    """
+
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        if isinstance(obj, bytes):
+            # Skip bytes (e.g., image data) - too large for checkpoints
+            # The actual data is saved to files during the workflow
+            return f"<bytes: {len(obj)} bytes skipped>"
+        if isinstance(obj, Path):
+            return str(obj)
+        return super().default(obj)
 
 
 class CheckpointStorage:
@@ -57,33 +83,68 @@ class CheckpointStorage:
     def _read_current_work_sync(self) -> CurrentWork:
         """Synchronous implementation of _read_current_work.
 
-        This is the actual file I/O logic.
+        This is the actual file I/O logic. Handles corrupted files gracefully.
         """
-        if self.current_work_file.exists():
+        default_work: CurrentWork = {
+            "version": "1.0",
+            "active_tasks": [],
+            "process_locks": {},
+        }
+
+        if not self.current_work_file.exists():
+            return default_work
+
+        try:
             with open(self.current_work_file, "r") as f:
                 data = json.load(f)
                 # Handle backward compatibility: active_topics -> active_tasks
                 if "active_topics" in data and "active_tasks" not in data:
                     data["active_tasks"] = data.pop("active_topics")
                 return data
-        return {
-            "version": "1.0",
-            "active_tasks": [],
-            "process_locks": {},
-        }
+        except json.JSONDecodeError as e:
+            # File corrupted (likely from interrupted write during CTRL-C)
+            logger.warning(
+                f"Corrupted checkpoint file {self.current_work_file}: {e}. "
+                "Starting fresh with no incomplete work."
+            )
+            # Back up corrupted file for debugging
+            backup_path = self.current_work_file.with_suffix(".corrupted")
+            try:
+                self.current_work_file.rename(backup_path)
+                logger.info(f"Corrupted checkpoint backed up to: {backup_path}")
+            except OSError as backup_err:
+                logger.warning(f"Failed to backup corrupted file: {backup_err}")
+            return default_work
 
     def _write_current_work_sync(self, work: CurrentWork) -> None:
         """Synchronous implementation of _write_current_work.
 
-        This is the actual file I/O logic.
+        Uses unique temp file name to prevent race conditions from concurrent writes.
+        Without unique names, overlapping writes can clobber each other's temp files,
+        triggering the fallback direct write which is vulnerable to CTRL-C corruption.
         """
-        temp_file = self.current_work_file.with_suffix(".tmp")
-        with open(temp_file, "w") as f:
-            json.dump(work, f, indent=2)
+        # Unique temp file prevents concurrent writes from interfering
+        temp_file = self.current_work_file.with_suffix(f".{uuid.uuid4().hex[:8]}.tmp")
         try:
+            with open(temp_file, "w") as f:
+                json.dump(work, f, indent=2, cls=CheckpointJSONEncoder)
             temp_file.rename(self.current_work_file)
-        except FileNotFoundError:
-            # Temp file may have been deleted by concurrent cleanup
-            logger.warning(f"Temp file {temp_file} disappeared before rename - retrying write")
-            with open(self.current_work_file, "w") as f:
-                json.dump(work, f, indent=2)
+        except Exception:
+            # Clean up temp file on any error
+            temp_file.unlink(missing_ok=True)
+            raise
+
+    def _archive_current_work_sync(self) -> None:
+        """Archive current work file before clearing/overwriting.
+
+        Creates a backup of the current checkpoint state that can be used
+        for debugging or recovery if subsequent operations fail.
+        """
+        if self.current_work_file.exists():
+            archive_path = self.current_work_file.with_suffix(".previous.json")
+            try:
+                import shutil
+                shutil.copy2(self.current_work_file, archive_path)
+                logger.debug(f"Archived checkpoint to {archive_path}")
+            except OSError as e:
+                logger.warning(f"Failed to archive checkpoint: {e}")

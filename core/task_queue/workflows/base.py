@@ -7,7 +7,7 @@ with the task queue runner.
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from ..paths import OUTPUT_DIR
 
@@ -71,6 +71,8 @@ class BaseWorkflow(ABC):
         task: dict[str, Any],
         checkpoint_callback: Callable[[str], None],
         resume_from: Optional[dict] = None,
+        *,
+        flush_checkpoints: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> dict[str, Any]:
         """Execute the workflow.
 
@@ -80,6 +82,9 @@ class BaseWorkflow(ABC):
                 Signature: checkpoint_callback(phase: str, **kwargs)
             resume_from: Optional checkpoint dict to resume from.
                 Contains: phase, phase_progress, counters, etc.
+            flush_checkpoints: Optional async function to await all pending
+                checkpoint writes. Call before operations that depend on
+                checkpoints being persisted (e.g., clearing incremental state).
 
         Returns:
             Dict with at minimum:

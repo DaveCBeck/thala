@@ -8,7 +8,7 @@ produces an evening reads article series from the findings.
 
 import logging
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from .base import BaseWorkflow
 
@@ -45,6 +45,8 @@ class WebResearchWorkflow(BaseWorkflow):
         task: dict[str, Any],
         checkpoint_callback: Callable[[str], None],
         resume_from: Optional[dict] = None,
+        *,
+        flush_checkpoints: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> dict[str, Any]:
         """Run the web research workflow.
 
@@ -52,6 +54,7 @@ class WebResearchWorkflow(BaseWorkflow):
             task: WebResearchTask with query, quality, language, etc.
             checkpoint_callback: Progress callback
             resume_from: Optional checkpoint for resumption
+            flush_checkpoints: Unused in this workflow (no incremental state)
 
         Returns:
             Dict with status, research, series results

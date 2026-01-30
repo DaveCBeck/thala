@@ -78,7 +78,8 @@ async def run_task_workflow(
 
         # Mark as started
         queue_manager.mark_started(task_id, langsmith_run_id)
-        await checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
+        if not resume_from:
+            await checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
 
         # Track pending checkpoint tasks to avoid race conditions with cleanup
         pending_checkpoint_tasks: list[asyncio.Task] = []
@@ -86,7 +87,11 @@ async def run_task_workflow(
         async def await_pending_checkpoints():
             """Await all pending checkpoint tasks before cleanup/completion."""
             if pending_checkpoint_tasks:
-                await asyncio.gather(*pending_checkpoint_tasks, return_exceptions=True)
+                results = await asyncio.gather(*pending_checkpoint_tasks, return_exceptions=True)
+                # Log any exceptions that occurred (don't silently swallow)
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.error(f"Checkpoint write {i} failed: {result}")
                 pending_checkpoint_tasks.clear()
 
         # Create checkpoint callback (sync wrapper for async operations)
@@ -100,8 +105,9 @@ async def run_task_workflow(
                 await checkpoint_mgr.update_checkpoint(task_id, phase, phase_outputs=phase_outputs, **kwargs)
 
             # Schedule the async checkpoint update and track it
-            task = asyncio.create_task(_update())
-            pending_checkpoint_tasks.append(task)
+            # Note: Use different variable name to avoid shadowing outer 'task' parameter
+            checkpoint_task = asyncio.create_task(_update())
+            pending_checkpoint_tasks.append(checkpoint_task)
 
             # Sync operations
             queue_manager.update_phase(task_id, phase)
@@ -117,8 +123,20 @@ async def run_task_workflow(
                 logger.info(f"Shutdown requested during phase {phase}")
                 # Don't raise - let the current checkpoint complete
 
+        async def flush_pending_checkpoints():
+            """Await all pending checkpoint writes. Call before cleanup operations."""
+            if pending_checkpoint_tasks:
+                results = await asyncio.gather(*pending_checkpoint_tasks, return_exceptions=True)
+                # Log any exceptions that occurred (don't silently swallow)
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.error(f"Checkpoint flush write {i} failed: {result}")
+                pending_checkpoint_tasks.clear()
+
         # Run the workflow (pass shutdown_coordinator if workflow supports it)
-        result = await workflow.run(task, checkpoint_callback, resume_from)
+        result = await workflow.run(
+            task, checkpoint_callback, resume_from, flush_checkpoints=flush_pending_checkpoints
+        )
 
         # Save outputs
         checkpoint_callback("saving")
@@ -150,6 +168,8 @@ async def run_task_workflow(
         return result
 
     except asyncio.CancelledError:
+        # Wait for pending checkpoint writes to complete before propagating cancellation
+        await await_pending_checkpoints()
         logger.info(f"Task {task_id[:8]} cancelled - checkpoint preserved for resumption")
         # Don't mark as failed - preserves checkpoint for later resumption
         raise

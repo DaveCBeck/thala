@@ -12,7 +12,7 @@ This is the complete academic research workflow that:
 """
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from core.task_queue.incremental_state import IncrementalStateManager
 
@@ -55,6 +55,8 @@ class LitReviewFullWorkflow(BaseWorkflow):
         task: dict[str, Any],
         checkpoint_callback: Callable[[str], None],
         resume_from: Optional[dict] = None,
+        *,
+        flush_checkpoints: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> dict[str, Any]:
         """Run the full literature review workflow.
 
@@ -62,6 +64,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
             task: LitReviewTask/TopicTask with topic, research_questions, quality, etc.
             checkpoint_callback: Progress callback
             resume_from: Optional checkpoint for resumption
+            flush_checkpoints: Optional async function to await pending checkpoint writes
 
         Returns:
             Dict with status, lit_review, enhance, series, illustrated results
@@ -132,15 +135,24 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     date_range=date_range,
                 )
                 checkpoint_callback("lit_review", phase_outputs={"lit_result": lit_result})
+                # Flush to ensure phase_outputs are persisted before next phase
+                if flush_checkpoints:
+                    await flush_checkpoints()
             except Exception as e:
                 logger.error(f"Literature review failed: {e}", exc_info=True)
                 errors.append({"phase": "lit_review", "error": str(e)})
                 return {"status": "failed", "errors": errors}
 
+        # Validate lit_result exists (could be missing from corrupted checkpoint)
+        if lit_result is None:
+            logger.error("lit_result is None - checkpoint may be corrupted")
+            errors.append({"phase": "lit_review", "error": "lit_result missing from checkpoint"})
+            return {"status": "failed", "errors": errors}
+
         # Phase 2: Enhancement (supervision + editing)
         if "supervision" in completed_phases and "editing" in completed_phases:
             enhance_result = phase_outputs.get("enhance_result")
-            final_report = phase_outputs.get("final_report") or enhance_result.get("final_report")
+            final_report = phase_outputs.get("final_report") or (enhance_result.get("final_report") if enhance_result else None)
             logger.info("Skipping supervision/editing phases (already complete)")
         else:
             checkpoint_callback("supervision")
@@ -174,13 +186,19 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     },
                 )
 
+                # Ensure checkpoint is persisted before clearing incremental state
+                if flush_checkpoints:
+                    await flush_checkpoints()
+
                 # THEN clear incremental state
                 await incremental_mgr.clear_progress(task_id)
 
             except Exception as e:
                 logger.error(f"Enhancement failed: {e}", exc_info=True)
                 errors.append({"phase": "enhancement", "error": str(e)})
-                final_report = lit_result["final_report"]
+                # Fall back to lit_result's report if enhancement failed
+                if lit_result and lit_result.get("final_report"):
+                    final_report = lit_result["final_report"]
 
         # Phase 3: Evening reads article series
         if "evening_reads" in completed_phases:
@@ -202,6 +220,9 @@ class LitReviewFullWorkflow(BaseWorkflow):
                         "series_result": series_result,
                     },
                 )
+                # Flush to ensure phase_outputs are persisted before next phase
+                if flush_checkpoints:
+                    await flush_checkpoints()
             except Exception as e:
                 logger.error(f"Evening reads failed: {e}", exc_info=True)
                 errors.append({"phase": "evening_reads", "error": str(e)})
@@ -234,6 +255,9 @@ class LitReviewFullWorkflow(BaseWorkflow):
                             "illustrated_paths": illustrated_paths,
                         },
                     )
+                    # Flush to ensure phase_outputs are persisted before next phase
+                    if flush_checkpoints:
+                        await flush_checkpoints()
                 except Exception as e:
                     logger.error(f"Illustration failed: {e}", exc_info=True)
                     errors.append({"phase": "illustrate", "error": str(e)})

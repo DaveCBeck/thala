@@ -14,7 +14,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from ..paths import PUBLICATIONS_FILE, SUBSTACK_COOKIES_FILE
 from .base import BaseWorkflow
@@ -56,6 +56,8 @@ class PublishSeriesWorkflow(BaseWorkflow):
         task: dict[str, Any],
         checkpoint_callback: Callable[[str], None],
         resume_from: Optional[dict] = None,
+        *,
+        flush_checkpoints: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> dict[str, Any]:
         """Run the publish series workflow.
 
@@ -65,6 +67,7 @@ class PublishSeriesWorkflow(BaseWorkflow):
             task: PublishSeriesTask with base_date, items, etc.
             checkpoint_callback: Progress callback
             resume_from: Optional checkpoint for resumption
+            flush_checkpoints: Unused in this workflow (no incremental state)
 
         Returns:
             Dict with status, published items, etc.

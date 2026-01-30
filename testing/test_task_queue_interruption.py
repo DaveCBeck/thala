@@ -227,6 +227,148 @@ async def test_event_loop_not_blocked():
         logger.info("Event loop not blocked test PASSED")
 
 
+async def test_phase_outputs_persistence_across_phases():
+    """Test that phase_outputs persist when transitioning between workflow phases.
+
+    This is the critical test for the bug where phase_outputs were being lost
+    when moving from lit_review to supervision phase.
+
+    The workflow does:
+    1. checkpoint_callback("lit_review") - no outputs
+    2. <lit_review work>
+    3. checkpoint_callback("lit_review", phase_outputs={"lit_result": ...}) - WITH outputs
+    4. flush_checkpoints() - await pending writes
+    5. checkpoint_callback("supervision") - no outputs (should NOT clear existing outputs)
+
+    After step 5, phase_outputs should still contain lit_result.
+    """
+    logger.info("=== Testing Phase Outputs Persistence Across Phases ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        queue_dir = Path(tmpdir)
+        manager = CheckpointManager(queue_dir=queue_dir)
+
+        task_id = "phase-outputs-test-task"
+        task_type = "lit_review_full"
+        langsmith_run_id = "test-run-123"
+
+        # Step 1: Start work (creates checkpoint)
+        await manager.start_work(task_id, task_type, langsmith_run_id)
+        logger.info("Started work ✓")
+
+        # Step 2: First checkpoint call (start of lit_review phase, no outputs)
+        await manager.update_checkpoint(task_id, "lit_review")
+        logger.info("Checkpoint: lit_review (no outputs) ✓")
+
+        # Step 3: Second checkpoint call (end of lit_review phase, WITH outputs)
+        mock_lit_result = {
+            "final_report": "# Literature Review\n\nThis is the mock review content.",
+            "papers_found": 10,
+            "papers_processed": 8,
+        }
+        await manager.update_checkpoint(
+            task_id,
+            "lit_review",
+            phase_outputs={"lit_result": mock_lit_result},
+        )
+        logger.info("Checkpoint: lit_review (with phase_outputs) ✓")
+
+        # Verify outputs were saved
+        checkpoint = await manager.get_checkpoint(task_id)
+        assert checkpoint is not None
+        assert "lit_result" in checkpoint.get("phase_outputs", {}), \
+            f"lit_result should be in phase_outputs, got: {checkpoint.get('phase_outputs', {}).keys()}"
+        logger.info("Verified lit_result in phase_outputs ✓")
+
+        # Step 4: Third checkpoint call (start of supervision phase, no outputs)
+        # This should NOT clear the existing phase_outputs!
+        await manager.update_checkpoint(task_id, "supervision")
+        logger.info("Checkpoint: supervision (no outputs) ✓")
+
+        # CRITICAL: Verify outputs are STILL present after supervision checkpoint
+        checkpoint = await manager.get_checkpoint(task_id)
+        assert checkpoint is not None
+        assert checkpoint["phase"] == "supervision", f"Phase should be supervision, got: {checkpoint['phase']}"
+        assert "lit_result" in checkpoint.get("phase_outputs", {}), \
+            f"lit_result should STILL be in phase_outputs after supervision checkpoint! Got: {checkpoint.get('phase_outputs', {}).keys()}"
+        assert checkpoint["phase_outputs"]["lit_result"]["final_report"] == mock_lit_result["final_report"], \
+            "lit_result content should be preserved"
+        logger.info("Verified lit_result STILL in phase_outputs after supervision ✓")
+
+        # Cleanup
+        await manager.complete_work(task_id)
+        logger.info("Phase outputs persistence test PASSED")
+
+
+async def test_phase_outputs_with_concurrent_writes():
+    """Test that phase_outputs persist even with rapid concurrent checkpoint writes.
+
+    Simulates the race condition scenario where multiple checkpoint callbacks
+    are scheduled in quick succession.
+    """
+    logger.info("=== Testing Phase Outputs with Concurrent Writes ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        queue_dir = Path(tmpdir)
+        manager = CheckpointManager(queue_dir=queue_dir)
+
+        task_id = "concurrent-writes-test"
+        task_type = "lit_review_full"
+        langsmith_run_id = "test-run-456"
+
+        # Start work
+        await manager.start_work(task_id, task_type, langsmith_run_id)
+        logger.info("Started work ✓")
+
+        # Schedule multiple checkpoint writes concurrently (simulates the async callback pattern)
+        mock_lit_result = {"final_report": "Mock report", "papers": 5}
+
+        # Create tasks that will run concurrently
+        tasks = [
+            manager.update_checkpoint(task_id, "lit_review"),  # No outputs
+            manager.update_checkpoint(task_id, "lit_review", phase_outputs={"lit_result": mock_lit_result}),
+            manager.update_checkpoint(task_id, "supervision"),  # No outputs
+        ]
+
+        # Run all concurrently
+        await asyncio.gather(*tasks)
+        logger.info("All concurrent checkpoints completed ✓")
+
+        # Verify final state
+        checkpoint = await manager.get_checkpoint(task_id)
+        assert checkpoint is not None
+
+        # The phase could be any of the three (depends on write order with threading lock)
+        # But phase_outputs should contain lit_result regardless of phase
+        phase_outputs = checkpoint.get("phase_outputs", {})
+        assert "lit_result" in phase_outputs, \
+            f"lit_result should be in phase_outputs even with concurrent writes! Got: {phase_outputs.keys()}"
+        logger.info(f"Final phase: {checkpoint['phase']}, phase_outputs keys: {list(phase_outputs.keys())} ✓")
+
+        # Cleanup
+        await manager.complete_work(task_id)
+        logger.info("Concurrent writes test PASSED")
+
+
+async def test_checkpoint_update_fails_for_missing_task():
+    """Test that checkpoint update raises error if task not found."""
+    logger.info("=== Testing Checkpoint Update Fails for Missing Task ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        queue_dir = Path(tmpdir)
+        manager = CheckpointManager(queue_dir=queue_dir)
+
+        # Try to update a task that doesn't exist
+        try:
+            await manager.update_checkpoint("nonexistent-task-id", "some_phase")
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "not found in active_tasks" in str(e)
+            logger.info(f"Got expected error: {e} ✓")
+
+        logger.info("Missing task error test PASSED")
+
+
 async def main():
     """Run all tests."""
     logger.info("=" * 60)
@@ -251,6 +393,16 @@ async def main():
     print()
 
     await test_event_loop_not_blocked()
+    print()
+
+    # New tests for phase_outputs persistence
+    await test_phase_outputs_persistence_across_phases()
+    print()
+
+    await test_phase_outputs_with_concurrent_writes()
+    print()
+
+    await test_checkpoint_update_fails_for_missing_task()
     print()
 
     logger.info("=" * 60)
