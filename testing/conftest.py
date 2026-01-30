@@ -17,6 +17,23 @@ Usage:
 
 import pytest
 
+from core.logging import end_run, start_run
+
+
+@pytest.fixture(autouse=True)
+def logging_run(request):
+    """Rotate logs at test module boundaries.
+
+    Each test module gets its own logging run, which triggers log rotation
+    on first write to each module's log file.
+    """
+    # Use test module path as run identifier (e.g., "test-testing-test_cache")
+    test_path = request.node.nodeid.split("::")[0]  # e.g., "testing/test_cache.py"
+    test_name = test_path.replace("/", "-").replace(".py", "")
+    start_run(f"test-{test_name}")
+    yield
+    end_run()
+
 
 def pytest_addoption(parser):
     """Add custom command line options for pytest."""

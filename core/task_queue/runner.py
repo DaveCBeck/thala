@@ -19,6 +19,8 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from core.logging import end_run, start_run
+
 from .budget_tracker import BudgetTracker
 from .checkpoint_manager import CheckpointManager
 from .incremental_state import IncrementalStateManager
@@ -94,25 +96,26 @@ async def run_task_workflow(
     task_id = task["id"]
     task_identifier = workflow.get_task_identifier(task)
 
-    # Generate langsmith_run_id (or use existing if resuming)
-    if resume_from:
-        langsmith_run_id = resume_from["langsmith_run_id"]
-        logger.info(f"Resuming task {task_id[:8]} from phase {resume_from['phase']}")
-    else:
-        langsmith_run_id = str(uuid.uuid4())
-        logger.info(f"Starting task {task_id[:8]} ({task_type}): {task_identifier}")
-
-    # Mark as started
-    queue_manager.mark_started(task_id, langsmith_run_id)
-    await checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
+    # Start logging run (triggers log rotation on first write to each module)
+    start_run(task_id)
 
     try:
+        # Generate langsmith_run_id (or use existing if resuming)
+        if resume_from:
+            langsmith_run_id = resume_from["langsmith_run_id"]
+            logger.info(f"Resuming task {task_id[:8]} from phase {resume_from['phase']}")
+        else:
+            langsmith_run_id = str(uuid.uuid4())
+            logger.info(f"Starting task {task_id[:8]} ({task_type}): {task_identifier}")
+
+        # Mark as started
+        queue_manager.mark_started(task_id, langsmith_run_id)
+        await checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
+
         # Create checkpoint callback
         async def checkpoint_callback(phase: str, phase_outputs: dict | None = None, **kwargs) -> None:
             """Update checkpoint during workflow execution."""
-            await checkpoint_mgr.update_checkpoint(
-                task_id, phase, phase_outputs=phase_outputs, **kwargs
-            )
+            await checkpoint_mgr.update_checkpoint(task_id, phase, phase_outputs=phase_outputs, **kwargs)
             queue_manager.update_phase(task_id, phase)
 
             # Check budget between phases
@@ -160,6 +163,10 @@ async def run_task_workflow(
         queue_manager.mark_failed(task_id, str(e))
         await checkpoint_mgr.fail_work(task_id)
         raise
+
+    finally:
+        # End logging run (best-effort cleanup)
+        end_run()
 
 
 async def run_single_task(
@@ -373,8 +380,7 @@ async def run_queue_loop(
                     sleep_seconds = adaptive_hours * 3600
 
                     logger.info(
-                        f"Sleeping {adaptive_hours:.1f} hours before next task "
-                        f"(base: {base_hours}h, budget-adjusted)"
+                        f"Sleeping {adaptive_hours:.1f} hours before next task (base: {base_hours}h, budget-adjusted)"
                     )
                     # Use interruptible sleep
                     if await coordinator.wait_or_shutdown(sleep_seconds):
@@ -437,4 +443,5 @@ def print_status():
     Sync wrapper that runs the async implementation.
     """
     import asyncio
+
     asyncio.run(print_status_async())

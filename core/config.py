@@ -69,93 +69,47 @@ def _get_project_root() -> Path:
     return Path(__file__).parent.parent
 
 
-def _rotate_log(log_dir: Path, base_name: str, keep: int = 4) -> None:
-    """Rotate log file: current -> previous/name.1.log, shift .1->.2, etc.
-
-    Args:
-        log_dir: Directory containing the log file
-        base_name: Name of the log file (e.g., "thala.log")
-        keep: Number of previous versions to keep (default: 4)
-    """
-    previous_dir = log_dir / "previous"
-    current = log_dir / base_name
-
-    if not current.exists():
-        return
-
-    previous_dir.mkdir(exist_ok=True)
-
-    # Parse stem and suffix
-    if "." in base_name:
-        stem, suffix = base_name.rsplit(".", 1)
-    else:
-        stem, suffix = base_name, "log"
-
-    # Delete oldest, shift others (.4 deleted, .3->.4, .2->.3, .1->.2)
-    for i in range(keep, 0, -1):
-        src = previous_dir / f"{stem}.{i}.{suffix}"
-        dst = previous_dir / f"{stem}.{i + 1}.{suffix}"
-        if i == keep and src.exists():
-            src.unlink()
-        elif src.exists():
-            src.rename(dst)
-
-    # Move current to .1
-    current.rename(previous_dir / f"{stem}.1.{suffix}")
-
-
 def configure_logging(name: str = "thala") -> Path:
-    """Configure application-wide logging with console and file handlers.
+    """Configure application-wide logging with console and module-based file handlers.
 
-    Sets up dual logging:
+    Sets up logging with:
     - Console: Compact format, defaults to WARNING level
-    - File: Detailed format with timestamps, defaults to INFO level
+    - Per-module files: Detailed format, defaults to INFO level
+      Each module writes to logs/<module>.log based on MODULE_TO_LOG mapping
+    - Third-party: All third-party logs go to logs/run-3p.log
 
-    Third-party library logs are segregated to a separate file to reduce noise.
+    Log rotation happens automatically on each "run" (task queue dispatch or
+    test execution) via start_run(). Each module keeps current + previous log.
 
     Args:
-        name: Base name for log files (default: "thala").
-              Creates {name}.log and {name}-3p.log with stable names.
+        name: Unused, kept for backwards compatibility.
 
     Environment variables:
         THALA_LOG_LEVEL_CONSOLE: Console log level (default: WARNING)
         THALA_LOG_LEVEL_FILE: File log level (default: INFO)
         THALA_LOG_DIR: Directory for log files (default: ./logs/)
 
-    Log files use stable names (e.g., thala.log). Previous versions are
-    rotated to logs/previous/ (keeps 4 previous versions).
-
     Returns:
-        Path to the main log file
+        Path to the log directory
 
     Note:
-        Safe to call multiple times (idempotent). Returns log path on
+        Safe to call multiple times (idempotent). Returns log dir on
         subsequent calls without reconfiguring.
     """
     global _logging_configured
+
+    from core.logging import ModuleDispatchHandler, ThirdPartyHandler
 
     # Determine log directory
     log_dir = Path(os.getenv("THALA_LOG_DIR", _get_project_root() / "logs"))
     log_dir.mkdir(parents=True, exist_ok=True)
 
     if _logging_configured:
-        # Return existing log file path
-        for handler in logging.getLogger().handlers:
-            if isinstance(handler, logging.FileHandler):
-                return Path(handler.baseFilename)
-        return log_dir / f"{name}.log"
+        return log_dir
 
     # Get configuration from environment
     console_level = os.getenv("THALA_LOG_LEVEL_CONSOLE", DEFAULT_CONSOLE_LEVEL).upper()
     file_level = os.getenv("THALA_LOG_LEVEL_FILE", DEFAULT_FILE_LEVEL).upper()
-
-    # Rotate existing log files to previous/ subdirectory (keep 4 previous)
-    _rotate_log(log_dir, f"{name}.log", keep=4)
-    _rotate_log(log_dir, f"{name}-3p.log", keep=4)
-
-    # Use stable log file names
-    main_log_file = log_dir / f"{name}.log"
-    third_party_log_file = log_dir / f"{name}-3p.log"
 
     # Configure root logger
     root_logger = logging.getLogger()
@@ -164,9 +118,7 @@ def configure_logging(name: str = "thala") -> Path:
 
     # Formatters
     console_formatter = logging.Formatter("%(levelname)s - %(name)s - %(message)s")
-    file_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # Console handler (for thala code only)
     console_handler = logging.StreamHandler()
@@ -174,16 +126,14 @@ def configure_logging(name: str = "thala") -> Path:
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
 
-    # Main file handler (for thala code)
-    main_file_handler = logging.FileHandler(main_log_file, mode="w", encoding="utf-8")
-    main_file_handler.setLevel(getattr(logging, file_level, logging.INFO))
-    main_file_handler.setFormatter(file_formatter)
-    root_logger.addHandler(main_file_handler)
+    # Module-based file handler (routes to per-module log files)
+    module_handler = ModuleDispatchHandler(log_dir)
+    module_handler.setLevel(getattr(logging, file_level, logging.INFO))
+    module_handler.setFormatter(file_formatter)
+    root_logger.addHandler(module_handler)
 
-    # Third-party file handler
-    third_party_handler = logging.FileHandler(
-        third_party_log_file, mode="w", encoding="utf-8"
-    )
+    # Third-party file handler (single run-3p.log for all third-party libs)
+    third_party_handler = ThirdPartyHandler(log_dir)
     third_party_handler.setLevel(logging.DEBUG)  # Capture all third-party logs
     third_party_handler.setFormatter(file_formatter)
 
@@ -206,10 +156,9 @@ def configure_logging(name: str = "thala") -> Path:
     # Log the configuration
     logger = logging.getLogger(__name__)
     logger.debug(f"Logging configured: console={console_level}, file={file_level}")
-    logger.debug(f"Main log: {main_log_file}")
-    logger.debug(f"Third-party log: {third_party_log_file}")
+    logger.debug(f"Log directory: {log_dir}")
 
-    return main_log_file
+    return log_dir
 
 
 def is_dev_mode() -> bool:
