@@ -72,6 +72,9 @@ class Loop1State(TypedDict, total=False):
     integration_failed: bool
     consecutive_failures: int
 
+    # Checkpointing (for task queue interruption handling)
+    checkpoint_callback: Optional[callable]
+
 
 @dataclass
 class Loop1Result:

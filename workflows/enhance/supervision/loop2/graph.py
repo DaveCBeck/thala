@@ -62,6 +62,8 @@ class Loop2State(TypedDict, total=False):
     consecutive_failures: int
     integration_failed: bool
     mini_review_failed: bool
+    # Checkpointing (for task queue interruption handling)
+    checkpoint_callback: Optional[callable]
 
 
 # =============================================================================
@@ -311,6 +313,22 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             f"Integration complete: {len(updated_review)} chars, "
             f"{len(merged_summaries)} total papers, {new_papers_added} new papers"
         )
+
+        # Call checkpoint callback if provided (N=1 for supervision loops)
+        checkpoint_callback = state.get("checkpoint_callback")
+        if checkpoint_callback:
+            checkpoint_callback(
+                iteration + 1,
+                {
+                    "current_review": updated_review,
+                    "iteration": iteration + 1,
+                    "explored_bases": explored_bases,
+                    "paper_corpus": merged_corpus,
+                    "paper_summaries": merged_summaries,
+                    "zotero_keys": merged_zotero,
+                },
+            )
+            logger.debug(f"Loop 2 checkpoint saved at iteration {iteration + 1}")
 
         return {
             "current_review": updated_review,
