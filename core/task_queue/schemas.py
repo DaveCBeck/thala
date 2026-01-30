@@ -246,3 +246,19 @@ class CostCache(TypedDict):
     version: str
     periods: dict[str, CostEntry]  # period -> CostEntry
     last_sync: Optional[str]  # Last full LangSmith sync
+
+
+class IncrementalState(TypedDict):
+    """Incremental checkpoint state for mid-phase resumption.
+
+    Stored at .thala/queue/incremental/{task_id}.json
+    Allows resuming iterative phases (paper processing, supervision loops)
+    from the last checkpoint rather than restarting the entire phase.
+    """
+
+    task_id: str
+    phase: str
+    iteration_count: int  # Number of items processed
+    checkpoint_interval: int  # Every N items (for reference)
+    partial_results: dict  # Keyed by identifier (DOI, loop_id, etc.)
+    last_checkpoint_at: str  # ISO timestamp
