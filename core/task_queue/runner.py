@@ -130,7 +130,7 @@ async def run_task_workflow(
         result = await workflow.run(task, checkpoint_callback, resume_from)
 
         # Save outputs
-        checkpoint_callback("saving")
+        await checkpoint_callback("saving")
         output_paths = workflow.save_outputs(task, result)
         result["output_paths"] = output_paths
 

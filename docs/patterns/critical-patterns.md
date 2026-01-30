@@ -43,6 +43,7 @@ Add a summary entry here with a link to the full pattern documentation.
 - **[Unified Content Retrieval Pipeline](./data-pipeline/unified-content-retrieval-pipeline.md)** - 5-stage content acquisition with DOI detection, classification, and fallback chains. *Production-verified.*
 - **[Two-Stage Pipeline Architecture](./data-pipeline/two-stage-pipeline-architecture.md)** - Bounded PDF queue + unbounded LLM queue for memory-safe processing. *Production-verified.*
 - **[Multi-Workflow Task Queue](./data-pipeline/multi-workflow-task-queue.md)** - Registry-based workflow dispatch with budget tracking and checkpointing. *Production-verified.*
+- **[Incremental Checkpointing for Iterative Workflows](./data-pipeline/incremental-checkpointing-iterative-workflows.md)** - Mid-iteration resumption with gzip-compressed checkpoints and graceful shutdown. *Production-verified.*
 
 ### Observability
 
@@ -58,6 +59,7 @@ Add a summary entry here with a link to the full pattern documentation.
 
 ## Recently Added
 
+- **2026-01-30**: [Incremental Checkpointing for Iterative Workflows](./data-pipeline/incremental-checkpointing-iterative-workflows.md) - Mid-iteration resumption for expensive operations
 - **2026-01-29**: Updated critical patterns index with 17 production-verified patterns from audit
 - **2026-01-28**: [Pipeline Simplification with Bridge Compatibility](./langgraph/pipeline-simplification-with-bridge-compatibility.md) - From commit 45a630c
 - **2026-01-28**: [Comprehensive LangSmith Tracing](./observability/comprehensive-langsmith-tracing.md) - Full tracing infrastructure
