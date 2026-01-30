@@ -6,7 +6,7 @@ organized by category.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from workflows.shared.language import LanguageConfig, get_translated_prompt
@@ -142,7 +142,7 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
     # Start building markdown
     sections = [
         f"# {headers['book_recommendations']}: {theme}",
-        f"*{headers['generated']}: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*",
+        f"*{headers['generated']}: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*",
         "",
         "---",
         "",
@@ -237,6 +237,6 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
 
     return {
         "final_markdown": final_markdown,
-        "completed_at": datetime.utcnow(),
+        "completed_at": datetime.now(timezone.utc),
         "current_phase": "completed",
     }

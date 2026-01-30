@@ -77,19 +77,19 @@ async def test_shutdown_coordinator_wait_or_shutdown():
     logger.info("ShutdownCoordinator wait_or_shutdown test PASSED")
 
 
-def test_incremental_state_manager():
-    """Test IncrementalStateManager save/load/clear operations."""
-    logger.info("=== Testing IncrementalStateManager ===")
+async def test_incremental_state_manager():
+    """Test IncrementalStateManager save/load/clear operations (async)."""
+    logger.info("=== Testing IncrementalStateManager (async) ===")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create manager with custom directory
-        manager = IncrementalStateManager(queue_dir=Path(tmpdir))
+        manager = IncrementalStateManager(incremental_dir=Path(tmpdir))
 
         task_id = "test-task-123"
         phase = "paper_processing"
 
-        # Test save
-        manager.save_progress(
+        # Test save (async)
+        await manager.save_progress(
             task_id=task_id,
             phase=phase,
             iteration_count=5,
@@ -98,26 +98,26 @@ def test_incremental_state_manager():
         )
         logger.info("Saved incremental progress ✓")
 
-        # Test load
-        state = manager.load_progress(task_id, phase)
+        # Test load (async)
+        state = await manager.load_progress(task_id, phase)
         assert state is not None, "Should load saved state"
         assert state["iteration_count"] == 5
         assert len(state["partial_results"]) == 2
         assert state["partial_results"]["doi1"]["title"] == "Paper 1"
         logger.info(f"Loaded state: iteration={state['iteration_count']}, results={len(state['partial_results'])} ✓")
 
-        # Test clear
-        manager.clear_progress(task_id)
-        cleared_state = manager.load_progress(task_id, phase)
+        # Test clear (async)
+        await manager.clear_progress(task_id)
+        cleared_state = await manager.load_progress(task_id, phase)
         assert cleared_state is None, "Should return None after clear"
         logger.info("Cleared progress ✓")
 
         logger.info("IncrementalStateManager test PASSED")
 
 
-def test_checkpoint_manager_orphaned_temps():
-    """Test CheckpointManager orphaned temp file cleanup."""
-    logger.info("=== Testing CheckpointManager Orphaned Temp Cleanup ===")
+async def test_checkpoint_manager_orphaned_temps():
+    """Test CheckpointManager orphaned temp file cleanup (async)."""
+    logger.info("=== Testing CheckpointManager Orphaned Temp Cleanup (async) ===")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         queue_dir = Path(tmpdir)
@@ -126,17 +126,17 @@ def test_checkpoint_manager_orphaned_temps():
         (queue_dir / "current_work.json.tmp").write_text('{"orphaned": true}')
         (queue_dir / "other_file.tmp").write_text('{"another": "orphan"}')
 
-        # Create manager and cleanup
+        # Create manager and cleanup (async)
         manager = CheckpointManager(queue_dir=queue_dir)
-        cleaned = manager.cleanup_orphaned_temps()
+        cleaned = await manager.cleanup_orphaned_temps()
 
         assert cleaned == 2, f"Should clean 2 files, cleaned {cleaned}"
         assert not (queue_dir / "current_work.json.tmp").exists()
         assert not (queue_dir / "other_file.tmp").exists()
         logger.info(f"Cleaned {cleaned} orphaned temp files ✓")
 
-        # Cleanup again should find nothing
-        cleaned_again = manager.cleanup_orphaned_temps()
+        # Cleanup again should find nothing (async)
+        cleaned_again = await manager.cleanup_orphaned_temps()
         assert cleaned_again == 0
         logger.info("Second cleanup found 0 files ✓")
 
@@ -144,20 +144,20 @@ def test_checkpoint_manager_orphaned_temps():
 
 
 async def test_checkpoint_callback_flow():
-    """Test that checkpoint callbacks flow correctly through the system."""
-    logger.info("=== Testing Checkpoint Callback Flow ===")
+    """Test that checkpoint callbacks flow correctly through the system (async)."""
+    logger.info("=== Testing Checkpoint Callback Flow (async) ===")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        manager = IncrementalStateManager(queue_dir=Path(tmpdir))
+        manager = IncrementalStateManager(incremental_dir=Path(tmpdir))
 
         # Simulate what happens in lit_review_full.py
         task_id = "flow-test-task"
         checkpoint_calls = []
 
-        def supervision_checkpoint(iteration: int, partial_results: dict) -> None:
-            """Save incremental progress during supervision loops."""
+        async def supervision_checkpoint(iteration: int, partial_results: dict) -> None:
+            """Save incremental progress during supervision loops (async)."""
             checkpoint_calls.append((iteration, len(partial_results)))
-            manager.save_progress(
+            await manager.save_progress(
                 task_id=task_id,
                 phase="supervision",
                 iteration_count=iteration,
@@ -172,13 +172,13 @@ async def test_checkpoint_callback_flow():
                 "iteration": i,
                 "explored_bases": [f"base_{j}" for j in range(i)],
             }
-            supervision_checkpoint(i, partial)
+            await supervision_checkpoint(i, partial)
 
         assert len(checkpoint_calls) == 3
         logger.info(f"Made {len(checkpoint_calls)} checkpoint calls ✓")
 
-        # Verify final state
-        state = manager.load_progress(task_id, "supervision")
+        # Verify final state (async)
+        state = await manager.load_progress(task_id, "supervision")
         assert state is not None
         assert state["iteration_count"] == 3
         assert state["partial_results"]["iteration"] == 3
@@ -186,6 +186,45 @@ async def test_checkpoint_callback_flow():
         logger.info(f"Final state: iteration={state['iteration_count']} ✓")
 
         logger.info("Checkpoint callback flow test PASSED")
+
+
+async def test_event_loop_not_blocked():
+    """Test that file I/O doesn't block the event loop."""
+    logger.info("=== Testing Event Loop Not Blocked ===")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        manager = IncrementalStateManager(incremental_dir=Path(tmpdir))
+        task_id = "blocking-test-task"
+
+        # Track if concurrent task ran during file I/O
+        concurrent_task_ran = False
+
+        async def concurrent_task():
+            nonlocal concurrent_task_ran
+            await asyncio.sleep(0.001)  # Yield to event loop
+            concurrent_task_ran = True
+
+        # Start concurrent task and file I/O at the same time
+        await asyncio.gather(
+            manager.save_progress(
+                task_id=task_id,
+                phase="test",
+                iteration_count=1,
+                partial_results={"key": "value" * 1000},  # Larger payload
+            ),
+            concurrent_task(),
+        )
+
+        assert concurrent_task_ran, "Concurrent task should have run during file I/O"
+        logger.info("Concurrent task ran during file I/O ✓")
+
+        # Verify the save worked
+        state = await manager.load_progress(task_id, "test")
+        assert state is not None
+        assert state["iteration_count"] == 1
+        logger.info("File I/O completed correctly ✓")
+
+        logger.info("Event loop not blocked test PASSED")
 
 
 async def main():
@@ -202,13 +241,16 @@ async def main():
     await test_shutdown_coordinator_wait_or_shutdown()
     print()
 
-    test_incremental_state_manager()
+    await test_incremental_state_manager()
     print()
 
-    test_checkpoint_manager_orphaned_temps()
+    await test_checkpoint_manager_orphaned_temps()
     print()
 
     await test_checkpoint_callback_flow()
+    print()
+
+    await test_event_loop_not_blocked()
     print()
 
     logger.info("=" * 60)

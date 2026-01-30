@@ -45,6 +45,7 @@ async def enhance_report(
     run_fact_check: bool = True,
     config: dict | None = None,
     checkpoint_callback: Callable[[int, dict], None] | None = None,
+    incremental_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Enhance an existing report with supervision loops, structural editing, and fact-checking.
 
@@ -83,6 +84,8 @@ async def enhance_report(
         config: Optional LangGraph config for tracing
         checkpoint_callback: Optional callback for incremental checkpointing during supervision.
             Called with (iteration_count, partial_results_dict) after each supervision iteration.
+        incremental_state: Optional checkpoint state for resumption.
+            Contains iteration_count and partial_results from a previous interrupted run.
 
     Returns:
         Dict with:
@@ -147,6 +150,7 @@ async def enhance_report(
                 zotero_keys=zotero_keys,
                 config=config,
                 checkpoint_callback=checkpoint_callback,
+                incremental_state=incremental_state,
             )
 
             current_report = supervision_result["final_report"]

@@ -1,7 +1,7 @@
 """Corpus and graph synchronization."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .types import DiffusionEngineState
@@ -52,7 +52,7 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
         stages[-1]["new_relevant"] = llm_relevant
         stages[-1]["new_rejected"] = llm_rejected
         stages[-1]["coverage_delta"] = coverage_delta
-        stages[-1]["completed_at"] = datetime.utcnow()
+        stages[-1]["completed_at"] = datetime.now(timezone.utc)
 
     new_consecutive_low = (
         diffusion["consecutive_low_coverage"] + 1

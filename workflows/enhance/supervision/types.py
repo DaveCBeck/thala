@@ -1,8 +1,11 @@
 """Type definitions for the enhancement supervision workflow."""
 
-from typing import Any, Callable, Literal, Optional
+from operator import add
+from typing import Annotated, Any, Literal, Optional
 
 from typing_extensions import NotRequired, TypedDict
+
+from core.task_queue.schemas import IncrementalCheckpointCallback
 
 
 class EnhanceInput(TypedDict):
@@ -37,17 +40,18 @@ class EnhanceState(TypedDict, total=False):
     max_iterations_per_loop: int
 
     # Progress tracking
-    loop_progress: list[dict]
+    loop_progress: Annotated[list[dict], add]
     loop1_result: Optional[dict]
     loop2_result: Optional[dict]
 
     # Completion state
     completion_reason: str
     is_complete: bool
-    errors: list[dict]
+    errors: Annotated[list[dict], add]
 
     # Checkpointing (for task queue interruption handling)
-    checkpoint_callback: Optional[Callable[[int, dict], None]]
+    checkpoint_callback: Optional[IncrementalCheckpointCallback]
+    incremental_state: Optional[dict[str, Any]]  # For mid-phase resumption
 
 
 class EnhanceResult(TypedDict):

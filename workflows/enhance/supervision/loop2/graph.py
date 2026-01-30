@@ -8,11 +8,14 @@ prompts, and mini_review from the original supervised_lit_review location.
 """
 
 import logging
-from typing import Optional
+from operator import add
+from typing import Annotated, Any, Optional
 
 from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
 from typing_extensions import TypedDict
+
+from core.task_queue.schemas import IncrementalCheckpointCallback
 
 from workflows.research.academic_lit_review.state import (
     LitReviewInput,
@@ -53,17 +56,17 @@ class Loop2State(TypedDict, total=False):
     quality_settings: QualitySettings
     iteration: int
     max_iterations: int
-    explored_bases: list[str]
+    explored_bases: Annotated[list[str], add]
     is_complete: bool
     decision: Optional[dict]
     # Error tracking fields
-    errors: list[dict]
+    errors: Annotated[list[dict], add]
     iterations_failed: int
     consecutive_failures: int
     integration_failed: bool
     mini_review_failed: bool
     # Checkpointing (for task queue interruption handling)
-    checkpoint_callback: Optional[callable]
+    checkpoint_callback: Optional[IncrementalCheckpointCallback]
 
 
 # =============================================================================
@@ -115,15 +118,14 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
 
     except Exception as e:
         logger.error(f"Loop 2 analysis failed: {e}")
-        errors = state.get("errors", [])
+        # Return single-element list - the add reducer will append to existing errors
         return {
             "decision": {
                 "action": "error",
                 "literature_base": None,
                 "reasoning": f"Analysis failed: {e}",
             },
-            "errors": errors
-            + [
+            "errors": [
                 {
                     "loop_number": 2,
                     "iteration": iteration,
@@ -139,14 +141,13 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
 async def run_mini_review_node(state: Loop2State) -> dict:
     """Execute mini-review on identified literature base."""
     decision = state.get("decision")
-    errors = state.get("errors", [])
 
     if not decision:
         logger.warning("Mini-review node called without decision")
+        # Return single-element list - the add reducer will append to existing errors
         return {
             "mini_review_failed": True,
-            "errors": errors
-            + [
+            "errors": [
                 {
                     "loop_number": 2,
                     "iteration": state.get("iteration", 0),
@@ -162,10 +163,10 @@ async def run_mini_review_node(state: Loop2State) -> dict:
         logger.warning(
             f"Mini-review node called with invalid action: {decision['action']}"
         )
+        # Return single-element list - the add reducer will append to existing errors
         return {
             "mini_review_failed": True,
-            "errors": errors
-            + [
+            "errors": [
                 {
                     "loop_number": 2,
                     "iteration": state.get("iteration", 0),
@@ -217,16 +218,15 @@ async def integrate_findings_node(state: Loop2State) -> dict:
     from workflows.shared.llm_utils import get_llm
 
     iteration = state.get("iteration", 0)
-    errors = state.get("errors", [])
     iterations_failed = state.get("iterations_failed", 0)
 
     try:
         decision = state.get("decision")
         if not decision or not decision.get("literature_base"):
             logger.error("Integration node called without valid decision")
+            # Return single-element list - the add reducer will append to existing errors
             return {
-                "errors": errors
-                + [
+                "errors": [
                     {
                         "loop_number": 2,
                         "iteration": iteration,
@@ -254,10 +254,10 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             logger.warning(
                 f"Mini-review too short for base '{literature_base.name}' ({len(mini_review_text.strip())} chars)"
             )
+            # Return single-element list - the add reducer will append to existing errors
             return {
                 # DON'T increment iteration on failure
-                "errors": errors
-                + [
+                "errors": [
                     {
                         "loop_number": 2,
                         "iteration": iteration,
@@ -307,14 +307,13 @@ async def integrate_findings_node(state: Loop2State) -> dict:
                 merged_corpus[doi] = paper_metadata
                 new_papers_added += 1
 
-        explored_bases = state.get("explored_bases", []) + [literature_base.name]
-
         logger.info(
             f"Integration complete: {len(updated_review)} chars, "
             f"{len(merged_summaries)} total papers, {new_papers_added} new papers"
         )
 
         # Call checkpoint callback if provided (N=1 for supervision loops)
+        # Note: checkpoint needs full accumulated list for resumption
         checkpoint_callback = state.get("checkpoint_callback")
         if checkpoint_callback:
             checkpoint_callback(
@@ -322,7 +321,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
                 {
                     "current_review": updated_review,
                     "iteration": iteration + 1,
-                    "explored_bases": explored_bases,
+                    "explored_bases": state.get("explored_bases", []) + [literature_base.name],
                     "paper_corpus": merged_corpus,
                     "paper_summaries": merged_summaries,
                     "zotero_keys": merged_zotero,
@@ -330,20 +329,21 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             )
             logger.debug(f"Loop 2 checkpoint saved at iteration {iteration + 1}")
 
+        # Return single-element list - the add reducer will append to existing explored_bases
         return {
             "current_review": updated_review,
             "paper_summaries": merged_summaries,
             "zotero_keys": merged_zotero,
             "paper_corpus": merged_corpus,
-            "explored_bases": explored_bases,
+            "explored_bases": [literature_base.name],
             "iteration": iteration + 1,  # Only increment on success
         }
 
     except Exception as e:
         logger.error(f"Integration failed: {e}")
+        # Return single-element list - the add reducer will append to existing errors
         return {
-            "errors": errors
-            + [
+            "errors": [
                 {
                     "loop_number": 2,
                     "iteration": iteration,
@@ -463,7 +463,8 @@ async def run_loop2_standalone(
     quality_settings: QualitySettings,
     max_iterations: int = 3,
     config: dict | None = None,
-    checkpoint_callback: callable | None = None,
+    checkpoint_callback: IncrementalCheckpointCallback | None = None,
+    incremental_state: dict[str, Any] | None = None,
 ) -> dict:
     """Run Loop 2 as standalone operation for testing.
 
@@ -478,6 +479,8 @@ async def run_loop2_standalone(
         config: Optional LangGraph config with run_id and run_name for tracing
         checkpoint_callback: Optional callback for incremental checkpointing.
             Called with (iteration_count, partial_results_dict) after each iteration.
+        incremental_state: Optional checkpoint state for resumption.
+            Contains iteration_count and partial_results from previous run.
 
     Returns:
         Dict with:
@@ -489,16 +492,41 @@ async def run_loop2_standalone(
             - iteration: Final iteration count
             - is_complete: Whether loop completed
     """
+    # Handle resume from incremental state
+    resumed_iteration = 0
+    resumed_review = review
+    resumed_explored_bases: list[str] = []
+    resumed_paper_corpus = paper_corpus
+    resumed_paper_summaries = paper_summaries
+    resumed_zotero_keys = zotero_keys
+
+    if incremental_state:
+        partial_results = incremental_state.get("partial_results", {})
+        resumed_iteration = incremental_state.get("iteration_count", 0)
+
+        if partial_results:
+            # Restore state from checkpoint
+            resumed_review = partial_results.get("current_review", review)
+            resumed_explored_bases = partial_results.get("explored_bases", [])
+            resumed_paper_corpus = partial_results.get("paper_corpus", paper_corpus)
+            resumed_paper_summaries = partial_results.get("paper_summaries", paper_summaries)
+            resumed_zotero_keys = partial_results.get("zotero_keys", zotero_keys)
+
+            logger.info(
+                f"Resuming Loop 2 from checkpoint: iteration {resumed_iteration}, "
+                f"{len(resumed_explored_bases)} bases already explored"
+            )
+
     initial_state = Loop2State(
-        current_review=review,
-        paper_corpus=paper_corpus,
-        paper_summaries=paper_summaries,
-        zotero_keys=zotero_keys,
+        current_review=resumed_review,
+        paper_corpus=resumed_paper_corpus,
+        paper_summaries=resumed_paper_summaries,
+        zotero_keys=resumed_zotero_keys,
         input=input_data,
         quality_settings=quality_settings,
-        iteration=0,
+        iteration=resumed_iteration,
         max_iterations=max_iterations,
-        explored_bases=[],
+        explored_bases=resumed_explored_bases,
         is_complete=False,
         decision=None,
         # Error tracking fields
@@ -510,6 +538,12 @@ async def run_loop2_standalone(
         # Checkpointing
         checkpoint_callback=checkpoint_callback,
     )
+
+    if resumed_iteration > 0:
+        logger.info(
+            f"Starting Loop 2 (resumed): iteration={resumed_iteration}/{max_iterations}, "
+            f"review length={len(resumed_review)} chars, corpus size={len(resumed_paper_corpus)}"
+        )
 
     if config:
         result = await loop2_graph.ainvoke(initial_state, config=config)

@@ -5,10 +5,11 @@ markdown report with theoretical depth (Loop 1) and literature expansion (Loop 2
 """
 
 import logging
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from langsmith import traceable
 
+from core.task_queue.schemas import IncrementalCheckpointCallback
 from workflows.enhance.supervision.builder import create_enhancement_graph
 from workflows.enhance.supervision.types import EnhanceInput, EnhanceResult, EnhanceState
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
@@ -29,7 +30,8 @@ async def enhance_report(
     paper_summaries: dict[str, Any] | None = None,
     zotero_keys: dict[str, str] | None = None,
     config: dict | None = None,
-    checkpoint_callback: Callable[[int, dict], None] | None = None,
+    checkpoint_callback: IncrementalCheckpointCallback | None = None,
+    incremental_state: dict[str, Any] | None = None,
 ) -> EnhanceResult:
     """Enhance an existing report with theoretical depth and literature expansion.
 
@@ -57,6 +59,8 @@ async def enhance_report(
         config: Optional LangGraph config for tracing
         checkpoint_callback: Optional callback for incremental checkpointing.
             Called with (iteration_count, partial_results_dict) after each iteration.
+        incremental_state: Optional checkpoint state for resumption.
+            Contains iteration_count and partial_results from a previous interrupted run.
 
     Returns:
         EnhanceResult with:
@@ -116,6 +120,7 @@ async def enhance_report(
         "is_complete": False,
         "errors": [],
         "checkpoint_callback": checkpoint_callback,
+        "incremental_state": incremental_state,
     }
 
     logger.info(

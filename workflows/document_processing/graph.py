@@ -16,7 +16,7 @@ configure_langsmith()
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langsmith import traceable
@@ -160,7 +160,7 @@ async def process_document(
         "chapter_summaries": [],
         "metadata_updates": {},
         "current_status": "starting",
-        "started_at": datetime.utcnow(),
+        "started_at": datetime.now(timezone.utc),
     }
 
     run_id = uuid.uuid4()

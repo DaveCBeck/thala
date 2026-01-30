@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langchain_tools.openalex import openalex_search, OpenAlexWork
@@ -43,7 +43,7 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
     language_code = language_config["code"] if language_config else None
 
     # Calculate recency cutoff
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     recent_cutoff = current_year - recency_years
 
     # Handle user-specified date range constraints

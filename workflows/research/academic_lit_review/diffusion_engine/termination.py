@@ -1,7 +1,7 @@
 """Saturation checking and diffusion finalization."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .types import DiffusionEngineState, NON_ENGLISH_PAPER_OVERHEAD
@@ -97,7 +97,7 @@ async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
         return {"final_corpus_dois": final_dois}
 
     # Partition by recency
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     cutoff_year = current_year - recency_years
 
     recent = [(doi, p) for doi, p in paper_corpus.items() if p.get("year", 0) >= cutoff_year]

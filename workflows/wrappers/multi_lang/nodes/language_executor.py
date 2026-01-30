@@ -4,7 +4,7 @@ Uses the workflow registry for pluggable workflow dispatch.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from workflows.wrappers.multi_lang.state import MultiLangState, LanguageResult
 from workflows.wrappers.multi_lang.workflow_registry import WORKFLOW_REGISTRY
@@ -128,7 +128,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
 
     logger.info(f"Executing workflow for {language_name}")
 
-    started_at = datetime.utcnow()
+    started_at = datetime.now(timezone.utc)
 
     # Get quality (single global quality tier)
     quality = state["input"]["quality"]
@@ -236,7 +236,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
         language_code=language_code,
         language_name=language_name,
         started_at=started_at,
-        completed_at=datetime.utcnow(),
+        completed_at=datetime.now(timezone.utc),
         workflows_run=workflows_run,
         quality_used=quality,
         findings_summary=summary,

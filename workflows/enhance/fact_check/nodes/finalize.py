@@ -1,7 +1,7 @@
 """Finalize node for fact-check workflow."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langsmith import traceable
@@ -29,7 +29,7 @@ async def finalize_node(state: dict) -> dict[str, Any]:
         return {
             "final_document": "",
             "status": "failed",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "changes_summary": "No document model available",
         }
 
@@ -94,6 +94,6 @@ async def finalize_node(state: dict) -> dict[str, Any]:
     return {
         "final_document": final_document,
         "status": status,
-        "completed_at": datetime.utcnow(),
+        "completed_at": datetime.now(timezone.utc),
         "changes_summary": changes_summary,
     }

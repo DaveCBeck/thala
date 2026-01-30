@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langsmith import traceable
@@ -146,7 +146,7 @@ async def fact_check(
             "langsmith_run_id": langsmith_run_id,
             "errors": errors,
             "started_at": initial_state["started_at"],
-            "completed_at": result.get("completed_at", datetime.utcnow()),
+            "completed_at": result.get("completed_at", datetime.now(timezone.utc)),
             "changes_summary": result.get("changes_summary", ""),
             # Detailed results
             "fact_check_results": result.get("fact_check_results", []),
@@ -168,7 +168,7 @@ async def fact_check(
             "langsmith_run_id": langsmith_run_id,
             "errors": [{"node": "unknown", "error": str(e)}],
             "started_at": initial_state["started_at"],
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "changes_summary": f"Workflow failed: {e}",
             "fact_check_results": [],
             "reference_check_results": [],

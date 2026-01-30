@@ -5,12 +5,16 @@ Tracks workflow progress at key phases. Each workflow type defines its own
 phases - use get_workflow_phases() to retrieve them dynamically.
 
 Uses PID-based process locking to detect crashed processes.
+
+All public methods that perform file I/O are async to avoid blocking the
+event loop. The actual I/O is offloaded to a thread pool via asyncio.to_thread().
 """
 
+import asyncio
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -39,7 +43,12 @@ def get_workflow_phases(task_type: str) -> list[str]:
 
 
 class CheckpointManager:
-    """Manage workflow checkpoints for resume capability."""
+    """Manage workflow checkpoints for resume capability.
+
+    All public methods that perform file I/O are async to avoid blocking
+    the event loop. The actual I/O is offloaded to a thread pool via
+    asyncio.to_thread().
+    """
 
     def __init__(self, queue_dir: Optional[Path] = None):
         """Initialize the checkpoint manager.
@@ -52,14 +61,10 @@ class CheckpointManager:
 
         self.queue_dir.mkdir(parents=True, exist_ok=True)
 
-    def cleanup_orphaned_temps(self) -> int:
-        """Clean up orphaned .tmp files from interrupted writes.
+    def _cleanup_orphaned_temps_sync(self) -> int:
+        """Synchronous implementation of cleanup_orphaned_temps.
 
-        These files can be left behind if the process is killed during
-        an atomic write operation.
-
-        Returns:
-            Number of temp files cleaned up
+        This is the actual file I/O logic, called via asyncio.to_thread().
         """
         cleaned = 0
         for tmp_file in self.queue_dir.glob("*.tmp"):
@@ -71,8 +76,23 @@ class CheckpointManager:
                 logger.warning(f"Failed to clean up temp file {tmp_file}: {e}")
         return cleaned
 
-    def _read_current_work(self) -> CurrentWork:
-        """Read current work from disk."""
+    async def cleanup_orphaned_temps(self) -> int:
+        """Clean up orphaned .tmp files from interrupted writes.
+
+        These files can be left behind if the process is killed during
+        an atomic write operation.
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
+
+        Returns:
+            Number of temp files cleaned up
+        """
+        return await asyncio.to_thread(self._cleanup_orphaned_temps_sync)
+
+    def _read_current_work_sync(self) -> CurrentWork:
+        """Synchronous implementation of _read_current_work.
+
+        This is the actual file I/O logic.
+        """
         if self.current_work_file.exists():
             with open(self.current_work_file, "r") as f:
                 data = json.load(f)
@@ -86,27 +106,27 @@ class CheckpointManager:
             "process_locks": {},
         }
 
-    def _write_current_work(self, work: CurrentWork) -> None:
-        """Write current work atomically."""
+    def _write_current_work_sync(self, work: CurrentWork) -> None:
+        """Synchronous implementation of _write_current_work.
+
+        This is the actual file I/O logic.
+        """
         temp_file = self.current_work_file.with_suffix(".tmp")
         with open(temp_file, "w") as f:
             json.dump(work, f, indent=2)
         temp_file.rename(self.current_work_file)
 
-    def start_work(
+    def _start_work_sync(
         self,
         task_id: str,
         task_type: str,
         langsmith_run_id: str,
     ) -> None:
-        """Record that work has started on a task.
+        """Synchronous implementation of start_work.
 
-        Args:
-            task_id: Task UUID
-            task_type: Workflow type (e.g., "lit_review_full", "web_research")
-            langsmith_run_id: LangSmith run ID
+        This is the actual file I/O logic, called via asyncio.to_thread().
         """
-        work = self._read_current_work()
+        work = self._read_current_work_sync()
 
         # Get first phase for this workflow type
         phases = get_workflow_phases(task_type)
@@ -119,8 +139,8 @@ class CheckpointManager:
             "phase": initial_phase,
             "phase_progress": {},
             "phase_outputs": {},
-            "started_at": datetime.utcnow().isoformat(),
-            "last_checkpoint_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "last_checkpoint_at": datetime.now(timezone.utc).isoformat(),
             "counters": {},
         }
 
@@ -133,31 +153,49 @@ class CheckpointManager:
         work["active_tasks"].append(checkpoint)
         work["process_locks"][task_id] = str(os.getpid())
 
-        self._write_current_work(work)
+        self._write_current_work_sync(work)
         logger.info(f"Started work on task {task_id} ({task_type})")
 
-    def update_checkpoint(
+    async def start_work(
+        self,
+        task_id: str,
+        task_type: str,
+        langsmith_run_id: str,
+    ) -> None:
+        """Record that work has started on a task.
+
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
+
+        Args:
+            task_id: Task UUID
+            task_type: Workflow type (e.g., "lit_review_full", "web_research")
+            langsmith_run_id: LangSmith run ID
+        """
+        await asyncio.to_thread(
+            self._start_work_sync,
+            task_id,
+            task_type,
+            langsmith_run_id,
+        )
+
+    def _update_checkpoint_sync(
         self,
         task_id: str,
         phase: str,
         phase_outputs: Optional[dict] = None,
         **kwargs,
     ) -> None:
-        """Update checkpoint for a task.
+        """Synchronous implementation of update_checkpoint.
 
-        Args:
-            task_id: Task being processed
-            phase: Current phase name
-            phase_outputs: Outputs from completed phases for resumption
-            **kwargs: Additional phase-specific data stored in counters
+        This is the actual file I/O logic, called via asyncio.to_thread().
         """
-        work = self._read_current_work()
+        work = self._read_current_work_sync()
 
         for checkpoint in work["active_tasks"]:
             cp_task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
             if cp_task_id == task_id:
                 checkpoint["phase"] = phase
-                checkpoint["last_checkpoint_at"] = datetime.utcnow().isoformat()
+                checkpoint["last_checkpoint_at"] = datetime.now(timezone.utc).isoformat()
 
                 # Store phase outputs for resumption
                 if phase_outputs is not None:
@@ -174,16 +212,40 @@ class CheckpointManager:
 
                 break
 
-        self._write_current_work(work)
+        self._write_current_work_sync(work)
         logger.debug(f"Checkpoint: {task_id} -> {phase}")
 
-    def complete_work(self, task_id: str) -> None:
-        """Mark work as complete and remove checkpoint.
+    async def update_checkpoint(
+        self,
+        task_id: str,
+        phase: str,
+        phase_outputs: Optional[dict] = None,
+        **kwargs,
+    ) -> None:
+        """Update checkpoint for a task.
+
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
 
         Args:
-            task_id: Task UUID
+            task_id: Task being processed
+            phase: Current phase name
+            phase_outputs: Outputs from completed phases for resumption
+            **kwargs: Additional phase-specific data stored in counters
         """
-        work = self._read_current_work()
+        await asyncio.to_thread(
+            self._update_checkpoint_sync,
+            task_id,
+            phase,
+            phase_outputs,
+            **kwargs,
+        )
+
+    def _complete_work_sync(self, task_id: str) -> None:
+        """Synchronous implementation of complete_work.
+
+        This is the actual file I/O logic, called via asyncio.to_thread().
+        """
+        work = self._read_current_work_sync()
 
         work["active_tasks"] = [
             c for c in work["active_tasks"]
@@ -191,28 +253,36 @@ class CheckpointManager:
         ]
         work["process_locks"].pop(task_id, None)
 
-        self._write_current_work(work)
+        self._write_current_work_sync(work)
         logger.info(f"Completed work on task {task_id}")
 
-    def fail_work(self, task_id: str) -> None:
+    async def complete_work(self, task_id: str) -> None:
+        """Mark work as complete and remove checkpoint.
+
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
+
+        Args:
+            task_id: Task UUID
+        """
+        await asyncio.to_thread(self._complete_work_sync, task_id)
+
+    async def fail_work(self, task_id: str) -> None:
         """Remove checkpoint after work failed.
+
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
 
         Args:
             task_id: Task UUID
         """
         # Same as complete_work - just remove the checkpoint
-        self.complete_work(task_id)
+        await self.complete_work(task_id)
 
-    def get_incomplete_work(self) -> list[WorkflowCheckpoint]:
-        """Get list of incomplete work items.
+    def _get_incomplete_work_sync(self) -> list[WorkflowCheckpoint]:
+        """Synchronous implementation of get_incomplete_work.
 
-        Filters out items where the owning process is still alive.
-        These are work items that can be resumed.
-
-        Returns:
-            List of checkpoints for incomplete work
+        This is the actual file I/O logic, called via asyncio.to_thread().
         """
-        work = self._read_current_work()
+        work = self._read_current_work_sync()
         incomplete = []
 
         for checkpoint in work["active_tasks"]:
@@ -233,25 +303,42 @@ class CheckpointManager:
 
         return incomplete
 
-    def get_active_work(self) -> list[WorkflowCheckpoint]:
+    async def get_incomplete_work(self) -> list[WorkflowCheckpoint]:
+        """Get list of incomplete work items.
+
+        Filters out items where the owning process is still alive.
+        These are work items that can be resumed.
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
+
+        Returns:
+            List of checkpoints for incomplete work
+        """
+        return await asyncio.to_thread(self._get_incomplete_work_sync)
+
+    def _get_active_work_sync(self) -> list[WorkflowCheckpoint]:
+        """Synchronous implementation of get_active_work.
+
+        This is the actual file I/O logic, called via asyncio.to_thread().
+        """
+        work = self._read_current_work_sync()
+        return work["active_tasks"]
+
+    async def get_active_work(self) -> list[WorkflowCheckpoint]:
         """Get all active work items (including those with live processes).
+
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
 
         Returns:
             List of all active checkpoints
         """
-        work = self._read_current_work()
-        return work["active_tasks"]
+        return await asyncio.to_thread(self._get_active_work_sync)
 
-    def get_checkpoint(self, task_id: str) -> Optional[WorkflowCheckpoint]:
-        """Get checkpoint for a specific task.
+    def _get_checkpoint_sync(self, task_id: str) -> Optional[WorkflowCheckpoint]:
+        """Synchronous implementation of get_checkpoint.
 
-        Args:
-            task_id: Task UUID
-
-        Returns:
-            Checkpoint if found, None otherwise
+        This is the actual file I/O logic, called via asyncio.to_thread().
         """
-        work = self._read_current_work()
+        work = self._read_current_work_sync()
 
         for checkpoint in work["active_tasks"]:
             cp_task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")
@@ -260,11 +347,26 @@ class CheckpointManager:
 
         return None
 
+    async def get_checkpoint(self, task_id: str) -> Optional[WorkflowCheckpoint]:
+        """Get checkpoint for a specific task.
+
+        File I/O is offloaded to a thread pool to avoid blocking the event loop.
+
+        Args:
+            task_id: Task UUID
+
+        Returns:
+            Checkpoint if found, None otherwise
+        """
+        return await asyncio.to_thread(self._get_checkpoint_sync, task_id)
+
     def can_resume_from_phase(self, checkpoint: WorkflowCheckpoint) -> str:
         """Determine which phase to resume from.
 
         Some phases can be resumed directly, others need to restart
         from an earlier phase.
+
+        Note: This method does not perform file I/O, so it remains synchronous.
 
         Args:
             checkpoint: Workflow checkpoint
@@ -286,6 +388,8 @@ class CheckpointManager:
     def get_phase_index(self, phase: str, task_type: str = DEFAULT_WORKFLOW_TYPE) -> int:
         """Get index of a phase in the workflow.
 
+        Note: This method does not perform file I/O, so it remains synchronous.
+
         Args:
             phase: Phase name
             task_type: Workflow type
@@ -305,6 +409,8 @@ class CheckpointManager:
         phase: str,
     ) -> bool:
         """Check if a phase has been completed.
+
+        Note: This method does not perform file I/O, so it remains synchronous.
 
         Args:
             checkpoint: Workflow checkpoint
@@ -327,6 +433,8 @@ class CheckpointManager:
         checkpoint: WorkflowCheckpoint,
     ) -> set[str]:
         """Get set of phases that completed before the checkpoint phase.
+
+        Note: This method does not perform file I/O, so it remains synchronous.
 
         Args:
             checkpoint: Workflow checkpoint

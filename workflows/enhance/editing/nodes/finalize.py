@@ -1,7 +1,7 @@
 """Finalize node for editing workflow."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langsmith import traceable
@@ -112,5 +112,5 @@ async def finalize_node(state: dict) -> dict[str, Any]:
         "final_verification": final_verification.model_dump(),
         "changes_summary": changes_summary,
         "status": status,
-        "completed_at": datetime.utcnow(),
+        "completed_at": datetime.now(timezone.utc),
     }

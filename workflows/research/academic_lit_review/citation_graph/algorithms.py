@@ -1,7 +1,7 @@
 """Citation graph analysis algorithms."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import networkx as nx
@@ -53,7 +53,7 @@ class CitationGraphAlgorithms:
     ) -> list[str]:
         """Get recent papers with high citation velocity (citations per year)."""
         if current_year is None:
-            current_year = datetime.utcnow().year
+            current_year = datetime.now(timezone.utc).year
 
         cutoff_year = current_year - years
         recent_dois = []

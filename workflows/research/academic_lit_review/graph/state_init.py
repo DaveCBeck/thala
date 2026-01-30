@@ -1,7 +1,7 @@
 """State initialization helpers for academic literature review workflow."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from workflows.research.academic_lit_review.state import (
     AcademicLitReviewState,
@@ -54,7 +54,7 @@ def build_initial_state(
         prisma_documentation=None,
         elasticsearch_ids={},
         zotero_keys={},
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         completed_at=None,
         current_phase="discovery",
         current_status="Starting literature review",

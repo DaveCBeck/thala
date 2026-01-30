@@ -1,7 +1,7 @@
 """Synthesis phase node for academic literature review workflow."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from workflows.research.academic_lit_review.state import AcademicLitReviewState
@@ -37,7 +37,7 @@ async def synthesis_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
             "final_review": "Literature review generation failed: no content available.",
             "current_phase": "complete",
             "current_status": "Synthesis skipped (no content)",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
         }
 
     synthesis_result = await run_synthesis(
@@ -69,5 +69,5 @@ async def synthesis_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
         "section_drafts": synthesis_result.get("section_drafts", {}),
         "current_phase": "complete",
         "current_status": f"Complete: {quality_metrics.get('total_words', 0)} word review",
-        "completed_at": datetime.utcnow(),
+        "completed_at": datetime.now(timezone.utc),
     }

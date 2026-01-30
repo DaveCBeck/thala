@@ -33,7 +33,7 @@ class ShutdownCoordinator:
     shutdown is requested via SIGINT/SIGTERM.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize shutdown coordinator."""
         self._shutdown_event = asyncio.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None

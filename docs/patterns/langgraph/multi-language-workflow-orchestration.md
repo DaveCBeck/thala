@@ -319,8 +319,8 @@ async def execute_next_language(state: MultiLangState) -> dict[str, Any]:
         language_result = LanguageResult(
             language_code=lang_code,
             language_name=lang_name,
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
             workflows_run=_get_workflows_run(state["input"]["workflows"]),
             quality_used=quality,
             findings_summary=result.get("summary", ""),

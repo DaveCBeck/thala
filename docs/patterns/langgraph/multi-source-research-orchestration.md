@@ -166,7 +166,7 @@ Run web and academic in parallel with independent failure handling:
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from workflows.research.graph.api import deep_research
@@ -187,7 +187,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
 
     async def run_web() -> WorkflowResult:
         """Run web research with error handling."""
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         try:
             logger.info(f"Starting web research: depth={quality_config['web_depth']}")
             result = await deep_research(
@@ -198,7 +198,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
                 workflow_type="web",
                 final_output=result.get("final_report"),
                 started_at=started_at,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 status="completed",
                 error=None,
                 top_of_mind_id=None,
@@ -209,7 +209,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
                 workflow_type="web",
                 final_output=None,
                 started_at=started_at,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 status="failed",
                 error=str(e),
                 top_of_mind_id=None,
@@ -217,7 +217,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
 
     async def run_academic() -> WorkflowResult:
         """Run academic lit review with error handling."""
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
 
         # Generate research questions if not provided
         research_questions = input_data.get("research_questions") or [
@@ -238,7 +238,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
                 workflow_type="academic",
                 final_output=result.get("final_review"),
                 started_at=started_at,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 status="completed",
                 error=None,
                 top_of_mind_id=None,
@@ -249,7 +249,7 @@ async def run_parallel_research(state: WrappedResearchState) -> dict[str, Any]:
                 workflow_type="academic",
                 final_output=None,
                 started_at=started_at,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 status="failed",
                 error=str(e),
                 top_of_mind_id=None,
@@ -284,7 +284,7 @@ Save state to disk after each major phase:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -305,7 +305,7 @@ def save_checkpoint(state: dict, prefix: str, phase: str) -> Path:
         Path to saved checkpoint file
     """
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"{prefix}_{phase}_{timestamp}.json"
     checkpoint_path = CHECKPOINT_DIR / filename
 
@@ -461,7 +461,7 @@ async def wrapped_research(
                 saved_to_top_of_mind=False,
             ),
             checkpoint_path=None,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             completed_at=None,
             current_phase="starting",
             errors=[],

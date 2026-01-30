@@ -30,6 +30,7 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
     max_iterations = state.get("max_iterations_per_loop", 3)
     paper_corpus = state.get("paper_corpus", {})
     checkpoint_callback = state.get("checkpoint_callback")
+    incremental_state = state.get("incremental_state")
 
     logger.info(f"Running Loop 1 (theoretical depth) on {len(current_review)} char review")
 
@@ -43,6 +44,7 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
             quality_settings=quality_settings,
             config=config,
             checkpoint_callback=checkpoint_callback,
+            incremental_state=incremental_state,
         )
 
         loop_progress = state.get("loop_progress", [])
@@ -92,6 +94,7 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
     paper_summaries = state.get("paper_summaries", {})
     zotero_keys = state.get("zotero_keys", {})
     checkpoint_callback = state.get("checkpoint_callback")
+    incremental_state = state.get("incremental_state")
 
     logger.info(
         f"Running Loop 2 (literature expansion) on {len(current_review)} char review "
@@ -118,6 +121,7 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
             max_iterations=max_iterations,
             config=config,
             checkpoint_callback=checkpoint_callback,
+            incremental_state=incremental_state,
         )
 
         loop_progress = state.get("loop_progress", [])

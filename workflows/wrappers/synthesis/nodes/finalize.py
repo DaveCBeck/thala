@@ -1,7 +1,7 @@
 """Finalize node for synthesis workflow."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langsmith import traceable
@@ -44,6 +44,6 @@ async def finalize(state: dict) -> dict[str, Any]:
 
     return {
         "status": status,
-        "completed_at": datetime.utcnow(),
+        "completed_at": datetime.now(timezone.utc),
         "current_phase": "completed",
     }

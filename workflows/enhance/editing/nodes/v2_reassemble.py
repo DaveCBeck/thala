@@ -5,7 +5,7 @@ and performs final coherence verification.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langsmith import traceable
@@ -118,7 +118,7 @@ async def v2_reassemble_node(state: dict) -> dict[str, Any]:
                 recommendation="reject",
             ).model_dump(),
             "status": "failed",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
         }
 
     logger.info(f"Reassembling document: {len(sections)} sections, {len(rewritten)} rewrites")
@@ -212,5 +212,5 @@ async def v2_reassemble_node(state: dict) -> dict[str, Any]:
         "verification": verification.model_dump(),
         "rewriting_complete": True,
         "status": status,
-        "completed_at": datetime.utcnow(),
+        "completed_at": datetime.now(timezone.utc),
     }

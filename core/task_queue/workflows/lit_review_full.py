@@ -96,7 +96,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
             current_phase = resume_from.get("phase", "")
 
             # Load incremental state for the current phase (mid-phase progress)
-            incremental_state = incremental_mgr.load_progress(task_id, current_phase)
+            incremental_state = await incremental_mgr.load_progress(task_id, current_phase)
             if incremental_state:
                 logger.info(
                     f"Loaded incremental state for phase '{current_phase}': "
@@ -169,15 +169,22 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     enhance_questions = [f"What are the key findings regarding {topic}?"]
 
                 # Create incremental checkpoint callback for supervision loops
-                def supervision_checkpoint(iteration: int, partial_results: dict) -> None:
+                async def supervision_checkpoint(iteration: int, partial_results: dict) -> None:
                     """Save incremental progress during supervision loops."""
-                    incremental_mgr.save_progress(
+                    await incremental_mgr.save_progress(
                         task_id=task_id,
                         phase="supervision",
                         iteration_count=iteration,
                         partial_results=partial_results,
                         checkpoint_interval=1,  # N=1 for supervision loops
                     )
+
+                # Pass incremental_state only if we're resuming the supervision phase
+                supervision_incremental_state = (
+                    incremental_state
+                    if incremental_state and incremental_state.get("phase") == "supervision"
+                    else None
+                )
 
                 enhance_result = await enhance_report(
                     report=lit_result["final_review"],
@@ -191,14 +198,8 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     run_editing=True,
                     run_fact_check=False,  # Disabled - adds latency without value
                     checkpoint_callback=supervision_checkpoint,
+                    incremental_state=supervision_incremental_state,
                 )
-
-                # Clear incremental state on phase completion
-                incremental_mgr.clear_progress(task_id)
-
-                # Update checkpoint as we progress through enhancement phases
-                if enhance_result.get("supervision_result"):
-                    checkpoint_callback("editing")
 
                 if enhance_result.get("status") == "failed":
                     logger.warning("Enhancement failed, using original lit review")
@@ -214,7 +215,8 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     f"report_length={len(final_report)}"
                 )
 
-                # Save outputs for potential resume
+                # Save phase outputs FIRST before clearing incremental state
+                # This prevents data loss if a crash occurs between clear and checkpoint
                 checkpoint_callback(
                     "editing",
                     phase_outputs={
@@ -223,6 +225,9 @@ class LitReviewFullWorkflow(BaseWorkflow):
                         "final_report": final_report,
                     },
                 )
+
+                # THEN clear incremental state (safe because phase checkpoint has outputs)
+                await incremental_mgr.clear_progress(task_id)
 
             except Exception as e:
                 logger.error(f"Enhancement failed: {e}", exc_info=True)

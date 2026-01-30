@@ -5,7 +5,7 @@ Provides the main function for running multi-language research.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langsmith import traceable
@@ -151,7 +151,7 @@ async def multi_lang_research(
         "per_language_record_ids": {},
         "comparative_record_id": None,
         "synthesis_record_id": None,
-        "started_at": datetime.utcnow(),
+        "started_at": datetime.now(timezone.utc),
         "completed_at": None,
         "current_phase": "initializing",
         "current_status": "Starting multi-language research",

@@ -12,9 +12,32 @@ To add a new task type:
 """
 
 from enum import Enum
-from typing import Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union
 
 from typing_extensions import TypedDict
+
+# =============================================================================
+# Checkpoint Callback Type Aliases
+# =============================================================================
+# Two distinct callback signatures exist for different checkpointing contexts:
+# - PhaseCheckpointCallback: Used by runner for workflow phase transitions
+# - IncrementalCheckpointCallback: Used by supervision loops for iteration checkpoints
+
+PhaseCheckpointCallback = Callable[[str, Optional[dict]], None]
+"""Callback for phase-level checkpoints in the task queue runner.
+
+Args:
+    phase: Phase name (e.g., "lit_review", "enhance", "loop1_iteration_2")
+    phase_outputs: Optional dict of outputs from the completed phase
+"""
+
+IncrementalCheckpointCallback = Callable[[int, dict], None]
+"""Callback for incremental checkpoints within iterative phases.
+
+Args:
+    iteration: Iteration number (1-indexed)
+    results: Dict containing partial results at this iteration
+"""
 
 
 class TaskType(Enum):
@@ -251,14 +274,30 @@ class CostCache(TypedDict):
 class IncrementalState(TypedDict):
     """Incremental checkpoint state for mid-phase resumption.
 
-    Stored at .thala/queue/incremental/{task_id}.json
+    Stored at .thala/queue/incremental/{task_id}.json.gz (gzip compressed)
     Allows resuming iterative phases (paper processing, supervision loops)
     from the last checkpoint rather than restarting the entire phase.
+
+    Compression: Uses gzip compression (~10-30x size reduction for JSON).
+
+    Delta-based checkpointing:
+        For supervision loops, partial_results stores only delta state:
+        - current_review: The current LLM output (essential for resume)
+        - iteration: Current iteration count
+        - new_dois_added: List of DOIs added in this iteration (not full corpus)
+
+        On resume, full state is reconstructed by:
+        1. Loading original corpus from phase_outputs["lit_result"]
+        2. Re-fetching newly added papers from Elasticsearch by DOI
+        3. Merging to reconstruct full state
+
+        This reduces checkpoint size from ~10MB to ~200KB (50x reduction),
+        plus gzip compression gives additional ~10x reduction.
     """
 
     task_id: str
     phase: str
     iteration_count: int  # Number of items processed
-    checkpoint_interval: int  # Every N items (for reference)
-    partial_results: dict  # Keyed by identifier (DOI, loop_id, etc.)
+    checkpoint_interval: int  # Stored for debugging/observability (not used in logic)
+    partial_results: dict[str, Any]  # Keyed by identifier (DOI, loop_id, etc.)
     last_checkpoint_at: str  # ISO timestamp

@@ -1,7 +1,7 @@
 """Action handlers for supervisor decisions."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from workflows.research.web_research.state import (
     ResearchQuestion,
@@ -97,7 +97,7 @@ async def handle_refine_draft(
     new_draft = DraftReport(
         content=action_data.get("updates", draft_content),
         version=(draft.get("version", 0) if draft else 0) + 1,
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         gaps_remaining=action_data.get("gaps", []),
     )
 

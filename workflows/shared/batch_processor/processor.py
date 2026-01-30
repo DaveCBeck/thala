@@ -12,7 +12,7 @@ LangSmith Integration:
 import asyncio
 import logging
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from anthropic import Anthropic, AsyncAnthropic
 from dotenv import load_dotenv
@@ -218,7 +218,7 @@ class BatchProcessor:
     @traceable(name="anthropic_batch_execute_with_callback", run_type="llm")
     async def execute_batch_with_callback(
         self,
-        callback: callable,
+        callback: Callable[[str, str, object], None],
         callback_interval: int = 300,
     ) -> dict[str, BatchResult]:
         """

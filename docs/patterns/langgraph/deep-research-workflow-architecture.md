@@ -128,7 +128,7 @@ State keys that receive parallel writes MUST use reducers.
 ```python
 """State schemas for deep research workflow."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from operator import add
 from typing import Annotated, Any, Literal, Optional
 from typing_extensions import TypedDict
@@ -557,7 +557,7 @@ async def deep_research(
         "final_report": None,
         "citations": [],
         "errors": [],
-        "started_at": datetime.utcnow(),
+        "started_at": datetime.now(timezone.utc),
         "completed_at": None,
         "current_status": "starting",
     }

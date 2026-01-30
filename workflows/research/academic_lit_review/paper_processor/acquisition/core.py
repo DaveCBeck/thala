@@ -39,7 +39,7 @@ Fallback Mechanism:
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from core.stores.retrieve_academic import RetrieveAcademicClient
 from workflows.research.academic_lit_review.state import (
@@ -173,7 +173,7 @@ async def run_paper_pipeline(
     max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
     use_batch_api: bool = True,
     fallback_manager: Optional["FallbackManager"] = None,
-    checkpoint_callback: Optional[callable] = None,
+    checkpoint_callback: Optional[Callable[[int, dict], None]] = None,
     checkpoint_interval: int = 5,
 ) -> tuple[dict[str, str], dict[str, dict], list[str], list[str], list[FallbackSubstitution]]:
     """Run streaming acquire→process pipeline for all papers.

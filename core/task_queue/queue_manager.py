@@ -13,7 +13,7 @@ import json
 import logging
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -99,7 +99,7 @@ class TaskQueueManager:
                 "categories": DEFAULT_CATEGORIES,
                 "last_category_index": -1,
                 "topics": [],
-                "last_updated": datetime.utcnow().isoformat(),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
             self._write_queue(initial_queue)
 
@@ -125,7 +125,7 @@ class TaskQueueManager:
 
     def _write_queue(self, queue: TaskQueue) -> None:
         """Write queue to disk atomically."""
-        queue["last_updated"] = datetime.utcnow().isoformat()
+        queue["last_updated"] = datetime.now(timezone.utc).isoformat()
 
         # Write to temp file first, then rename for atomicity
         temp_file = self.queue_file.with_suffix(".tmp")
@@ -183,7 +183,7 @@ class TaskQueueManager:
             "priority": pri_value,
             "status": TaskStatus.PENDING.value,
             "quality": quality,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "started_at": None,
             "completed_at": None,
             "langsmith_run_id": None,
@@ -338,7 +338,7 @@ class TaskQueueManager:
                 return True
 
             latest_start = max(started_times)
-            hours_elapsed = (datetime.utcnow() - latest_start).total_seconds() / 3600
+            hours_elapsed = (datetime.now(timezone.utc) - latest_start).total_seconds() / 3600
 
             return hours_elapsed >= config["stagger_hours"]
 
@@ -356,7 +356,7 @@ class TaskQueueManager:
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["status"] = TaskStatus.IN_PROGRESS.value
-                    task["started_at"] = datetime.utcnow().isoformat()
+                    task["started_at"] = datetime.now(timezone.utc).isoformat()
                     task["langsmith_run_id"] = langsmith_run_id
                     break
             self._write_queue(queue)
@@ -368,7 +368,7 @@ class TaskQueueManager:
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["status"] = TaskStatus.COMPLETED.value
-                    task["completed_at"] = datetime.utcnow().isoformat()
+                    task["completed_at"] = datetime.now(timezone.utc).isoformat()
                     break
             self._write_queue(queue)
 
@@ -384,7 +384,7 @@ class TaskQueueManager:
             for task in queue["topics"]:
                 if task["id"] == task_id:
                     task["status"] = TaskStatus.FAILED.value
-                    task["completed_at"] = datetime.utcnow().isoformat()
+                    task["completed_at"] = datetime.now(timezone.utc).isoformat()
                     task["error_message"] = error
                     break
             self._write_queue(queue)

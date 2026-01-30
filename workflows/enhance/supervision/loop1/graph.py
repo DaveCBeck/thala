@@ -11,11 +11,14 @@ and routing from the original supervised_lit_review location.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from operator import add
+from typing import Annotated, Any, Optional
 
 from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
 from typing_extensions import TypedDict
+
+from core.task_queue.schemas import IncrementalCheckpointCallback
 
 from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.enhance.supervision.shared.nodes import (
@@ -49,13 +52,13 @@ class Loop1State(TypedDict, total=False):
 
     # Iteration tracking
     iteration: int
-    issues_explored: list[str]
+    issues_explored: Annotated[list[str], add]
     is_complete: bool
 
     # Node outputs
     decision: Optional[dict]
     expansion_result: Optional[dict]
-    supervision_expansions: list[dict]
+    supervision_expansions: Annotated[list[dict], add]
 
     # Final outputs
     final_review: Optional[str]
@@ -73,7 +76,7 @@ class Loop1State(TypedDict, total=False):
     consecutive_failures: int
 
     # Checkpointing (for task queue interruption handling)
-    checkpoint_callback: Optional[callable]
+    checkpoint_callback: Optional[IncrementalCheckpointCallback]
 
 
 @dataclass
@@ -165,7 +168,8 @@ async def run_loop1_standalone(
     source_count: int = 0,
     quality_settings: dict[str, Any] | None = None,
     config: dict | None = None,
-    checkpoint_callback: callable | None = None,
+    checkpoint_callback: IncrementalCheckpointCallback | None = None,
+    incremental_state: dict[str, Any] | None = None,
 ) -> Loop1Result:
     """Run Loop 1 (theoretical depth supervision) as a standalone operation.
 
@@ -179,28 +183,51 @@ async def run_loop1_standalone(
         config: Optional LangGraph config for tracing
         checkpoint_callback: Optional callback for incremental checkpointing.
             Called with (iteration_count, partial_results_dict) after each iteration.
+        incremental_state: Optional checkpoint state for resumption.
+            Contains iteration_count and partial_results from previous run.
 
     Returns:
         Loop1Result with improved review and metadata
     """
+    # Handle resume from incremental state
+    resumed_iteration = 0
+    resumed_review = review
+    resumed_issues_explored: list[str] = []
+    resumed_supervision_expansions: list[dict] = []
+
+    if incremental_state:
+        partial_results = incremental_state.get("partial_results", {})
+        resumed_iteration = incremental_state.get("iteration_count", 0)
+
+        if partial_results:
+            # Restore state from checkpoint
+            resumed_review = partial_results.get("current_review", review)
+            resumed_issues_explored = partial_results.get("issues_explored", [])
+            resumed_supervision_expansions = partial_results.get("supervision_expansions", [])
+
+            logger.info(
+                f"Resuming Loop 1 from checkpoint: iteration {resumed_iteration}, "
+                f"{len(resumed_issues_explored)} issues already explored"
+            )
+
     initial_state: Loop1State = {
-        "current_review": review,
+        "current_review": resumed_review,
         "topic": topic,
         "research_questions": research_questions,
         "source_count": source_count,
         "quality_settings": quality_settings or {},
         "max_iterations": max_iterations,
-        "iteration": 0,
-        "issues_explored": [],
+        "iteration": resumed_iteration,
+        "issues_explored": resumed_issues_explored,
         "is_complete": False,
         "decision": None,
         "expansion_result": None,
-        "supervision_expansions": [],
+        "supervision_expansions": resumed_supervision_expansions,
         "final_review": None,
         "completion_reason": None,
-        "paper_corpus": {},
-        "paper_summaries": {},
-        "zotero_keys": {},
+        "paper_corpus": incremental_state.get("partial_results", {}).get("paper_corpus", {}) if incremental_state else {},
+        "paper_summaries": incremental_state.get("partial_results", {}).get("paper_summaries", {}) if incremental_state else {},
+        "zotero_keys": incremental_state.get("partial_results", {}).get("zotero_keys", {}) if incremental_state else {},
         "loop_error": None,
         "expansion_failed": False,
         "integration_failed": False,
@@ -208,10 +235,16 @@ async def run_loop1_standalone(
         "checkpoint_callback": checkpoint_callback,
     }
 
-    logger.info(
-        f"Starting Loop 1: max_iterations={max_iterations}, "
-        f"review length={len(review)} chars"
-    )
+    if resumed_iteration > 0:
+        logger.info(
+            f"Starting Loop 1 (resumed): iteration={resumed_iteration}/{max_iterations}, "
+            f"review length={len(resumed_review)} chars"
+        )
+    else:
+        logger.info(
+            f"Starting Loop 1: max_iterations={max_iterations}, "
+            f"review length={len(review)} chars"
+        )
 
     if config:
         final_state = await loop1_graph.ainvoke(initial_state, config=config)

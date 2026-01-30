@@ -190,7 +190,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
 ```python
 # keyword_search/searcher.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
@@ -201,7 +201,7 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
     min_citations = quality_settings.get("min_citations_filter", 10)
     recency_years = quality_settings.get("recency_years", 3)
 
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     recent_cutoff = current_year - recency_years  # e.g., 2023 if current is 2026
 
     async def search_single_query(query: str) -> list[OpenAlexWork]:
@@ -241,7 +241,7 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
 ```python
 # diffusion_engine/citation_fetcher.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 async def fetch_citations_raw(
@@ -250,7 +250,7 @@ async def fetch_citations_raw(
     recency_years: int = 3,
 ) -> tuple[list[dict], list[CitationEdge]]:
     """Fetch forward citations with recency-aware thresholds."""
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     recent_cutoff = current_year - recency_years
 
     async def fetch_single_paper(seed_doi: str):
@@ -340,7 +340,7 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
 ```python
 # diffusion_engine/termination.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
@@ -356,7 +356,7 @@ async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
         return {"final_corpus_dois": list(paper_corpus.keys())}
 
     # Partition by recency
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     cutoff_year = current_year - recency_years
 
     recent = [(doi, p) for doi, p in paper_corpus.items() if p.get("year", 0) >= cutoff_year]

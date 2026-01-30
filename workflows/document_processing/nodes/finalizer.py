@@ -3,7 +3,7 @@ Final workflow step for document processing.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from langsmith import traceable
 
@@ -43,14 +43,14 @@ async def finalize(state: DocumentProcessingState) -> dict:
         logger.info(f"Created {len(store_records)} store records")
 
         return {
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "current_status": "completed",
         }
 
     except Exception as e:
         logger.error(f"Finalize failed: {e}")
         return {
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "current_status": "completed_with_errors",
             "errors": [{"node": "finalizer", "error": str(e)}],
         }

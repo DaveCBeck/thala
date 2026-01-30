@@ -21,6 +21,7 @@ from typing import Optional
 
 from .budget_tracker import BudgetTracker
 from .checkpoint_manager import CheckpointManager
+from .incremental_state import IncrementalStateManager
 from .pricing import format_cost
 from .queue_manager import TaskQueueManager
 from .schemas import Task, WorkflowCheckpoint
@@ -103,13 +104,13 @@ async def run_task_workflow(
 
     # Mark as started
     queue_manager.mark_started(task_id, langsmith_run_id)
-    checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
+    await checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
 
     try:
         # Create checkpoint callback
-        def checkpoint_callback(phase: str, phase_outputs: dict = None, **kwargs):
+        async def checkpoint_callback(phase: str, phase_outputs: dict | None = None, **kwargs) -> None:
             """Update checkpoint during workflow execution."""
-            checkpoint_mgr.update_checkpoint(
+            await checkpoint_mgr.update_checkpoint(
                 task_id, phase, phase_outputs=phase_outputs, **kwargs
             )
             queue_manager.update_phase(task_id, phase)
@@ -139,17 +140,17 @@ async def run_task_workflow(
         # Mark complete or failed
         if result.get("status") == "success":
             queue_manager.mark_completed(task_id)
-            checkpoint_mgr.complete_work(task_id)
+            await checkpoint_mgr.complete_work(task_id)
             logger.info(f"Task {task_id[:8]} completed successfully")
         elif result.get("status") == "partial":
             # Partial success - mark complete but log warnings
             queue_manager.mark_completed(task_id)
-            checkpoint_mgr.complete_work(task_id)
+            await checkpoint_mgr.complete_work(task_id)
             logger.warning(f"Task {task_id[:8]} completed with errors: {result.get('errors')}")
         else:
             error = str(result.get("errors", "Unknown error"))
             queue_manager.mark_failed(task_id, error)
-            checkpoint_mgr.fail_work(task_id)
+            await checkpoint_mgr.fail_work(task_id)
             logger.error(f"Task {task_id[:8]} failed: {error}")
 
         return result
@@ -157,7 +158,7 @@ async def run_task_workflow(
     except Exception as e:
         logger.error(f"Task {task_id[:8]} failed with exception: {e}")
         queue_manager.mark_failed(task_id, str(e))
-        checkpoint_mgr.fail_work(task_id)
+        await checkpoint_mgr.fail_work(task_id)
         raise
 
 
@@ -169,84 +170,24 @@ async def run_single_task(
 ) -> Optional[dict]:
     """Run the next eligible task from the queue.
 
+    This is a convenience wrapper around run_queue_loop(max_tasks=1).
+
     Args:
         queue_dir: Override queue directory (for testing)
-        skip_resume: Skip incomplete work
+        skip_resume: Skip incomplete work and start with a new task
         dry_run: If True, only show what would run
         shutdown_coordinator: Optional coordinator for graceful shutdown
 
     Returns:
         Workflow result dict, or None if nothing to run
     """
-    queue_manager = TaskQueueManager(queue_dir=queue_dir)
-    checkpoint_mgr = CheckpointManager(queue_dir=queue_dir)
-    budget_tracker = BudgetTracker(queue_dir=queue_dir)
-
-    # Check for incomplete work first
-    if not skip_resume:
-        incomplete = checkpoint_mgr.get_incomplete_work()
-        if incomplete:
-            checkpoint = incomplete[0]
-            task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")  # backward compat
-            task = queue_manager.get_task(task_id)
-
-            if task:
-                task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
-                task_identifier = task.get("topic") or task.get("query", "unknown")
-                logger.info(f"Resuming incomplete work: {task_id[:8]} ({task_type})")
-
-                if dry_run:
-                    logger.info(f"Would resume: {task_identifier[:50]}...")
-                    return None
-
-                return await run_task_workflow(
-                    task,
-                    queue_manager,
-                    checkpoint_mgr,
-                    budget_tracker,
-                    resume_from=checkpoint,
-                    shutdown_coordinator=shutdown_coordinator,
-                )
-
-    # First check for bypass tasks (ignore concurrency limits)
-    task = _find_bypass_task(queue_manager)
-    if task:
-        task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
-        logger.info(f"Found bypass task: {task_type} (ignoring concurrency limits)")
-    else:
-        # Get next eligible task (respects concurrency)
-        task = queue_manager.get_next_eligible_task()
-
-    if not task:
-        logger.info("No eligible tasks to run")
-        return None
-
-    task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
-    task_identifier = task.get("topic") or task.get("query", "unknown")
-
-    # Check if zero-cost workflow (skip budget check)
-    workflow = get_workflow(task_type)
-    is_zero_cost = getattr(workflow, "is_zero_cost", False)
-
-    if not is_zero_cost:
-        # Check budget for workflows that incur costs
-        should_proceed, reason = budget_tracker.should_proceed()
-        if not should_proceed:
-            logger.warning(f"Cannot proceed: {reason}")
-            return None
-    else:
-        logger.info(f"Skipping budget check for zero-cost workflow: {task_type}")
-
-    if dry_run:
-        logger.info(f"Would run ({task_type}): {task_identifier[:50]}...")
-        return None
-
-    # Run the task
-    return await run_task_workflow(
-        task,
-        queue_manager,
-        checkpoint_mgr,
-        budget_tracker,
+    # Delegate to run_queue_loop with max_tasks=1
+    return await run_queue_loop(
+        queue_dir=queue_dir,
+        max_tasks=1,
+        skip_resume=skip_resume,
+        dry_run=dry_run,
+        install_signal_handlers=False,  # Don't install handlers for single task
         shutdown_coordinator=shutdown_coordinator,
     )
 
@@ -254,51 +195,78 @@ async def run_single_task(
 async def run_queue_loop(
     queue_dir: Optional[Path] = None,
     max_tasks: Optional[int] = None,
+    skip_resume: bool = False,
     dry_run: bool = False,
     check_interval: float = 300.0,  # 5 minutes
-) -> None:
+    install_signal_handlers: bool = True,
+    shutdown_coordinator: Optional[ShutdownCoordinator] = None,
+) -> Optional[dict]:
     """Continuously process tasks from queue with graceful shutdown support.
 
-    Installs signal handlers for SIGINT/SIGTERM to enable graceful shutdown.
+    Optionally installs signal handlers for SIGINT/SIGTERM to enable graceful shutdown.
     When a shutdown signal is received, the current checkpoint is saved
     and the loop exits cleanly.
+
+    This function also supports single-task execution when max_tasks=1, which is
+    how run_single_task() is implemented.
 
     Args:
         queue_dir: Override queue directory (for testing)
         max_tasks: Maximum tasks to process (None = unlimited)
+        skip_resume: Skip incomplete work and start with new tasks
         dry_run: If True, only show what would run
         check_interval: Seconds between queue checks when nothing to run
+        install_signal_handlers: Whether to install SIGINT/SIGTERM handlers (default True)
+        shutdown_coordinator: Optional pre-existing coordinator (if None, gets global one)
+
+    Returns:
+        When max_tasks=1: Workflow result dict, or None if nothing to run
+        When max_tasks!=1: Always returns None (runs until stopped)
     """
     from core.utils.async_http_client import cleanup_all_clients
 
-    # Get or create shutdown coordinator and install signal handlers
-    coordinator = get_shutdown_coordinator()
-    coordinator.install_signal_handlers()
+    # Get or create shutdown coordinator
+    coordinator = shutdown_coordinator or get_shutdown_coordinator()
+    if install_signal_handlers:
+        coordinator.install_signal_handlers()
 
     queue_manager = TaskQueueManager(queue_dir=queue_dir)
     checkpoint_mgr = CheckpointManager(queue_dir=queue_dir)
     budget_tracker = BudgetTracker(queue_dir=queue_dir)
 
     # Clean up any orphaned temp files from interrupted writes
-    checkpoint_mgr.cleanup_orphaned_temps()
+    await checkpoint_mgr.cleanup_orphaned_temps()
+
+    # Also clean up orphaned temp files in incremental directory
+    incremental_mgr = IncrementalStateManager(incremental_dir=queue_dir / "incremental" if queue_dir else None)
+    cleaned = await incremental_mgr.cleanup_orphaned_temps()
+    if cleaned > 0:
+        logger.info(f"Cleaned up {cleaned} orphaned incremental temp files")
 
     tasks_processed = 0
+    last_result: Optional[dict] = None  # Track result for max_tasks=1 case
+    is_single_task_mode = max_tasks == 1
 
     try:
         while not coordinator.shutdown_requested:
-            # Check for incomplete work first
-            incomplete = checkpoint_mgr.get_incomplete_work()
-            if incomplete:
-                checkpoint = incomplete[0]
-                task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")  # backward compat
-                task = queue_manager.get_task(task_id)
+            # Check for incomplete work first (unless skip_resume is set)
+            if not skip_resume:
+                incomplete = await checkpoint_mgr.get_incomplete_work()
+                if incomplete:
+                    checkpoint = incomplete[0]
+                    task_id = checkpoint.get("task_id") or checkpoint.get("topic_id")  # backward compat
+                    task = queue_manager.get_task(task_id)
 
-                if task:
-                    task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
-                    logger.info(f"Resuming incomplete work: {task_id[:8]} ({task_type})")
+                    if task:
+                        task_type = task.get("task_type", DEFAULT_WORKFLOW_TYPE)
+                        task_identifier = task.get("topic") or task.get("query", "unknown")
+                        logger.info(f"Resuming incomplete work: {task_id[:8]} ({task_type})")
 
-                    if not dry_run:
-                        await run_task_workflow(
+                        if dry_run:
+                            logger.info(f"Would resume: {task_identifier[:50]}...")
+                            return None
+
+                        last_result = await run_task_workflow(
                             task,
                             queue_manager,
                             checkpoint_mgr,
@@ -316,7 +284,7 @@ async def run_queue_loop(
                         if max_tasks and tasks_processed >= max_tasks:
                             logger.info(f"Processed {tasks_processed} tasks, stopping")
                             break
-                    continue
+                        continue
 
             # First check for bypass tasks (ignore concurrency limits)
             task = _find_bypass_task(queue_manager)
@@ -328,6 +296,11 @@ async def run_queue_loop(
                 task = queue_manager.get_next_eligible_task()
 
             if not task:
+                # In single-task mode, return immediately when no tasks
+                if is_single_task_mode:
+                    logger.info("No eligible tasks to run")
+                    return None
+
                 logger.info(f"No eligible tasks. Checking again in {check_interval}s...")
                 # Use interruptible sleep - returns True if shutdown requested
                 if await coordinator.wait_or_shutdown(check_interval):
@@ -346,6 +319,11 @@ async def run_queue_loop(
                 # Check budget for workflows that incur costs
                 should_proceed, reason = budget_tracker.should_proceed()
                 if not should_proceed:
+                    # In single-task mode, return None on budget exceeded
+                    if is_single_task_mode:
+                        logger.warning(f"Cannot proceed: {reason}")
+                        return None
+
                     logger.warning(f"Pausing due to budget: {reason}")
                     # Use interruptible sleep for an hour
                     if await coordinator.wait_or_shutdown(3600):
@@ -357,11 +335,11 @@ async def run_queue_loop(
 
             if dry_run:
                 logger.info(f"Would run ({task_type}): {task_identifier[:50]}...")
-                break
+                return None if is_single_task_mode else None
 
             # Run the task
             try:
-                await run_task_workflow(
+                last_result = await run_task_workflow(
                     task,
                     queue_manager,
                     checkpoint_mgr,
@@ -371,7 +349,10 @@ async def run_queue_loop(
                 tasks_processed += 1
             except Exception as e:
                 logger.error(f"Task failed: {e}")
-                # Continue to next task
+                # In single-task mode, re-raise exceptions
+                if is_single_task_mode:
+                    raise
+                # In loop mode, continue to next task
 
             # Check for shutdown after task completion
             if coordinator.shutdown_requested:
@@ -383,7 +364,8 @@ async def run_queue_loop(
                 break
 
             # Get adaptive delay based on budget (skip for zero-cost workflows)
-            if not is_zero_cost:
+            # Only apply stagger delays in loop mode, not single-task mode
+            if not is_zero_cost and not is_single_task_mode:
                 config = queue_manager.get_concurrency_config()
                 if config["mode"] == "stagger_hours":
                     base_hours = config["stagger_hours"]
@@ -402,13 +384,17 @@ async def run_queue_loop(
     finally:
         # Cleanup on exit
         logger.info("Cleaning up resources...")
-        coordinator.remove_signal_handlers()
+        if install_signal_handlers:
+            coordinator.remove_signal_handlers()
         await cleanup_all_clients()
         logger.info(f"Queue loop exiting. Processed {tasks_processed} tasks.")
 
+    # Return result for single-task mode
+    return last_result if is_single_task_mode else None
 
-def print_status():
-    """Print current queue and budget status."""
+
+async def print_status_async():
+    """Print current queue and budget status (async implementation)."""
     queue_manager = TaskQueueManager()
     checkpoint_mgr = CheckpointManager()
     budget_tracker = BudgetTracker()
@@ -428,7 +414,7 @@ def print_status():
         print(f"  {status_name}: {count}")
 
     # Active work
-    active = checkpoint_mgr.get_active_work()
+    active = await checkpoint_mgr.get_active_work()
     if active:
         print(f"\n=== ACTIVE ({len(active)}) ===")
         for cp in active:
@@ -443,3 +429,12 @@ def print_status():
         task_type = next_task.get("task_type", DEFAULT_WORKFLOW_TYPE)
         task_identifier = next_task.get("topic") or next_task.get("query", "unknown")
         print(f"  [{task_type}] {task_identifier[:50]}...")
+
+
+def print_status():
+    """Print current queue and budget status.
+
+    Sync wrapper that runs the async implementation.
+    """
+    import asyncio
+    asyncio.run(print_status_async())
