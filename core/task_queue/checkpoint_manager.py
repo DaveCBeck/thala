@@ -52,6 +52,25 @@ class CheckpointManager:
 
         self.queue_dir.mkdir(parents=True, exist_ok=True)
 
+    def cleanup_orphaned_temps(self) -> int:
+        """Clean up orphaned .tmp files from interrupted writes.
+
+        These files can be left behind if the process is killed during
+        an atomic write operation.
+
+        Returns:
+            Number of temp files cleaned up
+        """
+        cleaned = 0
+        for tmp_file in self.queue_dir.glob("*.tmp"):
+            try:
+                tmp_file.unlink()
+                logger.info(f"Cleaned up orphaned temp file: {tmp_file.name}")
+                cleaned += 1
+            except OSError as e:
+                logger.warning(f"Failed to clean up temp file {tmp_file}: {e}")
+        return cleaned
+
     def _read_current_work(self) -> CurrentWork:
         """Read current work from disk."""
         if self.current_work_file.exists():

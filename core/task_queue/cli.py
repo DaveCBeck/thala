@@ -521,9 +521,12 @@ def cmd_stop(args):
 
 
 def cmd_daemon(args):
-    """Run as daemon (internal use)."""
+    """Run as daemon (internal use).
+
+    Signal handlers for graceful shutdown are installed by run_queue_loop()
+    using asyncio-native loop.add_signal_handler() for proper integration.
+    """
     import asyncio
-    import signal
 
     # Write PID file
     DAEMON_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -531,16 +534,8 @@ def cmd_daemon(args):
 
     print(f"Daemon started (PID {os.getpid()})")
 
-    # Handle shutdown signals
-    def shutdown(signum, frame):
-        print("Shutting down...")
-        DAEMON_PID_FILE.unlink(missing_ok=True)
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
-
     # Import runner and start loop
+    # Signal handlers are installed inside run_queue_loop() for proper asyncio integration
     from core.task_queue.runner import run_queue_loop
 
     try:
@@ -550,6 +545,7 @@ def cmd_daemon(args):
         ))
     finally:
         DAEMON_PID_FILE.unlink(missing_ok=True)
+        print("Daemon stopped")
 
 
 def main():
