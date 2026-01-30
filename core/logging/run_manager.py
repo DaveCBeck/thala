@@ -4,6 +4,19 @@ Provides run lifecycle management for module-based logging. A "run" is a
 logical unit of work (task queue dispatch or test execution) that triggers
 log rotation on first write to each module's log file.
 
+Thread Safety
+-------------
+The `should_rotate()` function uses a threading.Lock to ensure atomic
+check-and-add operations on the rotation set. This prevents race conditions
+when multiple threads inherit the same ContextVar context and share the
+same `_rotated_this_run` set reference.
+
+While Python's logging.Handler.handle() acquires a per-handler lock before
+calling emit(), multiple handlers or loggers can call should_rotate()
+concurrently. The explicit lock in should_rotate() ensures that:
+1. Only one thread can check and mark a log as rotated at a time
+2. No duplicate rotations occur even under concurrent access
+
 Usage:
     from core.logging import start_run, end_run
 
@@ -14,6 +27,7 @@ Usage:
         end_run()
 """
 
+import threading
 from contextvars import ContextVar
 
 # Both must be ContextVars for async safety - prevents state leakage between
@@ -23,7 +37,14 @@ _rotated_this_run: ContextVar[set[str] | None] = ContextVar("rotated_this_run", 
 
 # Cache module-to-log resolution (populated on first access per module name)
 # This is a global cache shared across runs - module names don't change
+# IMPORTANT: This cache assumes logger names follow the standard __name__ pattern.
+# Do NOT create loggers with dynamic names (e.g., f"module.{task_id}") as the cache
+# is unbounded. Module names are finite and determined by the codebase structure.
 _module_log_cache: dict[str, str] = {}
+
+# Lock for thread-safe check-and-add in should_rotate()
+# Prevents race condition when multiple threads share the same ContextVar context
+_rotation_lock = threading.Lock()
 
 # Mapping from module path prefixes to log file names
 # Uses longest-prefix-match to resolve module paths to log names
@@ -98,6 +119,13 @@ def should_rotate(log_name: str) -> bool:
 
     Also marks the log as rotated to prevent duplicate rotations.
 
+    Thread Safety:
+        Uses _rotation_lock to make the check-and-add operation atomic.
+        This prevents race conditions when multiple threads share the same
+        ContextVar context (e.g., threads spawned from a parent that called
+        start_run()). Without the lock, two threads could both pass the
+        "if log_name in rotated" check before either adds to the set.
+
     Args:
         log_name: The log file name (without .log extension)
 
@@ -110,12 +138,12 @@ def should_rotate(log_name: str) -> bool:
     if run_id is None or rotated is None:
         return False
 
-    if log_name in rotated:
-        return False
-
-    # Mark as rotated before returning
-    rotated.add(log_name)
-    return True
+    # Atomic check-and-add to prevent race conditions
+    with _rotation_lock:
+        if log_name in rotated:
+            return False
+        rotated.add(log_name)
+        return True
 
 
 def module_to_log_name(module_name: str) -> str:
@@ -137,6 +165,10 @@ def module_to_log_name(module_name: str) -> str:
 
 def _compute_log_name(module_name: str) -> str:
     """Find longest matching prefix in MODULE_TO_LOG.
+
+    SECURITY: Unmapped modules fall back to "misc" which prevents
+    arbitrary file creation via malicious logger names. Never use
+    module_name directly in file paths without sanitization.
 
     Args:
         module_name: The __name__ of the module

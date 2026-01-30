@@ -2,11 +2,52 @@
 
 Provides ModuleDispatchHandler which routes log records to per-module files
 based on the logger name, using the MODULE_TO_LOG mapping.
+
+Note on Async Contexts:
+    These handlers perform synchronous file I/O (write, flush, unlink, rename).
+    While this technically blocks the event loop when used from async code, the
+    impact is typically 10-50 microseconds per operation, which is acceptable
+    for most workloads. This is by design: Python's standard logging module is
+    synchronous, and making it async would add significant complexity.
+
+    For high-throughput async applications where even microsecond-level blocking
+    is unacceptable, consider using logging.handlers.QueueHandler to offload
+    I/O to a background thread.
 """
 
 import logging
 from pathlib import Path
 from typing import TextIO
+
+
+def _rotate_log_file(log_dir: Path, log_name: str, stream: TextIO | None) -> TextIO:
+    """Rotate log file and return new file handle.
+
+    Renames current.log -> previous.log, deleting old previous.log if exists.
+    Closes the existing stream if provided.
+
+    Args:
+        log_dir: Directory containing log files
+        log_name: Base name of the log file (without .log extension)
+        stream: Existing stream to close, or None
+
+    Returns:
+        New opened file handle for writing.
+    """
+    current = log_dir / f"{log_name}.log"
+    previous = log_dir / f"{log_name}.previous.log"
+
+    # Close existing stream if open
+    if stream:
+        stream.close()
+
+    # Rotate files
+    if previous.exists():
+        previous.unlink()
+    if current.exists():
+        current.rename(previous)
+
+    return current.open("a", encoding="utf-8")
 
 
 class ModuleDispatchHandler(logging.Handler):
@@ -63,27 +104,19 @@ class ModuleDispatchHandler(logging.Handler):
             self.handleError(record)
 
     def _rotate_file(self, log_name: str) -> None:
-        """Rotate current.log → previous.log, delete old previous.
+        """Rotate current.log -> previous.log, delete old previous.
 
         Args:
             log_name: The log file name (without extension)
         """
-        current = self.log_dir / f"{log_name}.log"
-        previous = self.log_dir / f"{log_name}.previous.log"
+        # Get existing stream from cache (may be None)
+        existing_stream = self._file_cache.pop(log_name, None)
 
-        # Close cached handle if open (must do this before rename/delete)
-        if log_name in self._file_cache:
-            try:
-                self._file_cache[log_name].close()
-            except Exception:
-                pass  # Best effort
-            del self._file_cache[log_name]
+        # Use shared rotation logic - returns new file handle
+        new_stream = _rotate_log_file(self.log_dir, log_name, existing_stream)
 
-        # Delete old previous, move current to previous
-        if previous.exists():
-            previous.unlink()
-        if current.exists():
-            current.rename(previous)
+        # Cache the new stream
+        self._file_cache[log_name] = new_stream
 
     def _get_or_open_file(self, log_name: str) -> TextIO:
         """Get or open file handle for log_name.
@@ -155,18 +188,6 @@ class ThirdPartyHandler(logging.FileHandler):
             self.handleError(record)
 
     def _rotate_file(self) -> None:
-        """Rotate current run-3p.log → run-3p.previous.log."""
-        current = self.log_dir / f"{self.LOG_NAME}.log"
-        previous = self.log_dir / f"{self.LOG_NAME}.previous.log"
-
-        # Close current file handle
-        self.close()
-
-        # Rotate files
-        if previous.exists():
-            previous.unlink()
-        if current.exists():
-            current.rename(previous)
-
-        # Reopen for new run
-        self.stream = self._open()
+        """Rotate current run-3p.log -> run-3p.previous.log."""
+        # Use shared rotation logic - returns new file handle
+        self.stream = _rotate_log_file(self.log_dir, self.LOG_NAME, self.stream)

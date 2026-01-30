@@ -13,6 +13,7 @@ Uses THALA_QUEUE_PROJECT for LangSmith tracing to isolate queue costs
 from manual testing/development costs.
 """
 
+import asyncio
 import logging
 import os
 import uuid
@@ -157,6 +158,11 @@ async def run_task_workflow(
             logger.error(f"Task {task_id[:8]} failed: {error}")
 
         return result
+
+    except asyncio.CancelledError:
+        logger.info(f"Task {task_id[:8]} cancelled - checkpoint preserved for resumption")
+        # Don't mark as failed - preserves checkpoint for later resumption
+        raise
 
     except Exception as e:
         logger.error(f"Task {task_id[:8]} failed with exception: {e}")

@@ -34,11 +34,10 @@ from core.logging.run_manager import (
 )
 
 __all__ = [
+    # Run lifecycle
     "start_run",
     "end_run",
-    "get_current_run_id",
-    "module_to_log_name",
+    # Handlers (for config.py)
     "ModuleDispatchHandler",
     "ThirdPartyHandler",
-    "MODULE_TO_LOG",
 ]

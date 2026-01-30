@@ -15,18 +15,30 @@ Usage:
     python testing/test_research_workflow.py "topic" quick
 """
 
+from collections.abc import Generator
+
 import pytest
 
 from core.logging import end_run, start_run
 
 
 @pytest.fixture(autouse=True)
-def logging_run(request):
+def logging_run(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     """Rotate logs at test module boundaries.
 
     Each test module gets its own logging run, which triggers log rotation
     on first write to each module's log file.
+
+    When running with pytest-xdist, each worker uses a separate log directory
+    to prevent file corruption from concurrent writes.
     """
+    import os
+
+    # Handle pytest-xdist worker isolation to prevent log file corruption
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker_id:
+        os.environ["THALA_LOG_DIR"] = f"logs/test-{worker_id}"
+
     # Use test module path as run identifier (e.g., "test-testing-test_cache")
     test_path = request.node.nodeid.split("::")[0]  # e.g., "testing/test_cache.py"
     test_name = test_path.replace("/", "-").replace(".py", "")
