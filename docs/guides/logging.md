@@ -6,7 +6,7 @@ Thala uses a centralized logging configuration via `core.config.configure_loggin
 
 - **Two-tier logging**: Console and file outputs with independent log levels
 - **Third-party isolation**: Noisy library logs go to a separate file
-- **Automatic cleanup**: Keeps 5 most recent log files per type
+- **Automatic cleanup**: Keeps 4 most recent log files per type
 - **Environment-based config**: No code changes needed to adjust verbosity
 
 ## Environment Variables
@@ -23,16 +23,19 @@ Stored in `./logs/` (project root):
 
 ```
 logs/
-├── academic_lit_review_20260113_143052.log      # Test-specific logs
-├── academic_lit_review-3p_20260113_143052.log   # Third-party logs for that run
-├── thala_20260113_141230.log                    # Service logs (default name)
-├── thala-3p_20260113_141230.log
-└── ...
+├── academic_lit_review.log      # Test-specific logs
+├── academic_lit_review-3p.log   # Third-party logs for that run
+├── thala.log                    # Service logs (default name)
+├── thala-3p.log
+└── previous/                    # Rotated versions
+    ├── thala.1.log
+    ├── thala.2.log
+    └── ...
 ```
 
-- **Format**: `{name}_{YYYYMMDD_HHMMSS}.log` and `{name}-3p_{YYYYMMDD_HHMMSS}.log`
-- **Retention**: 5 most recent files per name (cleanup on startup)
-- **Rotation**: New file per process start
+- **Format**: `{name}.log` and `{name}-3p.log` (stable names)
+- **Retention**: 4 previous versions per name (cleanup on startup)
+- **Rotation**: Previous logs moved to `previous/` directory
 
 ## Third-Party Loggers
 
