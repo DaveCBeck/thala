@@ -65,14 +65,28 @@ async def delete_index(client: AsyncElasticsearch, name: str) -> None:
         logger.info(f"Deleted index: {name}")
 
 
-async def setup_indices(reset: bool = False) -> None:
-    """Set up all index templates and create indices."""
-    coherence_client = AsyncElasticsearch(hosts=[ES_COHERENCE_HOST])
-    forgotten_client = AsyncElasticsearch(hosts=[ES_FORGOTTEN_HOST])
+async def setup_indices(
+    reset: bool = False,
+    coherence_host: str | None = None,
+    forgotten_host: str | None = None,
+) -> None:
+    """Set up all index templates and create indices.
+
+    Args:
+        reset: Delete and recreate indices if True
+        coherence_host: Override for coherence ES instance (default: ES_COHERENCE_HOST)
+        forgotten_host: Override for forgotten ES instance (default: ES_FORGOTTEN_HOST)
+    """
+    # Use provided hosts or fall back to module constants
+    effective_coherence_host = coherence_host or ES_COHERENCE_HOST
+    effective_forgotten_host = forgotten_host or ES_FORGOTTEN_HOST
+
+    coherence_client = AsyncElasticsearch(hosts=[effective_coherence_host])
+    forgotten_client = AsyncElasticsearch(hosts=[effective_forgotten_host])
 
     try:
         # Apply templates and create indices on coherence instance
-        logger.info(f"Setting up coherence instance ({ES_COHERENCE_HOST})...")
+        logger.info(f"Setting up coherence instance ({effective_coherence_host})...")
         for name in COHERENCE_INDICES:
             if reset:
                 await delete_index(coherence_client, name)
@@ -80,7 +94,7 @@ async def setup_indices(reset: bool = False) -> None:
             await create_index(coherence_client, name)
 
         # Apply templates and create indices on forgotten instance
-        logger.info(f"Setting up forgotten instance ({ES_FORGOTTEN_HOST})...")
+        logger.info(f"Setting up forgotten instance ({effective_forgotten_host})...")
         for name in FORGOTTEN_INDICES:
             if reset:
                 await delete_index(forgotten_client, name)

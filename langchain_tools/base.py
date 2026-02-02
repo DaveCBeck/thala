@@ -133,6 +133,10 @@ class StoreManager:
             await self._zotero.close()
         if self._translation is not None:
             await self._translation.close()
+        # ChromaDB cleanup - HttpClient manages connection pooling internally,
+        # but we reset the reference for clean state
+        if self._chroma is not None:
+            self._chroma = None
 
 
 # Singleton instance for convenience
@@ -145,3 +149,13 @@ def get_store_manager() -> StoreManager:
     if _default_manager is None:
         _default_manager = StoreManager()
     return _default_manager
+
+
+def _reset_default_manager() -> None:
+    """Reset the default StoreManager singleton.
+
+    For testing only. Provides a stable API for test fixtures
+    instead of patching internal module variables.
+    """
+    global _default_manager
+    _default_manager = None
