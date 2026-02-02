@@ -80,21 +80,6 @@ async def multi_lang_research(
 ) -> MultiLangResult
 ```
 
-### Supervised Literature Review
-
-**Location:** `workflows/wrappers/supervised_lit_review/api.py`
-
-```python
-async def supervised_lit_review(
-    topic: str,
-    research_questions: list[str],
-    quality: QualityTier = "standard",
-    language: str = "en",
-    date_range: Optional[tuple[int, int]] = None,
-    supervision_loops: str = "all",
-) -> dict[str, Any]
-```
-
 ### Document Processing
 
 **Location:** `workflows/document_processing/graph.py`

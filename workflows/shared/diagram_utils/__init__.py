@@ -35,6 +35,11 @@ Example with quality refinement:
 # Re-export all public symbols for backward compatibility
 from .conversion import convert_svg_to_png
 from .core import generate_diagram
+from .validation import (
+    extract_validation_error_type,
+    sanitize_svg_text_entities,
+    validate_svg_xml,
+)
 from .generation import analyze_content_for_diagram, generate_svg_diagram
 from .overlap import check_bounds_violations, check_text_overlaps, check_text_shape_overlaps
 from .quality_assessment import assess_diagram_quality, generate_refinement_feedback
@@ -76,4 +81,8 @@ __all__ = [
     "check_bounds_violations",
     "check_text_shape_overlaps",
     "convert_svg_to_png",
+    # Validation utilities
+    "validate_svg_xml",
+    "sanitize_svg_text_entities",
+    "extract_validation_error_type",
 ]

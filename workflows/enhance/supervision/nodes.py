@@ -29,6 +29,8 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
     quality_settings = state.get("quality_settings", {})
     max_iterations = state.get("max_iterations_per_loop", 3)
     paper_corpus = state.get("paper_corpus", {})
+    checkpoint_callback = state.get("checkpoint_callback")
+    incremental_state = state.get("incremental_state")
 
     logger.info(f"Running Loop 1 (theoretical depth) on {len(current_review)} char review")
 
@@ -41,14 +43,9 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
             source_count=len(paper_corpus),
             quality_settings=quality_settings,
             config=config,
+            checkpoint_callback=checkpoint_callback,
+            incremental_state=incremental_state,
         )
-
-        loop_progress = state.get("loop_progress", [])
-        loop_progress.append({
-            "loop": "loop1",
-            "changes_summary": result.changes_summary,
-            "issues_explored": result.issues_explored,
-        })
 
         logger.info(f"Loop 1 complete: {result.changes_summary}")
 
@@ -59,19 +56,21 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
                 "changes_summary": result.changes_summary,
                 "issues_explored": result.issues_explored,
             },
-            "loop_progress": loop_progress,
+            "loop_progress": [{
+                "loop": "loop1",
+                "changes_summary": result.changes_summary,
+                "issues_explored": result.issues_explored,
+            }],
         }
 
     except Exception as e:
         logger.error(f"Loop 1 failed: {e}")
-        errors = state.get("errors", [])
-        errors.append({
-            "loop": "loop1",
-            "error": str(e),
-        })
         return {
             "review_loop1": current_review,  # Keep original on failure
-            "errors": errors,
+            "errors": [{
+                "loop": "loop1",
+                "error": str(e),
+            }],
         }
 
 
@@ -89,6 +88,8 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
     paper_corpus = state.get("paper_corpus", {})
     paper_summaries = state.get("paper_summaries", {})
     zotero_keys = state.get("zotero_keys", {})
+    checkpoint_callback = state.get("checkpoint_callback")
+    incremental_state = state.get("incremental_state")
 
     logger.info(
         f"Running Loop 2 (literature expansion) on {len(current_review)} char review "
@@ -114,15 +115,9 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
             quality_settings=quality_settings,
             max_iterations=max_iterations,
             config=config,
+            checkpoint_callback=checkpoint_callback,
+            incremental_state=incremental_state,
         )
-
-        loop_progress = state.get("loop_progress", [])
-        loop_progress.append({
-            "loop": "loop2",
-            "explored_bases": result.get("explored_bases", []),
-            "iteration": result.get("iteration", 0),
-            "errors": result.get("errors", []),
-        })
 
         logger.info(
             f"Loop 2 complete: explored {len(result.get('explored_bases', []))} literature bases, "
@@ -140,19 +135,22 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
                 "iteration": result.get("iteration", 0),
                 "errors": result.get("errors", []),
             },
-            "loop_progress": loop_progress,
+            "loop_progress": [{
+                "loop": "loop2",
+                "explored_bases": result.get("explored_bases", []),
+                "iteration": result.get("iteration", 0),
+                "errors": result.get("errors", []),
+            }],
         }
 
     except Exception as e:
         logger.error(f"Loop 2 failed: {e}")
-        errors = state.get("errors", [])
-        errors.append({
-            "loop": "loop2",
-            "error": str(e),
-        })
         return {
             "review_loop2": current_review,  # Keep current on failure
-            "errors": errors,
+            "errors": [{
+                "loop": "loop2",
+                "error": str(e),
+            }],
         }
 
 

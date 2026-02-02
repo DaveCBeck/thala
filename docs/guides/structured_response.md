@@ -355,34 +355,6 @@ results = await get_structured_output(
 # Results are already validated Pydantic models
 ```
 
-### From `extract_json_cached`
-
-**Before:**
-```python
-from workflows.shared.llm_utils import extract_json_cached
-
-data = await extract_json_cached(
-    text=content,
-    system_instructions=SYSTEM,
-    tier=ModelTier.HAIKU,
-)
-# data is an untyped dict
-```
-
-**After:**
-```python
-from workflows.shared.llm_utils import get_structured_output
-
-result = await get_structured_output(
-    output_schema=MySchema,
-    user_prompt=content,
-    system_prompt=SYSTEM,
-    tier=ModelTier.HAIKU,
-    enable_prompt_cache=True,
-)
-# result is a validated MySchema instance
-```
-
 ## Cost Optimization Tips
 
 1. **Use `prefer_batch_api=True` when latency isn't critical**: 50% cost reduction on requests

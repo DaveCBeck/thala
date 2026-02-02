@@ -18,10 +18,10 @@ Technology stack and version constraints for research agents.
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| langchain | >=1.2.0 | LangChain agent framework |
-| langchain-anthropic | >=0.3.0 | Anthropic Claude integration |
+| langchain | >=1.2.6 | LangChain agent framework |
+| langchain-anthropic | >=1.3.1 | Anthropic Claude integration |
 | anthropic | >=0.40.0 | Anthropic API client |
-| langgraph | >=0.2.0 | Graph-based workflows |
+| langgraph | >=1.0.6 | Graph-based workflows |
 | pydantic | >=2.0 | Data validation |
 | chromadb | >=1.0.0 | ChromaDB Python client |
 | elasticsearch[async] | >=8.17.0 | Elasticsearch async client |

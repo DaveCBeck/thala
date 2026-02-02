@@ -241,6 +241,13 @@ async def finalize_node(state: IllustrateState) -> dict:
     all_errors = existing_errors + errors
     status = _determine_status(image_plan, final_images, all_errors)
 
+    # Log which images were dropped (failed review after retries)
+    planned_ids = {p.location_id for p in image_plan}
+    approved_ids = {img["location_id"] for img in final_images}
+    dropped_ids = planned_ids - approved_ids
+    for loc_id in dropped_ids:
+        logger.warning(f"Image dropped (failed review after retries): {loc_id}")
+
     logger.info(
         f"Finalize complete: {len(final_images)}/{len(image_plan)} images, status={status}"
     )

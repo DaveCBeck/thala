@@ -6,7 +6,7 @@ Creates a StoreRecord with embedding for semantic search.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -33,7 +33,7 @@ async def save_findings(state: DeepResearchState) -> dict[str, Any]:
         logger.warning("No final report to save")
         return {
             "current_status": "completed",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "errors": [{"node": "save_findings", "error": "No final report"}],
         }
 
@@ -84,7 +84,7 @@ async def save_findings(state: DeepResearchState) -> dict[str, Any]:
         return {
             "store_record_id": str(record_id),
             "current_status": "completed",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
         }
 
     except ImportError as e:
@@ -92,7 +92,7 @@ async def save_findings(state: DeepResearchState) -> dict[str, Any]:
         # Continue without saving - the report is still in state
         return {
             "current_status": "completed",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "errors": [{"node": "save_findings", "error": f"Store not available: {e}"}],
         }
 
@@ -100,6 +100,6 @@ async def save_findings(state: DeepResearchState) -> dict[str, Any]:
         logger.error(f"Failed to save research: {e}")
         return {
             "current_status": "completed",
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "errors": [{"node": "save_findings", "error": str(e)}],
         }

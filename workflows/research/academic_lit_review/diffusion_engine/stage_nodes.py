@@ -1,7 +1,7 @@
 """Stage node functions: initialization, seed selection, and citation expansion."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from workflows.research.academic_lit_review.state import (
@@ -112,7 +112,7 @@ async def select_expansion_seeds(state: DiffusionEngineState) -> dict[str, Any]:
         new_relevant=[],
         new_rejected=[],
         coverage_delta=0.0,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         completed_at=None,
     )
 

@@ -1,7 +1,7 @@
 """Citation graph construction and serialization."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import networkx as nx
@@ -58,7 +58,7 @@ class CitationGraphBuilder:
         """Set cached centrality scores."""
         self._cached_centrality = value
         if value is not None:
-            self._last_analysis_time = datetime.utcnow()
+            self._last_analysis_time = datetime.now(timezone.utc)
 
     def add_paper(self, doi: str, metadata: PaperMetadata) -> None:
         """Add or update paper node."""

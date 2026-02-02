@@ -6,7 +6,7 @@ Called after researcher agents return with findings.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from workflows.research.web_research.state import (
@@ -96,7 +96,7 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
         new_draft = DraftReport(
             content=updated_content,
             version=version,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             gaps_remaining=unique_gaps,
         )
 

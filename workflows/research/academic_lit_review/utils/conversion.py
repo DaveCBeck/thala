@@ -6,7 +6,7 @@ Contains:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from langchain_tools.openalex import OpenAlexWork
@@ -93,7 +93,7 @@ def convert_to_paper_metadata(
         oa_status=work_dict.get("oa_status"),
         referenced_works=work_dict.get("referenced_works", []),
         citing_works_count=work_dict.get("cited_by_count", 0),
-        retrieved_at=datetime.utcnow(),
+        retrieved_at=datetime.now(timezone.utc),
         discovery_stage=discovery_stage,
         discovery_method=discovery_method,
     )

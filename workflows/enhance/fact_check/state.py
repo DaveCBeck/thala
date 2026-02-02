@@ -1,6 +1,6 @@
 """State definitions for the fact-check workflow."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from operator import add
 from typing import Annotated, Any, Literal, Optional
 
@@ -116,7 +116,7 @@ def build_initial_state(
         skipped_edits=[],
         # Metadata
         langsmith_run_id=langsmith_run_id,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         completed_at=None,
         status=None,
     )

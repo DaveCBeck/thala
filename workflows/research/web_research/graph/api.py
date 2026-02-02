@@ -25,7 +25,7 @@ configure_langsmith()
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from langsmith import traceable
 
@@ -135,7 +135,7 @@ async def deep_research(
         "store_record_id": None,
         "zotero_key": None,
         "errors": [],
-        "started_at": datetime.utcnow(),
+        "started_at": datetime.now(timezone.utc),
         "completed_at": None,
         "current_status": "starting",
         "status": None,  # Will be set on completion

@@ -51,7 +51,7 @@ Return to User / Agent
 | **Workflows** | academic_lit_review | core, shared | Literature reviews |
 | **Workflows** | web_research | core, shared, langchain_tools | Research reports |
 | **Workflows** | book_finding | shared | Book recommendations |
-| **Workflows** | supervised_lit_review | academic_lit_review | Enhanced reviews |
+| **Workflows** | enhance/supervision | academic_lit_review | Report enhancement |
 | **LangChain** | deep_research | workflows/web_research | Tool wrapper |
 | **LangChain** | search_memory | core/stores | Memory search |
 | **Core** | stores/ | services | Data persistence |
@@ -69,7 +69,7 @@ Return to User / Agent
 │ (coherence:9201) │    │ (forgotten:9200) │
 ├──────────────────┤    ├──────────────────┤
 │ • coherence      │    │ • who_i_was      │
-│ • store          │    │ • forgotten_store│
+│ • store_l0/l1/l2 │    │ • forgotten      │
 └────────┬─────────┘    └────────┬─────────┘
          │                       │
          └───────────┬───────────┘

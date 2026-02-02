@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from typing import Callable
 
 import httpx
 
@@ -14,7 +15,7 @@ from .models import BatchResult
 class ResultParser:
     """Parses batch results from Anthropic API."""
 
-    def __init__(self, id_mapper: callable):
+    def __init__(self, id_mapper: Callable[[str], str]):
         """Initialize with a function to map sanitized IDs to original IDs."""
         self._get_original_id = id_mapper
 

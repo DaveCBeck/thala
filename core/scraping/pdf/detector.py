@@ -17,6 +17,7 @@ def is_pdf_url(url: str) -> bool:
 
     Handles:
     - URLs ending in .pdf (with query params/fragments stripped)
+    - URLs with path ending in /pdf (e.g., MDPI: /article/1820/pdf?version=...)
     - URLs with common academic publisher PDF path patterns
       (e.g., /pdfdirect/, /doi/pdf/, /content/pdf/)
 
@@ -31,6 +32,10 @@ def is_pdf_url(url: str) -> bool:
 
     # Check for .pdf extension
     if clean_url.endswith(".pdf"):
+        return True
+
+    # Check for path ending in /pdf (e.g., MDPI URLs like /1820/pdf?version=...)
+    if clean_url.endswith("/pdf"):
         return True
 
     # Check for common PDF URL patterns (case-insensitive)

@@ -109,7 +109,8 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
         if decision.action == "pass_through":
             updates["is_complete"] = True
         elif decision.issue:
-            updates["issues_explored"] = issues_explored + [decision.issue.topic]
+            # Return single-element list - the add reducer will append to existing list
+            updates["issues_explored"] = [decision.issue.topic]
 
         return updates
 

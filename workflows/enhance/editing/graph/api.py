@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from langsmith import traceable
@@ -133,7 +133,7 @@ async def editing(
             "errors": errors,
             "source_count": source_count,
             "started_at": initial_state["started_at"],
-            "completed_at": result.get("completed_at", datetime.utcnow()),
+            "completed_at": result.get("completed_at", datetime.now(timezone.utc)),
             "changes_summary": result.get("changes_summary", ""),
             # V2 verification
             "verification": result.get("verification", {}),
@@ -150,6 +150,6 @@ async def editing(
             "errors": [{"node": "unknown", "error": str(e)}],
             "source_count": 0,
             "started_at": initial_state["started_at"],
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "changes_summary": f"Workflow failed: {e}",
         }

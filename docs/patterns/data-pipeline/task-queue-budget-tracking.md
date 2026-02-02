@@ -240,7 +240,7 @@ class CheckpointManager:
             "task_type": task_type,
             "langsmith_run_id": langsmith_run_id,
             "phase": "start",
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "counters": {},
         }
 
@@ -277,7 +277,7 @@ class CheckpointManager:
         for cp in work["active_tasks"]:
             if cp["task_id"] == task_id:
                 cp["phase"] = phase
-                cp["last_checkpoint_at"] = datetime.utcnow().isoformat()
+                cp["last_checkpoint_at"] = datetime.now(timezone.utc).isoformat()
                 cp["counters"].update(counters)
                 break
         self._write_current_work(work)

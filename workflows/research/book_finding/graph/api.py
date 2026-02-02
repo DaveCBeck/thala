@@ -7,7 +7,7 @@ the complete workflow from theme to markdown output.
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langsmith import traceable
@@ -98,7 +98,7 @@ async def book_finding(
         processing_failed=[],
         final_markdown=None,
         final_report=None,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         completed_at=None,
         current_phase="starting",
         status=None,
@@ -190,5 +190,5 @@ async def book_finding(
             "errors": [{"phase": "unknown", "error": str(e)}],
             "source_count": 0,
             "started_at": initial_state["started_at"],
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
         }

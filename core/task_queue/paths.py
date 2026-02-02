@@ -23,6 +23,7 @@ CURRENT_WORK_FILE = QUEUE_DIR / "current_work.json"
 COST_CACHE_FILE = QUEUE_DIR / "cost_cache.json"
 DAEMON_PID_FILE = QUEUE_DIR / "daemon.pid"
 DAEMON_LOG_FILE = QUEUE_DIR / "daemon.log"
+INCREMENTAL_DIR = QUEUE_DIR / "incremental"
 
 # Output directory (was: output/ and .outputs/)
 OUTPUT_DIR = THALA_DIR / "output"

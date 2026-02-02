@@ -125,6 +125,31 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
             f"{len(processed_dois)} papers integrated"
         )
 
+        # Call checkpoint callback if provided (N=1 for supervision loops)
+        checkpoint_callback = state.get("checkpoint_callback")
+        if checkpoint_callback:
+            checkpoint_callback(
+                iteration + 1,
+                {
+                    "current_review": integrated_review,
+                    "iteration": iteration + 1,
+                    "supervision_expansions": state.get("supervision_expansions", []) + [
+                        {
+                            "iteration": iteration,
+                            "topic": topic,
+                            "issue_type": issue_type,
+                            "research_query": issue.get("research_query", ""),
+                            "papers_added": processed_dois,
+                            "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
+                        }
+                    ],
+                    "paper_corpus": state.get("paper_corpus", {}),
+                    "paper_summaries": state.get("paper_summaries", {}),
+                    "zotero_keys": state.get("zotero_keys", {}),
+                },
+            )
+            logger.debug(f"Supervision checkpoint saved at iteration {iteration + 1}")
+
         return {
             "current_review": integrated_review,
             "iteration": iteration + 1,

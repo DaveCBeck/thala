@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from langchain_tools.openalex import get_forward_citations, get_backward_citations
 from workflows.research.academic_lit_review.state import CitationEdge
@@ -41,7 +41,7 @@ async def fetch_citations_raw(
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
     # Calculate recency cutoff
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
     recent_cutoff = current_year - recency_years
 
     async def fetch_single_paper(
@@ -80,7 +80,7 @@ async def fetch_citations_raw(
                                 CitationEdge(
                                     citing_doi=doi_clean,
                                     cited_doi=seed_doi,
-                                    discovered_at=datetime.utcnow(),
+                                    discovered_at=datetime.now(timezone.utc),
                                     edge_type="forward",
                                 )
                             )
@@ -114,7 +114,7 @@ async def fetch_citations_raw(
                                 CitationEdge(
                                     citing_doi=doi_clean,
                                     cited_doi=seed_doi,
-                                    discovered_at=datetime.utcnow(),
+                                    discovered_at=datetime.now(timezone.utc),
                                     edge_type="forward",
                                 )
                             )
@@ -145,7 +145,7 @@ async def fetch_citations_raw(
                             CitationEdge(
                                 citing_doi=seed_doi,
                                 cited_doi=cited_doi,
-                                discovered_at=datetime.utcnow(),
+                                discovered_at=datetime.now(timezone.utc),
                                 edge_type="backward",
                             )
                         )

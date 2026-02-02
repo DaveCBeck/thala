@@ -12,6 +12,7 @@ testing/traces/
 
 # Thala local state (queue, outputs, credentials)
 .thala/
+docs/quartz # Symbolic link to the Quartz content from tha.la
 
 # Environment variables and credentials
 .env
@@ -71,3 +72,4 @@ temp/
 
 # Cache
 .cache/
+docs/quartz

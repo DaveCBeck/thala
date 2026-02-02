@@ -4,10 +4,32 @@
 # Internal port 23120 maps to Zotero's 23119 (to avoid conflict)
 
 echo "**** Installing socat for port forwarding ****"
-apt-get update -qq && apt-get install -y -qq socat >/dev/null 2>&1
+# Install socat - don't suppress errors, and retry with --allow-unauthenticated if GPG fails
+if ! command -v socat &>/dev/null; then
+    apt-get update 2>&1 | grep -v "^W:" || true
+    if ! apt-get install -y socat 2>&1; then
+        echo "**** Retrying with --allow-unauthenticated ****"
+        apt-get install -y --allow-unauthenticated socat 2>&1
+    fi
+fi
+
+# Verify socat is installed before trying to use it
+if ! command -v socat &>/dev/null; then
+    echo "**** ERROR: socat installation failed! Port forwarding will not work. ****"
+    exit 1
+fi
 
 echo "**** Starting port forwarding for Zotero connector (23120 -> 23119) ****"
 # Run socat in background to forward 0.0.0.0:23120 -> 127.0.0.1:23119
-nohup socat TCP-LISTEN:23120,bind=0.0.0.0,reuseaddr,fork TCP:127.0.0.1:23119 &
+# Use s6-svc to supervise, or fall back to nohup
+socat TCP-LISTEN:23120,bind=0.0.0.0,reuseaddr,fork TCP:127.0.0.1:23119 &
+SOCAT_PID=$!
 
-echo "**** Port forwarding configured ****"
+# Give socat a moment to start and verify it's running
+sleep 1
+if kill -0 $SOCAT_PID 2>/dev/null; then
+    echo "**** Port forwarding started (PID $SOCAT_PID) ****"
+else
+    echo "**** ERROR: socat failed to start! ****"
+    exit 1
+fi
