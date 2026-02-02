@@ -47,10 +47,10 @@ class IllustrateConfig(BaseModel):
         description="Enable Sonnet vision review of generated images",
     )
     max_retries: int = Field(
-        default=1,
+        default=2,
         ge=0,
         le=3,
-        description="Max retries for substantive errors (one-retry-then-fail-through)",
+        description="Max retries for substantive errors before image is dropped",
     )
 
     # Output settings

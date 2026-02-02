@@ -23,8 +23,8 @@ async def enhance_report(
     topic: str,
     research_questions: list[str],
     quality: Literal["quick", "standard", "comprehensive", "high_quality"] = "standard",
-    loops: Literal["none", "one", "two", "all"] = "all",
-    max_iterations_per_loop: int = 3,
+    loops: Literal["none", "one", "two", "all"] | None = None,
+    max_iterations_per_loop: int | None = None,
     supervision_paper_factor: float = 0.5,
     paper_corpus: dict[str, Any] | None = None,
     paper_summaries: dict[str, Any] | None = None,
@@ -45,12 +45,14 @@ async def enhance_report(
         research_questions: List of research questions guiding the enhancement
         quality: Quality tier affecting search depth and iteration counts.
             One of: "quick", "standard", "comprehensive", "high_quality"
-        loops: Which loops to run:
+        loops: Which loops to run. If None, uses `supervision_loops` from
+            the quality preset. Explicit values:
             - "none": No loops, returns input unchanged
             - "one": Only Loop 1 (theoretical depth)
             - "two": Only Loop 2 (literature expansion)
-            - "all": Both loops (default)
-        max_iterations_per_loop: Maximum iterations for each loop (default: 3)
+            - "all": Both loops
+        max_iterations_per_loop: Maximum iterations for each loop. If None, uses
+            max_stages from quality preset (test=1, quick=2, standard=3, etc.)
         supervision_paper_factor: Multiplier for max_papers during supervision loops.
             Default 0.5 means supervision examines half as many papers as initial review.
         paper_corpus: Optional existing paper corpus (DOI -> PaperMetadata)
@@ -92,6 +94,17 @@ async def enhance_report(
         **base_quality_settings,
         "max_papers": int(base_quality_settings["max_papers"] * supervision_paper_factor),
     }
+
+    # Resolve loops from quality settings if not explicitly provided
+    if loops is None:
+        loops = base_quality_settings.get("supervision_loops", "all")
+        # Map extended loop values to the subset supported by supervision workflow
+        if loops in ("three", "four"):
+            loops = "all"  # Future: support additional loops
+
+    # Resolve max_iterations_per_loop from max_stages if not explicitly provided
+    if max_iterations_per_loop is None:
+        max_iterations_per_loop = base_quality_settings.get("max_stages", 3)
 
     # Build input
     enhance_input: EnhanceInput = {

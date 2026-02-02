@@ -58,6 +58,27 @@ log()   { echo -e "${GREEN}[+]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; }
 
+# Wait for a service to be healthy via HTTP endpoint
+# Usage: wait_for_http <name> <url> <max_wait_seconds>
+wait_for_http() {
+    local name="$1"
+    local url="$2"
+    local max_wait="${3:-60}"
+    local waited=0
+
+    log "Waiting for $name to be ready..."
+    while ! curl -sf --max-time 5 "$url" >/dev/null 2>&1; do
+        sleep 2
+        waited=$((waited + 2))
+        if [[ $waited -ge $max_wait ]]; then
+            warn "$name not ready after ${max_wait}s (may still be starting)"
+            return 1
+        fi
+    done
+    log "$name is ready (${waited}s)"
+    return 0
+}
+
 # Rotate log file: current -> previous/name.1.log, shift .1->.2, etc.
 # Usage: rotate_log <log_file> [keep_count]
 rotate_log() {
@@ -165,7 +186,17 @@ cmd_up() {
         warn "Run: git submodule update --init services/<service>"
     fi
 
-    log "All services started."
+    log "All services started. Waiting for health checks..."
+
+    # Wait for critical services to be healthy
+    wait_for_http "Elasticsearch (coherence)" "http://localhost:9201/_cluster/health" 60 || true
+    wait_for_http "Elasticsearch (forgotten)" "http://localhost:9200/_cluster/health" 60 || true
+    wait_for_http "Zotero" "http://localhost:23119/local-crud/ping" 90 || true
+
+    if check_nvidia; then
+        wait_for_http "Marker" "http://localhost:8001/health" 60 || true
+    fi
+
     cmd_status
 
     # Start dev mode monitoring (metrics + logs) if THALA_MODE=dev
@@ -225,6 +256,66 @@ cmd_logs() {
         exit 1
     fi
     docker compose -f "${SCRIPT_DIR}/${svc}/docker-compose.yml" logs -f
+}
+
+cmd_health() {
+    echo ""
+    echo "Service Health Checks:"
+    echo "======================"
+
+    local all_healthy=true
+
+    # Elasticsearch
+    if curl -sf --max-time 5 "http://localhost:9200/_cluster/health" >/dev/null 2>&1; then
+        local status=$(curl -sf "http://localhost:9200/_cluster/health" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+        log "ES forgotten (9200): $status"
+    else
+        error "ES forgotten (9200): unreachable"
+        all_healthy=false
+    fi
+
+    if curl -sf --max-time 5 "http://localhost:9201/_cluster/health" >/dev/null 2>&1; then
+        local status=$(curl -sf "http://localhost:9201/_cluster/health" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+        log "ES coherence (9201): $status"
+    else
+        error "ES coherence (9201): unreachable"
+        all_healthy=false
+    fi
+
+    # Zotero
+    if curl -sf --max-time 5 "http://localhost:23119/local-crud/ping" >/dev/null 2>&1; then
+        log "Zotero (23119): ok"
+    else
+        error "Zotero (23119): unreachable"
+        all_healthy=false
+    fi
+
+    # Marker (if nvidia available)
+    if check_nvidia; then
+        if curl -sf --max-time 5 "http://localhost:8001/health" >/dev/null 2>&1; then
+            log "Marker (8001): healthy"
+        else
+            error "Marker (8001): unreachable"
+            all_healthy=false
+        fi
+    fi
+
+    # ChromaDB
+    if curl -sf --max-time 5 "http://localhost:8000/api/v2/heartbeat" >/dev/null 2>&1; then
+        log "ChromaDB (8000): ok"
+    else
+        error "ChromaDB (8000): unreachable"
+        all_healthy=false
+    fi
+
+    echo ""
+    if $all_healthy; then
+        log "All services healthy!"
+        return 0
+    else
+        error "Some services are unhealthy"
+        return 1
+    fi
 }
 
 cmd_backup() {
@@ -451,9 +542,10 @@ cmd_help() {
 Usage: $0 <command> [args]
 
 Commands:
-  up        Start all services
+  up        Start all services (waits for health checks)
   down      Stop all services
   status    Show service status
+  health    Check if all services are healthy
   logs      Follow logs for a service (e.g., $0 logs zotero)
   monitor   Monitor service performance (e.g., $0 monitor --interval 60)
   backup    Create timestamped backup of all data
@@ -479,6 +571,7 @@ case "${1:-}" in
     up)      cmd_up ;;
     down)    cmd_down ;;
     status)  cmd_status ;;
+    health)  cmd_health ;;
     logs)    cmd_logs "$2" ;;
     monitor) cmd_monitor "${@:2}" ;;
     backup)  cmd_backup ;;

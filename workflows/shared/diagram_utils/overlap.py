@@ -100,9 +100,18 @@ def check_text_overlaps(svg_content: str) -> OverlapCheckResult:
         # Parse SVG
         root = etree.fromstring(svg_content.encode())
     except etree.XMLSyntaxError as e:
+        error_msg = str(e)
+        # Detect specific entity-related errors
+        if "xmlParseEntityRef" in error_msg or "not well-formed" in error_msg:
+            logger.warning(f"SVG has unescaped XML entities: {e}")
+            return OverlapCheckResult(
+                has_overlaps=True,  # Conservative - treat as problematic
+                overlap_pairs=[],
+                suggestion=f"SVG contains invalid XML entities - needs sanitization: {e}",
+            )
         logger.error(f"Invalid SVG: {e}")
         return OverlapCheckResult(
-            has_overlaps=False,
+            has_overlaps=True,  # Conservative - treat parse failures as problematic
             overlap_pairs=[],
             suggestion=f"SVG parsing failed: {e}",
         )

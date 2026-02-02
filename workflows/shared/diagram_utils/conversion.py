@@ -5,6 +5,12 @@ Provides functions for converting SVG content to PNG using CairoSVG.
 
 import logging
 
+from .validation import (
+    extract_validation_error_type,
+    sanitize_svg_text_entities,
+    validate_svg_xml,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +35,20 @@ def convert_svg_to_png(
         logger.error("cairosvg not installed. Run: pip install cairosvg")
         return None
 
+    # Validate and sanitize SVG before conversion
+    is_valid, error = validate_svg_xml(svg_content)
+    if not is_valid:
+        error_type = extract_validation_error_type(Exception(error or ""))
+        logger.warning(
+            f"SVG validation failed ({error_type}): {error}, attempting sanitization"
+        )
+        svg_content = sanitize_svg_text_entities(svg_content)
+
+        # Re-validate after sanitization
+        is_valid_after, error_after = validate_svg_xml(svg_content)
+        if not is_valid_after:
+            logger.error(f"SVG still invalid after sanitization: {error_after}")
+
     try:
         png_bytes = cairosvg.svg2png(
             bytestring=svg_content.encode("utf-8"),
@@ -37,7 +57,8 @@ def convert_svg_to_png(
         )
         return png_bytes
     except Exception as e:
-        logger.error(f"SVG to PNG conversion failed: {e}")
+        error_type = extract_validation_error_type(e)
+        logger.error(f"SVG to PNG conversion failed ({error_type}): {e}")
         return None
 
 

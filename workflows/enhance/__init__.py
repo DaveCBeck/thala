@@ -7,6 +7,7 @@ The main entry point is `enhance_report()` which runs:
 """
 
 import logging
+import re
 from typing import Any, Callable, Literal
 
 from langsmith import traceable
@@ -19,8 +20,58 @@ from workflows.enhance.supervision import (
     EnhanceResult,
     EnhanceState,
 )
+from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
 
 logger = logging.getLogger(__name__)
+
+
+async def _regenerate_references(document: str) -> str:
+    """Regenerate References section based on citations in document.
+
+    Extracts all [@KEY] citation patterns from the document, looks them up
+    in Zotero, and appends a fresh ## References section at the end.
+
+    This ensures the References section always matches the citations
+    actually used in the final document, even if citations were added
+    or removed during enhancement.
+
+    Args:
+        document: Markdown document with [@KEY] citations
+
+    Returns:
+        Document with regenerated References section
+    """
+    from workflows.output.evening_reads.nodes.format_references import (
+        _extract_citations_from_text,
+        _lookup_citations,
+        _build_reference_section,
+    )
+
+    # Extract citation keys from document
+    citation_keys = _extract_citations_from_text(document)
+    if not citation_keys:
+        logger.info("No citations found, skipping reference regeneration")
+        return document
+
+    logger.info(f"Regenerating references for {len(citation_keys)} citations")
+
+    # Look up in Zotero and format
+    formatted_refs, missing = await _lookup_citations(citation_keys)
+    if missing:
+        logger.warning(f"Missing Zotero entries for {len(missing)} citations: {missing[:5]}...")
+
+    # Build references section
+    refs_section = _build_reference_section(formatted_refs, citation_keys)
+
+    # Strip existing References section (with or without horizontal rule)
+    document = re.sub(r'\n+---\n+## References\n.*$', '', document, flags=re.DOTALL)
+    document = re.sub(r'\n+## References\n.*$', '', document, flags=re.DOTALL)
+
+    # Append fresh references
+    if refs_section:
+        return document.rstrip() + refs_section
+
+    return document
 
 __all__ = [
     "enhance_report",
@@ -36,8 +87,8 @@ async def enhance_report(
     topic: str,
     research_questions: list[str],
     quality: Literal["quick", "standard", "comprehensive", "high_quality"] = "standard",
-    loops: Literal["none", "one", "two", "all"] = "all",
-    max_iterations_per_loop: int = 3,
+    loops: Literal["none", "one", "two", "all"] | None = None,
+    max_iterations_per_loop: int | None = None,
     paper_corpus: dict[str, Any] | None = None,
     paper_summaries: dict[str, Any] | None = None,
     zotero_keys: dict[str, str] | None = None,
@@ -70,12 +121,14 @@ async def enhance_report(
         research_questions: List of research questions guiding the enhancement
         quality: Quality tier affecting search depth and iteration counts.
             One of: "quick", "standard", "comprehensive", "high_quality"
-        loops: Which supervision loops to run:
+        loops: Which supervision loops to run. If None, uses `supervision_loops`
+            from the quality preset. Explicit values:
             - "none": Skip supervision, go straight to editing
             - "one": Only Loop 1 (theoretical depth)
             - "two": Only Loop 2 (literature expansion)
-            - "all": Both loops (default)
-        max_iterations_per_loop: Maximum iterations for each supervision loop (default: 3)
+            - "all": Both loops
+        max_iterations_per_loop: Maximum iterations for each supervision loop. If None,
+            uses max_stages from quality preset (test=1, quick=2, standard=3, etc.)
         paper_corpus: Optional existing paper corpus (DOI -> PaperMetadata)
         paper_summaries: Optional existing paper summaries (DOI -> PaperSummary)
         zotero_keys: Optional existing Zotero keys (DOI -> Zotero key)
@@ -122,6 +175,14 @@ async def enhance_report(
     editing_result = None
     fact_check_result = None
     current_report = report
+
+    # Resolve loops from quality settings if not explicitly provided
+    if loops is None:
+        quality_settings = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
+        loops = quality_settings.get("supervision_loops", "all")
+        # Map extended loop values to the subset supported by supervision workflow
+        if loops in ("three", "four"):
+            loops = "all"  # Future: support additional loops
 
     # Track document model and citation info across phases
     document_model = None
@@ -244,6 +305,17 @@ async def enhance_report(
             errors.append({"phase": "fact_check", "error": str(e)})
     else:
         logger.info("Phase 3: Skipping fact-check workflow (run_fact_check=False)")
+
+    # Phase 4: Regenerate References section
+    # This ensures References match the final document's citations after all edits
+    if current_report:
+        try:
+            current_report = await _regenerate_references(current_report)
+            logger.info("References section regenerated")
+        except Exception as e:
+            logger.error(f"Reference regeneration failed: {e}", exc_info=True)
+            errors.append({"phase": "references", "error": str(e)})
+            # Continue without regenerated references
 
     # Determine overall status
     if not current_report:

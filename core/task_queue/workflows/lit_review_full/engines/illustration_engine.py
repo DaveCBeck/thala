@@ -39,27 +39,12 @@ async def illustrate_articles(
 
     illustrated_paths = {}
 
-    # Illustrate the literature review
-    try:
-        lit_result = await illustrate_graph.ainvoke({
-            "input": {
-                "markdown_document": final_report,
-                "title": f"Literature Review: {task.get('topic', 'Unknown')}",
-                "output_dir": str(illust_dir / "lit_review_images"),
-            }
-        })
-
-        lit_path = illust_dir / "lit_review.md"
-        lit_content = lit_result.get("illustrated_document", final_report)
-        lit_path.write_text(lit_content)
-        illustrated_paths["lit_review"] = str(lit_path)
-
-    except Exception as e:
-        logger.error(f"Failed to illustrate lit review: {e}")
-        # Save unillustrated version
-        lit_path = illust_dir / "lit_review.md"
-        lit_path.write_text(final_report)
-        illustrated_paths["lit_review"] = str(lit_path)
+    # Save the literature review WITHOUT illustration
+    # Lit reviews are academic documents with citations and don't benefit from images
+    lit_path = illust_dir / "lit_review.md"
+    lit_path.write_text(final_report)
+    illustrated_paths["lit_review"] = str(lit_path)
+    logger.info("Saved lit review (unillustrated - academic document)")
 
     # Illustrate each evening reads article
     for output in final_outputs:

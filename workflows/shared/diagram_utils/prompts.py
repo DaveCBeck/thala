@@ -74,6 +74,17 @@ SVG_GENERATION_SYSTEM = """You are an expert at creating clean, professional SVG
 - Arrow markers for directed relationships (define in <defs>)
 - Use whitespace effectively - don't crowd elements
 
+## XML Entity Escaping (CRITICAL)
+Text content with special characters MUST be properly escaped:
+- & → &amp;
+- < → &lt;
+- > → &gt;
+
+Example: To display "A & B" use: <text>A &amp; B</text>
+Example: To display "x < y" use: <text>x &lt; y</text>
+
+Never use raw &, <, or > characters in text elements - this causes XML parsing errors.
+
 ## SVG Structure
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
