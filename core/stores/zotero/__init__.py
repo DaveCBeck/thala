@@ -1,6 +1,7 @@
 """Zotero store for local CRUD operations."""
 
 from .client import ZoteroStore
+from .protocol import ZoteroStoreProtocol
 from .schemas import (
     ZoteroCreator,
     ZoteroHealthStatus,
@@ -22,4 +23,5 @@ __all__ = [
     "ZoteroSearchResult",
     "ZoteroHealthStatus",
     "ZoteroStore",
+    "ZoteroStoreProtocol",
 ]
