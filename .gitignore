@@ -73,3 +73,4 @@ temp/
 # Cache
 .cache/
 docs/quartz
+.worktrees
