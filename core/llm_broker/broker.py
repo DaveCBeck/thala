@@ -1,0 +1,880 @@
+"""Central LLM Broker for routing requests through batch or sync APIs.
+
+This module provides the main LLMBroker class that:
+- Routes requests based on user mode and call-site policy
+- Manages async futures for awaitable request resolution
+- Submits batches to Anthropic Batch API
+- Monitors batch status with retry/fallback logic
+- Coordinates cross-process access via persistent queue
+"""
+
+import asyncio
+import json
+import logging
+import os
+import re
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, AsyncIterator
+
+import httpx
+from anthropic import AsyncAnthropic
+from langsmith import traceable
+from langsmith.wrappers import wrap_anthropic
+
+from core.task_queue.shutdown import get_shutdown_coordinator
+from workflows.shared.llm_utils import ModelTier
+from workflows.shared.llm_utils.models import is_deepseek_tier
+
+from .config import BrokerConfig, get_broker_config
+from .exceptions import (
+    BatchSubmissionError,
+    BrokerNotStartedError,
+    NestedBatchGroupError,
+    QueueOverflowError,
+)
+from .metrics import BrokerMetrics
+from .persistence import BrokerPersistence
+from .schemas import (
+    BatchPolicy,
+    LLMRequest,
+    LLMResponse,
+    RequestState,
+    UserMode,
+)
+
+logger = logging.getLogger(__name__)
+
+# Context variable to track active batch groups (for nesting detection)
+_active_batch_group: ContextVar[bool] = ContextVar("active_batch_group", default=False)
+
+# Beta header for 1M context window
+CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
+
+def _sanitize_custom_id(identifier: str) -> str:
+    """Convert identifier to valid Anthropic batch custom_id.
+
+    The API requires custom_id to match pattern ^[a-zA-Z0-9_-]{1,64}$.
+    """
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", identifier)
+    return sanitized[:64]
+
+
+@dataclass
+class BatchGroup:
+    """Context for grouping requests in a batch.
+
+    Tracks requests added during the batch_group context and triggers
+    batch submission on context exit.
+    """
+
+    broker: "LLMBroker"
+    request_ids: list[str] = field(default_factory=list)
+    mode: UserMode = UserMode.BALANCED
+
+    def add_request(self, request_id: str) -> None:
+        """Track a request added to this group."""
+        self.request_ids.append(request_id)
+
+
+class LLMBroker:
+    """Central broker for routing LLM requests.
+
+    Routes requests through batch or synchronous APIs based on user mode
+    and call-site policy. Provides async futures for awaitable resolution
+    and handles batch submission, monitoring, and retry logic.
+
+    Usage:
+        broker = LLMBroker()
+        await broker.start()
+
+        async with broker.batch_group() as group:
+            future1 = await broker.request(prompt1, policy=BatchPolicy.PREFER_SPEED)
+            future2 = await broker.request(prompt2, policy=BatchPolicy.PREFER_SPEED)
+            results = await asyncio.gather(future1, future2)
+
+        await broker.stop()
+    """
+
+    def __init__(
+        self,
+        config: BrokerConfig | None = None,
+        mode: UserMode | None = None,
+    ) -> None:
+        """Initialize the broker.
+
+        Args:
+            config: Broker configuration (uses global config if not provided)
+            mode: Override default user mode
+        """
+        self._config = config or get_broker_config()
+        self._mode = mode or self._config.default_mode
+        self._persistence = BrokerPersistence(self._config.queue_dir)
+        self._metrics = BrokerMetrics() if self._config.enable_metrics else None
+
+        # Anthropic client (wrapped for LangSmith tracing)
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            self._async_client: AsyncAnthropic | None = wrap_anthropic(AsyncAnthropic(api_key=api_key))
+        else:
+            self._async_client = None
+            logger.warning("ANTHROPIC_API_KEY not set - broker will only work for DeepSeek")
+
+        # Concurrency controls
+        self._submission_lock = asyncio.Lock()
+        self._sync_semaphore = asyncio.Semaphore(self._config.max_concurrent_sync)
+
+        # Future tracking for request resolution
+        self._pending_futures: dict[str, asyncio.Future[LLMResponse]] = {}
+        self._id_mapping: dict[str, str] = {}  # sanitized -> original request_id
+
+        # Background task
+        self._batch_monitor_task: asyncio.Task | None = None
+        self._started = False
+
+        # Current batch group context
+        self._current_group: BatchGroup | None = None
+
+    @property
+    def mode(self) -> UserMode:
+        """Current user mode."""
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: UserMode) -> None:
+        """Set user mode."""
+        self._mode = value
+
+    @property
+    def metrics(self) -> BrokerMetrics | None:
+        """Broker metrics (None if disabled)."""
+        return self._metrics
+
+    async def start(self) -> None:
+        """Start the broker and background tasks.
+
+        Must be called before making requests. Initializes persistence
+        and starts the batch monitor loop.
+        """
+        if self._started:
+            return
+
+        await self._persistence.initialize()
+
+        # Start batch monitor background task
+        self._batch_monitor_task = asyncio.create_task(
+            self._batch_monitor_loop(),
+            name="broker-batch-monitor",
+        )
+        self._started = True
+        logger.info(f"LLM Broker started in {self._mode.value} mode")
+
+    async def stop(self) -> None:
+        """Stop the broker and cleanup.
+
+        Cancels background tasks and flushes any remaining queued requests.
+        """
+        if not self._started:
+            return
+
+        # Cancel monitor task
+        if self._batch_monitor_task:
+            self._batch_monitor_task.cancel()
+            try:
+                await self._batch_monitor_task
+            except asyncio.CancelledError:
+                pass
+            self._batch_monitor_task = None
+
+        # Log final metrics
+        if self._metrics:
+            self._metrics.log_summary()
+
+        self._started = False
+        logger.info("LLM Broker stopped")
+
+    @asynccontextmanager
+    async def batch_group(
+        self,
+        mode: UserMode | None = None,
+    ) -> AsyncIterator[BatchGroup]:
+        """Context manager for grouping requests into a batch.
+
+        Requests made within this context are queued together and
+        submitted as a batch when the context exits.
+
+        Args:
+            mode: Override mode for this batch group
+
+        Yields:
+            BatchGroup context for tracking requests
+
+        Raises:
+            NestedBatchGroupError: If attempting to nest batch groups
+        """
+        if _active_batch_group.get():
+            raise NestedBatchGroupError()
+
+        token = _active_batch_group.set(True)
+        group = BatchGroup(broker=self, mode=mode or self._mode)
+        self._current_group = group
+
+        try:
+            yield group
+        finally:
+            _active_batch_group.reset(token)
+            self._current_group = None
+
+            # Flush queued requests from this group
+            if group.request_ids:
+                await self._flush_batch_group(group)
+
+    async def request(
+        self,
+        prompt: str,
+        model: ModelTier = ModelTier.SONNET,
+        policy: BatchPolicy = BatchPolicy.PREFER_SPEED,
+        max_tokens: int = 4096,
+        system: str | None = None,
+        thinking_budget: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> asyncio.Future[LLMResponse]:
+        """Submit a request to the broker.
+
+        Routes the request through batch or sync API based on mode and policy.
+        Returns a Future that resolves when the response is available.
+
+        Args:
+            prompt: User message/prompt
+            model: Model tier to use
+            policy: Batch policy for this request
+            max_tokens: Maximum output tokens
+            system: Optional system prompt
+            thinking_budget: Optional extended thinking budget
+            tools: Optional tool definitions
+            tool_choice: Optional tool choice config
+            metadata: Optional request metadata
+
+        Returns:
+            Future that resolves to LLMResponse
+
+        Raises:
+            BrokerNotStartedError: If broker not started
+            QueueOverflowError: If queue full and overflow_behavior is "reject"
+        """
+        if not self._started:
+            raise BrokerNotStartedError()
+
+        # Create request
+        request = LLMRequest.create(
+            prompt=prompt,
+            model=model.value,
+            policy=policy,
+            max_tokens=max_tokens,
+            system=system,
+            thinking_budget=thinking_budget,
+            tools=tools,
+            tool_choice=tool_choice,
+            metadata=metadata or {},
+        )
+
+        # Create future for this request
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[LLMResponse] = loop.create_future()
+        self._pending_futures[request.request_id] = future
+
+        # Determine routing
+        should_batch = self._should_batch(policy, model, thinking_budget)
+
+        if should_batch:
+            await self._queue_for_batch(request)
+            if self._metrics:
+                self._metrics.record_request(batched=True)
+        else:
+            # Execute synchronously
+            asyncio.create_task(self._execute_sync(request))
+            if self._metrics:
+                self._metrics.record_request(batched=False)
+
+        return future
+
+    def _should_batch(
+        self,
+        policy: BatchPolicy,
+        model: ModelTier,
+        thinking_budget: int | None,
+    ) -> bool:
+        """Determine if a request should be batched.
+
+        Args:
+            policy: Call-site batch policy
+            model: Model tier
+            thinking_budget: Extended thinking budget
+
+        Returns:
+            True if request should be queued for batching
+        """
+        # DeepSeek doesn't support batch API
+        if is_deepseek_tier(model):
+            return False
+
+        # Extended thinking incompatible with batch
+        if thinking_budget:
+            return False
+
+        # Policy + Mode matrix
+        if policy == BatchPolicy.REQUIRE_SYNC:
+            return False
+        if policy == BatchPolicy.FORCE_BATCH:
+            return True
+        if self._mode == UserMode.FAST:
+            return False
+        if policy == BatchPolicy.PREFER_BALANCE and self._mode in (
+            UserMode.BALANCED,
+            UserMode.ECONOMICAL,
+        ):
+            return True
+        if policy == BatchPolicy.PREFER_SPEED and self._mode == UserMode.ECONOMICAL:
+            return True
+
+        return False
+
+    async def _queue_for_batch(self, request: LLMRequest) -> None:
+        """Queue a request for batch processing.
+
+        Args:
+            request: The request to queue
+
+        Raises:
+            QueueOverflowError: If queue full and overflow_behavior is "reject"
+        """
+        # Check queue size
+        queue_size = await self._persistence.get_queue_size()
+        if queue_size >= self._config.max_queue_size:
+            if self._metrics:
+                self._metrics.record_queue_overflow()
+
+            if self._config.overflow_behavior == "reject":
+                raise QueueOverflowError(queue_size, self._config.max_queue_size)
+            else:
+                # Fall back to sync
+                logger.warning(
+                    f"Queue overflow ({queue_size}/{self._config.max_queue_size}), "
+                    f"falling back to sync for request {request.request_id}"
+                )
+                asyncio.create_task(self._execute_sync(request))
+                return
+
+        # Add to persistent queue
+        await self._persistence.add_request(request)
+
+        # Track in current batch group if active
+        if self._current_group:
+            self._current_group.add_request(request.request_id)
+
+        # Check if threshold reached
+        await self._check_batch_triggers()
+
+    async def _check_batch_triggers(self) -> None:
+        """Check if batch should be submitted based on queue size."""
+        async with self._submission_lock:
+            queue_size = await self._persistence.get_queue_size()
+            if queue_size >= self._config.batch_threshold:
+                await self._submit_batch()
+
+    async def _flush_batch_group(self, group: BatchGroup) -> None:
+        """Submit batch for requests in a batch group.
+
+        Args:
+            group: The batch group to flush
+        """
+        if not group.request_ids:
+            return
+
+        async with self._submission_lock:
+            # Get queued requests from this group
+            queued = await self._persistence.get_queued_requests()
+            group_requests = [r for r in queued if r.request_id in group.request_ids]
+
+            if group_requests:
+                await self._submit_batch(group_requests)
+
+    async def _submit_batch(
+        self,
+        requests: list[LLMRequest] | None = None,
+    ) -> None:
+        """Submit a batch of requests to Anthropic Batch API.
+
+        Args:
+            requests: Specific requests to submit (or all queued if None)
+        """
+        if not self._async_client:
+            logger.error("Cannot submit batch: Anthropic client not configured")
+            return
+
+        # Get requests to submit
+        if requests is None:
+            async with self._persistence.lock():
+                requests = await self._persistence.get_queued_requests()
+
+        if not requests:
+            return
+
+        # Build batch requests
+        batch_requests = []
+        needs_1m_context = False
+
+        for req in requests:
+            sanitized_id = _sanitize_custom_id(req.request_id)
+            self._id_mapping[sanitized_id] = req.request_id
+
+            params: dict[str, Any] = {
+                "model": req.model,
+                "max_tokens": req.max_tokens,
+                "messages": [{"role": "user", "content": req.prompt}],
+            }
+
+            if req.system:
+                params["system"] = req.system
+
+            if req.thinking_budget:
+                params["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": req.thinking_budget,
+                }
+                if req.max_tokens <= req.thinking_budget:
+                    params["max_tokens"] = req.thinking_budget + 4096
+
+            if req.tools:
+                params["tools"] = req.tools
+            if req.tool_choice:
+                params["tool_choice"] = req.tool_choice
+
+            batch_requests.append(
+                {
+                    "custom_id": sanitized_id,
+                    "params": params,
+                }
+            )
+
+            # Check if 1M context needed
+            if req.model == ModelTier.SONNET_1M.value:
+                needs_1m_context = True
+
+        # Submit batch
+        try:
+            logger.info(f"Submitting batch with {len(batch_requests)} requests")
+
+            if needs_1m_context:
+                batch = await self._async_client.beta.messages.batches.create(
+                    requests=batch_requests,
+                    betas=[CONTEXT_1M_BETA],
+                )
+            else:
+                batch = await self._async_client.messages.batches.create(
+                    requests=batch_requests,
+                )
+
+            batch_id = batch.id
+            logger.info(f"Created batch {batch_id}, status: {batch.processing_status}")
+
+            # Mark requests as submitted
+            request_ids = [r.request_id for r in requests]
+            await self._persistence.mark_requests_submitted(request_ids, batch_id)
+
+            if self._metrics:
+                self._metrics.record_batch_submitted(len(requests))
+
+        except Exception as e:
+            logger.error(f"Failed to submit batch: {e}")
+            # Resolve futures with errors
+            for req in requests:
+                self._resolve_future(
+                    req.request_id,
+                    LLMResponse(
+                        request_id=req.request_id,
+                        content=None,
+                        success=False,
+                        error=f"Batch submission failed: {e}",
+                    ),
+                )
+            raise BatchSubmissionError(len(requests), str(e))
+
+    @traceable(name="llm_broker_sync", run_type="llm")
+    async def _execute_sync(self, request: LLMRequest) -> None:
+        """Execute a request via synchronous (non-batch) API.
+
+        Args:
+            request: The request to execute
+        """
+        if not self._async_client:
+            self._resolve_future(
+                request.request_id,
+                LLMResponse(
+                    request_id=request.request_id,
+                    content=None,
+                    success=False,
+                    error="Anthropic client not configured",
+                ),
+            )
+            return
+
+        async with self._sync_semaphore:
+            try:
+                # Build message params
+                kwargs: dict[str, Any] = {
+                    "model": request.model,
+                    "max_tokens": request.max_tokens,
+                    "messages": [{"role": "user", "content": request.prompt}],
+                }
+
+                if request.system:
+                    kwargs["system"] = request.system
+
+                if request.thinking_budget:
+                    kwargs["thinking"] = {
+                        "type": "enabled",
+                        "budget_tokens": request.thinking_budget,
+                    }
+                    if request.max_tokens <= request.thinking_budget:
+                        kwargs["max_tokens"] = request.thinking_budget + 4096
+
+                if request.tools:
+                    kwargs["tools"] = request.tools
+                if request.tool_choice:
+                    kwargs["tool_choice"] = request.tool_choice
+
+                # Check if 1M context needed
+                if request.model == ModelTier.SONNET_1M.value:
+                    response = await self._async_client.beta.messages.create(
+                        **kwargs,
+                        betas=[CONTEXT_1M_BETA],
+                    )
+                else:
+                    response = await self._async_client.messages.create(**kwargs)
+
+                # Parse response
+                content = self._parse_response_content(response)
+
+                self._resolve_future(
+                    request.request_id,
+                    LLMResponse(
+                        request_id=request.request_id,
+                        content=content,
+                        success=True,
+                        usage={
+                            "input_tokens": response.usage.input_tokens,
+                            "output_tokens": response.usage.output_tokens,
+                        },
+                        model=response.model,
+                        stop_reason=response.stop_reason,
+                    ),
+                )
+
+            except Exception as e:
+                logger.error(f"Sync request {request.request_id} failed: {e}")
+                if self._metrics:
+                    self._metrics.record_failure()
+                self._resolve_future(
+                    request.request_id,
+                    LLMResponse(
+                        request_id=request.request_id,
+                        content=None,
+                        success=False,
+                        error=str(e),
+                    ),
+                )
+
+    def _parse_response_content(self, response: Any) -> Any:
+        """Parse content from Anthropic message response.
+
+        Args:
+            response: Anthropic message response
+
+        Returns:
+            Parsed content (text or tool input)
+        """
+        for block in response.content:
+            if block.type == "text":
+                return block.text
+            elif block.type == "tool_use":
+                tool_input = block.input
+                # Unwrap $output wrapper if present
+                if isinstance(tool_input, dict) and "$output" in tool_input and len(tool_input) == 1:
+                    tool_input = tool_input["$output"]
+                return json.dumps(tool_input)
+        return None
+
+    def _resolve_future(self, request_id: str, response: LLMResponse) -> None:
+        """Resolve the future for a request.
+
+        Args:
+            request_id: ID of the request
+            response: The response to resolve with
+        """
+        future = self._pending_futures.pop(request_id, None)
+        if future and not future.done():
+            future.set_result(response)
+
+    # Batch monitoring
+
+    async def _batch_monitor_loop(self) -> None:
+        """Background loop to monitor submitted batches."""
+        coordinator = get_shutdown_coordinator()
+        while not coordinator.shutdown_requested:
+            try:
+                await self._check_submitted_batches()
+            except Exception as e:
+                logger.error(f"Error in batch monitor loop: {e}")
+
+            # Wait or respond to shutdown
+            if await coordinator.wait_or_shutdown(self._config.poll_interval_seconds):
+                break
+
+    async def _check_submitted_batches(self) -> None:
+        """Check status of all submitted batches."""
+        if not self._async_client:
+            return
+
+        batches = await self._persistence.get_submitted_batches()
+
+        for batch_id, batch_info in batches.items():
+            try:
+                # Retrieve batch status
+                batch = await self._async_client.messages.batches.retrieve(batch_id)
+
+                if batch.processing_status == "ended":
+                    await self._handle_batch_completed(batch_id, batch)
+                else:
+                    # Check for timeout
+                    submitted_at = datetime.fromisoformat(batch_info["submitted_at"])
+                    elapsed_hours = (datetime.now(timezone.utc) - submitted_at).total_seconds() / 3600
+
+                    # Get timeout for current mode
+                    retry_count = batch_info.get("retry_count", 0)
+                    timeout_hours = self._config.get_wait_timeout_hours(self._mode, retry_count)
+
+                    if elapsed_hours > timeout_hours:
+                        await self._handle_batch_timeout(batch_id, batch_info)
+
+            except Exception as e:
+                logger.error(f"Error checking batch {batch_id}: {e}")
+
+    async def _handle_batch_completed(
+        self,
+        batch_id: str,
+        batch: Any,
+    ) -> None:
+        """Handle a completed batch.
+
+        Args:
+            batch_id: The batch ID
+            batch: Anthropic batch object
+        """
+        logger.info(f"Batch {batch_id} completed, fetching results")
+
+        # Calculate wait time for metrics
+        batches = await self._persistence.get_submitted_batches()
+        if batch_id in batches:
+            submitted_at = datetime.fromisoformat(batches[batch_id]["submitted_at"])
+            wait_seconds = (datetime.now(timezone.utc) - submitted_at).total_seconds()
+            if self._metrics:
+                self._metrics.record_batch_completed(wait_seconds)
+
+        # Fetch results
+        results = await self._fetch_batch_results(batch.results_url)
+
+        # Update persistence and resolve futures
+        completed_requests = await self._persistence.mark_batch_completed(batch_id, results)
+
+        for request in completed_requests:
+            result = results.get(request.request_id, {})
+            self._resolve_future(
+                request.request_id,
+                LLMResponse(
+                    request_id=request.request_id,
+                    content=result.get("content"),
+                    success=result.get("success", False),
+                    error=result.get("error"),
+                    usage=result.get("usage"),
+                    model=result.get("model"),
+                    stop_reason=result.get("stop_reason"),
+                ),
+            )
+
+    async def _fetch_batch_results(
+        self,
+        results_url: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch and parse batch results from Anthropic.
+
+        Args:
+            results_url: URL to fetch results from
+
+        Returns:
+            Dictionary of request_id -> result data
+        """
+        results: dict[str, dict[str, Any]] = {}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                results_url,
+                headers={
+                    "x-api-key": os.getenv("ANTHROPIC_API_KEY"),
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            response.raise_for_status()
+
+            # Results are JSONL format
+            for line in response.text.strip().split("\n"):
+                if not line:
+                    continue
+
+                result_data = json.loads(line)
+                sanitized_id = result_data["custom_id"]
+                original_id = self._id_mapping.get(sanitized_id, sanitized_id)
+                result = result_data["result"]
+
+                if result["type"] == "succeeded":
+                    message = result["message"]
+                    content = None
+                    thinking = None
+
+                    for block in message.get("content", []):
+                        if block.get("type") == "text":
+                            content = block.get("text", "")
+                        elif block.get("type") == "thinking":
+                            thinking = block.get("thinking", "")
+                        elif block.get("type") == "tool_use":
+                            tool_input = block.get("input", {})
+                            if isinstance(tool_input, dict) and "$output" in tool_input and len(tool_input) == 1:
+                                tool_input = tool_input["$output"]
+                            content = json.dumps(tool_input)
+
+                    results[original_id] = {
+                        "success": True,
+                        "content": content,
+                        "thinking": thinking,
+                        "usage": message.get("usage"),
+                        "model": message.get("model"),
+                        "stop_reason": message.get("stop_reason"),
+                    }
+
+                elif result["type"] == "errored":
+                    error = result.get("error", {})
+                    if error.get("type") == "error" and "error" in error:
+                        inner_error = error["error"]
+                        error_msg = (
+                            f"{inner_error.get('type', 'unknown')}: {inner_error.get('message', 'Unknown error')}"
+                        )
+                    else:
+                        error_msg = f"{error.get('type', 'unknown')}: {error.get('message', 'Unknown error')}"
+                    results[original_id] = {
+                        "success": False,
+                        "error": error_msg,
+                    }
+
+                elif result["type"] in ("canceled", "expired"):
+                    results[original_id] = {
+                        "success": False,
+                        "error": f"Request {result['type']}",
+                    }
+
+        return results
+
+    async def _handle_batch_timeout(
+        self,
+        batch_id: str,
+        batch_info: dict[str, Any],
+    ) -> None:
+        """Handle a batch that hasn't completed within timeout.
+
+        Args:
+            batch_id: The batch ID
+            batch_info: Batch tracking info
+        """
+        request_ids = batch_info.get("request_ids", [])
+        retry_count = batch_info.get("retry_count", 0)
+        max_retries = self._config.max_retries_for_mode(self._mode)
+
+        if self._metrics:
+            self._metrics.record_batch_timeout()
+
+        if retry_count >= max_retries:
+            # Exhausted retries - fall back to sync
+            logger.warning(
+                f"Batch {batch_id} exhausted retries ({retry_count}/{max_retries}), "
+                f"falling back to sync for {len(request_ids)} requests"
+            )
+            if self._metrics:
+                self._metrics.record_sync_fallback()
+
+            # Get requests and execute synchronously
+            async with self._persistence.lock():
+                queue = await self._persistence.read_queue()
+                for request in queue["requests"]:
+                    if request["request_id"] in request_ids:
+                        req = LLMRequest.from_dict(request)
+                        asyncio.create_task(self._execute_sync(req))
+                        await self._persistence.remove_request(request["request_id"])
+
+            # Remove batch from tracking
+            queue["batches"].pop(batch_id, None)
+            await self._persistence.write_queue(queue)
+
+        else:
+            # Requeue for retry
+            logger.info(f"Batch {batch_id} timed out, requeueing (retry {retry_count + 1}/{max_retries})")
+
+            async with self._persistence.lock():
+                queue = await self._persistence.read_queue()
+
+                # Increment retry counts and reset state
+                for request in queue["requests"]:
+                    if request["request_id"] in request_ids:
+                        request["retry_count"] = request.get("retry_count", 0) + 1
+                        request["state"] = RequestState.QUEUED.value
+                        request["batch_id"] = None
+                        request["submitted_at"] = None
+
+                # Update batch info for tracking
+                queue["batches"][batch_id]["retry_count"] = retry_count + 1
+
+                await self._persistence.write_queue(queue)
+
+    async def flush(self) -> None:
+        """Manually flush all queued requests as a batch."""
+        async with self._submission_lock:
+            await self._submit_batch()
+
+
+# Global broker instance
+_broker: LLMBroker | None = None
+
+
+def get_broker() -> LLMBroker:
+    """Get or create the global broker instance."""
+    global _broker
+    if _broker is None:
+        _broker = LLMBroker()
+    return _broker
+
+
+def set_broker(broker: LLMBroker) -> None:
+    """Set the global broker instance (useful for testing)."""
+    global _broker
+    _broker = broker
+
+
+async def reset_broker() -> None:
+    """Reset the global broker instance."""
+    global _broker
+    if _broker is not None:
+        await _broker.stop()
+    _broker = None
