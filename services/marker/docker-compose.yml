@@ -55,7 +55,7 @@ services:
     environment:
       - TORCH_DEVICE=cuda
       - INFERENCE_RAM=14
-      - RECOGNITION_BATCH_SIZE=320
+      - RECOGNITION_BATCH_SIZE=384
       - DETECTOR_BATCH_SIZE=32
       - LAYOUT_BATCH_SIZE=48
       - TABLE_REC_BATCH_SIZE=64

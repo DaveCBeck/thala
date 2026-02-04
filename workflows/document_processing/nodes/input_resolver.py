@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from langsmith import traceable
 
 from core.scraping import get_url, GetUrlOptions
-from core.scraping.pdf import process_pdf_file
+from core.scraping.pdf import process_document_smart, process_pdf_file
 from workflows.shared.text_utils import chunk_by_headings, count_words, estimate_pages
 
 logger = logging.getLogger(__name__)
@@ -52,23 +52,27 @@ async def _resolve_local_file(
     suffix = source_path.suffix.lower()
 
     if suffix in PDF_EXTENSIONS:
-        # PDF file: Convert via Marker
-        logger.info(
-            f"Processing local PDF: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)"
-        )
+        # PDF file: Use smart routing (CPU fast-path or GPU Marker)
+        logger.info(f"Processing local PDF: {source_path.name} ({source_path.stat().st_size / 1024 / 1024:.1f} MB)")
 
         try:
-            markdown = await process_pdf_file(
-                str(source_path),
-                quality="balanced",
-                langs=input_data.get("langs", ["English"]),
+            # Read PDF content for smart routing analysis
+            pdf_content = source_path.read_bytes()
+            result = await process_document_smart(
+                pdf_content,
+                force_gpu=input_data.get("force_gpu", False),
             )
-            ocr_method = "marker:local_pdf"
+            markdown = result.markdown
+            ocr_method = f"smart:{result.processing_path}"
+            logger.info(
+                f"Smart routing: {result.processing_path}, "
+                f"complexity={result.analysis.complexity.value if result.analysis else 'N/A'}"
+            )
         except Exception as e:
-            logger.error(f"Marker PDF processing failed: {e}")
+            logger.error(f"Smart PDF processing failed: {e}")
             # Return minimal result so workflow can continue with metadata
             markdown = f"[PDF processing failed: {source_path.name}]"
-            ocr_method = "marker:failed"
+            ocr_method = "smart:failed"
 
     elif suffix in EPUB_EXTENSIONS:
         # EPUB file: Convert via Marker (same pipeline as PDF - auto-detected)
@@ -97,9 +101,7 @@ async def _resolve_local_file(
 
     else:
         # Unknown file type: Try to read as text
-        logger.warning(
-            f"Unknown file type '{suffix}', attempting to read as text: {source_path.name}"
-        )
+        logger.warning(f"Unknown file type '{suffix}', attempting to read as text: {source_path.name}")
         try:
             markdown = source_path.read_text(encoding="utf-8")
             ocr_method = "direct_read:unknown_type"
@@ -240,9 +242,7 @@ async def resolve_input(state: dict) -> dict:
             "ocr_method": "n/a",
         }
 
-        logger.info(
-            f"Markdown text resolved: {len(markdown)} chars, {word_count} words"
-        )
+        logger.info(f"Markdown text resolved: {len(markdown)} chars, {word_count} words")
 
         return {
             "source_type": source_type,
