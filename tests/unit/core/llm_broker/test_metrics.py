@@ -1,6 +1,8 @@
 """Unit tests for LLM Broker metrics."""
 
-from core.llm_broker.metrics import BrokerMetrics
+from collections import deque
+
+from core.llm_broker.metrics import METRICS_HISTORY_MAXLEN, BrokerMetrics
 
 
 class TestBrokerMetrics:
@@ -16,10 +18,52 @@ class TestBrokerMetrics:
         assert metrics.requests_batch_timeout == 0
         assert metrics.requests_failed == 0
         assert metrics.batches_submitted == 0
-        assert metrics.batch_sizes == []
-        assert metrics.batch_wait_times == []
+        assert len(metrics.batch_sizes) == 0
+        assert len(metrics.batch_wait_times) == 0
         assert metrics.queue_overflow_count == 0
         assert metrics.sync_fallback_count == 0
+
+    def test_batch_sizes_is_bounded_deque(self):
+        """Test batch_sizes uses bounded deque to prevent memory growth."""
+        metrics = BrokerMetrics()
+
+        assert isinstance(metrics.batch_sizes, deque)
+        assert metrics.batch_sizes.maxlen == METRICS_HISTORY_MAXLEN
+
+    def test_batch_wait_times_is_bounded_deque(self):
+        """Test batch_wait_times uses bounded deque to prevent memory growth."""
+        metrics = BrokerMetrics()
+
+        assert isinstance(metrics.batch_wait_times, deque)
+        assert metrics.batch_wait_times.maxlen == METRICS_HISTORY_MAXLEN
+
+    def test_batch_sizes_evicts_oldest_when_full(self):
+        """Test batch_sizes evicts oldest entries when maxlen is exceeded."""
+        metrics = BrokerMetrics()
+
+        # Fill beyond maxlen
+        for i in range(METRICS_HISTORY_MAXLEN + 10):
+            metrics.record_batch_submitted(size=i)
+
+        # Should only keep the most recent METRICS_HISTORY_MAXLEN entries
+        assert len(metrics.batch_sizes) == METRICS_HISTORY_MAXLEN
+        # Oldest entries (0-9) should be evicted, newest should remain
+        assert list(metrics.batch_sizes)[0] == 10
+        assert list(metrics.batch_sizes)[-1] == METRICS_HISTORY_MAXLEN + 9
+
+    def test_batch_wait_times_evicts_oldest_when_full(self):
+        """Test batch_wait_times evicts oldest entries when maxlen is exceeded."""
+        metrics = BrokerMetrics()
+
+        # Fill beyond maxlen
+        for i in range(METRICS_HISTORY_MAXLEN + 10):
+            metrics.record_batch_completed(wait_seconds=float(i))
+
+        # Should only keep the most recent METRICS_HISTORY_MAXLEN entries
+        assert len(metrics.batch_wait_times) == METRICS_HISTORY_MAXLEN
+        # Oldest entries should be evicted
+        assert list(metrics.batch_wait_times)[0] == 10.0
+        assert list(metrics.batch_wait_times)[-1] == float(METRICS_HISTORY_MAXLEN + 9)
 
     def test_record_request_batched(self):
         """Test recording a batched request."""
@@ -48,7 +92,7 @@ class TestBrokerMetrics:
         metrics.record_batch_submitted(size=10)
 
         assert metrics.batches_submitted == 1
-        assert metrics.batch_sizes == [10]
+        assert list(metrics.batch_sizes) == [10]
 
     def test_record_batch_completed(self):
         """Test recording a batch completion."""
@@ -56,7 +100,7 @@ class TestBrokerMetrics:
 
         metrics.record_batch_completed(wait_seconds=60.5)
 
-        assert metrics.batch_wait_times == [60.5]
+        assert list(metrics.batch_wait_times) == [60.5]
 
     def test_record_batch_timeout(self):
         """Test recording a batch timeout."""
@@ -139,7 +183,7 @@ class TestBrokerMetrics:
         assert metrics.requests_total == 0
         assert metrics.batches_submitted == 0
         assert metrics.requests_failed == 0
-        assert metrics.batch_sizes == []
+        assert len(metrics.batch_sizes) == 0
 
     def test_thread_safety(self):
         """Test metrics are thread-safe via lock."""

@@ -14,25 +14,23 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
+from urllib.parse import urlparse
 
 import httpx
-from anthropic import AsyncAnthropic
+from anthropic import APIError, AsyncAnthropic, RateLimitError
 from langsmith import traceable
 from langsmith.wrappers import wrap_anthropic
 
 from core.task_queue.shutdown import get_shutdown_coordinator
-from workflows.shared.llm_utils import ModelTier
-from workflows.shared.llm_utils.models import is_deepseek_tier
+from core.types import ModelTier, is_deepseek_tier
 
 from .config import BrokerConfig, get_broker_config
 from .exceptions import (
     BatchSubmissionError,
     BrokerNotStartedError,
-    NestedBatchGroupError,
     QueueOverflowError,
 )
 from .metrics import BrokerMetrics
@@ -47,11 +45,14 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Context variable to track active batch groups (for nesting detection)
-_active_batch_group: ContextVar[bool] = ContextVar("active_batch_group", default=False)
-
 # Beta header for 1M context window
 CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
+# Allowed hostnames for batch results URLs (SSRF protection)
+ALLOWED_RESULTS_HOSTS = frozenset({"api.anthropic.com", "batches.anthropic.com"})
+
+# Buffer tokens for output when thinking_budget is set
+DEFAULT_OUTPUT_BUFFER_TOKENS = 4096
 
 
 def _sanitize_custom_id(identifier: str) -> str:
@@ -138,6 +139,9 @@ class LLMBroker:
         # Current batch group context
         self._current_group: BatchGroup | None = None
 
+        # Track fire-and-forget sync tasks to ensure graceful shutdown
+        self._sync_tasks: set[asyncio.Task[None]] = set()
+
     @property
     def mode(self) -> UserMode:
         """Current user mode."""
@@ -176,6 +180,7 @@ class LLMBroker:
         """Stop the broker and cleanup.
 
         Cancels background tasks and flushes any remaining queued requests.
+        Waits for all in-flight sync tasks to complete gracefully.
         """
         if not self._started:
             return
@@ -189,12 +194,62 @@ class LLMBroker:
                 pass
             self._batch_monitor_task = None
 
+        # Wait for all in-flight sync tasks to complete
+        if self._sync_tasks:
+            logger.info(f"Waiting for {len(self._sync_tasks)} in-flight sync tasks to complete")
+            await asyncio.gather(*self._sync_tasks, return_exceptions=True)
+            self._sync_tasks.clear()
+
         # Log final metrics
         if self._metrics:
             self._metrics.log_summary()
 
         self._started = False
         logger.info("LLM Broker stopped")
+
+    async def __aenter__(self) -> "LLMBroker":
+        """Async context manager entry - starts the broker."""
+        await self.start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        """Async context manager exit - stops the broker."""
+        await self.stop()
+
+    def _spawn_sync_task(self, request: LLMRequest) -> asyncio.Task[None]:
+        """Spawn a tracked sync execution task.
+
+        Creates an asyncio task for sync execution and tracks it in _sync_tasks
+        to ensure graceful shutdown. Uses a done callback to automatically
+        remove completed tasks and log any exceptions.
+
+        Args:
+            request: The request to execute synchronously
+
+        Returns:
+            The created task
+        """
+        task = asyncio.create_task(
+            self._execute_sync(request),
+            name=f"sync-{request.request_id[:8]}",
+        )
+        self._sync_tasks.add(task)
+
+        def _on_task_done(t: asyncio.Task[None]) -> None:
+            self._sync_tasks.discard(t)
+            # Log exceptions that would otherwise be orphaned
+            if not t.cancelled() and t.exception() is not None:
+                logger.error(
+                    f"Sync task {t.get_name()} failed with exception: {t.exception()}"
+                )
+
+        task.add_done_callback(_on_task_done)
+        return task
 
     @asynccontextmanager
     async def batch_group(
@@ -211,21 +266,13 @@ class LLMBroker:
 
         Yields:
             BatchGroup context for tracking requests
-
-        Raises:
-            NestedBatchGroupError: If attempting to nest batch groups
         """
-        if _active_batch_group.get():
-            raise NestedBatchGroupError()
-
-        token = _active_batch_group.set(True)
         group = BatchGroup(broker=self, mode=mode or self._mode)
         self._current_group = group
 
         try:
             yield group
         finally:
-            _active_batch_group.reset(token)
             self._current_group = None
 
             # Flush queued requests from this group
@@ -296,8 +343,8 @@ class LLMBroker:
             if self._metrics:
                 self._metrics.record_request(batched=True)
         else:
-            # Execute synchronously
-            asyncio.create_task(self._execute_sync(request))
+            # Execute synchronously with tracked task
+            self._spawn_sync_task(request)
             if self._metrics:
                 self._metrics.record_request(batched=False)
 
@@ -362,12 +409,12 @@ class LLMBroker:
             if self._config.overflow_behavior == "reject":
                 raise QueueOverflowError(queue_size, self._config.max_queue_size)
             else:
-                # Fall back to sync
+                # Fall back to sync with tracked task
                 logger.warning(
                     f"Queue overflow ({queue_size}/{self._config.max_queue_size}), "
                     f"falling back to sync for request {request.request_id}"
                 )
-                asyncio.create_task(self._execute_sync(request))
+                self._spawn_sync_task(request)
                 return
 
         # Add to persistent queue
@@ -433,27 +480,7 @@ class LLMBroker:
             sanitized_id = _sanitize_custom_id(req.request_id)
             self._id_mapping[sanitized_id] = req.request_id
 
-            params: dict[str, Any] = {
-                "model": req.model,
-                "max_tokens": req.max_tokens,
-                "messages": [{"role": "user", "content": req.prompt}],
-            }
-
-            if req.system:
-                params["system"] = req.system
-
-            if req.thinking_budget:
-                params["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": req.thinking_budget,
-                }
-                if req.max_tokens <= req.thinking_budget:
-                    params["max_tokens"] = req.thinking_budget + 4096
-
-            if req.tools:
-                params["tools"] = req.tools
-            if req.tool_choice:
-                params["tool_choice"] = req.tool_choice
+            params = self._build_message_params(req)
 
             batch_requests.append(
                 {
@@ -527,27 +554,7 @@ class LLMBroker:
         async with self._sync_semaphore:
             try:
                 # Build message params
-                kwargs: dict[str, Any] = {
-                    "model": request.model,
-                    "max_tokens": request.max_tokens,
-                    "messages": [{"role": "user", "content": request.prompt}],
-                }
-
-                if request.system:
-                    kwargs["system"] = request.system
-
-                if request.thinking_budget:
-                    kwargs["thinking"] = {
-                        "type": "enabled",
-                        "budget_tokens": request.thinking_budget,
-                    }
-                    if request.max_tokens <= request.thinking_budget:
-                        kwargs["max_tokens"] = request.thinking_budget + 4096
-
-                if request.tools:
-                    kwargs["tools"] = request.tools
-                if request.tool_choice:
-                    kwargs["tool_choice"] = request.tool_choice
+                kwargs = self._build_message_params(request)
 
                 # Check if 1M context needed
                 if request.model == ModelTier.SONNET_1M.value:
@@ -559,7 +566,7 @@ class LLMBroker:
                     response = await self._async_client.messages.create(**kwargs)
 
                 # Parse response
-                content = self._parse_response_content(response)
+                content, thinking = self._parse_response_content(response)
 
                 self._resolve_future(
                     request.request_id,
@@ -573,8 +580,15 @@ class LLMBroker:
                         },
                         model=response.model,
                         stop_reason=response.stop_reason,
+                        thinking=thinking,
                     ),
                 )
+
+            except RateLimitError as e:
+                logger.warning(f"Rate limited for {request.request_id}, will retry in 60s: {e}")
+                await asyncio.sleep(60)
+                asyncio.create_task(self._execute_sync(request))
+                return
 
             except Exception as e:
                 logger.error(f"Sync request {request.request_id} failed: {e}")
@@ -590,25 +604,62 @@ class LLMBroker:
                     ),
                 )
 
-    def _parse_response_content(self, response: Any) -> Any:
-        """Parse content from Anthropic message response.
+    def _build_message_params(self, request: LLMRequest) -> dict[str, Any]:
+        """Build Anthropic API message parameters from request.
+
+        Args:
+            request: The LLM request to build parameters for
+
+        Returns:
+            Dictionary of parameters for Anthropic messages API
+        """
+        params: dict[str, Any] = {
+            "model": request.model,
+            "max_tokens": request.max_tokens,
+            "messages": [{"role": "user", "content": request.prompt}],
+        }
+
+        if request.system:
+            params["system"] = request.system
+
+        if request.thinking_budget:
+            params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": request.thinking_budget,
+            }
+            if request.max_tokens <= request.thinking_budget:
+                params["max_tokens"] = request.thinking_budget + DEFAULT_OUTPUT_BUFFER_TOKENS
+
+        if request.tools:
+            params["tools"] = request.tools
+        if request.tool_choice:
+            params["tool_choice"] = request.tool_choice
+
+        return params
+
+    def _parse_response_content(self, response: Any) -> tuple[Any, str | None]:
+        """Parse content and thinking from Anthropic message response.
 
         Args:
             response: Anthropic message response
 
         Returns:
-            Parsed content (text or tool input)
+            Tuple of (content, thinking) where content is text or tool input
         """
+        content = None
+        thinking = None
         for block in response.content:
-            if block.type == "text":
-                return block.text
+            if block.type == "thinking":
+                thinking = block.thinking
+            elif block.type == "text":
+                content = block.text
             elif block.type == "tool_use":
                 tool_input = block.input
                 # Unwrap $output wrapper if present
                 if isinstance(tool_input, dict) and "$output" in tool_input and len(tool_input) == 1:
                     tool_input = tool_input["$output"]
-                return json.dumps(tool_input)
-        return None
+                content = json.dumps(tool_input)
+        return content, thinking
 
     def _resolve_future(self, request_id: str, response: LLMResponse) -> None:
         """Resolve the future for a request.
@@ -630,7 +681,7 @@ class LLMBroker:
             try:
                 await self._check_submitted_batches()
             except Exception as e:
-                logger.error(f"Error in batch monitor loop: {e}")
+                logger.exception(f"Error in batch monitor loop: {e}")
 
             # Wait or respond to shutdown
             if await coordinator.wait_or_shutdown(self._config.poll_interval_seconds):
@@ -704,8 +755,27 @@ class LLMBroker:
                     usage=result.get("usage"),
                     model=result.get("model"),
                     stop_reason=result.get("stop_reason"),
+                    thinking=result.get("thinking"),
                 ),
             )
+
+    def _validate_results_url(self, url: str) -> bool:
+        """Validate that a results URL points to an allowed Anthropic domain.
+
+        Prevents SSRF attacks by ensuring we only send API credentials to
+        trusted Anthropic hostnames over HTTPS.
+
+        Args:
+            url: The URL to validate
+
+        Returns:
+            True if the URL is valid and safe to use with credentials
+        """
+        try:
+            parsed = urlparse(url)
+            return parsed.scheme == "https" and parsed.hostname in ALLOWED_RESULTS_HOSTS
+        except Exception:
+            return False
 
     async def _fetch_batch_results(
         self,
@@ -718,8 +788,19 @@ class LLMBroker:
 
         Returns:
             Dictionary of request_id -> result data
+
+        Raises:
+            ValueError: If results_url does not point to an allowed Anthropic domain
         """
+        # Validate URL to prevent SSRF - only send API key to trusted Anthropic domains
+        if not self._validate_results_url(results_url):
+            raise ValueError(
+                f"Invalid batch results URL: must be HTTPS to an allowed Anthropic domain "
+                f"({', '.join(sorted(ALLOWED_RESULTS_HOSTS))}), got: {results_url}"
+            )
+
         results: dict[str, dict[str, Any]] = {}
+        processed_sanitized_ids: list[str] = []
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -739,6 +820,7 @@ class LLMBroker:
                 result_data = json.loads(line)
                 sanitized_id = result_data["custom_id"]
                 original_id = self._id_mapping.get(sanitized_id, sanitized_id)
+                processed_sanitized_ids.append(sanitized_id)
                 result = result_data["result"]
 
                 if result["type"] == "succeeded":
@@ -786,6 +868,10 @@ class LLMBroker:
                         "error": f"Request {result['type']}",
                     }
 
+        # Cleanup processed ID mappings to prevent unbounded memory growth
+        for sanitized_id in processed_sanitized_ids:
+            self._id_mapping.pop(sanitized_id, None)
+
         return results
 
     async def _handle_batch_timeout(
@@ -815,18 +901,30 @@ class LLMBroker:
             if self._metrics:
                 self._metrics.record_sync_fallback()
 
-            # Get requests and execute synchronously
+            # Collect requests and modify queue atomically within single lock context
+            # to avoid nested lock acquisition (remove_request also acquires lock)
+            sync_requests: list[LLMRequest] = []
+            request_ids_set = set(request_ids)
+
             async with self._persistence.lock():
                 queue = await self._persistence.read_queue()
-                for request in queue["requests"]:
-                    if request["request_id"] in request_ids:
-                        req = LLMRequest.from_dict(request)
-                        asyncio.create_task(self._execute_sync(req))
-                        await self._persistence.remove_request(request["request_id"])
 
-            # Remove batch from tracking
-            queue["batches"].pop(batch_id, None)
-            await self._persistence.write_queue(queue)
+                # Separate requests to sync from those to keep
+                remaining_requests = []
+                for request in queue["requests"]:
+                    if request["request_id"] in request_ids_set:
+                        sync_requests.append(LLMRequest.from_dict(request))
+                    else:
+                        remaining_requests.append(request)
+
+                # Update queue atomically: remove synced requests and batch
+                queue["requests"] = remaining_requests
+                queue["batches"].pop(batch_id, None)
+                await self._persistence.write_queue(queue)
+
+            # Execute sync tasks OUTSIDE the lock to avoid holding lock during I/O
+            for req in sync_requests:
+                self._spawn_sync_task(req)
 
         else:
             # Requeue for retry

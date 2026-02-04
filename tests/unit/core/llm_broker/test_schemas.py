@@ -145,6 +145,70 @@ class TestLLMRequest:
         assert "created_at" in data
         assert isinstance(data["created_at"], str)  # ISO format string
 
+    def test_from_dict_missing_required_fields(self):
+        """Test from_dict raises clear error for missing required fields."""
+        import pytest
+
+        # Missing all required fields
+        with pytest.raises(ValueError) as exc_info:
+            LLMRequest.from_dict({})
+        error_msg = str(exc_info.value)
+        assert "Missing required fields in queue data:" in error_msg
+        assert "request_id" in error_msg
+        assert "prompt" in error_msg
+        assert "model" in error_msg
+        assert "policy" in error_msg
+        assert "state" in error_msg
+
+        # Missing some required fields
+        with pytest.raises(ValueError) as exc_info:
+            LLMRequest.from_dict({"request_id": "123", "prompt": "test"})
+        error_msg = str(exc_info.value)
+        assert "Missing required fields in queue data:" in error_msg
+        assert "model" in error_msg
+        assert "policy" in error_msg
+        assert "state" in error_msg
+        assert "request_id" not in error_msg.split(":")[-1]  # request_id should not be in missing list
+        assert "prompt" not in error_msg.split(":")[-1]  # prompt should not be in missing list
+
+    def test_from_dict_invalid_enum_value(self):
+        """Test from_dict wraps invalid enum values in descriptive error."""
+        import pytest
+
+        data = {
+            "request_id": "123",
+            "prompt": "test",
+            "model": "claude-sonnet-4-5-20250929",
+            "policy": "invalid_policy",  # Invalid BatchPolicy value
+            "state": "queued",
+            "created_at": "2025-01-01T00:00:00+00:00",
+        }
+
+        with pytest.raises(ValueError) as exc_info:
+            LLMRequest.from_dict(data)
+        error_msg = str(exc_info.value)
+        assert "Invalid queue data:" in error_msg
+        assert exc_info.value.__cause__ is not None  # Original error preserved
+
+    def test_from_dict_invalid_state_enum(self):
+        """Test from_dict wraps invalid state enum values in descriptive error."""
+        import pytest
+
+        data = {
+            "request_id": "123",
+            "prompt": "test",
+            "model": "claude-sonnet-4-5-20250929",
+            "policy": "prefer_speed",
+            "state": "invalid_state",  # Invalid RequestState value
+            "created_at": "2025-01-01T00:00:00+00:00",
+        }
+
+        with pytest.raises(ValueError) as exc_info:
+            LLMRequest.from_dict(data)
+        error_msg = str(exc_info.value)
+        assert "Invalid queue data:" in error_msg
+        assert exc_info.value.__cause__ is not None  # Original error preserved
+
 
 class TestLLMResponse:
     """Tests for LLMResponse dataclass."""

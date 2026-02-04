@@ -169,25 +169,6 @@ class TestBrokerPersistence:
         assert completed[0].state == RequestState.FAILED
 
     @pytest.mark.asyncio
-    async def test_increment_retry(self, persistence):
-        """Test incrementing retry count."""
-        await persistence.initialize()
-
-        request = LLMRequest.create(prompt="Test", model="model")
-        await persistence.add_request(request)
-
-        new_count = await persistence.increment_retry(request.request_id)
-        assert new_count == 1
-
-        new_count = await persistence.increment_retry(request.request_id)
-        assert new_count == 2
-
-        # Check request state reset to QUEUED
-        queued = await persistence.get_queued_requests()
-        assert len(queued) == 1
-        assert queued[0].retry_count == 2
-
-    @pytest.mark.asyncio
     async def test_remove_request(self, persistence):
         """Test removing a request."""
         await persistence.initialize()
@@ -231,38 +212,6 @@ class TestBrokerPersistence:
         await persistence.mark_requests_submitted([req1.request_id], "batch")
 
         assert await persistence.get_queue_size() == 1
-
-    @pytest.mark.asyncio
-    async def test_cleanup_completed(self, persistence):
-        """Test cleaning up old completed requests."""
-        await persistence.initialize()
-
-        # Add and complete a request
-        request = LLMRequest.create(prompt="Test", model="model")
-        await persistence.add_request(request)
-        await persistence.mark_requests_submitted([request.request_id], "batch")
-        await persistence.mark_batch_completed("batch", {request.request_id: {"success": True}})
-
-        # With max_age_hours=0, should clean up immediately
-        cleaned = await persistence.cleanup_completed(max_age_hours=0)
-
-        assert cleaned == 1
-        queue = await persistence.read_queue()
-        assert len(queue["requests"]) == 0
-
-    @pytest.mark.asyncio
-    async def test_cleanup_completed_keeps_queued(self, persistence):
-        """Test cleanup doesn't remove queued requests."""
-        await persistence.initialize()
-
-        request = LLMRequest.create(prompt="Test", model="model")
-        await persistence.add_request(request)
-
-        cleaned = await persistence.cleanup_completed(max_age_hours=0)
-
-        assert cleaned == 0
-        queue = await persistence.read_queue()
-        assert len(queue["requests"]) == 1
 
     @pytest.mark.asyncio
     async def test_atomic_write(self, persistence, temp_dir):

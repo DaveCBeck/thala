@@ -6,9 +6,14 @@ queue sizes, and response times.
 
 import logging
 import threading
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+# Maximum entries in batch_sizes and batch_wait_times deques
+# 1000 entries provides ~1 day of history at ~40 batches/hour
+METRICS_HISTORY_MAXLEN = 1000
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +44,8 @@ class BrokerMetrics:
     requests_batch_timeout: int = 0
     requests_failed: int = 0
     batches_submitted: int = 0
-    batch_sizes: list[int] = field(default_factory=list)
-    batch_wait_times: list[float] = field(default_factory=list)
+    batch_sizes: deque[int] = field(default_factory=lambda: deque(maxlen=METRICS_HISTORY_MAXLEN))
+    batch_wait_times: deque[float] = field(default_factory=lambda: deque(maxlen=METRICS_HISTORY_MAXLEN))
     queue_overflow_count: int = 0
     sync_fallback_count: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)

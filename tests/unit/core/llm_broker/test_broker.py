@@ -11,7 +11,6 @@ from core.llm_broker.broker import LLMBroker, _sanitize_custom_id
 from core.llm_broker.config import BrokerConfig
 from core.llm_broker.exceptions import (
     BrokerNotStartedError,
-    NestedBatchGroupError,
     QueueOverflowError,
 )
 from core.llm_broker.schemas import (
@@ -239,15 +238,6 @@ class TestBatchGroup:
         assert broker._submit_batch.called
 
     @pytest.mark.asyncio
-    async def test_nested_batch_group_raises(self, broker):
-        """Test nested batch_group raises error."""
-        broker._submit_batch = AsyncMock()  # Mock to avoid API calls
-        async with broker.batch_group():
-            with pytest.raises(NestedBatchGroupError):
-                async with broker.batch_group():
-                    pass
-
-    @pytest.mark.asyncio
     async def test_batch_group_with_mode_override(self, broker):
         """Test batch_group can override mode."""
         broker._submit_batch = AsyncMock()  # Mock to avoid API calls
@@ -423,3 +413,336 @@ class TestModeProperty:
         """Test setting mode."""
         broker.mode = UserMode.ECONOMICAL
         assert broker.mode == UserMode.ECONOMICAL
+
+
+class TestSyncTaskTracking:
+    """Tests for fire-and-forget task tracking and graceful shutdown."""
+
+    @pytest.mark.asyncio
+    async def test_sync_tasks_tracked_in_set(self, broker):
+        """Test that sync execution tasks are tracked in _sync_tasks set."""
+        # Create a slow mock response to keep the task running
+        async def slow_create(**kwargs):
+            await asyncio.sleep(0.5)
+            mock_response = MagicMock()
+            mock_response.content = [MagicMock(type="text", text="Response")]
+            mock_response.usage = MagicMock(input_tokens=10, output_tokens=20)
+            mock_response.model = "test"
+            mock_response.stop_reason = "end_turn"
+            return mock_response
+
+        broker._async_client.messages.create = slow_create
+        broker._async_client.beta.messages.create = slow_create
+
+        # Make a sync request
+        await broker.request(
+            prompt="Test",
+            model=ModelTier.HAIKU,
+            policy=BatchPolicy.REQUIRE_SYNC,
+        )
+
+        # Task should be tracked while running
+        await asyncio.sleep(0.1)  # Give task time to start
+        assert len(broker._sync_tasks) >= 1
+
+        # Wait for completion and verify task is removed
+        await asyncio.sleep(0.6)
+        assert len(broker._sync_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_stop_waits_for_in_flight_sync_tasks(self, test_config):
+        """Test that stop() waits for all in-flight sync tasks to complete."""
+        from core.task_queue.shutdown import reset_shutdown_coordinator
+
+        reset_shutdown_coordinator()
+
+        broker = LLMBroker(config=test_config)
+        broker._async_client = MagicMock()
+
+        # Track whether task completed before stop returned
+        task_completed = False
+
+        async def slow_create(**kwargs):
+            nonlocal task_completed
+            await asyncio.sleep(0.3)
+            task_completed = True
+            mock_response = MagicMock()
+            mock_response.content = [MagicMock(type="text", text="Response")]
+            mock_response.usage = MagicMock(input_tokens=10, output_tokens=20)
+            mock_response.model = "test"
+            mock_response.stop_reason = "end_turn"
+            return mock_response
+
+        broker._async_client.messages.create = slow_create
+        broker._async_client.beta.messages.create = slow_create
+
+        # Initialize without background task to avoid shutdown coordinator issues
+        await broker._persistence.initialize()
+        broker._started = True
+
+        try:
+            # Submit a sync request
+            await broker.request(
+                prompt="Test",
+                model=ModelTier.HAIKU,
+                policy=BatchPolicy.REQUIRE_SYNC,
+            )
+
+            # Verify task is in-flight
+            await asyncio.sleep(0.1)
+            assert len(broker._sync_tasks) >= 1
+
+            # Stop should wait for the task
+            await broker.stop()
+
+            # Task should have completed before stop returned
+            assert task_completed is True
+            assert len(broker._sync_tasks) == 0
+        finally:
+            broker._started = False
+            reset_shutdown_coordinator()
+
+    @pytest.mark.asyncio
+    async def test_task_exceptions_logged_not_orphaned(self, broker, caplog):
+        """Test that task exceptions are logged via done callback."""
+        import logging
+
+        # Make the API call raise an exception
+        broker._async_client.messages.create = AsyncMock(
+            side_effect=Exception("Simulated API failure")
+        )
+        broker._async_client.beta.messages.create = AsyncMock(
+            side_effect=Exception("Simulated API failure")
+        )
+
+        with caplog.at_level(logging.ERROR):
+            await broker.request(
+                prompt="Test",
+                model=ModelTier.HAIKU,
+                policy=BatchPolicy.REQUIRE_SYNC,
+            )
+
+            # Wait for task to complete and callback to run
+            await asyncio.sleep(0.2)
+
+        # The error should be logged (either from _execute_sync or done callback)
+        assert any("failed" in record.message.lower() for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_spawn_sync_task_returns_named_task(self, broker):
+        """Test that _spawn_sync_task creates properly named tasks."""
+        from core.llm_broker.schemas import LLMRequest
+
+        # Create a test request
+        request = LLMRequest.create(
+            prompt="Test",
+            model=ModelTier.HAIKU.value,
+            policy=BatchPolicy.REQUIRE_SYNC,
+            max_tokens=100,
+        )
+
+        # Mock to avoid actual API call
+        broker._async_client.messages.create = AsyncMock(
+            side_effect=Exception("Expected")
+        )
+
+        task = broker._spawn_sync_task(request)
+
+        # Task should be named with request ID prefix
+        assert task.get_name().startswith("sync-")
+        assert request.request_id[:8] in task.get_name()
+
+        # Wait for task to complete
+        await asyncio.sleep(0.1)
+
+
+class TestResultsUrlValidation:
+    """Tests for SSRF protection via results URL validation."""
+
+    @pytest.mark.asyncio
+    async def test_valid_api_anthropic_url(self, broker):
+        """Test that api.anthropic.com HTTPS URLs are accepted."""
+        url = "https://api.anthropic.com/v1/batches/123/results"
+        assert broker._validate_results_url(url) is True
+
+    @pytest.mark.asyncio
+    async def test_valid_batches_anthropic_url(self, broker):
+        """Test that batches.anthropic.com HTTPS URLs are accepted."""
+        url = "https://batches.anthropic.com/results/abc123"
+        assert broker._validate_results_url(url) is True
+
+    @pytest.mark.asyncio
+    async def test_reject_http_url(self, broker):
+        """Test that HTTP URLs are rejected even for valid domains."""
+        url = "http://api.anthropic.com/v1/batches/123/results"
+        assert broker._validate_results_url(url) is False
+
+    @pytest.mark.asyncio
+    async def test_reject_arbitrary_domain(self, broker):
+        """Test that arbitrary domains are rejected."""
+        url = "https://evil.com/steal-api-key"
+        assert broker._validate_results_url(url) is False
+
+    @pytest.mark.asyncio
+    async def test_reject_subdomain_attack(self, broker):
+        """Test that subdomains of allowed hosts are rejected."""
+        url = "https://evil.api.anthropic.com/results"
+        assert broker._validate_results_url(url) is False
+
+    @pytest.mark.asyncio
+    async def test_reject_lookalike_domain(self, broker):
+        """Test that lookalike domains are rejected."""
+        url = "https://api-anthropic.com/results"
+        assert broker._validate_results_url(url) is False
+        url = "https://anthropic.com.evil.com/results"
+        assert broker._validate_results_url(url) is False
+
+    @pytest.mark.asyncio
+    async def test_reject_empty_url(self, broker):
+        """Test that empty URLs are rejected."""
+        assert broker._validate_results_url("") is False
+
+    @pytest.mark.asyncio
+    async def test_reject_malformed_url(self, broker):
+        """Test that malformed URLs are rejected."""
+        assert broker._validate_results_url("not-a-url") is False
+        assert broker._validate_results_url("://missing-scheme.com") is False
+
+    @pytest.mark.asyncio
+    async def test_fetch_batch_results_validates_url(self, broker):
+        """Test that _fetch_batch_results raises ValueError for invalid URLs."""
+        with pytest.raises(ValueError) as exc_info:
+            await broker._fetch_batch_results("https://evil.com/steal")
+
+        assert "Invalid batch results URL" in str(exc_info.value)
+        assert "evil.com" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_fetch_batch_results_error_includes_allowed_hosts(self, broker):
+        """Test that error message lists allowed hosts for debugging."""
+        with pytest.raises(ValueError) as exc_info:
+            await broker._fetch_batch_results("https://attacker.com/results")
+
+        error_msg = str(exc_info.value)
+        assert "api.anthropic.com" in error_msg
+        assert "batches.anthropic.com" in error_msg
+
+
+class TestIdMappingCleanup:
+    """Tests for _id_mapping cleanup to prevent memory leaks."""
+
+    @pytest.mark.asyncio
+    async def test_id_mapping_cleaned_after_batch_results_fetched(self, broker):
+        """Test that _id_mapping entries are removed after processing batch results."""
+        import httpx
+
+        # Pre-populate _id_mapping with sanitized -> original mappings
+        broker._id_mapping["sanitized_id_1"] = "original-id-1"
+        broker._id_mapping["sanitized_id_2"] = "original-id-2"
+        broker._id_mapping["unrelated_id"] = "should-remain"
+
+        # Mock the HTTP response with JSONL results
+        jsonl_response = (
+            '{"custom_id": "sanitized_id_1", "result": {"type": "succeeded", "message": {"content": [{"type": "text", "text": "Response 1"}]}}}\n'
+            '{"custom_id": "sanitized_id_2", "result": {"type": "succeeded", "message": {"content": [{"type": "text", "text": "Response 2"}]}}}'
+        )
+
+        mock_response = MagicMock()
+        mock_response.text = jsonl_response
+        mock_response.raise_for_status = MagicMock()
+
+        # Patch httpx.AsyncClient
+        original_get = httpx.AsyncClient.get
+
+        async def mock_get(self, url, **kwargs):
+            return mock_response
+
+        httpx.AsyncClient.get = mock_get
+
+        try:
+            results = await broker._fetch_batch_results(
+                "https://api.anthropic.com/v1/batches/123/results"
+            )
+
+            # Verify results were parsed correctly
+            assert "original-id-1" in results
+            assert "original-id-2" in results
+            assert results["original-id-1"]["success"] is True
+            assert results["original-id-2"]["success"] is True
+
+            # Verify processed IDs were cleaned up
+            assert "sanitized_id_1" not in broker._id_mapping
+            assert "sanitized_id_2" not in broker._id_mapping
+
+            # Verify unrelated entry remains
+            assert broker._id_mapping.get("unrelated_id") == "should-remain"
+        finally:
+            httpx.AsyncClient.get = original_get
+
+    @pytest.mark.asyncio
+    async def test_id_mapping_cleaned_for_errored_results(self, broker):
+        """Test that _id_mapping entries are cleaned up even for errored results."""
+        import httpx
+
+        broker._id_mapping["error_id"] = "original-error-id"
+
+        jsonl_response = '{"custom_id": "error_id", "result": {"type": "errored", "error": {"type": "invalid_request", "message": "Test error"}}}'
+
+        mock_response = MagicMock()
+        mock_response.text = jsonl_response
+        mock_response.raise_for_status = MagicMock()
+
+        original_get = httpx.AsyncClient.get
+
+        async def mock_get(self, url, **kwargs):
+            return mock_response
+
+        httpx.AsyncClient.get = mock_get
+
+        try:
+            results = await broker._fetch_batch_results(
+                "https://api.anthropic.com/v1/batches/123/results"
+            )
+
+            # Verify error result was parsed
+            assert "original-error-id" in results
+            assert results["original-error-id"]["success"] is False
+
+            # Verify ID mapping was cleaned up
+            assert "error_id" not in broker._id_mapping
+        finally:
+            httpx.AsyncClient.get = original_get
+
+    @pytest.mark.asyncio
+    async def test_id_mapping_cleaned_for_canceled_results(self, broker):
+        """Test that _id_mapping entries are cleaned up for canceled/expired results."""
+        import httpx
+
+        broker._id_mapping["canceled_id"] = "original-canceled-id"
+
+        jsonl_response = '{"custom_id": "canceled_id", "result": {"type": "canceled"}}'
+
+        mock_response = MagicMock()
+        mock_response.text = jsonl_response
+        mock_response.raise_for_status = MagicMock()
+
+        original_get = httpx.AsyncClient.get
+
+        async def mock_get(self, url, **kwargs):
+            return mock_response
+
+        httpx.AsyncClient.get = mock_get
+
+        try:
+            results = await broker._fetch_batch_results(
+                "https://api.anthropic.com/v1/batches/123/results"
+            )
+
+            # Verify canceled result was parsed
+            assert "original-canceled-id" in results
+            assert results["original-canceled-id"]["success"] is False
+
+            # Verify ID mapping was cleaned up
+            assert "canceled_id" not in broker._id_mapping
+        finally:
+            httpx.AsyncClient.get = original_get

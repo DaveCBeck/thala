@@ -9,6 +9,7 @@ import asyncio
 import fcntl
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,7 +47,7 @@ class BrokerPersistence:
 
     def _initialize_sync(self) -> None:
         """Sync helper for initialization."""
-        self.queue_dir.mkdir(parents=True, exist_ok=True)
+        self.queue_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not self.queue_file.exists():
             self._write_queue_sync(self._empty_queue())
         logger.debug(f"Broker persistence initialized at {self.queue_dir}")
@@ -110,15 +111,17 @@ class BrokerPersistence:
         """Sync helper for atomic queue write."""
         queue["last_updated"] = datetime.now(timezone.utc).isoformat()
         temp_file = self.queue_file.with_suffix(".tmp")
-        with open(temp_file, "w") as f:
-            json.dump(queue, f, indent=2)
+        fd = os.open(temp_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(queue, f, separators=(",", ":"))
         try:
             temp_file.rename(self.queue_file)
         except FileNotFoundError:
             # Temp file may have been deleted by concurrent cleanup
             logger.warning(f"Temp file {temp_file} disappeared before rename - retrying write")
-            with open(self.queue_file, "w") as f:
-                json.dump(queue, f, indent=2)
+            fd = os.open(self.queue_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(queue, f, separators=(",", ":"))
 
     def _empty_queue(self) -> dict[str, Any]:
         """Create an empty queue structure."""
@@ -234,27 +237,6 @@ class BrokerPersistence:
             logger.debug(f"Batch {batch_id} completed with {len(completed_requests)} requests")
             return completed_requests
 
-    async def increment_retry(self, request_id: str) -> int:
-        """Increment retry count for a request.
-
-        Args:
-            request_id: ID of the request to retry
-
-        Returns:
-            New retry count
-        """
-        async with self.lock():
-            queue = await self.read_queue()
-            for request in queue["requests"]:
-                if request["request_id"] == request_id:
-                    request["retry_count"] = request.get("retry_count", 0) + 1
-                    request["state"] = RequestState.QUEUED.value
-                    request["batch_id"] = None
-                    request["submitted_at"] = None
-                    await self.write_queue(queue)
-                    return request["retry_count"]
-            return 0
-
     async def remove_request(self, request_id: str) -> LLMRequest | None:
         """Remove a request from the queue.
 
@@ -282,40 +264,3 @@ class BrokerPersistence:
         async with self.lock():
             queue = await self.read_queue()
             return sum(1 for r in queue["requests"] if r["state"] == RequestState.QUEUED.value)
-
-    async def cleanup_completed(self, max_age_hours: float = 24.0) -> int:
-        """Remove completed/failed requests older than max_age.
-
-        Args:
-            max_age_hours: Maximum age in hours for completed requests
-
-        Returns:
-            Number of requests cleaned up
-        """
-        async with self.lock():
-            queue = await self.read_queue()
-            now = datetime.now(timezone.utc)
-            original_count = len(queue["requests"])
-
-            queue["requests"] = [r for r in queue["requests"] if not self._should_cleanup(r, now, max_age_hours)]
-
-            cleaned = original_count - len(queue["requests"])
-            if cleaned > 0:
-                await self.write_queue(queue)
-                logger.info(f"Cleaned up {cleaned} old requests from queue")
-            return cleaned
-
-    def _should_cleanup(
-        self,
-        request: dict[str, Any],
-        now: datetime,
-        max_age_hours: float,
-    ) -> bool:
-        """Check if a request should be cleaned up."""
-        state = request.get("state")
-        if state not in (RequestState.COMPLETED.value, RequestState.FAILED.value):
-            return False
-
-        created_at = datetime.fromisoformat(request["created_at"])
-        age_hours = (now - created_at).total_seconds() / 3600
-        return age_hours > max_age_hours

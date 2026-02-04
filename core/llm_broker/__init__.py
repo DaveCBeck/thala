@@ -53,10 +53,8 @@ from .config import (
 from .exceptions import (
     BrokerError,
     QueueOverflowError,
-    BatchRequestError,
     BatchSubmissionError,
     BrokerNotStartedError,
-    NestedBatchGroupError,
 )
 from .metrics import BrokerMetrics
 from .persistence import BrokerPersistence
@@ -84,10 +82,8 @@ __all__ = [
     # Exceptions
     "BrokerError",
     "QueueOverflowError",
-    "BatchRequestError",
     "BatchSubmissionError",
     "BrokerNotStartedError",
-    "NestedBatchGroupError",
     # Observability
     "BrokerMetrics",
     # Persistence

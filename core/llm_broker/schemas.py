@@ -7,7 +7,7 @@ state tracking, and batch policy configuration.
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 import uuid
 
 
@@ -71,13 +71,13 @@ class LLMRequest:
     policy: BatchPolicy = BatchPolicy.PREFER_SPEED
     state: RequestState = RequestState.QUEUED
     max_tokens: int = 4096
-    system: Optional[str] = None
-    thinking_budget: Optional[int] = None
-    tools: Optional[list[dict[str, Any]]] = None
-    tool_choice: Optional[dict[str, Any]] = None
+    system: str | None = None
+    thinking_budget: int | None = None
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: dict[str, Any] | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    submitted_at: Optional[datetime] = None
-    batch_id: Optional[str] = None
+    submitted_at: datetime | None = None
+    batch_id: str | None = None
     retry_count: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -120,24 +120,32 @@ class LLMRequest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LLMRequest":
-        """Deserialize request from persistence."""
-        return cls(
-            request_id=data["request_id"],
-            prompt=data["prompt"],
-            model=data["model"],
-            policy=BatchPolicy(data["policy"]),
-            state=RequestState(data["state"]),
-            max_tokens=data.get("max_tokens", 4096),
-            system=data.get("system"),
-            thinking_budget=data.get("thinking_budget"),
-            tools=data.get("tools"),
-            tool_choice=data.get("tool_choice"),
-            created_at=datetime.fromisoformat(data["created_at"]),
-            submitted_at=(datetime.fromisoformat(data["submitted_at"]) if data.get("submitted_at") else None),
-            batch_id=data.get("batch_id"),
-            retry_count=data.get("retry_count", 0),
-            metadata=data.get("metadata", {}),
-        )
+        """Deserialize from dictionary with validation."""
+        required_fields = ["request_id", "prompt", "model", "policy", "state"]
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            raise ValueError(f"Missing required fields in queue data: {missing}")
+
+        try:
+            return cls(
+                request_id=data["request_id"],
+                prompt=data["prompt"],
+                model=data["model"],
+                policy=BatchPolicy(data["policy"]),
+                state=RequestState(data["state"]),
+                max_tokens=data.get("max_tokens", 4096),
+                system=data.get("system"),
+                thinking_budget=data.get("thinking_budget"),
+                tools=data.get("tools"),
+                tool_choice=data.get("tool_choice"),
+                created_at=datetime.fromisoformat(data["created_at"]),
+                submitted_at=(datetime.fromisoformat(data["submitted_at"]) if data.get("submitted_at") else None),
+                batch_id=data.get("batch_id"),
+                retry_count=data.get("retry_count", 0),
+                metadata=data.get("metadata", {}),
+            )
+        except (KeyError, ValueError) as e:
+            raise ValueError(f"Invalid queue data: {e}") from e
 
 
 @dataclass
@@ -152,15 +160,17 @@ class LLMResponse:
         usage: Token usage statistics
         model: Model that processed the request
         stop_reason: Why generation stopped
+        thinking: Extended thinking content if available
     """
 
     request_id: str
     content: Any
     success: bool = True
-    error: Optional[str] = None
-    usage: Optional[dict[str, int]] = None
-    model: Optional[str] = None
-    stop_reason: Optional[str] = None
+    error: str | None = None
+    usage: dict[str, int] | None = None
+    model: str | None = None
+    stop_reason: str | None = None
+    thinking: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize response for logging/storage."""
@@ -172,4 +182,5 @@ class LLMResponse:
             "usage": self.usage,
             "model": self.model,
             "stop_reason": self.stop_reason,
+            "thinking": self.thinking,
         }
