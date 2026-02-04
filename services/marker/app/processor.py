@@ -170,6 +170,10 @@ class MarkerProcessor:
             "languages": langs,
         }
 
+        # Pass Gemini API key for LLM mode
+        if preset["use_llm"] and self.settings.google_api_key:
+            config["gemini_api_key"] = self.settings.google_api_key
+
         # Create converter without specifying renderer (we'll render manually)
         converter = PdfConverter(
             artifact_dict=self._get_models(),

@@ -75,9 +75,7 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
             return content
 
         except httpx.HTTPStatusError as e:
-            raise MarkerProcessingError(
-                f"HTTP error downloading PDF: {e.response.status_code}"
-            ) from e
+            raise MarkerProcessingError(f"HTTP error downloading PDF: {e.response.status_code}") from e
         except httpx.TimeoutException as e:
             raise MarkerProcessingError("Timeout downloading PDF") from e
         except MarkerProcessingError:
@@ -160,9 +158,7 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
         timeout_ms = int(timeout * 1000)
 
         try:
-            response = await page.goto(
-                url, timeout=timeout_ms, wait_until="networkidle"
-            )
+            response = await page.goto(url, timeout=timeout_ms, wait_until="networkidle")
         except Exception as nav_error:
             error_str = str(nav_error)
             if "Download is starting" in error_str:
@@ -172,9 +168,7 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
 
         # Check if we captured the PDF via response interception
         if content and validate_pdf_bytes(content):
-            logger.debug(
-                f"Playwright captured PDF via response: {len(content) / 1024:.1f} KB"
-            )
+            logger.debug(f"Playwright captured PDF via response: {len(content) / 1024:.1f} KB")
             return content
 
         # If download was triggered, use expect_download to capture it
@@ -183,9 +177,7 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
             content = await _capture_download_with_expect(page, url, timeout_ms)
             if content and validate_pdf_bytes(content):
                 return content
-            raise MarkerProcessingError(
-                "Playwright download triggered but content is not a valid PDF"
-            )
+            raise MarkerProcessingError("Playwright download triggered but content is not a valid PDF")
 
         # If not captured via response, check if we can get it from the response directly
         if response:
@@ -193,14 +185,10 @@ async def _download_pdf_playwright(url: str, timeout: float = 60.0) -> bytes:
             if "application/pdf" in content_type:
                 content = await response.body()
                 if validate_pdf_bytes(content):
-                    logger.debug(
-                        f"Playwright got PDF from response: {len(content) / 1024:.1f} KB"
-                    )
+                    logger.debug(f"Playwright got PDF from response: {len(content) / 1024:.1f} KB")
                     return content
 
-        raise MarkerProcessingError(
-            "Playwright could not download PDF (got non-PDF content)"
-        )
+        raise MarkerProcessingError("Playwright could not download PDF (got non-PDF content)")
 
     except MarkerProcessingError:
         raise
@@ -246,9 +234,7 @@ async def _capture_download_with_expect(page, url: str, timeout_ms: int) -> byte
         # save_as waits for download to complete
         await download.save_as(download_path)
         content = Path(download_path).read_bytes()
-        logger.debug(
-            f"Playwright captured download via expect_download: {len(content)} bytes"
-        )
+        logger.debug(f"Playwright captured download via expect_download: {len(content)} bytes")
         return content
 
     finally:
@@ -359,14 +345,11 @@ async def _submit_marker_job(
                 if attempt < max_retries - 1:
                     wait_time = 2.0 * backoff_multipliers[attempt]  # 4s, 10s, 20s
                     logger.warning(
-                        f"Marker submit timeout (attempt {attempt + 1}/{max_retries}), "
-                        f"retrying in {wait_time}s"
+                        f"Marker submit timeout (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s"
                     )
                     await asyncio.sleep(wait_time)
                 else:
-                    raise MarkerProcessingError(
-                        f"Marker job submission failed after {max_retries} retries: {e}"
-                    ) from e
+                    raise MarkerProcessingError(f"Marker job submission failed after {max_retries} retries: {e}") from e
 
         # Should never reach here, but satisfy type checker
         raise MarkerProcessingError("Marker job submission failed")
@@ -397,9 +380,7 @@ async def _poll_marker_job(
         while True:
             elapsed = asyncio.get_event_loop().time() - start_time
             if max_wait is not None and elapsed > max_wait:
-                raise MarkerProcessingError(
-                    f"Marker job {job_id} did not complete within {max_wait}s"
-                )
+                raise MarkerProcessingError(f"Marker job {job_id} did not complete within {max_wait}s")
 
             # Retry transient network errors with longer backoffs for busy service
             backoff_multipliers = (2, 5, 10)  # 30s, 75s, 150s
@@ -417,9 +398,7 @@ async def _poll_marker_job(
                         )
                         await asyncio.sleep(wait_time)
                     else:
-                        raise MarkerProcessingError(
-                            f"Marker poll failed after {max_retries} retries: {e}"
-                        ) from e
+                        raise MarkerProcessingError(f"Marker poll failed after {max_retries} retries: {e}") from e
 
             data = response.json()
             status = data["status"]
@@ -503,9 +482,7 @@ async def process_pdf_bytes(
     if len(content) > MARKER_MAX_FILE_SIZE:
         size_mb = len(content) / (1024 * 1024)
         limit_mb = MARKER_MAX_FILE_SIZE / (1024 * 1024)
-        raise MarkerProcessingError(
-            f"PDF too large ({size_mb:.1f}MB > {limit_mb:.0f}MB limit)"
-        )
+        raise MarkerProcessingError(f"PDF too large ({size_mb:.1f}MB > {limit_mb:.0f}MB limit)")
 
     # Check if PDF needs chunking
     if should_chunk_pdf(content, MARKER_CHUNK_PAGE_THRESHOLD):
@@ -581,18 +558,14 @@ async def _process_chunked_pdf(
     """
     # Split PDF into chunks
     chunks = split_pdf_by_pages(content, MARKER_CHUNK_SIZE)
-    logger.info(
-        f"Processing large PDF in {len(chunks)} chunks of ~{MARKER_CHUNK_SIZE} pages"
-    )
+    logger.info(f"Processing large PDF in {len(chunks)} chunks of ~{MARKER_CHUNK_SIZE} pages")
 
     markdown_chunks = []
     page_ranges = []
 
     for i, (chunk_bytes, page_range) in enumerate(chunks):
         chunk_num = i + 1
-        logger.info(
-            f"Processing chunk {chunk_num}/{len(chunks)} (pages {page_range[0]}-{page_range[1]})"
-        )
+        logger.info(f"Processing chunk {chunk_num}/{len(chunks)} (pages {page_range[0]}-{page_range[1]})")
 
         try:
             # Process this chunk
@@ -607,9 +580,7 @@ async def _process_chunked_pdf(
             markdown_chunks.append(markdown)
             page_ranges.append(page_range)
 
-            logger.debug(
-                f"Chunk {chunk_num}/{len(chunks)} complete: {len(markdown)} chars"
-            )
+            logger.debug(f"Chunk {chunk_num}/{len(chunks)} complete: {len(markdown)} chars")
 
         except Exception as e:
             logger.error(f"Chunk {chunk_num}/{len(chunks)} failed: {e}")
@@ -630,9 +601,7 @@ async def _process_chunked_pdf(
 
     # Reassemble chunks
     assembled = assemble_markdown_chunks(markdown_chunks, page_ranges)
-    logger.info(
-        f"Assembled {len(chunks)} chunks into {len(assembled)} chars of markdown"
-    )
+    logger.info(f"Assembled {len(chunks)} chunks into {len(assembled)} chars of markdown")
 
     return assembled
 
@@ -715,9 +684,7 @@ async def download_pdf_by_md5(
             )
 
             if output_path.exists():
-                logger.debug(
-                    f"Downloaded PDF: {output_path} ({output_path.stat().st_size / 1024:.1f} KB)"
-                )
+                logger.debug(f"Downloaded PDF: {output_path} ({output_path.stat().st_size / 1024:.1f} KB)")
                 return str(output_path)
             else:
                 logger.warning(f"Download completed but file not found: {output_path}")
