@@ -8,13 +8,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Generic, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, Optional, Type, TypeVar
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from ..caching import CacheTTL
 from ..models import ModelTier
+
+if TYPE_CHECKING:
+    from core.llm_broker import BatchPolicy
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -84,6 +87,10 @@ class StructuredOutputConfig:
     strategy: StructuredOutputStrategy = StructuredOutputStrategy.AUTO
     use_json_schema_method: bool = False
     prefer_batch_api: bool = field(default_factory=_get_prefer_batch_default)
+
+    # Broker integration (when THALA_LLM_BROKER_ENABLED=1)
+    # When set, routes through central LLM broker with specified policy
+    batch_policy: Optional["BatchPolicy"] = None
 
     # Retry behavior
     max_retries: int = 2

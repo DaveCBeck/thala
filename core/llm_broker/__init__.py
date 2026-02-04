@@ -48,6 +48,7 @@ from .config import (
     get_broker_config,
     set_broker_config,
     reset_broker_config,
+    is_broker_enabled,
 )
 from .exceptions import (
     BrokerError,
@@ -79,6 +80,7 @@ __all__ = [
     "get_broker_config",
     "set_broker_config",
     "reset_broker_config",
+    "is_broker_enabled",
     # Exceptions
     "BrokerError",
     "QueueOverflowError",

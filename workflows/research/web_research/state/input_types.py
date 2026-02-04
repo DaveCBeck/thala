@@ -3,6 +3,7 @@
 from typing import Optional
 from typing_extensions import TypedDict
 
+from core.llm_broker import UserMode
 from workflows.shared.quality_config import QualityTier
 
 
@@ -13,6 +14,7 @@ class ResearchInput(TypedDict):
     quality: QualityTier
     max_iterations: Optional[int]  # Override default for quality
     language: Optional[str]  # ISO 639-1 code (e.g., "es", "zh") - default is English
+    llm_mode: Optional[UserMode]  # LLM broker mode (Fast/Balanced/Economical)
 
 
 class ClarificationQuestion(TypedDict):

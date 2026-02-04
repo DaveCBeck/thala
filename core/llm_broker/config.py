@@ -16,6 +16,7 @@ class BrokerConfig:
     """Configuration for the LLM Broker.
 
     Attributes:
+        enabled: Whether broker routing is enabled (feature flag for rollout)
         default_mode: Default user mode when not specified
         batch_threshold: Submit batch when queue reaches this size
         max_queue_size: Maximum queued requests before overflow protection
@@ -31,6 +32,9 @@ class BrokerConfig:
         queue_dir: Directory for queue persistence files
         enable_metrics: Whether to collect metrics
     """
+
+    # Feature flag - disabled by default for safe rollout
+    enabled: bool = False
 
     # Mode settings
     default_mode: UserMode = UserMode.BALANCED
@@ -60,12 +64,16 @@ class BrokerConfig:
         """Create config from environment variables.
 
         Environment variables:
+            THALA_LLM_BROKER_ENABLED: Enable broker routing (0/1, true/false)
             THALA_LLM_BROKER_MODE: Default mode (fast/balanced/economical)
             THALA_LLM_BROKER_BATCH_THRESHOLD: Batch submission threshold
             THALA_LLM_BROKER_MAX_QUEUE: Maximum queue size
             THALA_LLM_BROKER_OVERFLOW: Overflow behavior (sync/reject)
             THALA_LLM_BROKER_QUEUE_DIR: Queue persistence directory
         """
+        enabled_str = os.getenv("THALA_LLM_BROKER_ENABLED", "").lower()
+        enabled = enabled_str in ("1", "true", "yes")
+
         mode_str = os.getenv("THALA_LLM_BROKER_MODE", "balanced").lower()
         mode_map = {
             "fast": UserMode.FAST,
@@ -75,6 +83,7 @@ class BrokerConfig:
         default_mode = mode_map.get(mode_str, UserMode.BALANCED)
 
         return cls(
+            enabled=enabled,
             default_mode=default_mode,
             batch_threshold=int(os.getenv("THALA_LLM_BROKER_BATCH_THRESHOLD", "50")),
             max_queue_size=int(os.getenv("THALA_LLM_BROKER_MAX_QUEUE", "100")),
@@ -148,3 +157,12 @@ def reset_broker_config() -> None:
     """Reset the global broker configuration."""
     global _config
     _config = None
+
+
+def is_broker_enabled() -> bool:
+    """Check if the broker is enabled via feature flag.
+
+    Returns:
+        True if THALA_LLM_BROKER_ENABLED=1/true/yes, False otherwise.
+    """
+    return get_broker_config().enabled

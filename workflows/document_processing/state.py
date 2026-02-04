@@ -7,6 +7,8 @@ from operator import add
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
+from core.llm_broker import UserMode
+
 
 def merge_metadata(existing: dict, new: dict) -> dict:
     """Merge metadata dicts, new values override existing."""
@@ -22,6 +24,7 @@ class DocumentInput(TypedDict, total=False):
     langs: list[str]
     extra_metadata: dict
     use_batch_api: bool  # Set False for rapid iteration (skips batch API, default True)
+    llm_mode: Optional[UserMode]  # LLM broker mode (Fast/Balanced/Economical)
 
 
 class ChapterInfo(TypedDict):
@@ -106,6 +109,9 @@ class DocumentProcessingState(TypedDict):
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     current_status: str
+
+    # LLM broker mode (flows from input.llm_mode)
+    llm_mode: Optional[UserMode]
 
 
 class ChapterSummaryState(TypedDict):

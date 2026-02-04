@@ -39,6 +39,7 @@ from .caching import (
     invoke_with_cache,
     batch_invoke_with_cache,
     warm_deepseek_cache,
+    BrokerResponseWrapper,
 )
 from .structured import (
     StructuredOutputStrategy,
@@ -75,6 +76,7 @@ __all__ = [
     "invoke_with_cache",
     "batch_invoke_with_cache",
     "warm_deepseek_cache",
+    "BrokerResponseWrapper",
     # Response parsing
     "extract_response_content",
 ]
