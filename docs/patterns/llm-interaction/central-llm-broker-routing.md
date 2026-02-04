@@ -12,6 +12,9 @@ components: [llm_broker, batch_processor, workflow_routing, persistence, metrics
 complexity: high
 verified_in_production: false
 tags: [anthropic, batch-api, cost-reduction, llm, routing, centralized-architecture, configurable-modes]
+shared: true
+gist_url: https://gist.github.com/DaveCBeck/797eff970c9e2f913e9228f9e39a949c
+article_path: .context/libs/thala-dev/content/orchestration/2026-02-04-central-llm-broker-routing.md
 ---
 
 # Central LLM Broker Routing Pattern
