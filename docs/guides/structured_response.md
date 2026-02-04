@@ -363,7 +363,43 @@ results = await get_structured_output(
 4. **Reserve OPUS for complex reasoning**: Deep analysis, multi-step logic
 5. **Set appropriate max_tokens**: Don't over-provision
 
-### Batch API Configuration
+### Central LLM Batch Broker (Recommended)
+
+When the broker is enabled (`THALA_LLM_BROKER_ENABLED=1`), use `batch_policy` for intelligent routing based on user mode (Fast/Balanced/Economical):
+
+```python
+from core.llm_broker import BatchPolicy
+
+# Declare your intent - broker decides sync vs batch based on user mode
+result = await get_structured_output(
+    output_schema=MySchema,
+    user_prompt="...",
+    batch_policy=BatchPolicy.PREFER_BALANCE,  # Routes through broker
+)
+```
+
+**Batch Policies:**
+
+| Policy | Description | Use When |
+|--------|-------------|----------|
+| `FORCE_BATCH` | Always batch regardless of mode | Large bulk imports |
+| `PREFER_BALANCE` | Batch in Balanced/Economical modes | Standard workflow nodes |
+| `PREFER_SPEED` | Batch only in Economical mode | User-facing summarization |
+| `REQUIRE_SYNC` | Never batch, always synchronous | Streaming, interactive chat |
+
+**User Modes** (set via `THALA_LLM_BROKER_MODE` or workflow state):
+
+| Mode | Behavior |
+|------|----------|
+| `fast` | No batching - lowest latency |
+| `balanced` | Batch PREFER_BALANCE calls (default) |
+| `economical` | Aggressive batching - 50% savings |
+
+See [Central LLM Batch Broker](../solutions/llm-issues/central-llm-batch-broker.md) for full documentation.
+
+### Legacy Batch API Configuration
+
+When broker is disabled, use `prefer_batch_api` directly:
 
 ```python
 # Option 1: Per-call

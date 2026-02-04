@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator
 from urllib.parse import urlparse
 
 import httpx
-from anthropic import APIError, AsyncAnthropic, RateLimitError
+from anthropic import AsyncAnthropic, RateLimitError
 from langsmith import traceable
 from langsmith.wrappers import wrap_anthropic
 
@@ -587,7 +587,7 @@ class LLMBroker:
             except RateLimitError as e:
                 logger.warning(f"Rate limited for {request.request_id}, will retry in 60s: {e}")
                 await asyncio.sleep(60)
-                asyncio.create_task(self._execute_sync(request))
+                self._spawn_sync_task(request)  # Use tracked task to prevent loss on shutdown
                 return
 
             except Exception as e:
