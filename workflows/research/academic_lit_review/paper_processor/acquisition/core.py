@@ -7,27 +7,26 @@ Phase 2+3+4: Streaming acquisition → marker → LLM
 
   acquisition_producer
           ↓
-  marker_queue (bounded ~400MB, maxsize=8)
+  marker_queue (unbounded - holds file paths or markdown text, not PDF bytes)
           ↓
-  marker_consumer (semaphore=4, GPU-bound)
-      - PDF → process_pdf_file() → markdown
+  marker_consumer
+      - PDF → process_document_smart() → markdown (CPU or GPU path)
       - Already markdown → passthrough
           ↓
-  llm_queue (unbounded, ~100KB-1MB per item)
+  llm_queue (unbounded)
           ↓
-  llm_consumer (semaphore=4, IO-bound)
+  llm_consumer
       - process_single_document(markdown_text)
           ↓
   results
 
-Key insight: LLM queue can be unbounded because markdown text is ~100KB-1MB
-vs PDFs at ~50MB. This decouples Marker (GPU-bound, fast) from LLM workflow
-(IO-bound with batch API delays), keeping the Marker GPU busy.
+Key insight: Both queues can be unbounded because they hold file path strings
+or markdown text (~100KB-1MB), not PDF bytes in memory. The Marker service
+has its own Redis/Celery queue that handles job queuing and backpressure.
 
 This architecture ensures:
+- Smart routing sends simple PDFs to fast CPU path, complex to GPU
 - Marker GPU stays busy during batch API polling delays
-- No memory pressure (markdown ~100KB vs PDF ~50MB in LLM queue)
-- Independent concurrency tuning per stage
 - Processing starts as soon as first paper downloads
 
 Fallback Mechanism:
@@ -59,10 +58,10 @@ from workflows.research.academic_lit_review.paper_processor.types import (
     MAX_PAPER_PIPELINE_CONCURRENT,
 )
 
-from core.scraping.pdf import process_pdf_file, MarkerProcessingError
+from core.scraping.pdf import process_document_smart, MarkerProcessingError
 
 from .sources import try_oa_download
-from .types import MARKER_QUEUE_SIZE, MAX_LLM_CONCURRENT, MAX_MARKER_CONCURRENT
+from .types import MAX_LLM_CONCURRENT
 
 if TYPE_CHECKING:
     from workflows.research.academic_lit_review.paper_processor.fallback import (
@@ -253,11 +252,9 @@ async def run_paper_pipeline(
         processing_results: dict[str, dict] = dict(cached_results)
         processing_failed: list[str] = []
 
-        # Two-stage pipeline queues:
-        # marker_queue: bounded (~400MB) - bridges acquisition → marker
-        # llm_queue: unbounded (~100KB-1MB per item) - bridges marker → LLM
-        marker_queue: asyncio.Queue = asyncio.Queue(maxsize=MARKER_QUEUE_SIZE)
-        llm_queue: asyncio.Queue = asyncio.Queue()  # unbounded - markdown is small
+        # Two-stage pipeline queues (both unbounded - hold file paths/markdown, not PDF bytes)
+        marker_queue: asyncio.Queue = asyncio.Queue()
+        llm_queue: asyncio.Queue = asyncio.Queue()
 
         # Counters for progress logging
         acquired_count = 0
@@ -478,8 +475,12 @@ async def run_paper_pipeline(
                 await marker_queue.put(None)
 
         async def marker_consumer():
-            """Stage 1: Convert PDFs to markdown, passthrough already-markdown items."""
-            marker_semaphore = asyncio.Semaphore(MAX_MARKER_CONCURRENT)
+            """Stage 1: Convert PDFs to markdown, passthrough already-markdown items.
+
+            Uses smart routing to send simple PDFs to fast CPU path (PyMuPDF)
+            and complex/scanned PDFs to GPU path (Marker). The Marker service
+            has its own Redis/Celery queue for GPU jobs.
+            """
             active_tasks: set[asyncio.Task] = set()
             marker_completed = 0
 
@@ -488,62 +489,64 @@ async def run_paper_pipeline(
             ):
                 """Process a single item through marker stage."""
                 nonlocal marker_completed
-                async with marker_semaphore:
-                    try:
-                        if is_markdown:
-                            # Already markdown - passthrough to LLM stage
-                            markdown_text = source
-                            logger.debug(f"Marker passthrough (already markdown): {doi}")
-                        else:
-                            # PDF - convert to markdown via Marker
-                            logger.debug(f"Marker processing PDF: {doi}")
-                            markdown_text = await process_pdf_file(source)
-                            logger.debug(
-                                f"Marker complete: {doi} ({len(markdown_text)} chars)"
-                            )
-
-                        marker_completed += 1
-                        # Push markdown to LLM stage
-                        await llm_queue.put((doi, markdown_text, paper))
-
-                    except MarkerProcessingError as e:
-                        error_str = str(e)
-                        # Determine failure reason for fallback
-                        if "not a valid PDF" in error_str:
-                            failure_reason = "pdf_invalid"
-                        else:
-                            failure_reason = "marker_error"
-
-                        # Try to get a fallback paper
-                        if fallback_manager:
-                            fallback_paper = fallback_manager.get_fallback_for(
-                                doi, failure_reason, "marker"
-                            )
-                            if fallback_paper:
-                                # Inject fallback into retry queue for acquisition
-                                fallback_doi = fallback_paper.get("doi")
-                                papers_by_doi[fallback_doi] = fallback_paper
-                                await retry_queue.put(fallback_paper)
-                                logger.info(
-                                    f"Fallback requested for {doi} -> {fallback_doi} "
-                                    f"(reason: {failure_reason})"
-                                )
-                            else:
-                                # No fallback available - expected when queue exhausted
-                                processing_failed.append(doi)
-                                logger.info(f"Marker error for {doi} (no fallback available): {e}")
-                        else:
-                            # No fallback manager - log as info since this is a known limitation
-                            processing_failed.append(doi)
-                            logger.info(f"Marker error for {doi}: {e}")
-
-                    except Exception as e:
-                        # Other marker failure - log error, add to failed
-                        processing_failed.append(doi)
-                        logger.error(
-                            f"Marker error for {doi}: {type(e).__name__}: {e}",
-                            exc_info=True,
+                try:
+                    if is_markdown:
+                        # Already markdown - passthrough to LLM stage
+                        markdown_text = source
+                        logger.debug(f"Marker passthrough (already markdown): {doi}")
+                    else:
+                        # PDF - convert via smart routing (CPU or GPU path)
+                        logger.debug(f"Processing PDF via smart routing: {doi}")
+                        pdf_bytes = Path(source).read_bytes()
+                        result = await process_document_smart(pdf_bytes)
+                        markdown_text = result.markdown
+                        logger.debug(
+                            f"PDF processed via {result.processing_path}: {doi} "
+                            f"({len(markdown_text)} chars)"
                         )
+
+                    marker_completed += 1
+                    # Push markdown to LLM stage
+                    await llm_queue.put((doi, markdown_text, paper))
+
+                except MarkerProcessingError as e:
+                    error_str = str(e)
+                    # Determine failure reason for fallback
+                    if "not a valid PDF" in error_str:
+                        failure_reason = "pdf_invalid"
+                    else:
+                        failure_reason = "marker_error"
+
+                    # Try to get a fallback paper
+                    if fallback_manager:
+                        fallback_paper = fallback_manager.get_fallback_for(
+                            doi, failure_reason, "marker"
+                        )
+                        if fallback_paper:
+                            # Inject fallback into retry queue for acquisition
+                            fallback_doi = fallback_paper.get("doi")
+                            papers_by_doi[fallback_doi] = fallback_paper
+                            await retry_queue.put(fallback_paper)
+                            logger.info(
+                                f"Fallback requested for {doi} -> {fallback_doi} "
+                                f"(reason: {failure_reason})"
+                            )
+                        else:
+                            # No fallback available - expected when queue exhausted
+                            processing_failed.append(doi)
+                            logger.info(f"Marker error for {doi} (no fallback available): {e}")
+                    else:
+                        # No fallback manager - log as info since this is a known limitation
+                        processing_failed.append(doi)
+                        logger.info(f"Marker error for {doi}: {e}")
+
+                except Exception as e:
+                    # Other marker failure - log error, add to failed
+                    processing_failed.append(doi)
+                    logger.error(
+                        f"Marker error for {doi}: {type(e).__name__}: {e}",
+                        exc_info=True,
+                    )
 
             while True:
                 item = await marker_queue.get()

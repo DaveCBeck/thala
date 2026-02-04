@@ -7,19 +7,19 @@ applicability:
   - "Pipelines with GPU-bound and IO-bound stages"
   - "PDF processing followed by LLM batch API calls"
   - "Document processing with different resource bottlenecks"
-  - "Systems needing memory-efficient queue sizing"
-components: [bounded_marker_queue, unbounded_llm_queue, concurrent_workers, batch_collection]
+  - "Systems needing to maximize GPU utilization"
+components: [marker_queue, llm_queue, smart_routing, batch_collection]
 complexity: moderate
 verified_in_production: true
 related_solutions: []
-tags: [pipeline, gpu, io-bound, queue-sizing, batch-processing, marker, two-stage, concurrency]
+tags: [pipeline, gpu, io-bound, queue-sizing, batch-processing, marker, two-stage, concurrency, smart-routing]
 ---
 
 # Two-Stage Pipeline Architecture: Decoupling GPU from IO Workloads
 
 ## Intent
 
-Separate GPU-bound operations (PDF→markdown conversion) from IO-bound operations (LLM batch API calls) using two queues with different sizing strategies, maximizing GPU utilization during API polling delays.
+Separate GPU-bound operations (PDF->markdown conversion) from IO-bound operations (LLM batch API calls) using two queues with unbounded sizing, maximizing GPU utilization during API polling delays while leveraging smart routing to send simple PDFs to a fast CPU path.
 
 ## Motivation
 
@@ -28,43 +28,43 @@ Single-stage pipelines with mixed GPU/IO workloads waste resources:
 **The Problem:**
 ```
 Single-Stage Pipeline (inefficient):
-┌─────────────────────────────────────────────────────────────────────┐
-│  acquisition → marker_queue → marker+LLM_consumer                   │
-│                 (bounded: 8)   (single stage)                       │
-│                                                                     │
-│  Timeline:                                                          │
-│  [0s]   PDF 1 acquired                                             │
-│  [2s]   PDF 1 converted (GPU)                                      │
-│  [2-7s] PDF 1 LLM processing (GPU IDLE - waiting for batch API)    │
-│  [8s]   PDF 2 acquired                                             │
-│  [10s]  PDF 2 converted (GPU)                                      │
-│                                                                     │
-│  GPU Utilization: ~30% (idle during IO-bound LLM calls)            │
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|  acquisition -> marker_queue -> marker+LLM_consumer                  |
+|                                 (single stage)                       |
+|                                                                      |
+|  Timeline:                                                           |
+|  [0s]   PDF 1 acquired                                              |
+|  [2s]   PDF 1 converted (GPU)                                       |
+|  [2-7s] PDF 1 LLM processing (GPU IDLE - waiting for batch API)     |
+|  [8s]   PDF 2 acquired                                              |
+|  [10s]  PDF 2 converted (GPU)                                       |
+|                                                                      |
+|  GPU Utilization: ~30% (idle during IO-bound LLM calls)             |
++---------------------------------------------------------------------+
 ```
 
 **The Solution:**
 ```
-Two-Stage Pipeline (efficient):
-┌─────────────────────────────────────────────────────────────────────┐
-│  Stage 1 (GPU-bound):                                               │
-│  acquisition → marker_queue → marker_consumer                       │
-│                 (bounded: 8)   (4 workers)                          │
-│                      ↓                                              │
-│  Stage 2 (IO-bound):                                                │
-│  llm_queue → llm_consumer                                          │
-│  (unbounded)  (4 workers, batched)                                  │
-│                                                                     │
-│  Timeline:                                                          │
-│  [0s]   PDF 1 acquired                                             │
-│  [2s]   PDF 1 converted → pushed to llm_queue                      │
-│  [2s]   GPU starts PDF 2 conversion (while LLM processes PDF 1)    │
-│  [4s]   PDF 2 converted → pushed to llm_queue                      │
-│  [4s]   GPU starts PDF 3 conversion                                │
-│  [7s]   PDF 1 LLM complete (was processing in background)          │
-│                                                                     │
-│  GPU Utilization: ~85% (busy during IO-bound LLM calls)            │
-└─────────────────────────────────────────────────────────────────────┘
+Two-Stage Pipeline with Smart Routing (efficient):
++---------------------------------------------------------------------+
+|  Stage 1 (Smart Routing):                                            |
+|  acquisition -> marker_queue -> marker_consumer                      |
+|                 (unbounded)    (smart: CPU or GPU path)              |
+|                      |                                               |
+|  Stage 2 (IO-bound):                                                 |
+|  llm_queue -> llm_consumer                                          |
+|  (unbounded)  (batched)                                              |
+|                                                                      |
+|  Timeline:                                                           |
+|  [0s]   PDF 1 acquired                                              |
+|  [0.1s] PDF 1 routed to CPU (simple digital doc) -> llm_queue       |
+|  [0.1s] PDF 2 acquired                                              |
+|  [2s]   PDF 2 routed to GPU (scanned/complex) -> llm_queue          |
+|  [2s]   PDF 3 acquired, routed to CPU                               |
+|  [5s]   PDF 1 LLM complete (was processing in background)           |
+|                                                                      |
+|  GPU Utilization: ~90% (only used for complex PDFs)                 |
++---------------------------------------------------------------------+
 ```
 
 ## Applicability
@@ -72,56 +72,57 @@ Two-Stage Pipeline (efficient):
 Use this pattern when:
 - Pipeline has distinct GPU-bound and IO-bound stages
 - IO-bound stage has significant latency (API polling, network calls)
-- GPU is expensive and should be maximally utilized
-- Different stages have different memory footprints
+- GPU is expensive and should be reserved for complex documents
+- Many documents are simple digital-native PDFs (benefit from CPU path)
 - Need to tune concurrency independently per stage
 
 Do NOT use this pattern when:
 - All stages are CPU-bound with similar characteristics
 - No significant latency between stages
-- Memory is not a concern (can use single unbounded queue)
+- All documents are complex/scanned (no benefit from smart routing)
 - Simplicity is more important than efficiency
 
 ## Structure
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│  acquisition_producer (concurrent with semaphore)                  │
-│  - Downloads PDFs via OA/retrieve-academic                         │
-│  - Pushes (doi, pdf_path, metadata) to marker_queue               │
-└────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  marker_queue (BOUNDED: maxsize=8)                                 │
-│  ~400MB max (8 PDFs × 50MB each)                                   │
-│  Purpose: Limit memory pressure from large PDFs                    │
-└────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  marker_consumer (Stage 1: GPU-bound)                              │
-│  - 4 concurrent workers (MAX_MARKER_CONCURRENT)                    │
-│  - PDF → markdown conversion via Marker                            │
-│  - Passthrough for already-markdown content                        │
-│  - Pushes (doi, markdown, metadata) to llm_queue                  │
-└────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  llm_queue (UNBOUNDED)                                             │
-│  ~10MB typical (100 markdowns × 100KB each)                        │
-│  Purpose: Keep GPU busy during LLM API polling delays              │
-└────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  llm_consumer (Stage 2: IO-bound)                                  │
-│  - 4 concurrent workers (MAX_LLM_CONCURRENT)                       │
-│  - Batched LLM processing via Anthropic Batch API                  │
-│  - Concurrent Zotero/Elasticsearch writes                          │
-│  - Returns (doi, result) to caller                                │
-└────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------+
+|  acquisition_producer (concurrent with semaphore)                   |
+|  - Downloads PDFs via OA/retrieve-academic                          |
+|  - Pushes (doi, pdf_path, metadata) to marker_queue                |
++--------------------------------------------------------------------+
+                              |
+                              v
++--------------------------------------------------------------------+
+|  marker_queue (UNBOUNDED)                                           |
+|  Holds file paths (strings) or markdown text, NOT PDF bytes         |
+|  Memory: negligible (~1KB per item for paths)                       |
++--------------------------------------------------------------------+
+                              |
+                              v
++--------------------------------------------------------------------+
+|  marker_consumer (Stage 1: Smart Routing)                           |
+|  - Analyzes PDF complexity (PyMuPDF)                                |
+|  - Simple PDFs -> CPU path (PyMuPDF text extraction)                |
+|  - Complex/scanned PDFs -> GPU path (Marker service)                |
+|  - Marker has its own Redis/Celery queue for GPU jobs               |
+|  - Pushes (doi, markdown, metadata) to llm_queue                   |
++--------------------------------------------------------------------+
+                              |
+                              v
++--------------------------------------------------------------------+
+|  llm_queue (UNBOUNDED)                                              |
+|  ~10MB typical (100 markdowns x 100KB each)                         |
+|  Purpose: Keep processing flowing during LLM API polling delays     |
++--------------------------------------------------------------------+
+                              |
+                              v
++--------------------------------------------------------------------+
+|  llm_consumer (Stage 2: IO-bound)                                   |
+|  - 4 concurrent workers (MAX_LLM_CONCURRENT)                        |
+|  - Batched LLM processing via Anthropic Batch API                   |
+|  - Concurrent Zotero/Elasticsearch writes                           |
+|  - Returns (doi, result) to caller                                 |
++--------------------------------------------------------------------+
 ```
 
 ## Implementation
@@ -131,13 +132,14 @@ Do NOT use this pattern when:
 ```python
 # workflows/research/academic_lit_review/paper_processor/acquisition/types.py
 
-# Stage 1: GPU-bound marker processing
-MAX_MARKER_CONCURRENT = 4      # Concurrent marker workers
-MARKER_QUEUE_SIZE = 8          # ~400MB max (8 PDFs × 50MB)
+# Two-stage pipeline constants
+# Stage 1: Smart routing to CPU (PyMuPDF) or GPU (Marker)
+# Marker service has its own Redis/Celery queue that handles GPU job queuing.
+# We use unbounded asyncio queues since they hold file paths or markdown text,
+# not PDF bytes in memory.
 
 # Stage 2: IO-bound LLM processing
 MAX_LLM_CONCURRENT = 4         # Concurrent LLM workers
-# LLM queue is unbounded: markdown is small (~100KB-1MB vs 50MB PDFs)
 ```
 
 ### Step 2: Create Two-Stage Queue Structure
@@ -151,15 +153,9 @@ async def run_paper_pipeline(
 ) -> dict[str, Any]:
     """Run two-stage paper processing pipeline."""
 
-    # Stage 1 queue: Bounded for memory control (large PDFs)
-    marker_queue: asyncio.Queue[tuple[str, str, PaperMetadata, bool] | None] = (
-        asyncio.Queue(maxsize=MARKER_QUEUE_SIZE)
-    )
-
-    # Stage 2 queue: Unbounded (markdown is small, keep GPU busy)
-    llm_queue: asyncio.Queue[tuple[str, str, PaperMetadata] | None] = (
-        asyncio.Queue()  # No maxsize = unbounded
-    )
+    # Both queues unbounded - hold file paths/markdown, not PDF bytes
+    marker_queue: asyncio.Queue = asyncio.Queue()
+    llm_queue: asyncio.Queue = asyncio.Queue()
 
     # Shared state
     processing_results: dict[str, dict] = {}
@@ -178,49 +174,53 @@ async def run_paper_pipeline(
     }
 ```
 
-### Step 3: Implement Stage 1 (GPU-bound Marker)
+### Step 3: Implement Stage 1 (Smart Routing)
 
 ```python
+from core.scraping.pdf import process_document_smart
+
 async def marker_consumer(
     marker_queue: asyncio.Queue,
     llm_queue: asyncio.Queue,
 ):
-    """Stage 1: Convert PDFs to markdown (GPU-bound)."""
+    """Stage 1: Convert PDFs via smart routing (CPU or GPU path).
 
-    async def marker_worker(worker_id: int):
-        """Single marker worker."""
-        while True:
-            item = await marker_queue.get()
-            if item is None:  # Shutdown signal
-                await marker_queue.put(None)  # Pass to other workers
-                break
+    Uses smart routing to send simple PDFs to fast CPU path (PyMuPDF)
+    and complex/scanned PDFs to GPU path (Marker). The Marker service
+    has its own Redis/Celery queue for GPU jobs.
+    """
+    active_tasks: set[asyncio.Task] = set()
 
-            doi, source_path, paper, is_markdown = item
+    async def process_item(doi, source, paper, is_markdown):
+        try:
+            if is_markdown:
+                # Already markdown, passthrough
+                markdown = source
+            else:
+                # Smart routing: CPU for simple, GPU for complex
+                pdf_bytes = Path(source).read_bytes()
+                result = await process_document_smart(pdf_bytes)
+                markdown = result.markdown
+                logger.debug(f"PDF processed via {result.processing_path}: {doi}")
 
-            try:
-                if is_markdown:
-                    # Already markdown, passthrough
-                    markdown = Path(source_path).read_text()
-                else:
-                    # GPU-bound PDF conversion
-                    markdown = await convert_pdf_to_markdown(source_path)
+            # Push to Stage 2
+            await llm_queue.put((doi, markdown, paper))
 
-                # Push to Stage 2 (unbounded queue, won't block)
-                await llm_queue.put((doi, markdown, paper))
+        except Exception as e:
+            logger.error(f"Processing failed for {doi}: {e}")
 
-            except Exception as e:
-                logger.error(f"Marker failed for {doi}: {e}")
-                # Record failure for fallback handling
+    while True:
+        item = await marker_queue.get()
+        if item is None:  # Shutdown signal
+            if active_tasks:
+                await asyncio.gather(*active_tasks, return_exceptions=True)
+            await llm_queue.put(None)
+            break
 
-            finally:
-                marker_queue.task_done()
-
-    # Launch concurrent workers
-    workers = [marker_worker(i) for i in range(MAX_MARKER_CONCURRENT)]
-    await asyncio.gather(*workers)
-
-    # Signal completion to Stage 2
-    await llm_queue.put(None)
+        doi, source, paper, is_markdown = item
+        task = asyncio.create_task(process_item(doi, source, paper, is_markdown))
+        active_tasks.add(task)
+        task.add_done_callback(active_tasks.discard)
 ```
 
 ### Step 4: Implement Stage 2 (IO-bound LLM with Batch Collection)
@@ -276,165 +276,64 @@ async def llm_consumer(
     await asyncio.gather(*workers)
 ```
 
-### Step 5: Implement Batched Document Processing
+## Key Design Decisions
 
-```python
-# workflows/research/academic_lit_review/paper_processor/document_processing.py
+### Why Unbounded Queues?
 
-async def process_multiple_documents(
-    documents: list[tuple[str, str, PaperMetadata]],
-    use_batch_api: bool = True,
-) -> list[dict[str, Any]]:
-    """Process multiple documents using centralized batch processing."""
+Both queues are unbounded because:
 
-    # Transform to batch format
-    doc_configs = []
-    for doi, markdown_text, paper in documents:
-        doc_configs.append({
-            "source": markdown_text,
-            "title": paper.get("title", "Unknown"),
-            "item_type": "journalArticle",
-            "extra_metadata": {
-                "doi": doi,
-                "abstract": paper.get("abstract"),
-            },
-            "use_batch_api": use_batch_api,
-        })
+1. **marker_queue holds file paths or markdown text**, not PDF bytes in memory
+   - File paths: ~100 bytes each
+   - Markdown from OA: ~100KB-1MB each
+   - NOT 50MB PDF bytes (those stay on disk)
 
-    # Use centralized batch processing
-    raw_results = await process_documents_batch(doc_configs)
+2. **Marker service has its own Redis/Celery queue**
+   - GPU jobs queue inside Marker's infrastructure
+   - Celery handles backpressure automatically
+   - We don't need client-side semaphores
 
-    # Transform back to pipeline format
-    results = []
-    for (doi, _, paper), raw in zip(documents, raw_results):
-        results.append({
-            "doi": doi,
-            "success": raw.get("current_status") not in ("failed",),
-            "es_record_id": raw.get("store_records", [{}])[0].get("id"),
-            "zotero_key": raw.get("zotero_key"),
-            "validation_status": raw.get("validation_status"),
-        })
+3. **llm_queue holds markdown text**
+   - ~100KB-1MB per document
+   - Even 100 items = ~100MB max (acceptable)
 
-    return results
-```
+### Why No Marker Semaphore?
 
-## Complete Example
+The previous design had `MAX_MARKER_CONCURRENT = 4` but:
 
-```python
-import asyncio
-from typing import Any
+1. Marker uses `--pool=solo` (single-threaded Celery worker)
+2. `worker_prefetch_multiplier=1` means 1 task at a time
+3. Jobs naturally queue in Redis
+4. Client-side semaphore added complexity without benefit
 
-# Configuration
-MAX_MARKER_CONCURRENT = 4
-MARKER_QUEUE_SIZE = 8
-MAX_LLM_CONCURRENT = 4
+### Smart Routing Benefits
 
-
-async def run_two_stage_pipeline(
-    papers: list[dict],
-    use_batch_api: bool = True,
-) -> dict[str, Any]:
-    """Complete two-stage pipeline implementation."""
-
-    # Create queues
-    marker_queue = asyncio.Queue(maxsize=MARKER_QUEUE_SIZE)  # Bounded
-    llm_queue = asyncio.Queue()  # Unbounded
-
-    results = {}
-    failed = []
-
-    # Define stages
-    async def acquisition_producer():
-        for paper in papers:
-            pdf_path = await download_pdf(paper["doi"])
-            await marker_queue.put((paper["doi"], pdf_path, paper, False))
-        await marker_queue.put(None)  # Signal completion
-
-    async def marker_consumer():
-        async def worker(i):
-            while True:
-                item = await marker_queue.get()
-                if item is None:
-                    await marker_queue.put(None)
-                    break
-                doi, path, paper, is_md = item
-                try:
-                    markdown = await convert_pdf(path) if not is_md else Path(path).read_text()
-                    await llm_queue.put((doi, markdown, paper))
-                finally:
-                    marker_queue.task_done()
-
-        await asyncio.gather(*[worker(i) for i in range(MAX_MARKER_CONCURRENT)])
-        await llm_queue.put(None)
-
-    async def llm_consumer():
-        async def worker(i):
-            while True:
-                item = await llm_queue.get()
-                if item is None:
-                    await llm_queue.put(None)
-                    break
-
-                # Batch collection
-                batch = [item]
-                while True:
-                    try:
-                        next_item = llm_queue.get_nowait()
-                        if next_item is None:
-                            await llm_queue.put(None)
-                            break
-                        batch.append(next_item)
-                    except asyncio.QueueEmpty:
-                        break
-
-                # Process batch
-                batch_results = await process_batch(batch, use_batch_api)
-                for (doi, _, _), result in zip(batch, batch_results):
-                    if result["success"]:
-                        results[doi] = result
-                    else:
-                        failed.append(doi)
-
-        await asyncio.gather(*[worker(i) for i in range(MAX_LLM_CONCURRENT)])
-
-    # Run all stages
-    await asyncio.gather(
-        acquisition_producer(),
-        marker_consumer(),
-        llm_consumer(),
-    )
-
-    return {"results": results, "failed": failed}
-
-
-# Usage
-result = await run_two_stage_pipeline(papers, use_batch_api=True)
-print(f"Processed: {len(result['results'])}, Failed: {len(result['failed'])}")
-```
+- Simple digital PDFs (70-80% of academic papers): CPU path in ~100ms
+- Complex/scanned PDFs: GPU path via Marker, queued appropriately
+- Automatic quality selection based on document complexity
 
 ## Consequences
 
 ### Benefits
 
-- **Maximized GPU utilization**: GPU converts PDFs while IO waits for batch API
-- **Memory efficient**: Different queue sizes match data characteristics
-- **Independent tuning**: Adjust marker vs LLM concurrency separately
-- **Earlier results**: First paper ready after `marker_time + llm_time` (not `all_marker_times`)
-- **Better error isolation**: Failures at marker stage don't affect LLM batches
-- **Flexible batching**: LLM workers collect batches dynamically
+- **Maximized GPU utilization**: GPU only processes complex documents
+- **Faster throughput**: Simple PDFs skip GPU entirely
+- **Simplified code**: No client-side semaphores needed
+- **Better resource allocation**: CPU handles what CPU is good at
+- **Independent tuning**: Adjust LLM concurrency separately
+- **Earlier results**: First paper ready after `smart_route_time + llm_time`
 
 ### Trade-offs
 
-- **Increased complexity**: Two queues, two consumer implementations
+- **Increased complexity**: Two queues, smart routing logic
 - **More coordination**: Shutdown signaling between stages
-- **Memory for markdown**: Unbounded LLM queue can grow (but markdown is small)
+- **Analysis overhead**: Each PDF analyzed before routing (~50ms)
 - **Debugging difficulty**: Concurrent stages harder to trace
 
 ### Alternatives
 
 - **Single-stage pipeline**: Simpler but wastes GPU during IO waits
+- **All-GPU pipeline**: Simpler but slow for simple PDFs
 - **Process pools**: Separate processes for GPU/IO (higher overhead)
-- **Async generators**: Streaming approach (less batching control)
 
 ## Related Patterns
 
@@ -447,6 +346,7 @@ print(f"Processed: {len(result['results'])}, Failed: {len(result['failed'])}")
 - `workflows/research/academic_lit_review/paper_processor/acquisition/core.py` - Main two-stage implementation
 - `workflows/research/academic_lit_review/paper_processor/acquisition/types.py` - Queue configuration constants
 - `workflows/research/academic_lit_review/paper_processor/document_processing.py` - Batched document processing
+- `core/scraping/pdf/router.py` - Smart routing implementation
 
 ## References
 

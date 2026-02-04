@@ -1,9 +1,10 @@
 # Files and directories to copy to new worktrees
 # One path per line, relative to repo root
 
-# Claude Code configuration
+# Claude Code and workspace configuration
 .claude
 claude.md
+.vscode
 
 # Context libraries (shared across worktrees)
 .context/libs
@@ -12,3 +13,4 @@ claude.md
 .thala/editorial_stances
 .thala/.substack-cookies.json
 .thala/queue/publications.json
+.thala/queue/queue.json

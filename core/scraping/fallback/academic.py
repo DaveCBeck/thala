@@ -11,7 +11,7 @@ from typing import Optional
 
 from core.stores import RetrieveAcademicClient
 
-from ..pdf.processor import process_pdf_file
+from ..pdf.router import process_document_smart
 from ..types import ContentSource, GetUrlOptions, GetUrlResult
 
 logger = logging.getLogger(__name__)
@@ -69,20 +69,19 @@ async def try_retrieve_academic(
 
                 logger.debug(f"Downloaded via retrieve-academic: {local_path}")
 
-                # Process PDF via Marker
-                markdown = await process_pdf_file(
-                    str(local_path),
-                    quality=options.pdf_quality,
-                    langs=options.pdf_langs,
-                    timeout=options.pdf_timeout,
+                # Process PDF via smart routing (CPU or GPU path)
+                pdf_bytes = local_path.read_bytes()
+                result = await process_document_smart(pdf_bytes)
+                logger.debug(
+                    f"PDF processed via {result.processing_path} for {doi}"
                 )
 
                 return GetUrlResult(
                     url=f"doi:{doi}",
                     resolved_url=f"https://doi.org/{doi}",
-                    content=markdown,
+                    content=result.markdown,
                     source=ContentSource.RETRIEVE_ACADEMIC,
-                    provider="retrieve-academic",
+                    provider=f"retrieve-academic:{result.processing_path}",
                     doi=doi,
                     fallback_chain=fallback_chain,
                 )

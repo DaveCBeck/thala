@@ -160,6 +160,39 @@ async def process_document_smart(
     )
 
 
+async def process_document_smart_url(
+    url: str,
+    *,
+    force_gpu: bool = False,
+    quality: str | None = None,
+    timeout: float = 60.0,
+) -> ProcessingResult:
+    """Download PDF from URL and route to optimal processing path.
+
+    Uses httpx with Playwright fallback for sites that block direct downloads.
+
+    Args:
+        url: URL to PDF file
+        force_gpu: Always use Marker (for quality-critical documents)
+        quality: Override quality preset (if None, auto-selects based on complexity)
+        timeout: Download timeout in seconds
+
+    Returns:
+        ProcessingResult with markdown and metadata
+    """
+    from .processor import _download_pdf
+
+    logger.debug(f"Downloading PDF from URL for smart routing: {url}")
+    pdf_content = await _download_pdf(url, timeout=timeout)
+    logger.debug(f"Downloaded PDF: {len(pdf_content) / 1024:.1f} KB")
+
+    return await process_document_smart(
+        pdf_content,
+        force_gpu=force_gpu,
+        quality=quality,
+    )
+
+
 def _quality_for_complexity(analysis: DocumentAnalysis) -> str:
     """Map document complexity to Marker quality preset.
 

@@ -287,19 +287,21 @@ class ScraperService:
         try:
             markdown = await scraper.scrape(url)
         except PDFDownloadDetected as e:
-            # URL was a PDF - convert to markdown using Marker
+            # URL was a PDF - convert via smart routing (CPU or GPU path)
             logger.info(
-                f"Playwright detected PDF download ({len(e.content)} bytes), converting via Marker"
+                f"Playwright detected PDF download ({len(e.content)} bytes), "
+                "routing via smart processing"
             )
-            from .pdf import process_pdf_bytes
+            from .pdf import process_document_smart
 
             try:
-                markdown = await process_pdf_bytes(e.content)
+                result = await process_document_smart(e.content)
+                logger.debug(f"PDF processed via {result.processing_path}")
                 return ScrapeResult(
                     url=url,
-                    markdown=markdown,
+                    markdown=result.markdown,
                     links=[],
-                    provider="playwright-pdf",
+                    provider=f"playwright-pdf:{result.processing_path}",
                 )
             except Exception as pdf_error:
                 logger.warning(f"PDF conversion failed: {pdf_error}")

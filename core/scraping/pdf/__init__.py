@@ -10,7 +10,7 @@ from .processor import (
     process_pdf_file,
     process_pdf_url,
 )
-from .router import ProcessingResult, process_document_smart
+from .router import ProcessingResult, process_document_smart, process_document_smart_url
 from .routing import RouteDecision, determine_route
 
 __all__ = [
@@ -23,6 +23,7 @@ __all__ = [
     "RouteDecision",
     # Smart processing (recommended entry point)
     "process_document_smart",
+    "process_document_smart_url",
     "ProcessingResult",
     # Legacy/direct Marker processing
     "is_pdf_url",

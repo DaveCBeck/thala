@@ -43,7 +43,7 @@ from .doi import (
     search_doi_by_title,
 )
 from .fallback import try_retrieve_academic
-from .pdf import is_pdf_url, process_pdf_url
+from .pdf import is_pdf_url, process_document_smart_url
 from .service import get_scraper_service
 from .types import (
     ContentClassification,
@@ -259,7 +259,10 @@ async def _handle_pdf_url(
     opts: GetUrlOptions,
     fallback_chain: list[str],
 ) -> Optional[GetUrlResult]:
-    """Download and process PDF URL.
+    """Download and process PDF URL via smart routing.
+
+    Uses smart routing to send simple PDFs to fast CPU path (PyMuPDF)
+    and complex/scanned PDFs to GPU path (Marker).
 
     Args:
         url: PDF URL to download
@@ -271,18 +274,14 @@ async def _handle_pdf_url(
         GetUrlResult if successful, None otherwise
     """
     try:
-        markdown = await process_pdf_url(
-            url,
-            quality=opts.pdf_quality,
-            langs=opts.pdf_langs,
-            timeout=opts.pdf_timeout,
-        )
+        result = await process_document_smart_url(url)
+        logger.debug(f"PDF processed via {result.processing_path}: {url}")
         return GetUrlResult(
             url=url,
             resolved_url=url,
-            content=markdown,
+            content=result.markdown,
             source=ContentSource.PDF_DIRECT,
-            provider="marker",
+            provider=f"smart:{result.processing_path}",
             doi=doi_info.doi if doi_info else None,
             fallback_chain=fallback_chain,
         )

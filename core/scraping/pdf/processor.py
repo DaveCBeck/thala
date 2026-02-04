@@ -698,28 +698,25 @@ async def download_pdf_by_md5(
 async def process_pdf_by_md5(
     md5: str,
     identifier: Optional[str] = None,
-    quality: str = "fast",
-    langs: Optional[list[str]] = None,
     download_timeout: float = 120.0,
-    marker_timeout: Optional[float] = None,
+    force_gpu: bool = False,
 ) -> Optional[str]:
-    """Download PDF via MD5 hash (Anna's Archive pattern) and convert via Marker.
+    """Download PDF via MD5 hash (Anna's Archive pattern) and convert via smart routing.
 
     Uses the retrieve-academic service (VPN-enabled) to download PDFs by MD5 hash,
-    then converts to markdown using Marker.
+    then routes to CPU (PyMuPDF) or GPU (Marker) based on document complexity.
 
     Args:
         md5: MD5 hash of the document to download
         identifier: Identifier for logging (e.g., book title)
-        quality: Quality preset (fast, balanced, quality). Defaults to "fast".
-        langs: Languages for OCR
         download_timeout: Download timeout in seconds (for retrieve-academic)
-        marker_timeout: Marker processing timeout (None = no limit, uses Marker queue)
+        force_gpu: Always use Marker GPU path (for quality-critical documents)
 
     Returns:
         Markdown content or None if failed.
     """
     from core.stores import RetrieveAcademicClient
+    from .router import process_document_smart
 
     logger.debug(f"Processing PDF by MD5: {md5[:12]}...")
 
@@ -741,13 +738,13 @@ async def process_pdf_by_md5(
                     timeout=download_timeout,
                 )
 
-                # Convert via Marker (no timeout - uses Marker's native queue)
-                return await process_pdf_file(
-                    tmp_path,
-                    quality=quality,
-                    langs=langs,
-                    timeout=marker_timeout,
+                # Convert via smart routing (CPU or GPU path)
+                pdf_bytes = Path(tmp_path).read_bytes()
+                result = await process_document_smart(pdf_bytes, force_gpu=force_gpu)
+                logger.debug(
+                    f"PDF md5={md5[:12]} processed via {result.processing_path}"
                 )
+                return result.markdown
             finally:
                 # Cleanup temp file
                 try:
