@@ -75,7 +75,8 @@ def get_extractor() -> CpuExtractor:
     """Get or create default extractor singleton."""
     global _default_extractor
     if _default_extractor is None:
-        _default_extractor = CpuExtractor(max_workers=5)
+        # Use more workers to saturate multi-core CPUs (e.g., Ryzen 5950X)
+        _default_extractor = CpuExtractor(max_workers=16)
     return _default_extractor
 
 

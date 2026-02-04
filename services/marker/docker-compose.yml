@@ -19,7 +19,7 @@ services:
       - TABLE_REC_BATCH_SIZE=48
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_API_KEY=${GEMINI_API_KEY}
       # Performance optimizations
       # COMPILE_ALL disabled - causes failures with variable page sizes
       - OMP_NUM_THREADS=8
@@ -61,7 +61,7 @@ services:
       - TABLE_REC_BATCH_SIZE=64
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_API_KEY=${GEMINI_API_KEY}
       # Performance optimizations
       # COMPILE_ALL disabled - causes failures with variable page sizes
       - OMP_NUM_THREADS=8

@@ -4,8 +4,11 @@ This module provides smart routing between CPU (PyMuPDF) and GPU (Marker) paths
 based on document complexity analysis.
 """
 
+import asyncio
+import atexit
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import NamedTuple
 
 from .analysis import DocumentAnalysis, analyze_document
@@ -20,6 +23,29 @@ from .processor import process_pdf_bytes
 from .routing import RouteDecision, determine_route
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for parallel document analysis (CPU-bound PyMuPDF operations)
+_analysis_executor: ThreadPoolExecutor | None = None
+
+
+def _get_analysis_executor() -> ThreadPoolExecutor:
+    """Get or create the analysis thread pool."""
+    global _analysis_executor
+    if _analysis_executor is None:
+        _analysis_executor = ThreadPoolExecutor(
+            max_workers=16,
+            thread_name_prefix="pdf_analysis_",
+        )
+    return _analysis_executor
+
+
+def _cleanup_analysis_executor():
+    """Shutdown executor on process exit."""
+    if _analysis_executor is not None:
+        _analysis_executor.shutdown(wait=False)
+
+
+atexit.register(_cleanup_analysis_executor)
 
 
 class ProcessingResult(NamedTuple):
@@ -48,11 +74,14 @@ async def process_document_smart(
     Returns:
         ProcessingResult with markdown and metadata
     """
-    # Step 1: Analyze document (pure, no routing decision)
-    # NOTE: analyze_document is sync (~50-100ms for 100-page doc). If profiling shows
-    # this blocks event loop on very large docs, wrap in executor.
+    # Step 1: Analyze document in thread pool (CPU-bound PyMuPDF operation)
+    loop = asyncio.get_running_loop()
     analysis_start = time.perf_counter()
-    analysis = analyze_document(pdf_content)
+    analysis = await loop.run_in_executor(
+        _get_analysis_executor(),
+        analyze_document,
+        pdf_content,
+    )
     analysis_duration = time.perf_counter() - analysis_start
     record_analysis_time(analysis_duration)
 
