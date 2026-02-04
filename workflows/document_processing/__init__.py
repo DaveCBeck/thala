@@ -6,7 +6,7 @@ Uses Anthropic Claude models for LLM tasks:
 
 Cost optimizations:
 - Prompt caching: 90% reduction for repeated tasks
-- Batch API (per-document): 50% reduction when use_batch_api=True
+- Central LLM broker: Routes requests through broker for unified cost/speed management
 """
 
 from workflows.document_processing.graph import (

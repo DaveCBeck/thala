@@ -75,9 +75,7 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
                 )
                 for r in recent_result.get("results", []):
                     works.append(r)
-                logger.debug(
-                    f"Query '{query[:40]}...' recent phase: {len(recent_result.get('results', []))} results"
-                )
+                logger.debug(f"Query '{query[:40]}...' recent phase: {len(recent_result.get('results', []))} results")
 
             # Phase 2: Older papers with normal citation threshold
             older_to = min(recent_cutoff - 1, user_to_year) if user_to_year else recent_cutoff - 1
@@ -97,9 +95,7 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
                 )
                 for r in older_result.get("results", []):
                     works.append(r)
-                logger.debug(
-                    f"Query '{query[:40]}...' older phase: {len(older_result.get('results', []))} results"
-                )
+                logger.debug(f"Query '{query[:40]}...' older phase: {len(older_result.get('results', []))} results")
 
             logger.debug(f"Query '{query[:40]}...' total: {len(works)} results")
             return works
@@ -202,8 +198,6 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
         fallback_threshold=0.5,
         language_config=language_config,
         tier=ModelTier.DEEPSEEK_V3,
-        max_concurrent=10,
-        use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
     # Sort relevant papers by relevance score descending

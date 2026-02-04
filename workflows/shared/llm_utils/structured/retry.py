@@ -65,10 +65,7 @@ async def with_retries(
                 and not context_fallback_attempted
             ):
                 context_fallback_attempted = True
-                logger.info(
-                    f"Context limit exceeded with {config.tier.name}, "
-                    "falling back to SONNET_1M"
-                )
+                logger.info(f"Context limit exceeded with {config.tier.name}, falling back to SONNET_1M")
                 # Create upgraded config and new fn
                 upgraded_config = StructuredOutputConfig(
                     tier=ModelTier.SONNET_1M,
@@ -76,7 +73,6 @@ async def with_retries(
                     thinking_budget=config.thinking_budget,
                     strategy=config.strategy,
                     use_json_schema_method=config.use_json_schema_method,
-                    prefer_batch_api=config.prefer_batch_api,
                     max_retries=config.max_retries,
                     retry_backoff=config.retry_backoff,
                     enable_context_fallback=False,  # Prevent infinite fallback loop
@@ -88,16 +84,12 @@ async def with_retries(
                 )
                 fallback_fn = fallback_fn_factory(upgraded_config)
                 # Recursively retry with upgraded config
-                return await with_retries(
-                    fallback_fn, upgraded_config, schema, strategy, fallback_fn_factory
-                )
+                return await with_retries(fallback_fn, upgraded_config, schema, strategy, fallback_fn_factory)
 
             if attempt < config.max_retries - 1:
                 await asyncio.sleep(config.retry_backoff**attempt)
 
-    return StructuredOutputResult.err(
-        error=f"Failed after {config.max_retries} attempts: {last_error}"
-    )
+    return StructuredOutputResult.err(error=f"Failed after {config.max_retries} attempts: {last_error}")
 
 
 __all__ = ["with_retries", "is_context_limit_error"]

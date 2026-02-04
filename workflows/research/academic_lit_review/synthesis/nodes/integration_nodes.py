@@ -47,9 +47,7 @@ def _assemble_document(
     cluster_order = [c["label"] for c in clusters]
     for i, label in enumerate(cluster_order):
         section_num = i + 3
-        section_text = thematic_sections.get(
-            label, f"[Section for {label} not available]"
-        )
+        section_text = thematic_sections.get(label, f"[Section for {label} not available]")
         parts.append(f"## {section_num}. {label}\n\n{section_text}\n")
 
     # Discussion and conclusions
@@ -116,11 +114,7 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
         cache_ttl="1h",
     )
 
-    abstract = (
-        response.content
-        if isinstance(response.content, str)
-        else response.content[0].get("text", "")
-    )
+    abstract = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
 
     logger.info(f"Generated abstract: {len(abstract.split())} words")
 
@@ -139,9 +133,6 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     # Count citations for logging
     output_citations = extract_citations_from_text(integrated)
 
-    logger.info(
-        f"Assembled review: {len(integrated.split())} words, "
-        f"{len(output_citations)} citations preserved"
-    )
+    logger.info(f"Assembled review: {len(integrated.split())} words, {len(output_citations)} citations preserved")
 
     return {"integrated_review": integrated}

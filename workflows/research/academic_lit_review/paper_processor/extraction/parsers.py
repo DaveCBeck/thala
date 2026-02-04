@@ -42,16 +42,11 @@ async def _generate_l2_from_l0(
 
     try:
         word_count = count_words(l0_content)
-        logger.info(
-            f"Generating L2 from L0 ({len(l0_content)} chars, {word_count} words) "
-            f"for record {l0_record_id}"
-        )
+        logger.info(f"Generating L2 from L0 ({len(l0_content)} chars, {word_count} words) for record {l0_record_id}")
 
         # Skip if document is too short (same threshold as document_processing)
         if word_count < 3000:
-            logger.info(
-                f"Document too short ({word_count} words), skipping L2 generation"
-            )
+            logger.info(f"Document too short ({word_count} words), skipping L2 generation")
             return None
 
         # Create fallback chunks (simpler than full chapter detection for papers)
@@ -98,8 +93,7 @@ async def _generate_l2_from_l0(
         # Combine summaries
         tenth_summary = "\n\n".join(chunk_summaries)
         logger.info(
-            f"Generated L2 summary: {count_words(tenth_summary)} words "
-            f"(from {word_count} words, {len(chunks)} chunks)"
+            f"Generated L2 summary: {count_words(tenth_summary)} words (from {word_count} words, {len(chunks)} chunks)"
         )
 
         # Save L2 to store
@@ -132,9 +126,7 @@ async def _generate_l2_from_l0(
         return None
 
 
-async def _fetch_content_for_extraction(
-    store_manager, es_record_id: str, doi: str
-) -> str | None:
+async def _fetch_content_for_extraction(store_manager, es_record_id: str, doi: str) -> str | None:
     """Fetch content for extraction, preferring L2 (10:1 summary) over L0 (original).
 
     L2 is preferred because:
@@ -168,8 +160,7 @@ async def _fetch_content_for_extraction(
     # If L0 is too large, generate L2 on-the-fly
     if len(l0_content) > L0_SIZE_THRESHOLD_FOR_L2:
         logger.info(
-            f"L0 content for {doi} is {len(l0_content)} chars (>{L0_SIZE_THRESHOLD_FOR_L2}), "
-            f"generating L2 summary"
+            f"L0 content for {doi} is {len(l0_content)} chars (>{L0_SIZE_THRESHOLD_FOR_L2}), generating L2 summary"
         )
         l2_content = await _generate_l2_from_l0(
             store_manager=store_manager,

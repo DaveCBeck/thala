@@ -64,15 +64,10 @@ async def fetch_citations_raw(
                 )
 
                 for work in recent_forward.results:
-                    work_dict = (
-                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
-                    )
+                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
                     doi = work_dict.get("doi", "")
                     if doi:
-                        doi_clean = (
-                            doi.replace("https://doi.org/", "")
-                            .replace("http://doi.org/", "")
-                        )
+                        doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
                         if doi_clean not in seen_dois:
                             seen_dois.add(doi_clean)
                             forward_papers.append(work_dict)
@@ -97,15 +92,10 @@ async def fetch_citations_raw(
                 )
 
                 for work in older_forward.results:
-                    work_dict = (
-                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
-                    )
+                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
                     doi = work_dict.get("doi", "")
                     if doi:
-                        doi_clean = (
-                            doi.replace("https://doi.org/", "")
-                            .replace("http://doi.org/", "")
-                        )
+                        doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
                         # Deduplicate - older query may include some recent papers
                         if doi_clean not in seen_dois:
                             seen_dois.add(doi_clean)
@@ -130,17 +120,11 @@ async def fetch_citations_raw(
                 )
 
                 for work in backward_result.results:
-                    work_dict = (
-                        work.model_dump() if hasattr(work, "model_dump") else dict(work)
-                    )
+                    work_dict = work.model_dump() if hasattr(work, "model_dump") else dict(work)
                     backward_papers.append(work_dict)
 
                     if work_dict.get("doi"):
-                        cited_doi = (
-                            work_dict["doi"]
-                            .replace("https://doi.org/", "")
-                            .replace("http://doi.org/", "")
-                        )
+                        cited_doi = work_dict["doi"].replace("https://doi.org/", "").replace("http://doi.org/", "")
                         edges.append(
                             CitationEdge(
                                 citing_doi=seed_doi,
@@ -151,9 +135,7 @@ async def fetch_citations_raw(
                         )
 
             except Exception as e:
-                logger.warning(
-                    f"Failed to fetch backward citations for {seed_doi}: {e}"
-                )
+                logger.warning(f"Failed to fetch backward citations for {seed_doi}: {e}")
 
             logger.debug(
                 f"Fetched {len(forward_papers)} forward, {len(backward_papers)} backward "

@@ -26,7 +26,6 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
     backward_results = state.get("backward_results", [])
     existing_dois = state.get("existing_dois", set())
     input_data = state["input"]
-    quality_settings = state["quality_settings"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     citation_edges = state.get("citation_edges", [])
@@ -91,9 +90,7 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
             "new_edges": citation_edges,
         }
 
-    logger.info(
-        f"Merged {len(all_results)} raw results to {len(papers)} unique new papers"
-    )
+    logger.info(f"Merged {len(all_results)} raw results to {len(papers)} unique new papers")
 
     # language_config already fetched above for early filtering
     if language_config is None:
@@ -108,8 +105,6 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
         fallback_threshold=0.5,
         language_config=language_config,
         tier=ModelTier.DEEPSEEK_V3,
-        max_concurrent=10,
-        use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
     discovered_dois = [p.get("doi") for p in relevant if p.get("doi")]
@@ -119,9 +114,7 @@ async def merge_and_filter_node(state: CitationNetworkState) -> dict[str, Any]:
     valid_dois = discovered_doi_set | seed_dois_set
 
     filtered_edges = [
-        edge
-        for edge in citation_edges
-        if edge.get("citing_doi") in valid_dois or edge.get("cited_doi") in valid_dois
+        edge for edge in citation_edges if edge.get("citing_doi") in valid_dois or edge.get("cited_doi") in valid_dois
     ]
 
     logger.info(

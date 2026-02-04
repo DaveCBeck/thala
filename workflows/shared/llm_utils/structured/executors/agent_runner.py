@@ -76,13 +76,15 @@ async def run_tool_agent(
         )
 
         if is_final_iteration and call_count > 0:
-            working_messages.append({
-                "role": "user",
-                "content": "You have used most of your available tool calls. "
-                          "Please complete your research now and prepare to "
-                          "provide your final response. You may make one more "
-                          "tool call if essential, but prioritize completion."
-            })
+            working_messages.append(
+                {
+                    "role": "user",
+                    "content": "You have used most of your available tool calls. "
+                    "Please complete your research now and prepare to "
+                    "provide your final response. You may make one more "
+                    "tool call if essential, but prioritize completion.",
+                }
+            )
 
         # Get LLM response
         response: AIMessage = await llm_with_tools.ainvoke(working_messages)
@@ -114,9 +116,7 @@ async def run_tool_agent(
                         tool_result = tool_result[:available] + "\n[truncated]"
 
                     total_chars += len(tool_result)
-                    logger.debug(
-                        f"Tool {tool_name} returned {len(tool_result)} chars"
-                    )
+                    logger.debug(f"Tool {tool_name} returned {len(tool_result)} chars")
                 except Exception as e:
                     tool_result = f"Error executing tool: {e}"
                     logger.warning(f"Tool {tool_name} failed: {e}")

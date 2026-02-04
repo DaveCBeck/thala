@@ -27,9 +27,7 @@ class HeadingAnalysis(BaseModel):
 
     heading: str = Field(description="Exact heading text")
     is_chapter: bool = Field(description="Whether this is a chapter boundary")
-    chapter_author: Optional[str] = Field(
-        default=None, description="Author name if multi-author book"
-    )
+    chapter_author: Optional[str] = Field(default=None, description="Author name if multi-author book")
 
 
 class ChapterClassification(BaseModel):
@@ -39,17 +37,13 @@ class ChapterClassification(BaseModel):
     action: str = Field(
         description="'include' for main content, 'exclude' for non-content, 'combine_with_previous' to merge with preceding chapter"
     )
-    reason: Optional[str] = Field(
-        default=None, description="Brief reason if not 'include'"
-    )
+    reason: Optional[str] = Field(default=None, description="Brief reason if not 'include'")
 
 
 class ChapterClassificationResult(BaseModel):
     """Result of chapter content classification."""
 
-    chapters: list[ChapterClassification] = Field(
-        description="Classification of each chapter"
-    )
+    chapters: list[ChapterClassification] = Field(description="Classification of each chapter")
 
     @field_validator("chapters", mode="before")
     @classmethod
@@ -62,9 +56,7 @@ class ChapterClassificationResult(BaseModel):
                     return parsed
             except json.JSONDecodeError:
                 pass
-            raise ValueError(
-                f"chapters must be a list, got unparseable string: {v[:100]}..."
-            )
+            raise ValueError(f"chapters must be a list, got unparseable string: {v[:100]}...")
         return v if v is not None else []
 
 
@@ -92,9 +84,7 @@ class HeadingAnalysisResult(BaseModel):
         return v if v is not None else []
 
 
-def _build_chapter_boundaries(
-    markdown: str, headings: list[dict], analysis: list[dict]
-) -> list[ChapterInfo]:
+def _build_chapter_boundaries(markdown: str, headings: list[dict], analysis: list[dict]) -> list[ChapterInfo]:
     """
     Build ChapterInfo list from heading analysis.
 
@@ -112,9 +102,7 @@ def _build_chapter_boundaries(
 
     for heading in headings:
         heading_text = heading["text"]
-        if heading_text in analysis_map and analysis_map[heading_text].get(
-            "is_chapter"
-        ):
+        if heading_text in analysis_map and analysis_map[heading_text].get("is_chapter"):
             author = analysis_map[heading_text].get("chapter_author")
             chapter_headings.append(
                 {
@@ -129,11 +117,7 @@ def _build_chapter_boundaries(
     for i, chapter in enumerate(chapter_headings):
         start = chapter["position"]
         # End is start of next chapter, or end of document
-        end = (
-            chapter_headings[i + 1]["position"]
-            if i + 1 < len(chapter_headings)
-            else len(markdown)
-        )
+        end = chapter_headings[i + 1]["position"] if i + 1 < len(chapter_headings) else len(markdown)
 
         chapter_text = markdown[start:end]
         word_count = count_words(chapter_text)
@@ -192,9 +176,7 @@ async def _filter_content_chapters(
         return [], []
 
     # Stage 1: Prepare chapter list with word counts for LLM classification
-    chapter_list = "\n".join(
-        [f"- {c['title']} ({c['word_count']:,} words)" for c in chapters]
-    )
+    chapter_list = "\n".join([f"- {c['title']} ({c['word_count']:,} words)" for c in chapters])
 
     # Add document context if available
     context_section = ""
@@ -258,9 +240,7 @@ When in doubt, use "include"."""
 
             if action == "exclude":
                 excluded_chapters.append(chapter)
-                logger.debug(
-                    f"Excluding chapter '{chapter['title']}': {classification.reason}"
-                )
+                logger.debug(f"Excluding chapter '{chapter['title']}': {classification.reason}")
             elif action == "combine_with_previous" and content_chapters:
                 # Merge this chapter's content range into the previous one
                 prev_chapter = content_chapters[-1]
@@ -272,18 +252,14 @@ When in doubt, use "include"."""
                     word_count=prev_chapter["word_count"] + chapter["word_count"],
                 )
                 content_chapters[-1] = combined
-                logger.debug(
-                    f"Combined '{chapter['title']}' with '{prev_chapter['title']}'"
-                )
+                logger.debug(f"Combined '{chapter['title']}' with '{prev_chapter['title']}'")
             else:
                 # "include" or fallback
                 content_chapters.append(chapter)
 
         if excluded_chapters:
             excluded_titles = [c["title"] for c in excluded_chapters]
-            logger.info(
-                f"Filtered {len(excluded_chapters)} non-content chapters: {excluded_titles}"
-            )
+            logger.info(f"Filtered {len(excluded_chapters)} non-content chapters: {excluded_titles}")
 
         # Stage 2: Filter out any remaining chapters too short to summarize
         # (after combining, some may still be below threshold)
@@ -300,10 +276,7 @@ When in doubt, use "include"."""
                 final_content.append(chapter)
 
         if short_chapters:
-            logger.info(
-                f"Filtered {len(short_chapters)} chapters below {MIN_CHAPTER_WORDS} words "
-                f"(post-combine)"
-            )
+            logger.info(f"Filtered {len(short_chapters)} chapters below {MIN_CHAPTER_WORDS} words (post-combine)")
             excluded_chapters.extend(short_chapters)
 
         content_chapters = final_content
@@ -322,9 +295,7 @@ When in doubt, use "include"."""
         return content_chapters, excluded_chapters
 
     except Exception as e:
-        logger.warning(
-            f"Chapter content filtering failed: {e}. Applying word count filter only."
-        )
+        logger.warning(f"Chapter content filtering failed: {e}. Applying word count filter only.")
         # Fallback: just apply word count filter
         content_chapters = []
         excluded_chapters = []
@@ -367,9 +338,7 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                 "chapters": [],
                 "needs_tenth_summary": False,
                 "current_status": "chapter_detection_failed",
-                "errors": [
-                    {"node": "detect_chapters", "error": "No processing result"}
-                ],
+                "errors": [{"node": "detect_chapters", "error": "No processing result"}],
             }
 
         markdown = processing_result["markdown"]
@@ -377,16 +346,11 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
 
         # Log document token count for tracking
         doc_tokens = estimate_tokens_fast(markdown, with_safety_margin=False)
-        logger.info(
-            f"[TOKEN_TRACKING] Document content: {doc_tokens:,} tokens "
-            f"({word_count:,} words)"
-        )
+        logger.info(f"[TOKEN_TRACKING] Document content: {doc_tokens:,} tokens ({word_count:,} words)")
 
         # Only run 10:1 summary for documents with substantial content
         if word_count < 3000:
-            logger.info(
-                f"Document too short ({word_count} words), skipping 10:1 summary"
-            )
+            logger.info(f"Document too short ({word_count} words), skipping 10:1 summary")
             return {
                 "chapters": [],
                 "needs_tenth_summary": False,
@@ -437,7 +401,9 @@ Guidelines:
 - When in doubt, prefer marking more headings as chapters rather than fewer - splitting is better than one huge chunk"""
 
         if is_multi_author:
-            system_prompt += "\n\nThis is a multi-author book. For each chapter, identify the author name if present in the heading."
+            system_prompt += (
+                "\n\nThis is a multi-author book. For each chapter, identify the author name if present in the heading."
+            )
 
         try:
             # Use structured extraction for guaranteed valid JSON
@@ -458,28 +424,15 @@ Guidelines:
 
             # If no chapters identified, try using top-level headings as fallback
             if not chapters:
-                logger.info(
-                    "No chapters identified by LLM, trying top-level heading fallback"
-                )
-                chapters = create_heading_based_chapters(
-                    markdown, headings, ChapterInfo
-                )
+                logger.info("No chapters identified by LLM, trying top-level heading fallback")
+                chapters = create_heading_based_chapters(markdown, headings, ChapterInfo)
 
                 if chapters:
-                    logger.info(
-                        f"Created {len(chapters)} chapters from top-level headings"
-                    )
+                    logger.info(f"Created {len(chapters)} chapters from top-level headings")
                     # Filter to content chapters only
-                    short_summary = state.get("short_summary_english") or state.get(
-                        "short_summary"
-                    )
-                    content_chapters, excluded = await _filter_content_chapters(
-                        chapters, short_summary=short_summary
-                    )
-                    logger.info(
-                        f"After filtering: {len(content_chapters)} content chapters "
-                        f"({len(excluded)} excluded)"
-                    )
+                    short_summary = state.get("short_summary_english") or state.get("short_summary")
+                    content_chapters, excluded = await _filter_content_chapters(chapters, short_summary=short_summary)
+                    logger.info(f"After filtering: {len(content_chapters)} content chapters ({len(excluded)} excluded)")
                     return {
                         "chapters": content_chapters,
                         "needs_tenth_summary": True,
@@ -498,16 +451,9 @@ Guidelines:
             logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
 
             # Filter to content chapters only
-            short_summary = state.get("short_summary_english") or state.get(
-                "short_summary"
-            )
-            content_chapters, excluded = await _filter_content_chapters(
-                chapters, short_summary=short_summary
-            )
-            logger.info(
-                f"After filtering: {len(content_chapters)} content chapters "
-                f"({len(excluded)} excluded)"
-            )
+            short_summary = state.get("short_summary_english") or state.get("short_summary")
+            content_chapters, excluded = await _filter_content_chapters(chapters, short_summary=short_summary)
+            logger.info(f"After filtering: {len(content_chapters)} content chapters ({len(excluded)} excluded)")
 
             return {
                 "chapters": content_chapters,
@@ -517,9 +463,7 @@ Guidelines:
 
         except Exception as e:
             # Graceful fallback: chunk document into ~30k word sections
-            logger.warning(
-                f"Chapter detection via LLM failed: {e}. Using fallback chunking."
-            )
+            logger.warning(f"Chapter detection via LLM failed: {e}. Using fallback chunking.")
             chapters = create_fallback_chunks(markdown, word_count, ChapterInfo)
 
             return {

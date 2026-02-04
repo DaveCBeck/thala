@@ -31,9 +31,7 @@ async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
     """
     try:
         # Prefer new field, fall back to old for compatibility
-        tenth_summary_original = state.get("tenth_summary_original") or state.get(
-            "tenth_summary"
-        )
+        tenth_summary_original = state.get("tenth_summary_original") or state.get("tenth_summary")
         tenth_summary_english = state.get("tenth_summary_english")
         original_language = state.get("original_language", "en")
 
@@ -41,9 +39,7 @@ async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.error("No tenth_summary in state")
             return {
                 "current_status": "save_tenth_summary_failed",
-                "errors": [
-                    {"node": "save_tenth_summary", "error": "No summary to save"}
-                ],
+                "errors": [{"node": "save_tenth_summary", "error": "No summary to save"}],
             }
 
         # Find the original record (compression_level=0)
@@ -58,9 +54,7 @@ async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.error("No original record found in state")
             return {
                 "current_status": "save_tenth_summary_failed",
-                "errors": [
-                    {"node": "save_tenth_summary", "error": "No original record found"}
-                ],
+                "errors": [{"node": "save_tenth_summary", "error": "No original record found"}],
             }
 
         store_manager = get_store_manager()
@@ -98,9 +92,7 @@ async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
         record_original.embedding_model = store_manager.embedding.model
         await store_manager.es_stores.store.add(record_original)
 
-        logger.info(
-            f"Saved original language L2 record: {record_id_original} (lang={original_language})"
-        )
+        logger.info(f"Saved original language L2 record: {record_id_original} (lang={original_language})")
 
         new_refs.append(
             StoreRecordRef(
@@ -131,9 +123,7 @@ async def save_tenth_summary(state: DocumentProcessingState) -> dict[str, Any]:
                 },
             )
 
-            embedding_en = await store_manager.embedding.embed_long(
-                tenth_summary_english
-            )
+            embedding_en = await store_manager.embedding.embed_long(tenth_summary_english)
             record_english.embedding = embedding_en
             record_english.embedding_model = store_manager.embedding.model
             await store_manager.es_stores.store.add(record_english)

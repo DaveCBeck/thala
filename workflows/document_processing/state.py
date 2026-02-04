@@ -23,7 +23,6 @@ class DocumentInput(TypedDict, total=False):
     item_type: str
     langs: list[str]
     extra_metadata: dict
-    use_batch_api: bool  # Set False for rapid iteration (skips batch API, default True)
     llm_mode: Optional[UserMode]  # LLM broker mode (Fast/Balanced/Economical)
 
 

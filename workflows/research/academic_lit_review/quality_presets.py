@@ -1,11 +1,6 @@
 """Quality tier configuration for academic literature review workflow."""
 
-import os
-
 from typing_extensions import TypedDict
-
-# Read batch API preference from environment (default: True if not set)
-_USE_BATCH_API = os.getenv("THALA_PREFER_BATCH_API", "1") == "1"
 
 
 class QualitySettings(TypedDict):
@@ -16,7 +11,6 @@ class QualitySettings(TypedDict):
     target_word_count: int  # Target length of final review
     min_citations_filter: int  # Minimum citations for discovery
     saturation_threshold: float  # Coverage delta threshold
-    use_batch_api: bool  # Use Anthropic Batch API
     supervision_loops: str  # Which supervision loops to run: "none", "one", "two", "three", "four", "all"
     recency_years: int  # Years to consider "recent" (default: 3)
     recency_quota: float  # Target fraction of recent papers (default: 0.25)
@@ -29,7 +23,6 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=2000,
         min_citations_filter=0,
         saturation_threshold=0.25,
-        use_batch_api=_USE_BATCH_API,
         supervision_loops="none",  # All loops with minimal iterations
         recency_years=3,
         recency_quota=0.0,  # Skip recency quota for test tier
@@ -40,7 +33,6 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=9000,
         min_citations_filter=5,
         saturation_threshold=0.15,
-        use_batch_api=_USE_BATCH_API,
         supervision_loops="all",  # All loops with minimal iterations
         recency_years=3,
         recency_quota=0.25,
@@ -51,7 +43,6 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=12000,
         min_citations_filter=10,
         saturation_threshold=0.12,
-        use_batch_api=_USE_BATCH_API,
         supervision_loops="all",  # Full multi-loop supervision
         recency_years=3,
         recency_quota=0.25,
@@ -62,7 +53,6 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=17500,
         min_citations_filter=10,
         saturation_threshold=0.10,
-        use_batch_api=_USE_BATCH_API,
         supervision_loops="all",  # Full multi-loop supervision
         recency_years=3,
         recency_quota=0.25,
@@ -73,7 +63,6 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=22000,
         min_citations_filter=10,
         saturation_threshold=0.10,
-        use_batch_api=_USE_BATCH_API,
         supervision_loops="all",  # Full multi-loop supervision
         recency_years=3,
         recency_quota=0.25,

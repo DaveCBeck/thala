@@ -72,8 +72,7 @@ async def enrich_with_cocitation_counts_node(
 
     high_cocitation = sum(1 for c in enriched_candidates if c.get("corpus_cocitations", 0) >= 3)
     logger.info(
-        f"Co-citation enrichment: {len(enriched_candidates)} candidates, "
-        f"{high_cocitation} with 3+ corpus connections"
+        f"Co-citation enrichment: {len(enriched_candidates)} candidates, {high_cocitation} with 3+ corpus connections"
     )
 
     return {"current_stage_candidates": enriched_candidates}
@@ -90,7 +89,6 @@ async def score_relevance_node(state: DiffusionEngineState) -> dict[str, Any]:
     """
     candidates = state.get("current_stage_candidates", [])
     input_data = state["input"]
-    quality_settings = state["quality_settings"]
     topic = input_data["topic"]
     research_questions = input_data.get("research_questions", [])
     language_config = state.get("language_config")
@@ -112,8 +110,6 @@ async def score_relevance_node(state: DiffusionEngineState) -> dict[str, Any]:
         fallback_threshold=0.5,
         language_config=language_config,
         tier=ModelTier.DEEPSEEK_V3,
-        max_concurrent=10,
-        use_batch_api=quality_settings.get("use_batch_api", True),
     )
 
     # Extract DOIs

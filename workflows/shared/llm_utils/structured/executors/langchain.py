@@ -44,13 +44,9 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
         # - Default: Let LangChain choose (usually json_schema for OpenAI-compatible)
         if is_deepseek_tier(output_config.tier):
             # DeepSeek doesn't support json_schema response_format, use function calling
-            structured_llm = llm.with_structured_output(
-                output_schema, method="function_calling"
-            )
+            structured_llm = llm.with_structured_output(output_schema, method="function_calling")
         elif output_config.use_json_schema_method and not output_config.thinking_budget:
-            structured_llm = llm.with_structured_output(
-                output_schema, method="json_schema"
-            )
+            structured_llm = llm.with_structured_output(output_schema, method="json_schema")
         else:
             structured_llm = llm.with_structured_output(output_schema)
 
@@ -84,9 +80,7 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
 
         # DeepSeek with function_calling can return None if model doesn't call the function
         if result is None:
-            return StructuredOutputResult.err(
-                error="Model did not return structured output (got None)"
-            )
+            return StructuredOutputResult.err(error="Model did not return structured output (got None)")
 
         return StructuredOutputResult.ok(
             value=result,

@@ -48,9 +48,7 @@ class CitationGraphAlgorithms:
             logger.error(f"Error computing betweenness centrality: {e}")
             return []
 
-    def get_recent_impactful(
-        self, years: int = 3, top_n: int = 10, current_year: Optional[int] = None
-    ) -> list[str]:
+    def get_recent_impactful(self, years: int = 3, top_n: int = 10, current_year: Optional[int] = None) -> list[str]:
         """Get recent papers with high citation velocity (citations per year)."""
         if current_year is None:
             current_year = datetime.now(timezone.utc).year
@@ -91,9 +89,7 @@ class CitationGraphAlgorithms:
 
                     partition = community_louvain.best_partition(undirected)
                 except ImportError:
-                    logger.warning(
-                        "python-louvain not available, falling back to label propagation"
-                    )
+                    logger.warning("python-louvain not available, falling back to label propagation")
                     algorithm = "label_propagation"
 
             if algorithm == "label_propagation":
@@ -122,9 +118,7 @@ class CitationGraphAlgorithms:
 
         return list(clusters_dict.values())
 
-    def get_corpus_overlap_count(
-        self, paper_doi: str, corpus_dois: set[str]
-    ) -> int:
+    def get_corpus_overlap_count(self, paper_doi: str, corpus_dois: set[str]) -> int:
         """Count how many corpus papers this paper shares citations with.
 
         Checks both directions:
@@ -149,9 +143,7 @@ class CitationGraphAlgorithms:
 
         return backward_overlap + forward_overlap
 
-    def get_cocitation_candidates(
-        self, paper_doi: str, corpus_dois: set[str], threshold: int = 3
-    ) -> bool:
+    def get_cocitation_candidates(self, paper_doi: str, corpus_dois: set[str], threshold: int = 3) -> bool:
         """Check if paper shares >= threshold citations with corpus.
 
         Checks both directions:
@@ -160,9 +152,7 @@ class CitationGraphAlgorithms:
         """
         return self.get_corpus_overlap_count(paper_doi, corpus_dois) >= threshold
 
-    def get_unexplored_citations(
-        self, doi: str, explored_dois: set[str]
-    ) -> tuple[list[str], list[str]]:
+    def get_unexplored_citations(self, doi: str, explored_dois: set[str]) -> tuple[list[str], list[str]]:
         """Get unexplored citations for a paper.
 
         Returns:
@@ -181,9 +171,7 @@ class CitationGraphAlgorithms:
 
         return unexplored_citing, unexplored_cited
 
-    def get_expansion_candidates(
-        self, max_papers: int = 20, prioritize_recent: bool = True
-    ) -> list[str]:
+    def get_expansion_candidates(self, max_papers: int = 20, prioritize_recent: bool = True) -> list[str]:
         """Get best papers to expand from in next diffusion stage.
 
         Combines scores from:

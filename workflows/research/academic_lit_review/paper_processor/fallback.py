@@ -69,9 +69,7 @@ class FallbackManager:
             # Get full metadata from corpus
             fallback_metadata = self.corpus.get(candidate_doi)
             if not fallback_metadata:
-                logger.warning(
-                    f"Fallback candidate {candidate_doi} not found in corpus, skipping"
-                )
+                logger.warning(f"Fallback candidate {candidate_doi} not found in corpus, skipping")
                 continue
 
             # Record substitution

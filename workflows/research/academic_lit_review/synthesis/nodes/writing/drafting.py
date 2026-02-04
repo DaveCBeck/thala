@@ -33,9 +33,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     research_questions = input_data.get("research_questions", [])
     date_range = input_data.get("date_range")
 
-    themes_overview = "\n".join(
-        f"- {c['label']}: {c['description'][:100]}" for c in clusters
-    )
+    themes_overview = "\n".join(f"- {c['label']}: {c['description'][:100]}" for c in clusters)
 
     years = [s.get("year", 0) for s in paper_summaries.values() if s.get("year")]
     if years:
@@ -94,9 +92,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     )
 
     introduction = (
-        intro_response.content
-        if isinstance(intro_response.content, str)
-        else intro_response.content[0].get("text", "")
+        intro_response.content if isinstance(intro_response.content, str) else intro_response.content[0].get("text", "")
     )
 
     total_papers = len(paper_summaries)
@@ -145,9 +141,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
 
     research_questions = input_data.get("research_questions", [])
 
-    themes_summary = "\n".join(
-        f"- {c['label']}: {c['description'][:150]}" for c in clusters
-    )
+    themes_summary = "\n".join(f"- {c['label']}: {c['description'][:150]}" for c in clusters)
 
     gaps = []
     for analysis in cluster_analyses:
@@ -194,8 +188,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         research_questions="\n".join(f"- {q}" for q in research_questions),
         themes_summary=themes_summary,
         cross_cutting_findings="See thematic sections for detailed findings.",
-        research_gaps="\n".join(f"- {g}" for g in gaps[:10])
-        or "None explicitly identified",
+        research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
     )
 
     llm = get_llm(tier=ModelTier.SONNET, max_tokens=4096)

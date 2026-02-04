@@ -5,7 +5,6 @@ Contains enums, dataclasses, and result types used across the structured output 
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Generic, Optional, Type, TypeVar
@@ -47,11 +46,6 @@ class StructuredRequest:
     system_prompt: Optional[str] = None
 
 
-def _get_prefer_batch_default() -> bool:
-    """Get default for prefer_batch_api from environment variable."""
-    return os.getenv("THALA_PREFER_BATCH_API", "").lower() in ("true", "1", "yes")
-
-
 @dataclass
 class StructuredOutputConfig:
     """Configuration for structured output extraction.
@@ -63,9 +57,6 @@ class StructuredOutputConfig:
 
         strategy: Force a specific strategy (default: AUTO)
         use_json_schema_method: Use method="json_schema" for stricter validation
-        prefer_batch_api: Route requests through batch API for 50% cost savings.
-            When True, requests use the batch API (higher latency but cheaper).
-            Defaults to THALA_PREFER_BATCH_API environment variable.
 
         max_retries: Maximum retry attempts on failure
         retry_backoff: Backoff multiplier between retries
@@ -76,6 +67,8 @@ class StructuredOutputConfig:
         tools: LangChain tools for TOOL_AGENT strategy
         max_tool_calls: Maximum tool calls for agent
         max_tool_result_chars: Maximum chars from tool results
+
+        batch_policy: Routes through central LLM broker with specified policy
     """
 
     # Model configuration
@@ -86,10 +79,8 @@ class StructuredOutputConfig:
     # Strategy selection
     strategy: StructuredOutputStrategy = StructuredOutputStrategy.AUTO
     use_json_schema_method: bool = False
-    prefer_batch_api: bool = field(default_factory=_get_prefer_batch_default)
 
-    # Broker integration (when THALA_LLM_BROKER_ENABLED=1)
-    # When set, routes through central LLM broker with specified policy
+    # Broker integration - routes through central LLM broker with specified policy
     batch_policy: Optional["BatchPolicy"] = None
 
     # Retry behavior
@@ -194,5 +185,4 @@ __all__ = [
     "StructuredOutputResult",
     "BatchResult",
     "StructuredOutputError",
-    "_get_prefer_batch_default",
 ]

@@ -27,17 +27,11 @@ class DocumentMetadata(BaseModel):
         default_factory=list,
         description="List of author names in 'First Last' or 'Last, First' format",
     )
-    year: Optional[str] = Field(
-        default=None, description="Publication year (4-digit, e.g., '2023')"
-    )
-    date: Optional[str] = Field(
-        default=None, description="Full publication date if available (YYYY-MM-DD)"
-    )
+    year: Optional[str] = Field(default=None, description="Publication year (4-digit, e.g., '2023')")
+    date: Optional[str] = Field(default=None, description="Full publication date if available (YYYY-MM-DD)")
     publisher: Optional[str] = Field(default=None, description="Publisher name")
     isbn: Optional[str] = Field(default=None, description="ISBN if present")
-    is_multi_author: bool = Field(
-        default=False, description="True if multi-author edited volume"
-    )
+    is_multi_author: bool = Field(default=False, description="True if multi-author edited volume")
     chapter_authors: dict[str, str] = Field(
         default_factory=dict,
         description="Mapping of chapter titles to author names (for multi-author books)",
@@ -113,9 +107,7 @@ Extract:
         logger.info(f"Extracted metadata: {list(metadata.keys())}")
 
         # Clean up metadata - remove null values and empty defaults
-        cleaned = {
-            k: v for k, v in metadata.items() if v is not None and v != [] and v != {}
-        }
+        cleaned = {k: v for k, v in metadata.items() if v is not None and v != [] and v != {}}
 
         # Don't update current_status here - parallel nodes would conflict
         return {

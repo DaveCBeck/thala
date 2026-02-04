@@ -24,13 +24,10 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
 
     # Use filtered papers_to_process list (set by diffusion phase), not full corpus
     papers_to_process_dois = state.get("papers_to_process", list(paper_corpus.keys()))
-    papers_to_process = [
-        paper_corpus[doi] for doi in papers_to_process_dois if doi in paper_corpus
-    ]
+    papers_to_process = [paper_corpus[doi] for doi in papers_to_process_dois if doi in paper_corpus]
 
     logger.info(
-        f"Starting processing phase for {len(papers_to_process)} papers "
-        f"(filtered from {len(paper_corpus)} discovered)"
+        f"Starting processing phase for {len(papers_to_process)} papers (filtered from {len(paper_corpus)} discovered)"
     )
 
     if not papers_to_process:
@@ -57,9 +54,7 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
     processed = processing_result.get("processed_dois", [])
     failed = processing_result.get("failed_dois", [])
 
-    logger.info(
-        f"Processing complete: {len(processed)} successful, {len(failed)} failed"
-    )
+    logger.info(f"Processing complete: {len(processed)} successful, {len(failed)} failed")
 
     return {
         "paper_summaries": paper_summaries,

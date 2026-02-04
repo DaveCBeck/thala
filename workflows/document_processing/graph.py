@@ -140,7 +140,6 @@ async def process_document(
     item_type: str = "document",
     langs: list[str] = None,
     extra_metadata: dict = None,
-    use_batch_api: bool = True,  # Set False for rapid iteration (skips batch API)
 ) -> dict[str, Any]:
     """Process a document through the full pipeline."""
     graph = create_document_processing_graph()
@@ -152,7 +151,6 @@ async def process_document(
             "item_type": item_type,
             "langs": langs or ["English"],
             "extra_metadata": extra_metadata or {},
-            "use_batch_api": use_batch_api,
         },
         "store_records": [],
         "errors": [],
@@ -205,12 +203,9 @@ async def process_documents_batch(
                 item_type=doc_config.get("item_type", "document"),
                 langs=doc_config.get("langs"),
                 extra_metadata=doc_config.get("extra_metadata"),
-                use_batch_api=doc_config.get("use_batch_api", True),
             )
 
-    logger.info(
-        f"Starting batch processing of {len(documents)} documents (concurrency: {concurrency})"
-    )
+    logger.info(f"Starting batch processing of {len(documents)} documents (concurrency: {concurrency})")
 
     tasks = [process_with_limit(doc) for doc in documents]
     results = await asyncio.gather(*tasks, return_exceptions=True)

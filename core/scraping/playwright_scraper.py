@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import html2text
 
 if TYPE_CHECKING:
-    from playwright.async_api import Browser, Download, Playwright
+    from playwright.async_api import Browser, Playwright
 
 logger = logging.getLogger(__name__)
 

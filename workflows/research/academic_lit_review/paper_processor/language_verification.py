@@ -51,10 +51,7 @@ async def language_verification_node(state: PaperProcessingState) -> dict[str, A
     target_language = language_config["code"]
     target_name = language_config.get("name", target_language)
 
-    logger.info(
-        f"Verifying language for {len(processing_results)} processed papers "
-        f"(target: {target_name})"
-    )
+    logger.info(f"Verifying language for {len(processing_results)} processed papers (target: {target_name})")
 
     # Build paper lookup for metadata
     papers_by_doi = {p.get("doi"): p for p in papers_to_process if p.get("doi")}
@@ -106,24 +103,16 @@ async def language_verification_node(state: PaperProcessingState) -> dict[str, A
 
         by_detected_language[detected_lang] += 1
 
-        if (
-            detected_lang == target_language
-            and confidence >= LANGUAGE_CONFIDENCE_THRESHOLD
-        ):
+        if detected_lang == target_language and confidence >= LANGUAGE_CONFIDENCE_THRESHOLD:
             verified_dois.append(doi)
             logger.debug(f"Verified {doi}: {detected_lang} ({confidence:.2f})")
         else:
             rejected_dois.append(doi)
-            logger.info(
-                f"Rejected {doi}: detected {detected_lang} ({confidence:.2f}), "
-                f"expected {target_language}"
-            )
+            logger.info(f"Rejected {doi}: detected {detected_lang} ({confidence:.2f}), expected {target_language}")
 
     # Filter papers_to_process to only verified DOIs
     verified_papers = [
-        p
-        for p in papers_to_process
-        if p.get("doi") in verified_dois or p.get("doi") not in processing_results
+        p for p in papers_to_process if p.get("doi") in verified_dois or p.get("doi") not in processing_results
     ]
 
     # Apply max_papers limit after verification
@@ -137,9 +126,7 @@ async def language_verification_node(state: PaperProcessingState) -> dict[str, A
             key=lambda p: p.get("relevance_score", 0.5),
             reverse=True,
         )[:max_papers]
-        logger.info(
-            f"Applied max_papers limit: {len(verified_papers)} papers after verification"
-        )
+        logger.info(f"Applied max_papers limit: {len(verified_papers)} papers after verification")
 
     stats: LanguageVerificationStats = {
         "verified_count": len(verified_dois),

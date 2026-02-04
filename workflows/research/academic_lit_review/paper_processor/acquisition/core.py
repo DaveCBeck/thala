@@ -49,7 +49,6 @@ from workflows.research.academic_lit_review.paper_processor.cache import (
     check_document_exists_by_doi,
 )
 from workflows.research.academic_lit_review.paper_processor.document_processing import (
-    process_multiple_documents,
     process_single_document,
 )
 from workflows.research.academic_lit_review.paper_processor.types import (
@@ -61,7 +60,6 @@ from workflows.research.academic_lit_review.paper_processor.types import (
 from core.scraping.pdf import process_document_smart, MarkerProcessingError
 
 from .sources import try_oa_download
-from .types import MAX_LLM_CONCURRENT
 
 if TYPE_CHECKING:
     from workflows.research.academic_lit_review.paper_processor.fallback import (
@@ -170,7 +168,6 @@ async def _check_cache_phase(
 async def run_paper_pipeline(
     papers: list[PaperMetadata],
     max_concurrent: int = MAX_PAPER_PIPELINE_CONCURRENT,
-    use_batch_api: bool = True,
     fallback_manager: Optional["FallbackManager"] = None,
     checkpoint_callback: Optional[Callable[[int, dict], None]] = None,
     checkpoint_interval: int = 5,
@@ -200,7 +197,6 @@ async def run_paper_pipeline(
     Args:
         papers: Papers to process
         max_concurrent: Maximum concurrent acquisitions (default: 2)
-        use_batch_api: Whether to use batch API for LLM processing
         fallback_manager: Optional manager for paper substitution on failure
         checkpoint_callback: Optional callback(iteration_count, partial_results) for mid-phase checkpointing
         checkpoint_interval: How often to checkpoint (default: every 5 papers)
@@ -210,9 +206,7 @@ async def run_paper_pipeline(
     """
     async with RetrieveAcademicClient() as client:
         if not await client.health_check():
-            logger.warning(
-                "Retrieve-academic service unavailable, skipping full-text acquisition"
-            )
+            logger.warning("Retrieve-academic service unavailable, skipping full-text acquisition")
             return {}, {}, [p.get("doi") for p in papers], [], []
 
         output_dir = Path("/tmp/thala_papers")
@@ -230,10 +224,7 @@ async def run_paper_pipeline(
         logger.debug(f"Phase 1: Checking cache for {total_papers} papers")
         cached_results, papers_to_acquire = await _check_cache_phase(papers)
 
-        logger.info(
-            f"Cache check complete: {len(cached_results)} cached, "
-            f"{len(papers_to_acquire)} need acquisition"
-        )
+        logger.info(f"Cache check complete: {len(cached_results)} cached, {len(papers_to_acquire)} need acquisition")
 
         if not papers_to_acquire:
             return {}, cached_results, [], [], []
@@ -241,10 +232,7 @@ async def run_paper_pipeline(
         # ========================================
         # Phase 2+3: Streaming acquire → process
         # ========================================
-        logger.debug(
-            f"Phase 2+3: Starting streaming acquisition and processing for "
-            f"{len(papers_to_acquire)} papers"
-        )
+        logger.debug(f"Phase 2+3: Starting streaming acquisition and processing for {len(papers_to_acquire)} papers")
 
         # Shared state (thread-safe via single event loop)
         acquired_paths: dict[str, str] = {}
@@ -271,9 +259,7 @@ async def run_paper_pipeline(
             # Track OA vs retrieve-academic acquisitions
             oa_acquired_count = 0
 
-            async def try_acquire_single(
-                paper: PaperMetadata, index: int
-            ) -> tuple[str, Optional[str], Optional[str]]:
+            async def try_acquire_single(paper: PaperMetadata, index: int) -> tuple[str, Optional[str], Optional[str]]:
                 """Try OA first, then submit to retrieve-academic if needed.
 
                 OA successes are pushed directly to the processing queue for
@@ -301,29 +287,18 @@ async def run_paper_pipeline(
 
                     # Try OA download first if URL available
                     if oa_url:
-                        source, is_markdown = await try_oa_download(
-                            oa_url, local_path, doi
-                        )
+                        source, is_markdown = await try_oa_download(oa_url, local_path, doi)
                         if source:
                             # Push directly to queue - stream to marker immediately
                             oa_acquired_count += 1
                             acquired_count += 1
                             acquired_paths[doi] = source
-                            logger.debug(
-                                f"[{acquired_count}/{total_to_acquire}] "
-                                f"Acquired via OA (streaming): {doi}"
-                            )
-                            await marker_queue.put(
-                                (doi, source, papers_by_doi[doi], is_markdown)
-                            )
+                            logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired via OA (streaming): {doi}")
+                            await marker_queue.put((doi, source, papers_by_doi[doi], is_markdown))
                             return doi, None, None  # Signal OA handled
 
                     # Fall back to retrieve-academic
-                    authors = [
-                        a.get("name")
-                        for a in paper.get("authors", [])[:5]
-                        if a.get("name")
-                    ]
+                    authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
                     job = await client.retrieve(
                         doi=doi,
                         title=title,
@@ -336,12 +311,8 @@ async def run_paper_pipeline(
             try:
                 # Try OA and submit retrieve jobs with rate limiting
                 # OA successes are pushed to queue immediately (streaming)
-                submit_tasks = [
-                    try_acquire_single(p, i) for i, p in enumerate(papers_to_acquire)
-                ]
-                submit_results = await asyncio.gather(
-                    *submit_tasks, return_exceptions=True
-                )
+                submit_tasks = [try_acquire_single(p, i) for i, p in enumerate(papers_to_acquire)]
+                submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
 
                 # Collect retrieve-academic jobs for polling
                 # (OA successes already pushed to queue in try_acquire_single)
@@ -353,17 +324,14 @@ async def run_paper_pipeline(
 
                         # Try to get a fallback paper
                         if fallback_manager:
-                            fallback_paper = fallback_manager.get_fallback_for(
-                                doi, "acquisition_failed", "acquisition"
-                            )
+                            fallback_paper = fallback_manager.get_fallback_for(doi, "acquisition_failed", "acquisition")
                             if fallback_paper:
                                 # Add fallback to retry queue
                                 fallback_doi = fallback_paper.get("doi")
                                 papers_by_doi[fallback_doi] = fallback_paper
                                 await retry_queue.put(fallback_paper)
                                 logger.info(
-                                    f"Fallback requested for {doi} -> {fallback_doi} "
-                                    "(reason: acquisition_failed)"
+                                    f"Fallback requested for {doi} -> {fallback_doi} (reason: acquisition_failed)"
                                 )
                             else:
                                 acquisition_failed.append(doi)
@@ -405,8 +373,7 @@ async def run_paper_pipeline(
                                     papers_by_doi[fallback_doi] = fallback_paper
                                     await retry_queue.put(fallback_paper)
                                     logger.info(
-                                        f"Fallback requested for {doi} -> {fallback_doi} "
-                                        "(reason: acquisition_failed)"
+                                        f"Fallback requested for {doi} -> {fallback_doi} (reason: acquisition_failed)"
                                     )
                                 else:
                                     acquisition_failed.append(doi)
@@ -415,12 +382,8 @@ async def run_paper_pipeline(
                         else:
                             acquired_paths[doi] = local_path
                             acquired_count += 1
-                            logger.debug(
-                                f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}"
-                            )
-                            await marker_queue.put(
-                                (doi, local_path, papers_by_doi[doi], False)
-                            )
+                            logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}")
+                            await marker_queue.put((doi, local_path, papers_by_doi[doi], False))
 
                 # Process retry queue items (fallback papers from failures)
                 while not retry_queue.empty():
@@ -433,23 +396,15 @@ async def run_paper_pipeline(
 
                         # Try OA download first
                         if oa_url:
-                            source, is_markdown = await try_oa_download(
-                                oa_url, local_path, fallback_doi
-                            )
+                            source, is_markdown = await try_oa_download(oa_url, local_path, fallback_doi)
                             if source:
                                 acquired_paths[fallback_doi] = source
-                                await marker_queue.put(
-                                    (fallback_doi, source, fallback_paper, is_markdown)
-                                )
+                                await marker_queue.put((fallback_doi, source, fallback_paper, is_markdown))
                                 logger.debug(f"Fallback acquired via OA: {fallback_doi}")
                                 continue
 
                         # Fall back to retrieve-academic
-                        authors = [
-                            a.get("name")
-                            for a in fallback_paper.get("authors", [])[:5]
-                            if a.get("name")
-                        ]
+                        authors = [a.get("name") for a in fallback_paper.get("authors", [])[:5] if a.get("name")]
                         try:
                             path, _ = await client.retrieve_and_download(
                                 doi=fallback_doi,
@@ -459,9 +414,7 @@ async def run_paper_pipeline(
                                 timeout=ACQUISITION_TIMEOUT,
                             )
                             acquired_paths[fallback_doi] = path
-                            await marker_queue.put(
-                                (fallback_doi, path, fallback_paper, False)
-                            )
+                            await marker_queue.put((fallback_doi, path, fallback_paper, False))
                             logger.debug(f"Fallback acquired via retrieve-academic: {fallback_doi}")
                         except Exception as e:
                             logger.warning(f"Fallback acquisition failed for {fallback_doi}: {e}")
@@ -484,9 +437,7 @@ async def run_paper_pipeline(
             active_tasks: set[asyncio.Task] = set()
             marker_completed = 0
 
-            async def process_marker_item(
-                doi: str, source: str, paper: PaperMetadata, is_markdown: bool
-            ):
+            async def process_marker_item(doi: str, source: str, paper: PaperMetadata, is_markdown: bool):
                 """Process a single item through marker stage."""
                 nonlocal marker_completed
                 try:
@@ -500,10 +451,7 @@ async def run_paper_pipeline(
                         pdf_bytes = Path(source).read_bytes()
                         result = await process_document_smart(pdf_bytes)
                         markdown_text = result.markdown
-                        logger.debug(
-                            f"PDF processed via {result.processing_path}: {doi} "
-                            f"({len(markdown_text)} chars)"
-                        )
+                        logger.debug(f"PDF processed via {result.processing_path}: {doi} ({len(markdown_text)} chars)")
 
                     marker_completed += 1
                     # Push markdown to LLM stage
@@ -519,18 +467,13 @@ async def run_paper_pipeline(
 
                     # Try to get a fallback paper
                     if fallback_manager:
-                        fallback_paper = fallback_manager.get_fallback_for(
-                            doi, failure_reason, "marker"
-                        )
+                        fallback_paper = fallback_manager.get_fallback_for(doi, failure_reason, "marker")
                         if fallback_paper:
                             # Inject fallback into retry queue for acquisition
                             fallback_doi = fallback_paper.get("doi")
                             papers_by_doi[fallback_doi] = fallback_paper
                             await retry_queue.put(fallback_paper)
-                            logger.info(
-                                f"Fallback requested for {doi} -> {fallback_doi} "
-                                f"(reason: {failure_reason})"
-                            )
+                            logger.info(f"Fallback requested for {doi} -> {fallback_doi} (reason: {failure_reason})")
                         else:
                             # No fallback available - expected when queue exhausted
                             processing_failed.append(doi)
@@ -562,110 +505,59 @@ async def run_paper_pipeline(
                 doi, source, paper, is_markdown = item
 
                 # Create marker task
-                task = asyncio.create_task(
-                    process_marker_item(doi, source, paper, is_markdown)
-                )
+                task = asyncio.create_task(process_marker_item(doi, source, paper, is_markdown))
                 active_tasks.add(task)
                 task.add_done_callback(active_tasks.discard)
 
         async def llm_consumer():
-            """Stage 2: Run LLM workflow on markdown text using batched processing."""
+            """Stage 2: Process documents through document processing workflow.
+
+            The broker handles batching internally at the node level, so we just
+            process documents one at a time. No multi-worker pattern needed.
+            """
             nonlocal processed_count
 
-            async def llm_worker(worker_id: int):
-                """Single worker that drains queue and processes batches."""
-                nonlocal processed_count
-                while True:
-                    # Wait for first item
-                    item = await llm_queue.get()
-                    if item is None:
-                        # Put None back for other workers to see
-                        await llm_queue.put(None)
-                        logger.debug(f"LLM worker {worker_id}: received shutdown signal")
-                        break
+            while True:
+                item = await llm_queue.get()
+                if item is None:
+                    logger.debug("LLM consumer: received shutdown signal")
+                    break
 
-                    # Collect batch: first item + drain additional available items
-                    batch = [item]
-                    while True:
-                        try:
-                            next_item = llm_queue.get_nowait()
-                            if next_item is None:
-                                # Put None back for other workers
-                                await llm_queue.put(None)
-                                break
-                            batch.append(next_item)
-                        except asyncio.QueueEmpty:
-                            break
+                doi, markdown_text, paper = item
 
-                    # Process batch
-                    logger.info(
-                        f"LLM worker {worker_id}: processing batch of {len(batch)} documents"
-                    )
-                    documents = [(doi, md, paper) for doi, md, paper in batch]
+                try:
+                    result = await process_single_document(doi, markdown_text, paper, is_markdown=True)
+                    processed_count += 1
 
-                    try:
-                        if use_batch_api and len(documents) > 1:
-                            # Batch multiple documents together
-                            results = await process_multiple_documents(
-                                documents, use_batch_api=True
-                            )
-                        else:
-                            # Single doc or batch API disabled: process individually
-                            results = []
-                            for doi, md, paper in documents:
-                                result = await process_single_document(
-                                    doi, md, paper, is_markdown=True, use_batch_api=use_batch_api
-                                )
-                                results.append(result)
+                    if result.get("success"):
+                        processing_results[doi] = result
+                        logger.debug(f"[{processed_count}/{total_to_acquire}] LLM complete: {doi}")
+                    elif result.get("validation_failed"):
+                        # Content-metadata mismatch - expected condition, triggers fallback
+                        processing_failed.append(doi)
+                        logger.info(
+                            f"[{processed_count}/{total_to_acquire}] Validation failed for {doi}: "
+                            f"{result.get('validation_reasoning', 'Unknown reason')}"
+                        )
+                        # Store validation failure info in result for fallback handling
+                        result["failure_reason"] = "metadata_mismatch"
+                        result["failure_stage"] = "validation"
+                    else:
+                        processing_failed.append(doi)
+                        logger.warning(f"[{processed_count}/{total_to_acquire}] LLM failed: {doi}")
 
-                        # Handle results
-                        for result in results:
-                            doi = result["doi"]
-                            processed_count += 1
-                            if result.get("success"):
-                                processing_results[doi] = result
-                                logger.debug(
-                                    f"[{processed_count}/{total_to_acquire}] LLM complete: {doi}"
-                                )
-                            elif result.get("validation_failed"):
-                                # Content-metadata mismatch - expected condition, triggers fallback
-                                processing_failed.append(doi)
-                                logger.info(
-                                    f"[{processed_count}/{total_to_acquire}] Validation failed for {doi}: "
-                                    f"{result.get('validation_reasoning', 'Unknown reason')}"
-                                )
-                                # Store validation failure info in result for fallback handling
-                                result["failure_reason"] = "metadata_mismatch"
-                                result["failure_stage"] = "validation"
-                            else:
-                                processing_failed.append(doi)
-                                logger.warning(
-                                    f"[{processed_count}/{total_to_acquire}] LLM failed: {doi}"
-                                )
+                    # Checkpoint every N papers
+                    nonlocal last_checkpoint_count
+                    if checkpoint_callback and processed_count - last_checkpoint_count >= checkpoint_interval:
+                        last_checkpoint_count = processed_count
+                        checkpoint_callback(processed_count, dict(processing_results))
+                        logger.debug(f"Checkpoint: {processed_count}/{total_to_acquire} papers processed")
 
-                        # Checkpoint every N papers (using nonlocal for counter)
-                        nonlocal last_checkpoint_count
-                        if (
-                            checkpoint_callback
-                            and processed_count - last_checkpoint_count >= checkpoint_interval
-                        ):
-                            last_checkpoint_count = processed_count
-                            # Create a copy of results for checkpoint (avoid mutation issues)
-                            checkpoint_callback(processed_count, dict(processing_results))
-                            logger.debug(
-                                f"Checkpoint: {processed_count}/{total_to_acquire} papers processed"
-                            )
+                except Exception as e:
+                    logger.error(f"LLM consumer error for {doi}: {e}")
+                    processed_count += 1
+                    processing_failed.append(doi)
 
-                    except Exception as e:
-                        # Batch processing failed - mark all as failed
-                        logger.error(f"LLM worker {worker_id} batch error: {e}")
-                        for doi, _, _ in documents:
-                            processed_count += 1
-                            processing_failed.append(doi)
-
-            # Launch workers
-            workers = [llm_worker(i) for i in range(MAX_LLM_CONCURRENT)]
-            await asyncio.gather(*workers)
             logger.debug(f"LLM stage complete: {processed_count} items processed")
 
         # Run all three stages concurrently
@@ -676,9 +568,7 @@ async def run_paper_pipeline(
         )
 
         # Collect fallback substitutions
-        fallback_substitutions = (
-            fallback_manager.get_substitutions() if fallback_manager else []
-        )
+        fallback_substitutions = fallback_manager.get_substitutions() if fallback_manager else []
 
         # Final summary
         logger.info(
