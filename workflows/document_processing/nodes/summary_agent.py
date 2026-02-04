@@ -88,10 +88,7 @@ Guidelines:
 
         original_summary = (await with_retry(_summarize)).strip()
 
-        logger.info(
-            f"Generated original summary ({len(original_summary.split())} words, "
-            f"lang={original_language})"
-        )
+        logger.info(f"Generated original summary ({len(original_summary.split())} words, lang={original_language})")
 
         # Build result with backward compatibility
         result = {
@@ -103,9 +100,7 @@ Guidelines:
         if original_language != "en":
             english_summary = await _translate_to_english(original_summary)
             result["short_summary_english"] = english_summary.strip()
-            logger.info(
-                f"Generated English translation ({len(english_summary.split())} words)"
-            )
+            logger.info(f"Generated English translation ({len(english_summary.split())} words)")
 
         return result
 

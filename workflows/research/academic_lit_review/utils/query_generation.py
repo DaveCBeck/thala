@@ -109,13 +109,9 @@ async def generate_search_queries(
                 target_language_code=language_config["code"],
                 target_language_name=language_config["name"],
             )
-            logger.info(
-                f"Translated {len(queries)} queries to {language_config['name']}"
-            )
+            logger.info(f"Translated {len(queries)} queries to {language_config['name']}")
 
-        logger.info(
-            f"Generated {len(queries)} search queries for topic: {topic[:50]}..."
-        )
+        logger.info(f"Generated {len(queries)} search queries for topic: {topic[:50]}...")
         return queries
 
     except Exception as e:

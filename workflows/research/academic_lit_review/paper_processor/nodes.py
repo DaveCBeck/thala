@@ -71,8 +71,6 @@ async def acquire_and_process_papers_node(
     will be skipped.
     """
     papers = state.get("papers_to_process", [])
-    quality_settings = state["quality_settings"]
-    use_batch_api = quality_settings.get("use_batch_api", True)
     fallback_queue = state.get("fallback_queue", [])
     checkpoint_callback = state.get("checkpoint_callback")
     incremental_state = state.get("incremental_state")
@@ -98,10 +96,7 @@ async def acquire_and_process_papers_node(
             # Filter out already-processed papers
             already_processed_dois = set(resumed_results.keys())
             papers = [p for p in papers if p.get("doi") not in already_processed_dois]
-            logger.info(
-                f"Resuming from checkpoint: {resumed_count} papers already processed, "
-                f"{len(papers)} remaining"
-            )
+            logger.info(f"Resuming from checkpoint: {resumed_count} papers already processed, {len(papers)} remaining")
 
     # Create FallbackManager if we have fallback candidates
     fallback_manager = None
@@ -118,9 +113,7 @@ async def acquire_and_process_papers_node(
             fallback_queue=fallback_queue,
             paper_corpus=papers_by_doi,
         )
-        logger.info(
-            f"FallbackManager initialized with {len(fallback_queue)} candidates"
-        )
+        logger.info(f"FallbackManager initialized with {len(fallback_queue)} candidates")
 
     logger.info(f"Starting unified paper pipeline for {len(papers)} papers")
 
@@ -133,7 +126,6 @@ async def acquire_and_process_papers_node(
     ) = await run_paper_pipeline(
         papers=papers,
         max_concurrent=MAX_PAPER_PIPELINE_CONCURRENT,
-        use_batch_api=use_batch_api,
         fallback_manager=fallback_manager,
         checkpoint_callback=checkpoint_callback,
     )
@@ -176,13 +168,11 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
     """Extract structured summaries from processed papers.
 
     Falls back to metadata-based extraction when document processing fails.
-    Uses unified structured output interface that auto-selects batch API for 5+ papers.
+    Routes through central LLM broker for unified cost/speed management.
     Extraction is contextualized by research topic and questions for relevance.
     """
     processing_results = state.get("processing_results", {})
     papers = state.get("papers_to_process", [])
-    quality_settings = state["quality_settings"]
-    use_batch_api = quality_settings.get("use_batch_api", True)
 
     # Get research context for focused extraction
     lit_review_input = state.get("input", {})
@@ -205,7 +195,6 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
         ) = await extract_all_summaries(
             processing_results=processing_results,
             papers_by_doi=papers_by_doi,
-            use_batch_api=use_batch_api,
             topic=topic,
             research_questions=research_questions,
         )
@@ -231,13 +220,9 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
             f"Document processing failed for {len(papers_needing_fallback)} papers, "
             f"using metadata-only extraction with Zotero stubs"
         )
-        logger.debug(
-            f"Failed DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}"
-        )
+        logger.debug(f"Failed DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}")
 
-        paper_zotero_keys = await _create_zotero_stubs_for_papers(
-            papers_needing_fallback
-        )
+        paper_zotero_keys = await _create_zotero_stubs_for_papers(papers_needing_fallback)
 
         metadata_summaries = await _extract_metadata_summaries_batched(
             papers=papers_needing_fallback,
@@ -318,11 +303,7 @@ async def _create_zotero_stubs_for_papers(
                 itemType="journalArticle",
                 fields=fields,
                 tags=tags,
-                creators=[
-                    {"creatorType": "author", "name": name}
-                    for name in author_names
-                    if name
-                ],
+                creators=[{"creatorType": "author", "name": name} for name in author_names if name],
             )
 
             zotero_key = await store_manager.zotero.add(zotero_item)
@@ -332,9 +313,7 @@ async def _create_zotero_stubs_for_papers(
         except Exception as e:
             fallback_key = doi.replace("/", "_").replace(".", "")[:20].upper()
             zotero_keys[doi] = fallback_key
-            logger.warning(
-                f"Failed to create Zotero record for {doi}, using fallback key: {e}"
-            )
+            logger.warning(f"Failed to create Zotero record for {doi}, using fallback key: {e}")
 
     logger.debug(f"Created {len(zotero_keys)} Zotero stubs for metadata-only papers")
     return zotero_keys
@@ -425,10 +404,7 @@ Extract structured information based on this metadata."""
                     abstract[:500] if abstract else f"Study on {title}"
                 )
 
-                paper_zotero_key = (
-                    zotero_keys.get(doi)
-                    or doi.replace("/", "_").replace(".", "")[:20].upper()
-                )
+                paper_zotero_key = zotero_keys.get(doi) or doi.replace("/", "_").replace(".", "")[:20].upper()
 
                 summaries[doi] = PaperSummary(
                     doi=doi,

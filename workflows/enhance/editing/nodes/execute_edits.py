@@ -8,7 +8,7 @@ from typing import Any
 from langsmith import traceable
 from langgraph.types import Send
 
-from workflows.enhance.editing.document_model import DocumentModel, Section, ContentBlock, DocumentTransaction
+from workflows.enhance.editing.document_model import DocumentModel, Section, ContentBlock
 from workflows.enhance.editing.schemas import EditPlan
 from workflows.enhance.editing.prompts import (
     GENERATE_INTRODUCTION_SYSTEM,
@@ -649,7 +649,6 @@ async def assemble_edits_node(state: dict) -> dict[str, Any]:
         elif edit_type == "generate_transition":
             content = edit.get("generated_content", "")
             from_id = edit.get("from_section_id")
-            to_id = edit.get("to_section_id")
             if content and from_id:
                 # Use deep-copied section list
                 section = _find_section_in_list(new_sections, from_id)

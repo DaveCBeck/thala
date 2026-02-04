@@ -18,7 +18,6 @@ async def process_book_document(
     title: str,
     authors: str,
     md5: str,
-    use_batch_api: bool = True,
 ) -> dict[str, Any]:
     """Process a downloaded book through document_processing workflow.
 
@@ -27,7 +26,6 @@ async def process_book_document(
         title: Book title
         authors: Book authors (comma-separated string)
         md5: MD5 hash of the book (used as identifier)
-        use_batch_api: If False, skip batch API for rapid iteration
 
     Returns:
         Processing result with:
@@ -78,7 +76,6 @@ async def process_book_document(
             title=title,
             item_type="book",
             extra_metadata=extra_metadata,
-            use_batch_api=use_batch_api,
         )
 
         status = result.get("current_status", "unknown")

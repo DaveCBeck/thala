@@ -32,8 +32,6 @@ def format_paper_for_batch(paper: PaperMetadata) -> str:
     return "\n".join(lines)
 
 
-def chunk_papers(
-    papers: list[PaperMetadata], chunk_size: int = 10
-) -> list[list[PaperMetadata]]:
+def chunk_papers(papers: list[PaperMetadata], chunk_size: int = 10) -> list[list[PaperMetadata]]:
     """Split papers into chunks for batch processing."""
     return [papers[i : i + chunk_size] for i in range(0, len(papers), chunk_size)]

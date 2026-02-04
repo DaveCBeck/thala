@@ -79,7 +79,6 @@ async def _process_single_book(
                 title=book["title"],
                 authors=book["authors"],
                 md5=book["md5"],
-                use_batch_api=True,  # Use batch API for cost savings
             )
 
             if not result["success"]:

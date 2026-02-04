@@ -1,6 +1,5 @@
 """Plan edits node for editing workflow."""
 
-import json
 import logging
 from typing import Any
 
@@ -19,8 +18,6 @@ from workflows.enhance.editing.schemas import (
     ContentConsolidationEdit,
     DeleteRedundantEdit,
 )
-from workflows.enhance.editing.prompts import EDIT_PLANNING_SYSTEM, EDIT_PLANNING_USER
-from workflows.shared.llm_utils import ModelTier, get_structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +101,6 @@ def create_edits_from_issues(
 
     # Get all sections for context
     all_sections = doc_model.get_all_sections()
-    first_section_id = all_sections[0].section_id if all_sections else None
-    last_section_id = all_sections[-1].section_id if all_sections else None
     last_content_section_id = _find_last_content_section(all_sections)
 
     for issue in analysis.issues:

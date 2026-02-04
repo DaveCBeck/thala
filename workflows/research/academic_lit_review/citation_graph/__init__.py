@@ -32,9 +32,7 @@ class CitationGraph:
         """Add or update paper node."""
         self._builder.add_paper(doi, metadata)
 
-    def add_citation(
-        self, citing_doi: str, cited_doi: str, edge_type: str = "forward"
-    ) -> bool:
+    def add_citation(self, citing_doi: str, cited_doi: str, edge_type: str = "forward") -> bool:
         """Add directed edge (citing -> cited).
 
         Args:
@@ -55,9 +53,7 @@ class CitationGraph:
         """Get papers with highest betweenness centrality (connecting different clusters)."""
         return self._algorithms.get_bridging_papers(top_n)
 
-    def get_recent_impactful(
-        self, years: int = 3, top_n: int = 10, current_year: int | None = None
-    ) -> list[str]:
+    def get_recent_impactful(self, years: int = 3, top_n: int = 10, current_year: int | None = None) -> list[str]:
         """Get recent papers with high citation velocity (citations per year)."""
         return self._algorithms.get_recent_impactful(years, top_n, current_year)
 
@@ -72,9 +68,7 @@ class CitationGraph:
         """
         return self._algorithms.identify_clusters(algorithm)
 
-    def get_corpus_overlap_count(
-        self, paper_doi: str, corpus_dois: set[str]
-    ) -> int:
+    def get_corpus_overlap_count(self, paper_doi: str, corpus_dois: set[str]) -> int:
         """Count how many corpus papers this paper shares citations with.
 
         Checks both directions:
@@ -86,22 +80,16 @@ class CitationGraph:
         """
         return self._algorithms.get_corpus_overlap_count(paper_doi, corpus_dois)
 
-    def get_cocitation_candidates(
-        self, paper_doi: str, corpus_dois: set[str], threshold: int = 3
-    ) -> bool:
+    def get_cocitation_candidates(self, paper_doi: str, corpus_dois: set[str], threshold: int = 3) -> bool:
         """Check if paper shares >= threshold citations with corpus.
 
         Checks both directions:
         - Papers this paper cites (backward)
         - Papers citing this paper (forward)
         """
-        return self._algorithms.get_cocitation_candidates(
-            paper_doi, corpus_dois, threshold
-        )
+        return self._algorithms.get_cocitation_candidates(paper_doi, corpus_dois, threshold)
 
-    def get_unexplored_citations(
-        self, doi: str, explored_dois: set[str]
-    ) -> tuple[list[str], list[str]]:
+    def get_unexplored_citations(self, doi: str, explored_dois: set[str]) -> tuple[list[str], list[str]]:
         """Get unexplored citations for a paper.
 
         Returns:
@@ -121,9 +109,7 @@ class CitationGraph:
         graph._algorithms = CitationGraphAlgorithms(graph._builder)
         return graph
 
-    def get_expansion_candidates(
-        self, max_papers: int = 20, prioritize_recent: bool = True
-    ) -> list[str]:
+    def get_expansion_candidates(self, max_papers: int = 20, prioritize_recent: bool = True) -> list[str]:
         """Get best papers to expand from in next diffusion stage.
 
         Combines scores from:

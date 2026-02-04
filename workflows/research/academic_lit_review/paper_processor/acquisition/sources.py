@@ -45,9 +45,7 @@ async def try_oa_download(
 
         # Check for paywall
         if result.classification == ContentClassification.PAYWALL:
-            logger.info(
-                f"[OA] Paywall detected for {doi}, falling back to retrieve-academic"
-            )
+            logger.info(f"[OA] Paywall detected for {doi}, falling back to retrieve-academic")
             return None, False
 
         # Log source info
@@ -63,7 +61,5 @@ async def try_oa_download(
         return result.content, True
 
     except Exception as e:
-        logger.info(
-            f"[OA] Failed to download from OA URL for {doi}: {type(e).__name__}: {e}"
-        )
+        logger.info(f"[OA] Failed to download from OA URL for {doi}: {type(e).__name__}: {e}")
         return None, False

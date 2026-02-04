@@ -39,15 +39,9 @@ async def run_synthesis(
     """
     # Validate that all papers have real Zotero keys - no synthetic fallback allowed
     if zotero_keys is None:
-        raise ValueError(
-            "zotero_keys cannot be None - all papers must have Zotero keys from document_processing"
-        )
+        raise ValueError("zotero_keys cannot be None - all papers must have Zotero keys from document_processing")
 
-    missing_keys = [
-        doi
-        for doi in paper_summaries.keys()
-        if doi not in zotero_keys or not zotero_keys[doi]
-    ]
+    missing_keys = [doi for doi in paper_summaries.keys() if doi not in zotero_keys or not zotero_keys[doi]]
     if missing_keys:
         raise ValueError(
             f"Papers missing Zotero keys: {missing_keys[:5]}"

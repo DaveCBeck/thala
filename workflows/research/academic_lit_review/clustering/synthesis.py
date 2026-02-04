@@ -39,9 +39,7 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
         }
 
     # Evaluate BERTopic quality
-    bertopic_good, bertopic_reason = _evaluate_bertopic_quality(
-        bertopic_clusters, total_papers
-    )
+    bertopic_good, bertopic_reason = _evaluate_bertopic_quality(bertopic_clusters, total_papers)
 
     if not bertopic_good:
         logger.warning(f"BERTopic quality issue: {bertopic_reason}")
@@ -55,25 +53,15 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
         # BERTopic only available
         if bertopic_good:
             logger.info("Using BERTopic clusters only (LLM failed)")
-            return _convert_bertopic_to_final_clusters(
-                bertopic_clusters, paper_summaries
-            )
+            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
         else:
             # BERTopic is poor quality and LLM failed - return what we have with warning
-            logger.warning(
-                f"Using poor-quality BERTopic clusters (LLM failed). "
-                f"Reason: {bertopic_reason}"
-            )
-            return _convert_bertopic_to_final_clusters(
-                bertopic_clusters, paper_summaries
-            )
+            logger.warning(f"Using poor-quality BERTopic clusters (LLM failed). Reason: {bertopic_reason}")
+            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
 
     # Both succeeded - check if we should skip synthesis and use LLM directly
     if not bertopic_good:
-        logger.info(
-            f"Preferring LLM clusters over poor BERTopic results. "
-            f"BERTopic issue: {bertopic_reason}"
-        )
+        logger.info(f"Preferring LLM clusters over poor BERTopic results. BERTopic issue: {bertopic_reason}")
         return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
 
     # Both succeeded - use Opus to synthesize
@@ -162,8 +150,7 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
                 cluster_labels[doi] = cluster["cluster_id"]
 
         logger.info(
-            f"Opus synthesis complete: {len(final_clusters)} final clusters. "
-            f"Reasoning: {result.reasoning[:100]}..."
+            f"Opus synthesis complete: {len(final_clusters)} final clusters. Reasoning: {result.reasoning[:100]}..."
         )
 
         return {
@@ -224,11 +211,7 @@ def _convert_bertopic_to_final_clusters(
         key_papers = _identify_key_papers(cluster_dois, paper_summaries)
 
         # Generate label from topic words
-        label = (
-            " & ".join(btc["topic_words"][:3]).title()
-            if btc["topic_words"]
-            else f"Cluster {i}"
-        )
+        label = " & ".join(btc["topic_words"][:3]).title() if btc["topic_words"] else f"Cluster {i}"
 
         cluster = ThematicCluster(
             cluster_id=i,

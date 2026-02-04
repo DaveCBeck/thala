@@ -127,9 +127,7 @@ async def update_zotero(state: DocumentProcessingState) -> dict[str, Any]:
         # First, get current item to preserve other tags
         current_item = await store_manager.zotero.get(zotero_key)
         if current_item:
-            current_tags = [
-                tag.get("tag", "") for tag in current_item.tags if isinstance(tag, dict)
-            ]
+            current_tags = [tag.get("tag", "") for tag in current_item.tags if isinstance(tag, dict)]
             # Remove "pending", add "processed"
             new_tags = [t for t in current_tags if t.lower() != "pending"]
             if "processed" not in [t.lower() for t in new_tags]:

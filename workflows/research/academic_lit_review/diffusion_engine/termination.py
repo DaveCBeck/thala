@@ -90,10 +90,7 @@ async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     # If corpus is small enough, no filtering needed
     if len(paper_corpus) <= max_papers:
         final_dois = list(paper_corpus.keys())
-        logger.info(
-            f"Diffusion complete: {len(final_dois)} papers in final corpus. "
-            f"Reason: {saturation_reason}"
-        )
+        logger.info(f"Diffusion complete: {len(final_dois)} papers in final corpus. Reason: {saturation_reason}")
         return {"final_corpus_dois": final_dois}
 
     # Partition by recency
@@ -125,9 +122,7 @@ async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     final_dois = [doi for doi, _ in recent_selected] + [doi for doi, _ in older_selected]
 
     # Log composition
-    actual_recent = len(
-        [d for d in final_dois if paper_corpus[d].get("year", 0) >= cutoff_year]
-    )
+    actual_recent = len([d for d in final_dois if paper_corpus[d].get("year", 0) >= cutoff_year])
     recent_pct = actual_recent / len(final_dois) if final_dois else 0
     logger.info(
         f"Diffusion complete: {len(final_dois)} papers "

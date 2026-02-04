@@ -1,24 +1,27 @@
-"""Main extraction logic for paper summaries."""
+"""Main extraction logic for paper summaries.
 
-import asyncio
+Routes through central LLM broker for unified cost/speed management.
+"""
+
 import logging
-from typing import Any
 
 from langchain_tools.base import get_store_manager
+
+from core.llm_broker import BatchPolicy
 from workflows.research.academic_lit_review.state import (
     PaperMetadata,
     PaperSummary,
 )
 from workflows.shared.llm_utils import ModelTier
 from workflows.shared.llm_utils.structured import (
-    get_structured_output,
     StructuredRequest,
+    get_structured_output,
 )
 
 from .parsers import _fetch_content_for_extraction
 from .prompts import (
-    PAPER_SUMMARY_EXTRACTION_SYSTEM,
     METADATA_SUMMARY_EXTRACTION_SYSTEM,
+    PAPER_SUMMARY_EXTRACTION_SYSTEM,
     format_paper_extraction_system,
 )
 from .types import PaperSummarySchema
@@ -173,9 +176,7 @@ Extract structured information based on this metadata."""
 
         # Use existing short_summary from document processing if available,
         # otherwise fall back to abstract
-        short_summary = existing_short_summary or (
-            abstract[:500] if abstract else f"Study on {title}"
-        )
+        short_summary = existing_short_summary or (abstract[:500] if abstract else f"Study on {title}")
 
         return PaperSummary(
             doi=doi,
@@ -199,9 +200,7 @@ Extract structured information based on this metadata."""
     except Exception as e:
         logger.warning(f"Failed to extract metadata summary for {doi}: {e}")
         # Use existing short_summary from document processing if available
-        fallback_summary = existing_short_summary or (
-            abstract[:500] if abstract else title
-        )
+        fallback_summary = existing_short_summary or (abstract[:500] if abstract else title)
         return PaperSummary(
             doi=doi,
             title=title,
@@ -225,18 +224,16 @@ Extract structured information based on this metadata."""
 async def extract_all_summaries(
     processing_results: dict[str, dict],
     papers_by_doi: dict[str, PaperMetadata],
-    use_batch_api: bool = True,
     topic: str | None = None,
     research_questions: list[str] | None = None,
 ) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str], set[str]]:
     """Extract structured summaries for all processed papers.
 
-    Uses unified structured output interface that auto-selects batch API for 5+ papers.
+    Routes through central LLM broker for unified cost/speed management.
 
     Args:
         processing_results: DOI -> processing result mapping
         papers_by_doi: DOI -> PaperMetadata mapping
-        use_batch_api: Set False for rapid iteration (skips batch API)
         topic: Research topic for context-aware extraction
         research_questions: Research questions to focus extraction
 
@@ -249,123 +246,13 @@ async def extract_all_summaries(
     if not processing_results:
         return {}, {}, {}, set()
 
-    # Use batch API for 5+ papers when enabled
-    if use_batch_api and len(processing_results) >= 5:
-        return await _extract_all_summaries_batched(
-            processing_results, papers_by_doi, store_manager, topic, research_questions
-        )
-
-    # Fall back to concurrent calls for small batches
-    summaries = {}
-    es_ids = {}
-    zotero_keys = {}
-    failed_dois = set()
-    semaphore = asyncio.Semaphore(3)
-    completed_count = 0
-    total_to_extract = len(processing_results)
-
-    async def extract_single_summary(
-        doi: str, result: dict
-    ) -> tuple[str, Any, str, str, str]:
-        """Returns (doi, summary, es_record_id, zotero_key, failure_reason)."""
-        nonlocal completed_count
-        async with semaphore:
-            # Skip papers that were removed (e.g., by language verification)
-            paper = papers_by_doi.get(doi)
-            if paper is None:
-                logger.debug(
-                    f"Skipping {doi}: not in papers_by_doi (likely filtered out)"
-                )
-                return doi, None, None, None, "filtered_out"
-            es_record_id = result.get("es_record_id")
-            zotero_key = result.get("zotero_key")
-            short_summary = result.get("short_summary", "")
-
-            if not es_record_id:
-                logger.warning(f"No ES record ID for {doi}, will need fallback")
-                return doi, None, None, None, "no_es_record_id"
-
-            try:
-                content = await _fetch_content_for_extraction(
-                    store_manager, es_record_id, doi
-                )
-                if not content:
-                    logger.warning(
-                        f"Could not fetch content for {doi}, will need fallback"
-                    )
-                    return doi, None, None, None, "content_fetch_failed"
-
-                summary = await extract_paper_summary(
-                    content=content,
-                    paper=paper,
-                    short_summary=short_summary,
-                    es_record_id=es_record_id,
-                    zotero_key=zotero_key,
-                    topic=topic,
-                    research_questions=research_questions,
-                )
-
-                completed_count += 1
-                title = paper.get("title", "Unknown")[:50]
-                logger.debug(
-                    f"[{completed_count}/{total_to_extract}] Extracted summary: {title}"
-                )
-
-                return doi, summary, es_record_id, zotero_key, None
-
-            except Exception as e:
-                logger.error(f"Failed to extract summary for {doi}: {e}")
-                return doi, None, None, None, f"extraction_error: {e}"
-
-    tasks = [
-        extract_single_summary(doi, result)
-        for doi, result in processing_results.items()
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error(f"Summary extraction task failed: {result}")
-            continue
-        doi, summary, es_record_id, zotero_key, failure_reason = result
-        if summary:
-            summaries[doi] = summary
-            es_ids[doi] = es_record_id
-            zotero_keys[doi] = zotero_key
-        elif failure_reason:
-            failed_dois.add(doi)
-
-    logger.info(
-        f"Extracted summaries for {len(summaries)} papers, {len(failed_dois)} failed"
-    )
-    return summaries, es_ids, zotero_keys, failed_dois
-
-
-async def _extract_all_summaries_batched(
-    processing_results: dict[str, dict],
-    papers_by_doi: dict[str, PaperMetadata],
-    store_manager,
-    topic: str | None = None,
-    research_questions: list[str] | None = None,
-) -> tuple[dict[str, PaperSummary], dict[str, str], dict[str, str], set[str]]:
-    """Extract summaries using unified structured output interface.
-
-    Args:
-        processing_results: DOI -> processing result mapping
-        papers_by_doi: DOI -> PaperMetadata mapping
-        store_manager: Store manager instance
-        topic: Research topic for context-aware extraction
-        research_questions: Research questions to focus extraction
-
-    Returns:
-        Tuple of (summaries, es_ids, zotero_keys, failed_dois)
-    """
     # Build system prompt with research context if available
     if topic and research_questions:
         system_prompt = format_paper_extraction_system(topic, research_questions)
     else:
         system_prompt = PAPER_SUMMARY_EXTRACTION_SYSTEM
-    # First, fetch all L0 content (this is I/O, not LLM calls)
+
+    # First, fetch all content (this is I/O, not LLM calls)
     paper_data = {}  # doi -> {paper, content, es_record_id, zotero_key, short_summary}
     failed_dois = set()
 
@@ -385,9 +272,7 @@ async def _extract_all_summaries_batched(
             continue
 
         try:
-            content = await _fetch_content_for_extraction(
-                store_manager, es_record_id, doi
-            )
+            content = await _fetch_content_for_extraction(store_manager, es_record_id, doi)
             if not content:
                 logger.warning(f"Could not fetch content for {doi}, will need fallback")
                 failed_dois.add(doi)
@@ -442,30 +327,30 @@ Extract structured information from this paper."""
             deepseek_requests.append(request)
             doi_to_data[doi] = (data, ModelTier.DEEPSEEK_V3)
 
-    # Run batches for each tier
+    # Run batches for each tier via broker
     all_results = {}
 
     if deepseek_requests:
-        logger.debug(f"Submitting batch of {len(deepseek_requests)} papers (DEEPSEEK_V3)")
+        logger.debug(f"Submitting {len(deepseek_requests)} papers (DEEPSEEK_V3) via broker")
         deepseek_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=deepseek_requests,
             system_prompt=system_prompt,
             tier=ModelTier.DEEPSEEK_V3,
             max_tokens=2048,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
         )
         all_results.update(deepseek_results.results)
 
     if sonnet_1m_requests:
-        logger.debug(
-            f"Submitting batch of {len(sonnet_1m_requests)} papers (SONNET_1M)"
-        )
+        logger.debug(f"Submitting {len(sonnet_1m_requests)} papers (SONNET_1M) via broker")
         sonnet_results = await get_structured_output(
             output_schema=PaperSummarySchema,
             requests=sonnet_1m_requests,
             system_prompt=system_prompt,
             tier=ModelTier.SONNET_1M,
             max_tokens=2048,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
         )
         all_results.update(sonnet_results.results)
 
@@ -511,7 +396,5 @@ Extract structured information from this paper."""
             logger.warning(f"Summary extraction failed for {doi}: {error_msg}")
             failed_dois.add(doi)
 
-    logger.info(
-        f"Extracted {len(summaries)} summaries (batch), {len(failed_dois)} failed"
-    )
+    logger.info(f"Extracted {len(summaries)} summaries, {len(failed_dois)} failed")
     return summaries, es_ids, zotero_keys, failed_dois

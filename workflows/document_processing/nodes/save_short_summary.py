@@ -31,9 +31,7 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
     """
     try:
         # Prefer new field, fall back to old for compatibility
-        short_summary_original = state.get("short_summary_original") or state.get(
-            "short_summary"
-        )
+        short_summary_original = state.get("short_summary_original") or state.get("short_summary")
         short_summary_english = state.get("short_summary_english")
         original_language = state.get("original_language", "en")
 
@@ -41,9 +39,7 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.error("No short_summary in state")
             return {
                 "current_status": "save_summary_failed",
-                "errors": [
-                    {"node": "save_short_summary", "error": "No summary to save"}
-                ],
+                "errors": [{"node": "save_short_summary", "error": "No summary to save"}],
             }
 
         # Find the original record (compression_level=0)
@@ -58,9 +54,7 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
             logger.error("No original record found in state")
             return {
                 "current_status": "save_summary_failed",
-                "errors": [
-                    {"node": "save_short_summary", "error": "No original record found"}
-                ],
+                "errors": [{"node": "save_short_summary", "error": "No original record found"}],
             }
 
         store_manager = get_store_manager()
@@ -96,9 +90,7 @@ async def save_short_summary(state: DocumentProcessingState) -> dict[str, Any]:
         record_original.embedding_model = store_manager.embedding.model
         await store_manager.es_stores.store.add(record_original)
 
-        logger.info(
-            f"Saved original language L1 record: {record_id_original} (lang={original_language})"
-        )
+        logger.info(f"Saved original language L1 record: {record_id_original} (lang={original_language})")
 
         new_refs.append(
             StoreRecordRef(

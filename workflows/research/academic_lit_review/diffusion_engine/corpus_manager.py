@@ -42,9 +42,7 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
             )
 
     total_candidates = len(llm_relevant) + len(llm_rejected)
-    coverage_delta = (
-        len(llm_relevant) / total_candidates if total_candidates > 0 else 0.0
-    )
+    coverage_delta = len(llm_relevant) / total_candidates if total_candidates > 0 else 0.0
 
     current_stage = diffusion["current_stage"]
     stages = diffusion["stages"]
@@ -55,19 +53,15 @@ async def update_corpus_and_graph(state: DiffusionEngineState) -> dict[str, Any]
         stages[-1]["completed_at"] = datetime.now(timezone.utc)
 
     new_consecutive_low = (
-        diffusion["consecutive_low_coverage"] + 1
-        if coverage_delta < diffusion["saturation_threshold"]
-        else 0
+        diffusion["consecutive_low_coverage"] + 1 if coverage_delta < diffusion["saturation_threshold"] else 0
     )
 
     updated_diffusion = {
         **diffusion,
         "stages": stages,
         "consecutive_low_coverage": new_consecutive_low,
-        "total_papers_discovered": diffusion["total_papers_discovered"]
-        + total_candidates,
-        "total_papers_relevant": diffusion["total_papers_relevant"]
-        + len(llm_relevant),
+        "total_papers_discovered": diffusion["total_papers_discovered"] + total_candidates,
+        "total_papers_relevant": diffusion["total_papers_relevant"] + len(llm_relevant),
         "total_papers_rejected": diffusion["total_papers_rejected"] + len(llm_rejected),
     }
 

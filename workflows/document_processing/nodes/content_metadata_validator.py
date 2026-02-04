@@ -162,9 +162,7 @@ async def validate_content_metadata(state: DocumentProcessingState) -> dict[str,
         content = f"{first_pages}\n\n--- END OF FRONT MATTER ---\n\n{last_pages}"
 
         # Quick heuristic check
-        heuristic_result, heuristic_conf, heuristic_reason = _quick_heuristic_check(
-            content, metadata
-        )
+        heuristic_result, heuristic_conf, heuristic_reason = _quick_heuristic_check(content, metadata)
 
         if heuristic_result is True:
             logger.info(f"Validation passed via heuristics: {heuristic_reason}")

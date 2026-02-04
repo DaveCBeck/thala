@@ -10,6 +10,7 @@ from operator import add
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
+from core.llm_broker import UserMode
 from workflows.shared.language import LanguageConfig
 from workflows.research.academic_lit_review.reducers import (
     merge_dicts,
@@ -31,6 +32,7 @@ class LitReviewInput(TypedDict):
     quality: Literal["test", "quick", "standard", "comprehensive", "high_quality"]
     date_range: Optional[tuple[int, int]]  # (start_year, end_year)
     language_code: Optional[str]  # ISO 639-1 code, default "en"
+    llm_mode: Optional[UserMode]  # LLM broker mode (Fast/Balanced/Economical)
 
 
 # =============================================================================
@@ -278,9 +280,7 @@ class MultiLoopProgress(TypedDict):
     """Progress tracking across all supervision loops."""
 
     current_loop: int  # 1-5
-    loop_iterations: dict[
-        str, int
-    ]  # "loop_1" -> iterations used (string keys for TypedDict)
+    loop_iterations: dict[str, int]  # "loop_1" -> iterations used (string keys for TypedDict)
     max_iterations_per_loop: int  # Budget per loop (not shared across loops)
     revision_history: list[RevisionRecord]
     loop3_repeat_count: int  # For Loop 4.5 -> Loop 3 return (max 1)
@@ -366,3 +366,6 @@ class AcademicLitReviewState(TypedDict):
     status: Optional[str]  # Standardized: "success", "partial", "failed"
     langsmith_run_id: Optional[str]  # LangSmith run ID for tracing
     errors: Annotated[list[dict], add]
+
+    # LLM broker mode (flows from input.llm_mode)
+    llm_mode: Optional[UserMode]

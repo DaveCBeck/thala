@@ -8,6 +8,7 @@ from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
+from core.llm_broker import UserMode
 from .input_types import ClarificationQuestion, ResearchBrief, ResearchInput
 from .language_config import LanguageConfig
 from .researcher_state import ResearchFinding, ResearchQuestion
@@ -70,6 +71,7 @@ class DeepResearchState(TypedDict):
 
     # Language support
     primary_language: Optional[str]  # ISO 639-1 code (default: "en")
-    primary_language_config: Optional[
-        LanguageConfig
-    ]  # Full config for primary language
+    primary_language_config: Optional[LanguageConfig]  # Full config for primary language
+
+    # LLM broker mode (Fast/Balanced/Economical)
+    llm_mode: Optional[UserMode]

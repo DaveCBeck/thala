@@ -66,9 +66,7 @@ async def run_bertopic_clustering_node(state: dict) -> dict[str, Any]:
             if topic_id == -1:
                 continue
 
-            cluster_dois = [
-                document_dois[i] for i, t in enumerate(topics) if t == topic_id
-            ]
+            cluster_dois = [document_dois[i] for i, t in enumerate(topics) if t == topic_id]
 
             if not cluster_dois:
                 continue
@@ -77,11 +75,7 @@ async def run_bertopic_clustering_node(state: dict) -> dict[str, Any]:
             topic_words = [word for word, _ in topic_info[:10]] if topic_info else []
 
             cluster_indices = [i for i, t in enumerate(topics) if t == topic_id]
-            coherence = (
-                float(probs[cluster_indices].mean())
-                if len(cluster_indices) > 0
-                else 0.0
-            )
+            coherence = float(probs[cluster_indices].mean()) if len(cluster_indices) > 0 else 0.0
 
             clusters.append(
                 BERTopicCluster(
@@ -94,19 +88,11 @@ async def run_bertopic_clustering_node(state: dict) -> dict[str, Any]:
 
         outlier_dois = [document_dois[i] for i, t in enumerate(topics) if t == -1]
         if outlier_dois:
-            logger.debug(
-                f"BERTopic: {len(outlier_dois)} papers not assigned to clusters"
-            )
+            logger.debug(f"BERTopic: {len(outlier_dois)} papers not assigned to clusters")
 
-        logger.info(
-            f"BERTopic clustering complete: {len(clusters)} clusters "
-            f"from {len(document_texts)} documents"
-        )
+        logger.info(f"BERTopic clustering complete: {len(clusters)} clusters from {len(document_texts)} documents")
         for c in clusters[:5]:
-            logger.debug(
-                f"Cluster {c['cluster_id']}: {len(c['paper_dois'])} papers, "
-                f"topics: {c['topic_words'][:5]}"
-            )
+            logger.debug(f"Cluster {c['cluster_id']}: {len(c['paper_dois'])} papers, topics: {c['topic_words'][:5]}")
 
         return {
             "bertopic_clusters": clusters,

@@ -115,9 +115,7 @@ def create_parallel_clustering_subgraph() -> StateGraph:
         bertopic_task = asyncio.create_task(run_bertopic_clustering_node(state))
         llm_task = asyncio.create_task(run_llm_clustering_node(state))
 
-        bertopic_result, llm_result = await asyncio.gather(
-            bertopic_task, llm_task, return_exceptions=True
-        )
+        bertopic_result, llm_result = await asyncio.gather(bertopic_task, llm_task, return_exceptions=True)
 
         result = {}
 

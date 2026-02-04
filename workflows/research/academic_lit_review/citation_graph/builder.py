@@ -83,9 +83,7 @@ class CitationGraphBuilder:
 
         self.invalidate_cache()
 
-    def add_citation(
-        self, citing_doi: str, cited_doi: str, edge_type: str = "forward"
-    ) -> bool:
+    def add_citation(self, citing_doi: str, cited_doi: str, edge_type: str = "forward") -> bool:
         """Add directed edge (citing -> cited).
 
         Args:
@@ -98,9 +96,7 @@ class CitationGraphBuilder:
         """
         # Ensure both nodes exist
         if citing_doi not in self._nodes or cited_doi not in self._nodes:
-            logger.info(
-                f"Cannot add citation: missing node(s) {citing_doi}, {cited_doi}"
-            )
+            logger.info(f"Cannot add citation: missing node(s) {citing_doi}, {cited_doi}")
             return False
 
         # Check if edge exists

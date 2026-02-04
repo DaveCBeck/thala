@@ -459,6 +459,7 @@ for custom_id, result in results.items():
 
 ## Related Patterns
 
+- [Central LLM Broker Routing](./central-llm-broker-routing.md) - Centralized routing with user-configurable modes (supersedes threshold logic)
 - [Anthropic Claude Integration with Extended Thinking](./anthropic-claude-extended-thinking.md) - Extended thinking support
 - [Prompt Caching Patterns](./prompt-caching-patterns.md) - Cache hits in batches
 

@@ -2,8 +2,8 @@
 Haiku-powered query translation for multilingual search.
 
 Translates search queries to target languages using Claude Haiku for
-fast, cost-effective translation. Uses Anthropic Batch API for 50%
-cost reduction when translating 5+ queries.
+fast, cost-effective translation. Routes through central LLM broker
+for unified cost/speed management.
 
 Usage:
     translated = await translate_query(
@@ -16,18 +16,14 @@ Usage:
 
 import asyncio
 import logging
-import os
 from typing import Optional
 
 from cachetools import TTLCache
 
-from workflows.shared.llm_utils import get_llm, ModelTier
-from workflows.shared.llm_utils.response_parsing import extract_response_content
-from workflows.shared.batch_processor import BatchProcessor
+from core.llm_broker import BatchPolicy, get_broker
+from workflows.shared.llm_utils import ModelTier
 
 logger = logging.getLogger(__name__)
-
-_USE_BATCH_API = os.getenv("THALA_PREFER_BATCH_API", "").lower() in ("true", "1", "yes")
 
 _query_cache: TTLCache = TTLCache(maxsize=1000, ttl=3600)
 _query_locks: dict[str, asyncio.Lock] = {}
@@ -69,27 +65,30 @@ async def translate_query(
         result = await _do_query_translation(query, target_language_name)
 
         _query_cache[cache_key] = result
-        logger.debug(
-            f"Translated query to {target_language_code}: {query[:30]}... -> {result[:30]}..."
-        )
+        logger.debug(f"Translated query to {target_language_code}: {query[:30]}... -> {result[:30]}...")
         return result
 
 
 async def _do_query_translation(query: str, target_language: str) -> str:
-    """Perform the actual query translation using Haiku."""
-    llm = get_llm(ModelTier.HAIKU, max_tokens=256)
-
+    """Perform the actual query translation using Haiku via broker."""
     user_prompt = f"Translate to {target_language}: {query}"
 
     try:
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": QUERY_TRANSLATION_SYSTEM},
-                {"role": "user", "content": user_prompt},
-            ]
+        broker = get_broker()
+        future = await broker.request(
+            prompt=user_prompt,
+            model=ModelTier.HAIKU,
+            policy=BatchPolicy.PREFER_BALANCE,
+            max_tokens=256,
+            system=QUERY_TRANSLATION_SYSTEM,
         )
+        response = await future
 
-        return extract_response_content(response)
+        if response.success:
+            return response.content.strip()
+        else:
+            logger.warning(f"Query translation failed: {response.error}, using original query")
+            return query
 
     except Exception as e:
         logger.warning(f"Query translation failed: {e}, using original query")
@@ -100,12 +99,10 @@ async def translate_queries(
     queries: list[str],
     target_language_code: str,
     target_language_name: str,
-    max_concurrent: int = 5,  # Kept for API compatibility
 ) -> list[str]:
     """Translate multiple search queries.
 
-    Uses Anthropic Batch API for 50% cost reduction when translating 5+ queries.
-    Falls back to concurrent individual calls for smaller batches.
+    Routes through central LLM broker for unified cost/speed management.
     """
     if target_language_code == "en":
         return queries
@@ -129,24 +126,39 @@ async def translate_queries(
     if not uncached_queries:
         return results
 
-    # Use batch API for 5+ uncached queries (50% cost reduction)
-    if _USE_BATCH_API and len(uncached_queries) >= 5:
-        translated = await _translate_queries_batched(
-            uncached_queries, target_language_code, target_language_name
-        )
-    else:
-        # Fall back to concurrent calls for small batches
-        semaphore = asyncio.Semaphore(max_concurrent)
+    # Route all translations through broker
+    broker = get_broker()
+    pending_futures = []
 
-        async def translate_with_semaphore(query: str) -> str:
-            async with semaphore:
-                return await translate_query(
-                    query, target_language_code, target_language_name
+    logger.debug(f"Submitting {len(uncached_queries)} queries for translation to {target_language_name} via broker")
+
+    async with broker.batch_group():
+        for query in uncached_queries:
+            user_prompt = f"Translate to {target_language_name}: {query}"
+            future = await broker.request(
+                prompt=user_prompt,
+                model=ModelTier.HAIKU,
+                policy=BatchPolicy.PREFER_BALANCE,
+                max_tokens=256,
+                system=QUERY_TRANSLATION_SYSTEM,
+            )
+            pending_futures.append(future)
+
+    # Collect results
+    translated = []
+    for i, future in enumerate(pending_futures):
+        try:
+            response = await future
+            if response.success:
+                translated.append(response.content.strip())
+            else:
+                logger.warning(
+                    f"Translation failed for query '{uncached_queries[i][:30]}...': {response.error}, using original"
                 )
-
-        translated = await asyncio.gather(
-            *[translate_with_semaphore(q) for q in uncached_queries]
-        )
+                translated.append(uncached_queries[i])
+        except Exception as e:
+            logger.warning(f"Translation failed for query '{uncached_queries[i][:30]}...': {e}, using original")
+            translated.append(uncached_queries[i])
 
     # Merge results and update cache
     for i, idx in enumerate(uncached_indices):
@@ -155,43 +167,6 @@ async def translate_queries(
         _query_cache[cache_key] = translated[i]
 
     return results
-
-
-async def _translate_queries_batched(
-    queries: list[str],
-    target_language_code: str,
-    target_language_name: str,
-) -> list[str]:
-    """Translate queries using Anthropic Batch API for 50% cost reduction."""
-    processor = BatchProcessor(poll_interval=30)
-
-    for i, query in enumerate(queries):
-        user_prompt = f"Translate to {target_language_name}: {query}"
-        processor.add_request(
-            custom_id=f"translate-{i}",
-            prompt=user_prompt,
-            model=ModelTier.HAIKU,
-            max_tokens=256,
-            system=QUERY_TRANSLATION_SYSTEM,
-        )
-
-    logger.debug(
-        f"Submitting batch of {len(queries)} queries for translation to {target_language_name}"
-    )
-    results = await processor.execute_batch()
-
-    translated = []
-    for i, query in enumerate(queries):
-        result = results.get(f"translate-{i}")
-        if result and result.success:
-            translated.append(result.content.strip())
-        else:
-            logger.warning(
-                f"Translation failed for query '{query[:30]}...', using original"
-            )
-            translated.append(query)
-
-    return translated
 
 
 def clear_query_cache() -> None:
