@@ -10,7 +10,6 @@ import pytest
 from core.llm_broker.broker import LLMBroker, _sanitize_custom_id
 from core.llm_broker.config import BrokerConfig
 from core.llm_broker.exceptions import (
-    BrokerNotStartedError,
     QueueOverflowError,
 )
 from core.llm_broker.schemas import (
@@ -135,12 +134,27 @@ class TestBrokerLifecycle:
         reset_shutdown_coordinator()
 
     @pytest.mark.asyncio
-    async def test_request_before_start_raises(self, test_config):
-        """Test making request before start() raises error."""
-        broker = LLMBroker(config=test_config)
+    async def test_request_before_start_auto_starts(self, test_config):
+        """Test making request before start() auto-starts the broker."""
+        from core.task_queue.shutdown import get_shutdown_coordinator, reset_shutdown_coordinator
 
-        with pytest.raises(BrokerNotStartedError):
-            await broker.request(prompt="Test", model=ModelTier.SONNET)
+        reset_shutdown_coordinator()
+        coordinator = get_shutdown_coordinator()
+
+        broker = LLMBroker(config=test_config)
+        broker._async_client = MagicMock()
+        assert not broker._started
+
+        # Mock _queue_for_batch and _spawn_sync_task so request() doesn't
+        # actually try to call the API
+        broker._spawn_sync_task = MagicMock()
+
+        await broker.request(prompt="Test", model=ModelTier.SONNET)
+        assert broker._started
+
+        coordinator.request_shutdown()
+        await broker.stop()
+        reset_shutdown_coordinator()
 
 
 class TestRoutingLogic:

@@ -183,5 +183,13 @@ async def run_task_workflow(
         raise
 
     finally:
+        # Stop broker if it was auto-started during this workflow
+        from core.llm_broker import get_broker, is_broker_enabled
+
+        if is_broker_enabled():
+            broker = get_broker()
+            if broker._started:
+                await broker.stop()
+
         # End logging run (best-effort cleanup)
         end_run()

@@ -30,7 +30,6 @@ from core.types import ModelTier, is_deepseek_tier
 from .config import BrokerConfig, get_broker_config
 from .exceptions import (
     BatchSubmissionError,
-    BrokerNotStartedError,
     QueueOverflowError,
 )
 from .metrics import BrokerMetrics
@@ -311,11 +310,10 @@ class LLMBroker:
             Future that resolves to LLMResponse
 
         Raises:
-            BrokerNotStartedError: If broker not started
             QueueOverflowError: If queue full and overflow_behavior is "reject"
         """
         if not self._started:
-            raise BrokerNotStartedError()
+            await self.start()
 
         # Create request
         request = LLMRequest.create(
