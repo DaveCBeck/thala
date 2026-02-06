@@ -21,7 +21,7 @@ from typing import Optional
 
 from cachetools import TTLCache
 
-from workflows.shared.llm_utils import get_llm, ModelTier
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.shared.retry_utils import with_retry
 from workflows.shared.llm_utils.response_parsing import extract_response_content
 
@@ -80,18 +80,16 @@ async def translate_prompt(
 
 async def _do_translation(english_prompt: str, target_language: str) -> str:
     """Perform the actual translation using Opus."""
-    llm = get_llm(ModelTier.OPUS, max_tokens=8192)
-
     user_prompt = f"""Translate this LLM prompt to {target_language}:
 
 {english_prompt}"""
 
     async def _invoke():
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": PROMPT_TRANSLATION_SYSTEM},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=PROMPT_TRANSLATION_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=8192),
         )
         return extract_response_content(response)
 

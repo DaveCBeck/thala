@@ -16,7 +16,7 @@ from workflows.research.web_research.state import (
 )
 from workflows.research.web_research.prompts import REFINE_DRAFT_SYSTEM, get_today_str
 from workflows.research.web_research.utils import load_prompts_with_translation
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +81,12 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
         new_findings=new_findings_text,
     )
 
-    llm = get_llm(ModelTier.SONNET)
-
     try:
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system="You are a research report writer.",
+            user=prompt,
+        )
         updated_content = response.content.strip()
 
         # Estimate remaining gaps from findings

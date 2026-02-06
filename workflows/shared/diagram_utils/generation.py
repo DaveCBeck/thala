@@ -6,7 +6,7 @@ and generating SVG diagrams using Claude.
 
 import logging
 
-from ..llm_utils import ModelTier, get_llm, invoke, InvokeConfig
+from ..llm_utils import invoke, InvokeConfig, ModelTier
 from .prompts import (
     DIAGRAM_ANALYSIS_SYSTEM,
     DIAGRAM_ANALYSIS_USER,
@@ -75,8 +75,6 @@ async def generate_svg_diagram(
         SVG code string if successful, None on failure
     """
     try:
-        llm = get_llm(tier=tier, max_tokens=4000)
-
         # Format the system prompt with dimensions
         system_prompt = SVG_GENERATION_SYSTEM.format(
             width=config.width,
@@ -96,11 +94,11 @@ async def generate_svg_diagram(
             font_family=config.font_family,
         )
 
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=tier,
+            system=system_prompt,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=4000),
         )
 
         svg_content = (
@@ -143,8 +141,6 @@ async def regenerate_svg_with_feedback(
 ) -> str | None:
     """Regenerate SVG with feedback about overlap issues."""
     try:
-        llm = get_llm(tier=tier, max_tokens=4000)
-
         # Format overlap issues for feedback
         overlap_issues = "\n".join(
             [f'- "{t1}" overlaps with "{t2}"' for t1, t2 in overlap_check.overlap_pairs]
@@ -169,11 +165,11 @@ async def regenerate_svg_with_feedback(
             font_family=config.font_family,
         )
 
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=tier,
+            system=system_prompt,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=4000),
         )
 
         svg_content = (

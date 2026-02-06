@@ -204,7 +204,6 @@ async def run_mini_review_node(state: Loop2State) -> dict:
 
 async def integrate_findings_node(state: Loop2State) -> dict:
     """Integrate mini-review findings into main review."""
-    from workflows.shared.llm_utils import get_llm
 
     iteration = state.get("iteration", 0)
     iterations_failed = state.get("iterations_failed", 0)
@@ -275,12 +274,11 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         )
 
         # Use large max_tokens for full output capacity on large reviews
-        llm = get_llm(ModelTier.OPUS, thinking_budget=8000, max_tokens=32000)
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=LOOP2_INTEGRATOR_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(thinking_budget=8000, max_tokens=32000, cache=False),
         )
 
         updated_review = extract_response_content(response)

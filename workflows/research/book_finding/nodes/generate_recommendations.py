@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.research.book_finding.state import (
     BookRecommendation,
     BookFindingQualitySettings,
@@ -53,19 +53,17 @@ async def _generate_recommendations(
     max_tokens = quality_settings["recommendation_max_tokens"]
     max_recs = quality_settings["recommendations_per_category"]
 
-    llm = get_llm(model_tier, max_tokens=max_tokens)
-
     brief_section = _format_brief_section(brief)
     user_prompt = user_template.format(theme=theme, brief_section=brief_section)
 
     logger.debug(f"Generating {category} recommendations with {model_tier.name} (max_recs={max_recs})")
 
     try:
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=model_tier,
+            system=system_prompt,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=max_tokens),
         )
         content = response.content if isinstance(response.content, str) else str(response.content)
 

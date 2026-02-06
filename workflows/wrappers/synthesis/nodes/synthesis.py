@@ -6,7 +6,7 @@ from typing import Any
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from ..prompts import get_simple_synthesis_prompt, DEFAULT_TARGET_WORDS
 
 logger = logging.getLogger(__name__)
@@ -161,8 +161,6 @@ async def suggest_structure(state: dict) -> dict[str, Any]:
     try:
         # Use Opus if quality permits
         model_tier = ModelTier.OPUS if quality_settings.get("use_opus_for_structure", True) else ModelTier.SONNET
-        llm = get_llm(model_tier, max_tokens=4000)
-        llm_structured = llm.with_structured_output(StructureSuggestion)
 
         prompt = STRUCTURE_PROMPT.format(
             topic=topic,
@@ -173,7 +171,13 @@ async def suggest_structure(state: dict) -> dict[str, Any]:
             book_summary=book_summary,
         )
 
-        result = await llm_structured.ainvoke([{"role": "user", "content": prompt}])
+        result = await invoke(
+            tier=model_tier,
+            system="You are a synthesis structure designer.",
+            user=prompt,
+            schema=StructureSuggestion,
+            config=InvokeConfig(max_tokens=4000),
+        )
 
         # Convert to state format
         synthesis_structure = {
@@ -267,8 +271,6 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
     logger.info(f"Creating simple synthesis (test mode), target: {target_words} words")
 
     try:
-        llm = get_llm(ModelTier.SONNET, max_tokens=16000)
-
         prompt_template = get_simple_synthesis_prompt(target_words)
         prompt = prompt_template.format(
             topic=topic,
@@ -278,7 +280,12 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
             book_summary=book_summary,
         )
 
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system="You are a synthesis writer.",
+            user=prompt,
+            config=InvokeConfig(max_tokens=16000),
+        )
         synthesis = response.content if isinstance(response.content, str) else str(response.content)
 
         logger.info(f"Simple synthesis complete: {len(synthesis)} chars")
@@ -330,9 +337,6 @@ async def select_books(state: dict) -> dict[str, Any]:
     logger.info(f"Phase 4b: Selecting up to {max_books} from {len(all_books)} books")
 
     try:
-        llm = get_llm(ModelTier.SONNET, max_tokens=2000)
-        llm_structured = llm.with_structured_output(BookSelections)
-
         book_list = "\n".join(
             f"- **{b.get('title', 'Unknown')}** [@{b.get('zotero_key')}]\n"
             f"  Authors: {b.get('authors', 'Unknown')}\n"
@@ -347,7 +351,13 @@ async def select_books(state: dict) -> dict[str, Any]:
             max_books=max_books,
         )
 
-        result = await llm_structured.ainvoke([{"role": "user", "content": prompt}])
+        result = await invoke(
+            tier=ModelTier.SONNET,
+            system="You are a book selector for synthesis.",
+            user=prompt,
+            schema=BookSelections,
+            config=InvokeConfig(max_tokens=2000),
+        )
 
         selected_books = [
             {

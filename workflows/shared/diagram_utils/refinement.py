@@ -6,7 +6,7 @@ feedback until quality threshold is met or max iterations reached.
 
 import logging
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from .conversion import convert_svg_to_png
 from .prompts import SVG_REFINEMENT_SYSTEM, SVG_REFINEMENT_USER
@@ -58,12 +58,12 @@ async def _regenerate_svg_with_feedback(
         )
 
         # Use Sonnet for refinement
-        llm = get_llm(tier=ModelTier.SONNET, max_tokens=8000)
-
-        response = await llm.ainvoke([
-            {"role": "system", "content": SVG_REFINEMENT_SYSTEM},
-            {"role": "user", "content": prompt},
-        ])
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system=SVG_REFINEMENT_SYSTEM,
+            user=prompt,
+            config=InvokeConfig(max_tokens=8000),
+        )
 
         improved_svg = (
             response.content

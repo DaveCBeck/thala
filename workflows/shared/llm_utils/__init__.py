@@ -70,8 +70,6 @@ from .invoke import invoke, invoke_batch, InvokeBatch
 from .caching import (
     CacheTTL,
     create_cached_messages,
-    invoke_with_cache,
-    batch_invoke_with_cache,
     warm_deepseek_cache,
     BrokerResponseWrapper,
 )
@@ -92,7 +90,7 @@ __all__ = [
     "BatchPolicy",
     # Model utilities
     "ModelTier",
-    "get_llm",
+    "get_llm",  # DEPRECATED: Use invoke() instead. Kept for internal/multimodal use.
     # Structured output types (for type annotations)
     "StructuredOutputStrategy",
     "StructuredOutputConfig",
@@ -101,8 +99,6 @@ __all__ = [
     # Caching utilities
     "CacheTTL",
     "create_cached_messages",
-    "invoke_with_cache",
-    "batch_invoke_with_cache",
     "warm_deepseek_cache",
     "BrokerResponseWrapper",
     # Response parsing

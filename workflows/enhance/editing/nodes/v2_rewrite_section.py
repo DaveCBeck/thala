@@ -9,7 +9,7 @@ from typing import Any
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from ..prompts import V2_SECTION_REWRITE_SYSTEM, V2_SECTION_REWRITE_USER, V2_SECTION_MERGE_USER
 from ..schemas import (
@@ -272,12 +272,12 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
 
     # Call LLM for rewriting
     try:
-        llm = get_llm(tier=tier, max_tokens=8000)
-        messages = [
-            {"role": "system", "content": V2_SECTION_REWRITE_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
-        response = await llm.ainvoke(messages)
+        response = await invoke(
+            tier=tier,
+            system=V2_SECTION_REWRITE_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=8000),
+        )
         rewritten_content = response.content.strip()
     except Exception as e:
         logger.error(f"Rewrite LLM call failed for section [{section_index}]: {e}")

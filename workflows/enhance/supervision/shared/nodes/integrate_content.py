@@ -5,7 +5,7 @@ from typing import Any
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils.models import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.enhance.supervision.shared.prompts import (
     INTEGRATOR_SYSTEM,
     INTEGRATOR_USER,
@@ -95,19 +95,13 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Use Opus for complex integration with large output capacity
-    llm = get_llm(
-        tier=ModelTier.OPUS,
-        thinking_budget=8000,
-        max_tokens=32000,
-    )
-
     try:
-        messages = [
-            {"role": "system", "content": INTEGRATOR_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        response = await llm.ainvoke(messages)
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=INTEGRATOR_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(thinking_budget=8000, max_tokens=32000, cache=False),
+        )
 
         # Extract the integrated review from response
         integrated_review = _extract_review_content(response)

@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from ..prompts import EDITORIAL_STANCE_SECTION, OVERVIEW_SYSTEM_PROMPT_FULL, OVERVIEW_USER_TEMPLATE
 from ..state import DeepDiveDraft, OverviewDraft, EveningReadsState
@@ -99,13 +99,11 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     logger.info(f"Writing overview referencing {len(deep_dive_drafts)} deep-dives")
 
     try:
-        llm = get_llm(tier=ModelTier.OPUS, max_tokens=MAX_TOKENS)
-
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=system_prompt,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=MAX_TOKENS),
         )
 
         content = response.content if isinstance(response.content, str) else str(response.content)

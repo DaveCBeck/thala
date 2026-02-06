@@ -22,7 +22,7 @@ from workflows.enhance.editing.prompts import (
     CONSOLIDATE_CONTENT_SYSTEM,
     CONSOLIDATE_CONTENT_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,6 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 if section:
                     context_content += document_model.get_section_content(sec_id) + "\n\n"
 
-            llm = get_llm(tier=tier, max_tokens=2000)
             user_prompt = GENERATE_INTRODUCTION_USER.format(
                 scope=edit_data["scope"],
                 topic=topic,
@@ -153,11 +152,11 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 target_words=edit_data["target_word_count"],
             )
 
-            response = await llm.ainvoke(
-                [
-                    {"role": "system", "content": GENERATE_INTRODUCTION_SYSTEM},
-                    {"role": "user", "content": user_prompt},
-                ]
+            response = await invoke(
+                tier=tier,
+                system=GENERATE_INTRODUCTION_SYSTEM,
+                user=user_prompt,
+                config=InvokeConfig(max_tokens=2000),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -168,7 +167,6 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 if section:
                     context_content += document_model.get_section_content(sec_id) + "\n\n"
 
-            llm = get_llm(tier=tier, max_tokens=2000)
             user_prompt = GENERATE_CONCLUSION_USER.format(
                 scope=edit_data["scope"],
                 topic=topic,
@@ -177,11 +175,11 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 target_words=edit_data["target_word_count"],
             )
 
-            response = await llm.ainvoke(
-                [
-                    {"role": "system", "content": GENERATE_CONCLUSION_SYSTEM},
-                    {"role": "user", "content": user_prompt},
-                ]
+            response = await invoke(
+                tier=tier,
+                system=GENERATE_CONCLUSION_SYSTEM,
+                user=user_prompt,
+                config=InvokeConfig(max_tokens=2000),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -189,7 +187,6 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
             section = document_model.get_section(edit_data["target_section_id"])
             section_content = document_model.get_section_content(edit_data["target_section_id"]) if section else ""
 
-            llm = get_llm(tier=tier, max_tokens=2000)
             user_prompt = GENERATE_SYNTHESIS_USER.format(
                 topic=topic,
                 section_content=section_content[:6000],
@@ -197,11 +194,11 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 target_words=edit_data["target_word_count"],
             )
 
-            response = await llm.ainvoke(
-                [
-                    {"role": "system", "content": GENERATE_SYNTHESIS_SYSTEM},
-                    {"role": "user", "content": user_prompt},
-                ]
+            response = await invoke(
+                tier=tier,
+                system=GENERATE_SYNTHESIS_SYSTEM,
+                user=user_prompt,
+                config=InvokeConfig(max_tokens=2000),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -221,7 +218,6 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 else ""
             )
 
-            llm = get_llm(tier=tier, max_tokens=500)
             user_prompt = GENERATE_TRANSITION_USER.format(
                 from_content=from_content,
                 to_content=to_content,
@@ -229,11 +225,11 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 target_words=edit_data["target_word_count"],
             )
 
-            response = await llm.ainvoke(
-                [
-                    {"role": "system", "content": GENERATE_TRANSITION_SYSTEM},
-                    {"role": "user", "content": user_prompt},
-                ]
+            response = await invoke(
+                tier=tier,
+                system=GENERATE_TRANSITION_SYSTEM,
+                user=user_prompt,
+                config=InvokeConfig(max_tokens=500),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -311,18 +307,11 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
                     secondary_content = document_model.get_section_content(edit_data["secondary_section_id"])
 
                     # Use LLM to merge
-                    llm = get_llm(tier=ModelTier.SONNET, max_tokens=4000)
-                    response = await llm.ainvoke(
-                        [
-                            {
-                                "role": "system",
-                                "content": "Merge these two sections into one cohesive section. Eliminate redundancy while preserving all important information.",
-                            },
-                            {
-                                "role": "user",
-                                "content": f"PRIMARY SECTION:\n{primary_content}\n\nSECONDARY SECTION:\n{secondary_content}\n\nMerge strategy: {edit_data['merge_strategy']}\n\nCreate a single cohesive section.",
-                            },
-                        ]
+                    response = await invoke(
+                        tier=ModelTier.SONNET,
+                        system="Merge these two sections into one cohesive section. Eliminate redundancy while preserving all important information.",
+                        user=f"PRIMARY SECTION:\n{primary_content}\n\nSECONDARY SECTION:\n{secondary_content}\n\nMerge strategy: {edit_data['merge_strategy']}\n\nCreate a single cohesive section.",
+                        config=InvokeConfig(max_tokens=4000),
                     )
 
                     results.append(
@@ -356,18 +345,17 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
                 if source_contents:
                     source_blocks_text = "\n\n---\n\n".join(source_contents)
 
-                    llm = get_llm(tier=ModelTier.SONNET, max_tokens=3000)
                     user_prompt = CONSOLIDATE_CONTENT_USER.format(
                         topic=edit_data["topic"],
                         source_blocks=source_blocks_text,
                         approach=edit_data["consolidation_approach"],
                     )
 
-                    response = await llm.ainvoke(
-                        [
-                            {"role": "system", "content": CONSOLIDATE_CONTENT_SYSTEM},
-                            {"role": "user", "content": user_prompt},
-                        ]
+                    response = await invoke(
+                        tier=ModelTier.SONNET,
+                        system=CONSOLIDATE_CONTENT_SYSTEM,
+                        user=user_prompt,
+                        config=InvokeConfig(max_tokens=3000),
                     )
                     consolidated = _strip_generated_header(response.content.strip(), edit_type)
 

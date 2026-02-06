@@ -7,7 +7,7 @@ from langsmith import traceable
 from langgraph.types import Send
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from ..prompts import get_section_writing_prompt, DEFAULT_TARGET_WORDS
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,6 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
 
         # Use Opus if quality permits
         model_tier = ModelTier.OPUS if quality_settings.get("use_opus_for_sections", True) else ModelTier.SONNET
-        llm = get_llm(model_tier, max_tokens=8000)
 
         # Generate prompt with word count target
         prompt_template = get_section_writing_prompt(target_words, section_count)
@@ -164,7 +163,12 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
             book_summaries_excerpt=book_summaries_excerpt,
         )
 
-        response = await llm.ainvoke([{"role": "user", "content": prompt}])
+        response = await invoke(
+            tier=model_tier,
+            system="You are a synthesis writer creating document sections.",
+            user=prompt,
+            config=InvokeConfig(max_tokens=8000),
+        )
         content = response.content if isinstance(response.content, str) else str(response.content)
 
         # Extract citations from content (simple regex)
@@ -222,9 +226,6 @@ async def check_section_quality(state: dict) -> dict[str, Any]:
     logger.info(f"Phase 4e: Checking quality of {len(section_drafts)} sections")
 
     try:
-        llm = get_llm(ModelTier.HAIKU, max_tokens=1000)
-        llm_structured = llm.with_structured_output(SectionQuality)
-
         updated_sections = []
 
         for section in section_drafts:
@@ -235,7 +236,13 @@ async def check_section_quality(state: dict) -> dict[str, Any]:
                     section_content=section.get("content", "")[:5000],
                 )
 
-                result = await llm_structured.ainvoke([{"role": "user", "content": prompt}])
+                result = await invoke(
+                    tier=ModelTier.HAIKU,
+                    system="You are a quality assessor for synthesis sections.",
+                    user=prompt,
+                    schema=SectionQuality,
+                    config=InvokeConfig(max_tokens=1000),
+                )
 
                 section["quality_score"] = result.quality_score
                 section["needs_revision"] = result.needs_revision or result.quality_score < quality_threshold

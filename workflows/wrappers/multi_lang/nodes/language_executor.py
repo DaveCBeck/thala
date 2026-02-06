@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from workflows.wrappers.multi_lang.state import MultiLangState, LanguageResult
 from workflows.wrappers.multi_lang.workflow_registry import WORKFLOW_REGISTRY
-from workflows.shared.llm_utils.models import get_llm, ModelTier
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.research.web_research.utils import extract_json_from_llm_response
 
 logger = logging.getLogger(__name__)
@@ -28,8 +28,6 @@ async def _compress_language_findings(
 
     Returns: (summary, key_insights, unique_perspectives)
     """
-    llm = get_llm(ModelTier.SONNET, max_tokens=4096)
-
     # Combine all reports
     combined_reports = "\n\n---\n\n".join(
         f"## {result['workflow_type']}\n\n{result['report']}" for result in workflow_results if result.get("report")
@@ -57,7 +55,12 @@ Format your response as JSON:
 }}"""
 
     try:
-        response = await llm.ainvoke(prompt)
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system="You are a research analyst that consolidates findings.",
+            user=prompt,
+            config=InvokeConfig(max_tokens=4096),
+        )
         content = response.content
 
         # Parse JSON response using robust extraction

@@ -8,11 +8,9 @@ existing knowledge before conducting web research.
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage
-
 from langchain_tools.search_memory import search_memory
 from workflows.research.web_research.state import DeepResearchState
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +86,16 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
         )
 
         try:
-            llm = get_llm(tier=ModelTier.HAIKU)
             prompt = f"""Summarize in approximately 300 words what the user already knows about: {brief["topic"]}.
 If none of the content is relevant to this topic, say so clearly.
 
 Content:
 {findings_text}"""
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            response = await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a helpful assistant that summarizes information.",
+                user=prompt,
+            )
             memory_context = response.content.strip()
         except Exception as e:
             logger.warning(f"Failed to summarize memory context: {e}")

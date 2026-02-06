@@ -6,7 +6,7 @@ from typing import Any
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +97,6 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
     logger.info(f"Phase 3: Generating {num_queries} queries and {num_themes} themes")
 
     try:
-        # Use Sonnet to generate research targets
-        llm = get_llm(ModelTier.HAIKU, max_tokens=2000)
-        llm_structured = llm.with_structured_output(ResearchTargets)
-
         prompt = RESEARCH_TARGETS_PROMPT.format(
             topic=topic,
             research_questions="\n".join(f"- {q}" for q in research_questions),
@@ -110,7 +106,13 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
             num_themes=num_themes,
         )
 
-        result = await llm_structured.ainvoke([{"role": "user", "content": prompt}])
+        result = await invoke(
+            tier=ModelTier.HAIKU,
+            system="You are a research target generator.",
+            user=prompt,
+            schema=ResearchTargets,
+            config=InvokeConfig(max_tokens=2000),
+        )
 
         # Convert to state format
         generated_queries = [
