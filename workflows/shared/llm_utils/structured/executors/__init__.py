@@ -1,9 +1,11 @@
-"""Executor registry for structured output strategies."""
+"""Executor registry for structured output strategies.
+
+Used internally by invoke() for structured output extraction.
+"""
 
 from ..types import StructuredOutputStrategy
 from .base import StrategyExecutor
 from .langchain import LangChainStructuredExecutor
-from .batch import BatchToolCallExecutor
 from .agent import ToolAgentExecutor
 from .json import JSONPromptingExecutor
 
@@ -11,7 +13,6 @@ from .json import JSONPromptingExecutor
 # Executor instances (singletons - no state)
 executors: dict[StructuredOutputStrategy, StrategyExecutor] = {
     StructuredOutputStrategy.LANGCHAIN_STRUCTURED: LangChainStructuredExecutor(),
-    StructuredOutputStrategy.BATCH_TOOL_CALL: BatchToolCallExecutor(),
     StructuredOutputStrategy.TOOL_AGENT: ToolAgentExecutor(),
     StructuredOutputStrategy.JSON_PROMPTING: JSONPromptingExecutor(),
 }
@@ -25,7 +26,6 @@ def get_executor(strategy: StructuredOutputStrategy) -> StrategyExecutor:
 __all__ = [
     "StrategyExecutor",
     "LangChainStructuredExecutor",
-    "BatchToolCallExecutor",
     "ToolAgentExecutor",
     "JSONPromptingExecutor",
     "executors",

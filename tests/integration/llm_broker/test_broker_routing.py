@@ -1,7 +1,7 @@
-"""Integration tests for LLM broker routing through structured output and caching interfaces.
+"""Integration tests for LLM broker routing through invoke() and caching interfaces.
 
 These tests verify that:
-1. get_structured_output() routes through broker when enabled + batch_policy set
+1. invoke() routes through broker when enabled + batch_policy set
 2. invoke_with_cache() routes through broker when enabled + batch_policy set
 3. Feature flag correctly enables/disables routing
 4. Backward compatibility when broker is disabled
@@ -165,13 +165,13 @@ class TestFeatureFlag:
         reset_broker_config()
 
 
-class TestGetStructuredOutputRouting:
-    """Tests for get_structured_output() broker routing."""
+class TestInvokeRouting:
+    """Tests for invoke() broker routing."""
 
     @pytest.mark.asyncio
     async def test_routes_through_broker_when_enabled(self, mock_broker, cleanup_broker):
         """Test requests route through broker when enabled and batch_policy set."""
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import InvokeConfig, invoke
 
         # Verify broker is enabled
         assert is_broker_enabled()
@@ -181,12 +181,12 @@ class TestGetStructuredOutputRouting:
             # Note: This will call the broker's request method
             # The actual execution depends on the broker being properly mocked
             try:
-                result = await get_structured_output(
-                    output_schema=SimpleOutput,
-                    user_prompt="What is 2+2?",
-                    system_prompt="You are a math assistant",
+                result = await invoke(
                     tier=ModelTier.HAIKU,
-                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                    system="You are a math assistant",
+                    user="What is 2+2?",
+                    schema=SimpleOutput,
+                    config=InvokeConfig(batch_policy=BatchPolicy.PREFER_BALANCE),
                 )
                 # If we got here, the broker was used
                 assert isinstance(result, SimpleOutput)
@@ -198,7 +198,7 @@ class TestGetStructuredOutputRouting:
     @pytest.mark.asyncio
     async def test_skips_broker_without_batch_policy(self, mock_broker, cleanup_broker):
         """Test requests skip broker when batch_policy is not set."""
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import invoke
 
         assert is_broker_enabled()
 
@@ -211,9 +211,11 @@ class TestGetStructuredOutputRouting:
                 value=SimpleOutput(answer="Direct response"),
             )
 
-            await get_structured_output(
-                output_schema=SimpleOutput,
-                user_prompt="What is 2+2?",
+            await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a math assistant",
+                user="What is 2+2?",
+                schema=SimpleOutput,
                 # No batch_policy - should skip broker
             )
 
@@ -228,7 +230,7 @@ class TestGetStructuredOutputRouting:
 
         assert not is_broker_enabled()
 
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import InvokeConfig, invoke
 
         # Mock the LangChain path
         with patch(
@@ -239,10 +241,12 @@ class TestGetStructuredOutputRouting:
                 value=SimpleOutput(answer="Direct response"),
             )
 
-            await get_structured_output(
-                output_schema=SimpleOutput,
-                user_prompt="What is 2+2?",
-                batch_policy=BatchPolicy.PREFER_BALANCE,  # Even with policy
+            await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a math assistant",
+                user="What is 2+2?",
+                schema=SimpleOutput,
+                config=InvokeConfig(batch_policy=BatchPolicy.PREFER_BALANCE),  # Even with policy
             )
 
             # Should have used LangChain path since broker is disabled
@@ -404,14 +408,14 @@ class TestBackwardCompatibility:
     """Tests for backward compatibility when broker is disabled."""
 
     @pytest.mark.asyncio
-    async def test_structured_output_works_without_broker(self, disabled_broker_config, cleanup_broker):
-        """Test get_structured_output works normally when broker is disabled."""
+    async def test_invoke_works_without_broker(self, disabled_broker_config, cleanup_broker):
+        """Test invoke() works normally when broker is disabled."""
         reset_broker_config()
         set_broker_config(disabled_broker_config)
 
         assert not is_broker_enabled()
 
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import invoke
 
         # Mock the LangChain execution path
         with patch(
@@ -422,9 +426,11 @@ class TestBackwardCompatibility:
                 value=SimpleOutput(answer="Test", confidence=0.9),
             )
 
-            result = await get_structured_output(
-                output_schema=SimpleOutput,
-                user_prompt="Test prompt",
+            result = await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a test assistant",
+                user="Test prompt",
+                schema=SimpleOutput,
             )
 
             assert isinstance(result, SimpleOutput)

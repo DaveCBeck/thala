@@ -1,6 +1,6 @@
 """Per-cluster deep analysis implementation.
 
-Routes through central LLM broker for unified cost/speed management.
+Uses unified invoke() for LLM calls.
 """
 
 import logging
@@ -8,12 +8,7 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
-from core.llm_broker import BatchPolicy
-from workflows.shared.llm_utils import ModelTier
-from workflows.shared.llm_utils.structured import (
-    StructuredRequest,
-    get_structured_output,
-)
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .prompts import CLUSTER_ANALYSIS_SYSTEM_PROMPT, CLUSTER_ANALYSIS_USER_TEMPLATE
 from .schemas import ClusterAnalysisOutput
@@ -44,11 +39,11 @@ async def per_cluster_analysis_node(state: dict) -> dict[str, Any]:
         logger.warning("No clusters to analyze")
         return {"cluster_analyses": []}
 
-    # Build batch requests for all clusters
-    requests = []
-    cluster_id_map = {}
+    # Build batch prompts for all clusters
+    prompts: list[str] = []
+    cluster_ids: list[int] = []
 
-    for i, cluster in enumerate(final_clusters):
+    for cluster in final_clusters:
         cluster_dois = cluster["paper_dois"]
 
         # Format papers for analysis
@@ -75,38 +70,32 @@ Limitations: {"; ".join(summary.get("limitations", [])[:2])}"""
             papers_detail=papers_text,
         )
 
-        request_id = f"cluster-{i}"
-        requests.append(
-            StructuredRequest(
-                id=request_id,
-                user_prompt=user_prompt,
-            )
+        prompts.append(user_prompt)
+        cluster_ids.append(cluster["cluster_id"])
+
+    logger.info(f"Submitting {len(final_clusters)} clusters for analysis")
+
+    # Use invoke() for batch structured output
+    try:
+        results = await invoke(
+            tier=ModelTier.SONNET,
+            system=CLUSTER_ANALYSIS_SYSTEM_PROMPT,
+            user=prompts,
+            schema=ClusterAnalysisOutput,
+            config=InvokeConfig(max_tokens=4096),
         )
-        cluster_id_map[request_id] = cluster["cluster_id"]
-
-    logger.info(f"Submitting {len(final_clusters)} clusters for analysis via broker")
-
-    # Route through broker with PREFER_BALANCE policy
-    batch_results = await get_structured_output(
-        output_schema=ClusterAnalysisOutput,
-        requests=requests,
-        system_prompt=CLUSTER_ANALYSIS_SYSTEM_PROMPT,
-        tier=ModelTier.SONNET,
-        max_tokens=4096,
-        batch_policy=BatchPolicy.PREFER_BALANCE,
-    )
+    except Exception as e:
+        logger.error(f"Cluster analysis batch failed: {e}")
+        results = [None] * len(prompts)
 
     # Parse results
     cluster_analyses: list[ClusterAnalysis] = []
     for i, cluster in enumerate(final_clusters):
-        request_id = f"cluster-{i}"
-        cluster_id = cluster_id_map[request_id]
-        result = batch_results.results.get(request_id)
+        cluster_id = cluster_ids[i]
+        parsed = results[i] if results else None
 
-        if result and result.success:
+        if parsed is not None:
             try:
-                parsed = result.value
-
                 cluster_analyses.append(
                     ClusterAnalysis(
                         cluster_id=cluster_id,
@@ -130,12 +119,11 @@ Limitations: {"; ".join(summary.get("limitations", [])[:2])}"""
                     )
                 )
         else:
-            error_msg = result.error if result else "No result returned"
-            logger.warning(f"Cluster analysis failed for {cluster['label']}: {error_msg}")
+            logger.warning(f"Cluster analysis failed for {cluster['label']}: No result returned")
             cluster_analyses.append(
                 ClusterAnalysis(
                     cluster_id=cluster_id,
-                    narrative_summary=f"Analysis failed: {error_msg}",
+                    narrative_summary="Analysis failed: No result returned",
                     timeline=[],
                     key_debates=[],
                     methodologies=[],

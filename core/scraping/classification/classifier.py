@@ -15,7 +15,7 @@ from typing import Optional
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 from .prompts import CLASSIFICATION_SYSTEM_PROMPT, CLASSIFICATION_USER_TEMPLATE
 from .types import ClassificationResult
 
@@ -149,12 +149,12 @@ async def classify_content(
     )
 
     try:
-        result: ClassificationResult = await get_structured_output(
-            output_schema=ClassificationResult,
-            user_prompt=user_prompt,
-            system_prompt=CLASSIFICATION_SYSTEM_PROMPT,
+        result: ClassificationResult = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            max_tokens=1024,
+            system=CLASSIFICATION_SYSTEM_PROMPT,
+            user=user_prompt,
+            schema=ClassificationResult,
+            config=InvokeConfig(max_tokens=1024),
         )
 
         logger.debug(

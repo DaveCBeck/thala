@@ -32,21 +32,6 @@ class StructuredOutputStrategy(Enum):
 
 
 @dataclass
-class StructuredRequest:
-    """A single request in a batch.
-
-    Args:
-        id: Unique identifier for this request (used to retrieve results)
-        user_prompt: The user message content
-        system_prompt: Optional per-request system prompt (overrides default)
-    """
-
-    id: str
-    user_prompt: str
-    system_prompt: Optional[str] = None
-
-
-@dataclass
 class StructuredOutputConfig:
     """Configuration for structured output extraction.
 
@@ -141,25 +126,6 @@ class StructuredOutputResult(Generic[T]):
         return cls(success=False, error=error)
 
 
-@dataclass
-class BatchResult(Generic[T]):
-    """Results from batch structured output.
-
-    Attributes:
-        results: Mapping of request ID to result
-        total_items: Total items processed
-        successful_items: Count of successful extractions
-        failed_items: Count of failed extractions
-        strategy_used: Which strategy was used
-    """
-
-    results: dict[str, StructuredOutputResult[T]]
-    total_items: int
-    successful_items: int
-    failed_items: int
-    strategy_used: StructuredOutputStrategy
-
-
 class StructuredOutputError(Exception):
     """Raised when structured output extraction fails after retries."""
 
@@ -180,9 +146,7 @@ class StructuredOutputError(Exception):
 
 __all__ = [
     "StructuredOutputStrategy",
-    "StructuredRequest",
     "StructuredOutputConfig",
     "StructuredOutputResult",
-    "BatchResult",
     "StructuredOutputError",
 ]

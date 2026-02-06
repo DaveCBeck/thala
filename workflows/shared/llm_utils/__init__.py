@@ -6,7 +6,7 @@ This module provides Anthropic Claude and DeepSeek model integration with:
 - Extended thinking support for complex reasoning tasks
 - Prompt caching for cost optimization (90% savings on cache hits)
 - Automatic broker routing for batch cost optimization
-- Structured output interface
+- Structured output via schema= parameter
 
 Unified Invocation (Recommended):
     The invoke() function is the recommended way to call LLMs. It handles
@@ -36,6 +36,20 @@ Unified Invocation (Recommended):
         user=["Doc 1...", "Doc 2...", "Doc 3..."],
     )
 
+    # Structured output with Pydantic schema
+    from pydantic import BaseModel
+
+    class Summary(BaseModel):
+        key_points: list[str]
+        conclusion: str
+
+    result = await invoke(
+        tier=ModelTier.SONNET,
+        system="Summarize the document.",
+        user=document_text,
+        schema=Summary,
+    )
+
 Dynamic Batch Building:
     Use invoke_batch() for accumulating requests dynamically:
 
@@ -43,11 +57,6 @@ Dynamic Batch Building:
         for paper in papers:
             batch.add(tier=ModelTier.HAIKU, system=SYSTEM, user=format(paper))
     results = await batch.results()
-
-Structured Output:
-    The get_structured_output() function provides structured output with
-    automatic strategy selection. Will be migrated to invoke(..., schema=)
-    in a future release.
 
 Prompt Caching:
     Cache reads cost 10% of base input token price. The invoke() function
@@ -69,14 +78,8 @@ from .caching import (
 from .structured import (
     StructuredOutputStrategy,
     StructuredOutputConfig,
-    StructuredRequest,
     StructuredOutputResult,
-    BatchResult,
     StructuredOutputError,
-    get_structured_output,
-    get_structured_output_with_result,
-    extract_from_text,
-    classify_content,
 )
 from .response_parsing import extract_response_content
 
@@ -90,17 +93,11 @@ __all__ = [
     # Model utilities
     "ModelTier",
     "get_llm",
-    # Structured output
+    # Structured output types (for type annotations)
     "StructuredOutputStrategy",
     "StructuredOutputConfig",
-    "StructuredRequest",
     "StructuredOutputResult",
-    "BatchResult",
     "StructuredOutputError",
-    "get_structured_output",
-    "get_structured_output_with_result",
-    "extract_from_text",
-    "classify_content",
     # Caching utilities
     "CacheTTL",
     "create_cached_messages",
