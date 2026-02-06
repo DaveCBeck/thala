@@ -10,7 +10,7 @@ from workflows.research.academic_lit_review.state import (
     PaperSummary,
     ThematicCluster,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from .bertopic_clustering import _evaluate_bertopic_quality
 from .prompts import OPUS_SYNTHESIS_SYSTEM_PROMPT, OPUS_SYNTHESIS_USER_TEMPLATE
@@ -119,12 +119,12 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
             paper_summaries=papers_brief,
         )
 
-        result: OpusSynthesisOutput = await get_structured_output(
-            output_schema=OpusSynthesisOutput,
-            user_prompt=user_prompt,
-            system_prompt=OPUS_SYNTHESIS_SYSTEM_PROMPT,
+        result: OpusSynthesisOutput = await invoke(
             tier=ModelTier.OPUS,
-            max_tokens=16000,
+            system=OPUS_SYNTHESIS_SYSTEM_PROMPT,
+            user=user_prompt,
+            schema=OpusSynthesisOutput,
+            config=InvokeConfig(max_tokens=16000),
         )
 
         # Convert Pydantic models to TypedDict for state compatibility

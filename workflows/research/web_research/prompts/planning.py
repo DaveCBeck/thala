@@ -37,4 +37,6 @@ Output a customized research plan as JSON:
 }}
 """
 
-ITERATE_PLAN_HUMAN = """Based on the user's existing knowledge and the research brief, create a customized research plan."""
+ITERATE_PLAN_HUMAN = (
+    """Based on the user's existing knowledge and the research brief, create a customized research plan."""
+)

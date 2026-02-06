@@ -12,7 +12,7 @@ from workflows.enhance.editing.prompts import (
     FINAL_VERIFICATION_SYSTEM,
     FINAL_VERIFICATION_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,7 @@ async def finalize_node(state: dict) -> dict[str, Any]:
     Reconstructs markdown from the edited document model and
     performs final quality verification.
     """
-    document_model = DocumentModel.from_dict(
-        state["updated_document_model"]
-    )
+    document_model = DocumentModel.from_dict(state["updated_document_model"])
     topic = state["input"]["topic"]
 
     # Final semantic deduplication - remove duplicate sections and content
@@ -37,10 +35,7 @@ async def finalize_node(state: dict) -> dict[str, Any]:
     # Reconstruct markdown (also handles header deduplication in blocks)
     final_document = document_model.to_markdown()
 
-    logger.info(
-        f"Finalizing document: {document_model.total_words} words, "
-        f"{document_model.section_count} sections"
-    )
+    logger.info(f"Finalizing document: {document_model.total_words} words, {document_model.section_count} sections")
 
     # Build changes summary (V2 structure + V1 enhancement/polish)
     rewritten_sections = state.get("rewritten_sections", [])
@@ -70,12 +65,12 @@ async def finalize_node(state: dict) -> dict[str, Any]:
             document=final_document,
         )
 
-        final_verification = await get_structured_output(
-            output_schema=FinalVerification,
-            user_prompt=user_prompt,
-            system_prompt=FINAL_VERIFICATION_SYSTEM,
+        final_verification = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            max_tokens=1500,
+            system=FINAL_VERIFICATION_SYSTEM,
+            user=user_prompt,
+            schema=FinalVerification,
+            config=InvokeConfig(max_tokens=1500),
         )
 
         logger.info(

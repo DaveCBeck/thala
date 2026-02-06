@@ -8,16 +8,12 @@ from pydantic import BaseModel, Field
 class DeepDiveTopicPlan(BaseModel):
     """Plan for a single deep-dive article."""
 
-    id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"] = Field(
-        description="Identifier for this deep-dive"
-    )
+    id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"] = Field(description="Identifier for this deep-dive")
     title: str = Field(
         description="Evocative, specific title (5-10 words). Should intrigue without being clickbait. "
         "Examples: 'The drilling ship and the smoking gun', 'When oceans turn toxic'"
     )
-    theme: str = Field(
-        description="2-3 sentence description of what this deep-dive covers and why it's distinct"
-    )
+    theme: str = Field(description="2-3 sentence description of what this deep-dive covers and why it's distinct")
     structural_approach: Literal["puzzle", "finding", "contrarian"] = Field(
         description="Narrative approach that best fits this topic's content. "
         "'puzzle': Opens with mystery/anomaly, unfolds as investigation. Best for mysteries, unexpected findings. "
@@ -50,9 +46,7 @@ class PlanningOutput(BaseModel):
         "The overview synthesizes the big picture and references the deep-dives without duplicating them."
     )
 
-    series_coherence: str = Field(
-        description="2-3 sentences explaining how these 4 pieces work together as a series"
-    )
+    series_coherence: str = Field(description="2-3 sentences explaining how these 4 pieces work together as a series")
 
     def get_all_anchor_keys(self) -> set[str]:
         """Get all unique anchor keys across all deep-dives."""

@@ -11,7 +11,7 @@ from workflows.enhance.editing.document_model import DocumentModel
 logger = logging.getLogger(__name__)
 
 # Zotero citation pattern: [@8ALPHANUMERIC]
-ZOTERO_CITATION_PATTERN = re.compile(r'\[@([A-Za-z0-9]{8})\]')
+ZOTERO_CITATION_PATTERN = re.compile(r"\[@([A-Za-z0-9]{8})\]")
 
 
 def extract_citation_keys(text: str) -> list[str]:
@@ -51,9 +51,7 @@ async def detect_citations_node(state: dict) -> dict[str, Any]:
     """
     # Check if citation info already provided
     if state.get("has_citations") is not None and state.get("citation_keys"):
-        logger.debug(
-            f"Using pre-provided citation info: {len(state['citation_keys'])} citations"
-        )
+        logger.debug(f"Using pre-provided citation info: {len(state['citation_keys'])} citations")
         return {
             "has_citations": state["has_citations"],
             "citation_keys": state["citation_keys"],
@@ -80,10 +78,7 @@ async def detect_citations_node(state: dict) -> dict[str, Any]:
         )
         logger.debug(f"Citation keys: {citation_keys[:10]}{'...' if len(citation_keys) > 10 else ''}")
     else:
-        logger.info(
-            "No Zotero citations detected in document. "
-            "Skipping fact-check and reference-check phases."
-        )
+        logger.info("No Zotero citations detected in document. Skipping fact-check and reference-check phases.")
 
     return {
         "has_citations": has_citations,

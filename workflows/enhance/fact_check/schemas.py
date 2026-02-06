@@ -132,9 +132,7 @@ class VerifiedEdit(BaseModel):
         description="Text to find (must be unique in document)",
     )
     replace: str = Field(description="Replacement text")
-    position_hint: str = Field(
-        description="Location hint (e.g., 'in section X' or 'after paragraph starting with Y')"
-    )
+    position_hint: str = Field(description="Location hint (e.g., 'in section X' or 'after paragraph starting with Y')")
 
     edit_type: Literal[
         "fact_correction",  # Correct a factual error

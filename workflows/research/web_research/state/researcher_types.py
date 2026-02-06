@@ -28,9 +28,7 @@ def parse_allocation(allocation_str: str) -> ResearcherAllocation:
         {'web_count': 3}
     """
     if not allocation_str or len(allocation_str) != 1:
-        raise ValueError(
-            f"Allocation must be a single digit (1-3), got: {allocation_str!r}"
-        )
+        raise ValueError(f"Allocation must be a single digit (1-3), got: {allocation_str!r}")
 
     try:
         web = int(allocation_str)

@@ -21,9 +21,7 @@ class ResearchComplete(BaseModel):
 class RefineDraftReport(BaseModel):
     """Tool for refining the draft report with new findings."""
 
-    updates: str = Field(
-        description="The updates to make to the draft report based on new findings."
-    )
+    updates: str = Field(description="The updates to make to the draft report based on new findings.")
     gaps: list[str] = Field(
         default_factory=list,
         description="Remaining gaps that still need research.",

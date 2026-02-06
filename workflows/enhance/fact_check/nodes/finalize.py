@@ -72,9 +72,7 @@ async def finalize_node(state: dict) -> dict[str, Any]:
         total_citations = sum(len(r.get("citations_found", [])) for r in reference_check_results)
         invalid_citations = sum(len(r.get("invalid_citations", [])) for r in reference_check_results)
         if total_citations:
-            summary_parts.append(
-                f"Validated {total_citations} citations ({invalid_citations} invalid)"
-            )
+            summary_parts.append(f"Validated {total_citations} citations ({invalid_citations} invalid)")
 
         # Edits summary
         if applied_edits:

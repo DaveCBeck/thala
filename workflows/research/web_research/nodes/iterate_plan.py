@@ -20,7 +20,7 @@ from workflows.research.web_research.prompts import (
     get_today_str,
 )
 from workflows.research.web_research.utils import load_prompts_with_translation
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -28,25 +28,15 @@ logger = logging.getLogger(__name__)
 class IteratePlanResponse(BaseModel):
     """Structured output for customized research plan."""
 
-    user_knows: list[str] = Field(
-        default_factory=list, description="What the user already understands well"
-    )
-    knowledge_gaps: list[str] = Field(
-        default_factory=list, description="Specific gaps to fill with research"
-    )
-    priority_questions: list[str] = Field(
-        default_factory=list, description="Prioritized questions based on gaps"
-    )
-    avoid_researching: list[str] = Field(
-        default_factory=list, description="Topics the user already knows well"
-    )
+    user_knows: list[str] = Field(default_factory=list, description="What the user already understands well")
+    knowledge_gaps: list[str] = Field(default_factory=list, description="Specific gaps to fill with research")
+    priority_questions: list[str] = Field(default_factory=list, description="Prioritized questions based on gaps")
+    avoid_researching: list[str] = Field(default_factory=list, description="Topics the user already knows well")
     potential_challenges: list[str] = Field(
         default_factory=list,
         description="Areas where findings might challenge existing beliefs",
     )
-    research_strategy: str = Field(
-        default="", description="Overall approach given their existing knowledge"
-    )
+    research_strategy: str = Field(default="", description="Overall approach given their existing knowledge")
 
 
 async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
@@ -89,11 +79,11 @@ async def iterate_plan(state: DeepResearchState) -> dict[str, Any]:
     )
 
     try:
-        result: IteratePlanResponse = await get_structured_output(
-            output_schema=IteratePlanResponse,
-            user_prompt=human_prompt_template,
-            system_prompt=system_prompt,
+        result: IteratePlanResponse = await invoke(
             tier=ModelTier.OPUS,
+            system=system_prompt,
+            user=human_prompt_template,
+            schema=IteratePlanResponse,
         )
 
         # Build structured plan from response

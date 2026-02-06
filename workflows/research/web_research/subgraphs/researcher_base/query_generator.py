@@ -9,7 +9,7 @@ from workflows.research.web_research.prompts import (
     GENERATE_ACADEMIC_QUERIES_SYSTEM,
     GENERATE_BOOK_QUERIES_SYSTEM,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 
 from .query_validator import validate_queries
 
@@ -48,9 +48,7 @@ def create_generate_queries(researcher_type: str = "web"):
         language_config = state.get("language_config")
 
         # Get researcher-specific base prompt
-        base_prompt = RESEARCHER_QUERY_PROMPTS.get(
-            researcher_type, GENERATE_WEB_QUERIES_SYSTEM
-        )
+        base_prompt = RESEARCHER_QUERY_PROMPTS.get(researcher_type, GENERATE_WEB_QUERIES_SYSTEM)
 
         # Build language-aware prompt
         if language_config and language_config["code"] != "en":
@@ -69,10 +67,10 @@ Question: {question["question"]}
 """
 
         try:
-            result: SearchQueries = await get_structured_output(
-                output_schema=SearchQueries,
-                user_prompt=prompt,
+            result: SearchQueries = await invoke(
                 tier=ModelTier.DEEPSEEK_V3,
+                user=prompt,
+                schema=SearchQueries,
             )
 
             # Validate queries are relevant

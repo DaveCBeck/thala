@@ -9,7 +9,7 @@ from workflows.enhance.editing.prompts import (
     ENHANCE_COHERENCE_REVIEW_SYSTEM,
     ENHANCE_COHERENCE_REVIEW_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,14 @@ async def enhance_coherence_review_node(state: dict) -> dict[str, Any]:
     Evaluates overall document coherence and identifies sections
     that may need additional enhancement in the next iteration.
     """
-    document_model = DocumentModel.from_dict(
-        state["updated_document_model"]
-    )
+    document_model = DocumentModel.from_dict(state["updated_document_model"])
     topic = state["input"]["topic"]
     iteration = state.get("enhance_iteration", 0)
     max_iterations = state.get("max_enhance_iterations", 3)
     enhancements = state.get("section_enhancements", [])
 
     # Get sections that were enhanced in this pass
-    enhanced_section_ids = [
-        e["section_id"] for e in enhancements
-        if e.get("success")
-    ]
+    enhanced_section_ids = [e["section_id"] for e in enhancements if e.get("success")]
 
     # Render document for review
     document_text = document_model.to_markdown()
@@ -51,13 +46,12 @@ async def enhance_coherence_review_node(state: dict) -> dict[str, Any]:
     )
 
     try:
-        result = await get_structured_output(
-            output_schema=EnhanceCoherenceReview,
-            user_prompt=user_prompt,
-            system_prompt=ENHANCE_COHERENCE_REVIEW_SYSTEM,
+        result = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=2000,
-            use_json_schema_method=True,
+            system=ENHANCE_COHERENCE_REVIEW_SYSTEM,
+            user=user_prompt,
+            schema=EnhanceCoherenceReview,
+            config=InvokeConfig(max_tokens=2000, cache=False),
         )
 
         logger.info(
@@ -106,10 +100,7 @@ def route_enhance_iteration(state: dict) -> str:
 
     # If we've reached max iterations, stop
     if iteration >= max_iterations:
-        logger.info(
-            f"Max enhancement iterations ({max_iterations}) reached. "
-            f"Proceeding to verification."
-        )
+        logger.info(f"Max enhancement iterations ({max_iterations}) reached. Proceeding to verification.")
         return "verify"
 
     # If coherence is good enough and no sections flagged, stop

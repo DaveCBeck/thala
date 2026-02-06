@@ -51,8 +51,7 @@ async def run_editing(state: dict) -> dict[str, Any]:
             edited_report = final_report
 
         logger.info(
-            f"Phase 5 complete: status={result.get('status')}, "
-            f"length_change={len(edited_report) - len(final_report)}"
+            f"Phase 5 complete: status={result.get('status')}, length_change={len(edited_report) - len(final_report)}"
         )
 
         return {

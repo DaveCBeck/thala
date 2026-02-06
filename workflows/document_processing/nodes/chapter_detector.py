@@ -14,7 +14,7 @@ from workflows.shared.chunking_utils import (
     create_fallback_chunks,
     create_heading_based_chapters,
 )
-from workflows.shared.llm_utils import get_structured_output, ModelTier
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.shared.markdown_utils import extract_headings
 from workflows.shared.text_utils import count_words
 from workflows.shared.token_utils import estimate_tokens_fast
@@ -215,12 +215,12 @@ it should be "include" even if it sounds like a generic term.
 When in doubt, use "include"."""
 
     try:
-        result = await get_structured_output(
-            output_schema=ChapterClassificationResult,
-            user_prompt=f"CHAPTERS:\n{chapter_list}",
-            system_prompt=system_prompt,
+        result = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            max_tokens=4096,
+            system=system_prompt,
+            user=f"CHAPTERS:\n{chapter_list}",
+            schema=ChapterClassificationResult,
+            config=InvokeConfig(max_tokens=4096),
         )
 
         # Build lookup map
@@ -410,12 +410,12 @@ Guidelines:
             # No max_tokens limit - large docs can have many headings
             # use_json_schema_method=True for stricter validation, combined with
             # field validator to handle edge case of JSON strings in list fields
-            result = await get_structured_output(
-                output_schema=HeadingAnalysisResult,
-                user_prompt=heading_list,
-                system_prompt=system_prompt,
+            result = await invoke(
                 tier=ModelTier.DEEPSEEK_V3,
-                max_tokens=8192,
+                system=system_prompt,
+                user=heading_list,
+                schema=HeadingAnalysisResult,
+                config=InvokeConfig(max_tokens=8192),
             )
             analysis = [h.model_dump() for h in result.headings]
 

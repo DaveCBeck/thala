@@ -16,17 +16,11 @@ class SearchQueries(BaseModel):
 class QueryValidation(BaseModel):
     """Validation result for a single search query."""
 
-    is_relevant: bool = Field(
-        description="Whether the query is relevant to the research question"
-    )
-    reason: str = Field(
-        description="Brief explanation of why the query is or isn't relevant"
-    )
+    is_relevant: bool = Field(description="Whether the query is relevant to the research question")
+    reason: str = Field(description="Brief explanation of why the query is or isn't relevant")
 
 
 class QueryValidationBatch(BaseModel):
     """Batch validation of search queries."""
 
-    validations: list[QueryValidation] = Field(
-        description="Validation results for each query in order"
-    )
+    validations: list[QueryValidation] = Field(description="Validation results for each query in order")

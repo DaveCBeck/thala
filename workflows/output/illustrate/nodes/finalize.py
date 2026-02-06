@@ -25,9 +25,7 @@ def _get_approved_results(
 ) -> list[ImageGenResult]:
     """Get generation results that passed review."""
     # Build set of passed location_ids
-    passed_ids = {
-        r["location_id"] for r in review_results if r.get("passed", False)
-    }
+    passed_ids = {r["location_id"] for r in review_results if r.get("passed", False)}
 
     # Also include successful generations that weren't reviewed
     # (e.g., if vision review was disabled)
@@ -85,9 +83,7 @@ def _insert_images_into_markdown(
                 break
 
         if header_line_idx is None:
-            logger.warning(
-                f"Could not find header '{header_text}' for image {plan.location_id}"
-            )
+            logger.warning(f"Could not find header '{header_text}' for image {plan.location_id}")
             continue
 
         # Build image markdown
@@ -248,9 +244,7 @@ async def finalize_node(state: IllustrateState) -> dict:
     for loc_id in dropped_ids:
         logger.warning(f"Image dropped (failed review after retries): {loc_id}")
 
-    logger.info(
-        f"Finalize complete: {len(final_images)}/{len(image_plan)} images, status={status}"
-    )
+    logger.info(f"Finalize complete: {len(final_images)}/{len(image_plan)} images, status={status}")
 
     return {
         "final_images": final_images,

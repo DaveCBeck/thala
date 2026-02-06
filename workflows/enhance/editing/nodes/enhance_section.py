@@ -15,7 +15,7 @@ from workflows.enhance.editing.prompts import (
     ENHANCE_CONTENT_SYSTEM,
     ENHANCE_CONTENT_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +90,12 @@ def route_to_enhance_sections(state: dict) -> list[Send] | str:
     # On subsequent iterations, only enhance flagged sections
     if iteration == 0:
         sections_to_enhance = [
-            s for s in leaf_sections
+            s
+            for s in leaf_sections
             if get_section_type(s) not in ("abstract",)  # Skip abstracts on first pass
         ]
     else:
-        sections_to_enhance = [
-            s for s in leaf_sections
-            if s.section_id in flagged_sections
-        ]
+        sections_to_enhance = [s for s in leaf_sections if s.section_id in flagged_sections]
 
     if not sections_to_enhance:
         return "enhance_coherence_review"
@@ -106,9 +104,7 @@ def route_to_enhance_sections(state: dict) -> list[Send] | str:
     sends = []
     for section in sections_to_enhance:
         # Get only this section's content, not subsections
-        section_content = document_model.get_section_content(
-            section.section_id, include_subsections=False
-        )
+        section_content = document_model.get_section_content(section.section_id, include_subsections=False)
 
         # Skip sections with very little content (just headings)
         if count_words(section_content) < 50:
@@ -167,6 +163,7 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
 
     # Get paper tools
     from langchain_tools import search_papers, get_paper_content
+
     tools = [search_papers, get_paper_content]
 
     # Select prompts based on section type
@@ -201,15 +198,16 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
         max_tokens = 8000
 
     try:
-        result = await get_structured_output(
-            output_schema=SectionEnhancement,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        result = await invoke(
             tier=ModelTier.OPUS if use_opus else ModelTier.SONNET,
-            tools=tools,
-            max_tokens=max_tokens,
-            max_tool_calls=max_tool_calls,
-            use_json_schema_method=True,
+            system=system_prompt,
+            user=user_prompt,
+            schema=SectionEnhancement,
+            config=InvokeConfig(
+                tools=tools,
+                max_tokens=max_tokens,
+                max_tool_calls=max_tool_calls,
+            ),
         )
 
         # Validate word count
@@ -270,9 +268,7 @@ async def assemble_enhancements_node(state: dict) -> dict[str, Any]:
     Applies successful enhancements to the document model.
     """
     logger.info("[DIAG] assemble_enhancements_node STARTING")
-    document_model = DocumentModel.from_dict(
-        state["updated_document_model"]
-    )
+    document_model = DocumentModel.from_dict(state["updated_document_model"])
     enhancements = state.get("section_enhancements", [])
     logger.info(f"[DIAG] assemble_enhancements_node got {len(enhancements)} enhancements")
 
@@ -292,10 +288,9 @@ async def assemble_enhancements_node(state: dict) -> dict[str, Any]:
             # Replace section content with enhanced version
             # This is a simplified approach - we replace all blocks
             from workflows.enhance.editing.document_model import ContentBlock
+
             new_blocks = [
-                ContentBlock.from_content(para, "paragraph")
-                for para in enhanced_content.split("\n\n")
-                if para.strip()
+                ContentBlock.from_content(para, "paragraph") for para in enhanced_content.split("\n\n") if para.strip()
             ]
             section.blocks = new_blocks
 

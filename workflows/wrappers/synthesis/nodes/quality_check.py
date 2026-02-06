@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 class SectionQuality(BaseModel):
     """Quality assessment for a section."""
 
-    quality_score: float = Field(
-        ge=0.0, le=1.0, description="Quality score from 0 to 1"
-    )
+    quality_score: float = Field(ge=0.0, le=1.0, description="Quality score from 0 to 1")
     strengths: list[str] = Field(description="What the section does well")
     weaknesses: list[str] = Field(description="Areas for improvement")
     needs_revision: bool = Field(description="Whether section needs revision")
@@ -32,8 +30,6 @@ class SectionQuality(BaseModel):
 # =============================================================================
 # Prompts
 # =============================================================================
-
-
 
 
 QUALITY_CHECK_PROMPT = """Assess the quality of this synthesis section.
@@ -136,25 +132,24 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
         else:
             lit_review_excerpt = "No academic literature available."
 
-        web_research_excerpt = "\n\n".join(
-            f"**{r.get('query', 'Query')}**\n{r.get('final_report', '')[:1500]}"
-            for r in web_research_results
-            if r.get("status") == "success"
-        )[:4000] or "No web research available."
+        web_research_excerpt = (
+            "\n\n".join(
+                f"**{r.get('query', 'Query')}**\n{r.get('final_report', '')[:1500]}"
+                for r in web_research_results
+                if r.get("status") == "success"
+            )[:4000]
+            or "No web research available."
+        )
 
-        book_summaries_excerpt = "\n\n".join(
-            f"**[@{zotkey}]**\n{summary[:2000]}"
-            for zotkey, summary in book_summaries_cache.items()
-        )[:4000] or "No book summaries available."
+        book_summaries_excerpt = (
+            "\n\n".join(f"**[@{zotkey}]**\n{summary[:2000]}" for zotkey, summary in book_summaries_cache.items())[:4000]
+            or "No book summaries available."
+        )
 
         key_sources_str = ", ".join(key_sources) if key_sources else "Use all available"
 
         # Use Opus if quality permits
-        model_tier = (
-            ModelTier.OPUS
-            if quality_settings.get("use_opus_for_sections", True)
-            else ModelTier.SONNET
-        )
+        model_tier = ModelTier.OPUS if quality_settings.get("use_opus_for_sections", True) else ModelTier.SONNET
         llm = get_llm(model_tier, max_tokens=8000)
 
         # Generate prompt with word count target
@@ -170,15 +165,12 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
         )
 
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
-        content = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
-        )
+        content = response.content if isinstance(response.content, str) else str(response.content)
 
         # Extract citations from content (simple regex)
         import re
-        citations = re.findall(r'\[@([A-Za-z0-9_-]+)\]', content)
+
+        citations = re.findall(r"\[@([A-Za-z0-9_-]+)\]", content)
 
         section = {
             "section_id": section_id,
@@ -189,10 +181,7 @@ async def write_section_worker(state: dict) -> dict[str, Any]:
             "needs_revision": False,
         }
 
-        logger.info(
-            f"Wrote section '{section_title}': {len(content)} chars, "
-            f"{len(citations)} citations"
-        )
+        logger.info(f"Wrote section '{section_title}': {len(content)} chars, {len(citations)} citations")
 
         return {
             "section_drafts": [section],
@@ -249,9 +238,7 @@ async def check_section_quality(state: dict) -> dict[str, Any]:
                 result = await llm_structured.ainvoke([{"role": "user", "content": prompt}])
 
                 section["quality_score"] = result.quality_score
-                section["needs_revision"] = (
-                    result.needs_revision or result.quality_score < quality_threshold
-                )
+                section["needs_revision"] = result.needs_revision or result.quality_score < quality_threshold
 
                 logger.debug(
                     f"Section '{section.get('title')}': "
@@ -302,14 +289,8 @@ async def assemble_sections(state: dict) -> dict[str, Any]:
     logger.info(f"Assembling {len(section_drafts)} sections into final document")
 
     # Sort sections by section_id to maintain structure order
-    structure_order = {
-        s.get("section_id"): i
-        for i, s in enumerate(synthesis_structure.get("sections", []))
-    }
-    sorted_sections = sorted(
-        section_drafts,
-        key=lambda s: structure_order.get(s.get("section_id"), 999)
-    )
+    structure_order = {s.get("section_id"): i for i, s in enumerate(synthesis_structure.get("sections", []))}
+    sorted_sections = sorted(section_drafts, key=lambda s: structure_order.get(s.get("section_id"), 999))
 
     # Build document
     lines = [
@@ -319,30 +300,36 @@ async def assemble_sections(state: dict) -> dict[str, Any]:
 
     # Add introduction if we have guidance
     if intro_guidance:
-        lines.extend([
-            "## Introduction",
-            "",
-            f"*[Introduction based on: {intro_guidance}]*",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Introduction",
+                "",
+                f"*[Introduction based on: {intro_guidance}]*",
+                "",
+            ]
+        )
 
     # Add all sections
     for section in sorted_sections:
-        lines.extend([
-            f"## {section.get('title', 'Section')}",
-            "",
-            section.get("content", "[No content]"),
-            "",
-        ])
+        lines.extend(
+            [
+                f"## {section.get('title', 'Section')}",
+                "",
+                section.get("content", "[No content]"),
+                "",
+            ]
+        )
 
     # Add conclusion if we have guidance
     if conclusion_guidance:
-        lines.extend([
-            "## Conclusion",
-            "",
-            f"*[Conclusion based on: {conclusion_guidance}]*",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Conclusion",
+                "",
+                f"*[Conclusion based on: {conclusion_guidance}]*",
+                "",
+            ]
+        )
 
     final_report = "\n".join(lines)
 

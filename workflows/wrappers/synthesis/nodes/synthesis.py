@@ -23,9 +23,7 @@ class SectionSuggestion(BaseModel):
     section_id: str = Field(description="Unique identifier for section")
     title: str = Field(description="Section title")
     description: str = Field(description="What this section should cover")
-    key_sources: list[str] = Field(
-        description="Key sources to integrate (DOIs or zotero keys)"
-    )
+    key_sources: list[str] = Field(description="Key sources to integrate (DOIs or zotero keys)")
 
 
 class StructureSuggestion(BaseModel):
@@ -88,8 +86,6 @@ Design a synthesis structure that:
 Provide a title, 4-7 sections with descriptions, and guidance for introduction and conclusion."""
 
 
-
-
 BOOK_SELECTION_PROMPT = """Select the most valuable books for deep integration into the synthesis.
 
 ## Topic
@@ -142,27 +138,29 @@ async def suggest_structure(state: dict) -> dict[str, Any]:
     else:
         lit_review_summary = "No academic literature available."
 
-    web_research_summary = "\n\n".join(
-        f"### Query: {r.get('query', 'Unknown')}\n{r.get('final_report', '')[:2000]}"
-        for r in web_research_results
-        if r.get("status") == "success"
-    )[:8000] or "No web research available."
+    web_research_summary = (
+        "\n\n".join(
+            f"### Query: {r.get('query', 'Unknown')}\n{r.get('final_report', '')[:2000]}"
+            for r in web_research_results
+            if r.get("status") == "success"
+        )[:8000]
+        or "No web research available."
+    )
 
-    book_summary = "\n\n".join(
-        f"### Theme: {r.get('theme', 'Unknown')}\n{r.get('final_report', '')[:2000]}"
-        for r in book_finding_results
-        if r.get("status") == "success"
-    )[:8000] or "No book insights available."
+    book_summary = (
+        "\n\n".join(
+            f"### Theme: {r.get('theme', 'Unknown')}\n{r.get('final_report', '')[:2000]}"
+            for r in book_finding_results
+            if r.get("status") == "success"
+        )[:8000]
+        or "No book insights available."
+    )
 
     logger.info("Phase 4a: Suggesting synthesis structure")
 
     try:
         # Use Opus if quality permits
-        model_tier = (
-            ModelTier.OPUS
-            if quality_settings.get("use_opus_for_structure", True)
-            else ModelTier.SONNET
-        )
+        model_tier = ModelTier.OPUS if quality_settings.get("use_opus_for_structure", True) else ModelTier.SONNET
         llm = get_llm(model_tier, max_tokens=4000)
         llm_structured = llm.with_structured_output(StructureSuggestion)
 
@@ -193,9 +191,7 @@ async def suggest_structure(state: dict) -> dict[str, Any]:
             "conclusion_guidance": result.conclusion_guidance,
         }
 
-        logger.info(
-            f"Structure suggested: '{result.title}' with {len(result.sections)} sections"
-        )
+        logger.info(f"Structure suggested: '{result.title}' with {len(result.sections)} sections")
 
         return {
             "synthesis_structure": synthesis_structure,
@@ -250,17 +246,23 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
     else:
         lit_review_summary = "No academic literature available."
 
-    web_research_summary = "\n\n".join(
-        f"### {r.get('query', 'Query')}\n{r.get('final_report', '')[:3000]}"
-        for r in web_research_results
-        if r.get("status") == "success"
-    )[:10000] or "No web research available."
+    web_research_summary = (
+        "\n\n".join(
+            f"### {r.get('query', 'Query')}\n{r.get('final_report', '')[:3000]}"
+            for r in web_research_results
+            if r.get("status") == "success"
+        )[:10000]
+        or "No web research available."
+    )
 
-    book_summary = "\n\n".join(
-        f"### {r.get('theme', 'Theme')}\n{r.get('final_report', '')[:3000]}"
-        for r in book_finding_results
-        if r.get("status") == "success"
-    )[:10000] or "No book insights available."
+    book_summary = (
+        "\n\n".join(
+            f"### {r.get('theme', 'Theme')}\n{r.get('final_report', '')[:3000]}"
+            for r in book_finding_results
+            if r.get("status") == "success"
+        )[:10000]
+        or "No book insights available."
+    )
 
     logger.info(f"Creating simple synthesis (test mode), target: {target_words} words")
 
@@ -277,11 +279,7 @@ async def simple_synthesis(state: dict) -> dict[str, Any]:
         )
 
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
-        synthesis = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
-        )
+        synthesis = response.content if isinstance(response.content, str) else str(response.content)
 
         logger.info(f"Simple synthesis complete: {len(synthesis)} chars")
 

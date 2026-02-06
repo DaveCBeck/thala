@@ -49,12 +49,7 @@ def _format_zotero_item_as_citation(item: ZoteroItem) -> str:
     date_str = fields.get("date", "")
     year = date_str[:4] if date_str else "n.d."
     title = fields.get("title", "Untitled")
-    publication = (
-        fields.get("publicationTitle")
-        or fields.get("journalAbbreviation")
-        or fields.get("publisher")
-        or ""
-    )
+    publication = fields.get("publicationTitle") or fields.get("journalAbbreviation") or fields.get("publisher") or ""
 
     citation = f"{authors_str} ({year}). {title}."
     if publication:
@@ -153,9 +148,7 @@ async def _lookup_citations(
     return formatted_refs, missing_refs
 
 
-def _build_reference_section(
-    formatted_refs: list[FormattedReference], citation_keys: list[str]
-) -> str:
+def _build_reference_section(formatted_refs: list[FormattedReference], citation_keys: list[str]) -> str:
     """Build a reference section for the citations used in an article."""
     # Filter to only refs that are in this article's citations
     article_refs = [r for r in formatted_refs if r["key"] in citation_keys]

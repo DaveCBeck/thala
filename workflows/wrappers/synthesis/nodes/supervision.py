@@ -70,10 +70,7 @@ async def run_supervision(state: dict) -> dict[str, Any]:
         updated_paper_summaries = result.get("paper_summaries", paper_summaries)
         updated_zotero_keys = result.get("zotero_keys", zotero_keys)
 
-        logger.info(
-            f"Phase 2 complete: status={result.get('status')}, "
-            f"papers_after={len(updated_paper_corpus)}"
-        )
+        logger.info(f"Phase 2 complete: status={result.get('status')}, papers_after={len(updated_paper_corpus)}")
 
         return {
             "supervision_result": result,

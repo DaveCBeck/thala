@@ -3,7 +3,7 @@
 import logging
 import re
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..config import IllustrateConfig
 from ..prompts import ANALYSIS_SYSTEM, ANALYSIS_USER
@@ -48,18 +48,18 @@ async def analyze_document_node(state: IllustrateState) -> dict:
     title = input_data.get("title") or _extract_title_from_markdown(document)
 
     try:
-        analysis = await get_structured_output(
-            output_schema=DocumentAnalysis,
-            user_prompt=ANALYSIS_USER.format(
+        analysis = await invoke(
+            tier=ModelTier.SONNET,
+            system=ANALYSIS_SYSTEM,
+            user=ANALYSIS_USER.format(
                 title=title,
                 document=document,
                 generate_header=config.generate_header_image,
                 additional_count=config.additional_image_count,
                 prefer_pd_header=config.header_prefer_public_domain,
             ),
-            system_prompt=ANALYSIS_SYSTEM,
-            tier=ModelTier.SONNET,
-            max_tokens=4000,
+            schema=DocumentAnalysis,
+            config=InvokeConfig(max_tokens=4000),
         )
 
         # Build image plan list
@@ -77,8 +77,7 @@ async def analyze_document_node(state: IllustrateState) -> dict:
             image_plan.append(plan)
 
         logger.info(
-            f"Document analysis complete: {len(image_plan)} images planned "
-            f"({analysis.analysis_notes[:100]}...)"
+            f"Document analysis complete: {len(image_plan)} images planned ({analysis.analysis_notes[:100]}...)"
         )
 
         return {

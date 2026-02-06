@@ -115,15 +115,10 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         # Clean up any duplicate headers introduced during integration
         duplicates = detect_duplicate_headers(integrated_review)
         if duplicates:
-            logger.info(
-                f"Removing {len(duplicates)} duplicate headers after Loop 1 integration"
-            )
+            logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
             integrated_review = remove_duplicate_headers(integrated_review, duplicates)
 
-        logger.info(
-            f"Integration complete for '{topic}': "
-            f"{len(processed_dois)} papers integrated"
-        )
+        logger.info(f"Integration complete for '{topic}': {len(processed_dois)} papers integrated")
 
         # Call checkpoint callback if provided (N=1 for supervision loops)
         checkpoint_callback = state.get("checkpoint_callback")
@@ -133,7 +128,8 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
                 {
                     "current_review": integrated_review,
                     "iteration": iteration + 1,
-                    "supervision_expansions": state.get("supervision_expansions", []) + [
+                    "supervision_expansions": state.get("supervision_expansions", [])
+                    + [
                         {
                             "iteration": iteration,
                             "topic": topic,

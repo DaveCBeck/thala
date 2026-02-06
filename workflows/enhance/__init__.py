@@ -64,14 +64,15 @@ async def _regenerate_references(document: str) -> str:
     refs_section = _build_reference_section(formatted_refs, citation_keys)
 
     # Strip existing References section (with or without horizontal rule)
-    document = re.sub(r'\n+---\n+## References\n.*$', '', document, flags=re.DOTALL)
-    document = re.sub(r'\n+## References\n.*$', '', document, flags=re.DOTALL)
+    document = re.sub(r"\n+---\n+## References\n.*$", "", document, flags=re.DOTALL)
+    document = re.sub(r"\n+## References\n.*$", "", document, flags=re.DOTALL)
 
     # Append fresh references
     if refs_section:
         return document.rstrip() + refs_section
 
     return document
+
 
 __all__ = [
     "enhance_report",
@@ -220,10 +221,7 @@ async def enhance_report(
             zotero_keys = supervision_result["zotero_keys"]
 
             if supervision_result.get("errors"):
-                errors.extend([
-                    {"phase": "supervision", **err}
-                    for err in supervision_result["errors"]
-                ])
+                errors.extend([{"phase": "supervision", **err} for err in supervision_result["errors"]])
 
             logger.info(
                 f"Supervision complete: loops_run={supervision_result['loops_run']}, "
@@ -255,15 +253,9 @@ async def enhance_report(
             # For now, fact-check will re-detect - can optimize later if needed
 
             if editing_result.get("errors"):
-                errors.extend([
-                    {"phase": "editing", **err}
-                    for err in editing_result["errors"]
-                ])
+                errors.extend([{"phase": "editing", **err} for err in editing_result["errors"]])
 
-            logger.info(
-                f"Editing complete: status={editing_result.get('status')}, "
-                f"report_length={len(current_report)}"
-            )
+            logger.info(f"Editing complete: status={editing_result.get('status')}, report_length={len(current_report)}")
 
         except Exception as e:
             logger.error(f"Editing phase failed: {e}", exc_info=True)
@@ -289,10 +281,7 @@ async def enhance_report(
                     current_report = fact_check_result["final_report"]
 
             if fact_check_result.get("errors"):
-                errors.extend([
-                    {"phase": "fact_check", **err}
-                    for err in fact_check_result["errors"]
-                ])
+                errors.extend([{"phase": "fact_check", **err} for err in fact_check_result["errors"]])
 
             logger.info(
                 f"Fact-check complete: status={fact_check_result.get('status')}, "

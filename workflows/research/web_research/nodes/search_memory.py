@@ -60,9 +60,7 @@ async def search_memory_node(state: DeepResearchState) -> dict[str, Any]:
             results_list = result.get("results", [])
             all_results.extend(results_list)
 
-            logger.debug(
-                f"Memory search for '{query[:30]}...': {len(results_list)} results"
-            )
+            logger.debug(f"Memory search for '{query[:30]}...': {len(results_list)} results")
 
         except Exception as e:
             logger.warning(f"Memory search failed for '{query[:30]}...': {e}")

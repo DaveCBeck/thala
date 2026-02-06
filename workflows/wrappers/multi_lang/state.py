@@ -113,9 +113,7 @@ class MultiLangInput(TypedDict):
 # =============================================================================
 
 
-def merge_language_results(
-    existing: list[LanguageResult], new: list[LanguageResult]
-) -> list[LanguageResult]:
+def merge_language_results(existing: list[LanguageResult], new: list[LanguageResult]) -> list[LanguageResult]:
     """Merge language results, keeping latest by language_code."""
     merged = {r["language_code"]: r for r in existing}
     for result in new:

@@ -7,7 +7,7 @@ import httpx
 
 from core.images import NoResultsError, get_image
 from workflows.shared.image_utils import generate_article_header
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..config import IllustrateConfig
 from ..prompts import HEADER_APPOSITES_SYSTEM, HEADER_APPOSITES_USER
@@ -63,19 +63,18 @@ async def _evaluate_pd_appositeness(
             },
         ]
 
-        result = await get_structured_output(
-            output_schema=HeaderAppositenessResult,
-            user_prompt=content,
-            system_prompt=HEADER_APPOSITES_SYSTEM,
+        result = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=500,
+            system=HEADER_APPOSITES_SYSTEM,
+            user=content,
+            schema=HeaderAppositenessResult,
+            config=InvokeConfig(max_tokens=500),
         )
 
         # Score 3+ means apposite
         is_apposite = result.is_apposite and result.quality_score >= 3
         logger.info(
-            f"Header PD appositeness: {is_apposite} "
-            f"(score={result.quality_score}, reason={result.reasoning[:100]})"
+            f"Header PD appositeness: {is_apposite} (score={result.quality_score}, reason={result.reasoning[:100]})"
         )
         return is_apposite, result.reasoning
 
@@ -143,11 +142,8 @@ async def generate_header_node(state: dict) -> dict:
                             image_bytes=image_bytes,
                             image_type="public_domain",
                             prompt_or_query_used=search_query,
-                            alt_text=pd_result.metadata.alt_text
-                            or pd_result.metadata.description,
-                            attribution=pd_result.attribution.model_dump()
-                            if pd_result.attribution
-                            else None,
+                            alt_text=pd_result.metadata.alt_text or pd_result.metadata.description,
+                            attribution=pd_result.attribution.model_dump() if pd_result.attribution else None,
                         )
                     ]
                 }

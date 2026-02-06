@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..schemas import PlanningOutput
 from ..prompts import EDITORIAL_STANCE_SECTION, PLANNING_SYSTEM_PROMPT, PLANNING_USER_TEMPLATE
@@ -41,12 +41,12 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
     logger.info(f"Planning series with {len(citation_keys)} available citation keys")
 
     try:
-        planning_result: PlanningOutput = await get_structured_output(
-            output_schema=PlanningOutput,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        planning_result: PlanningOutput = await invoke(
             tier=ModelTier.OPUS,
-            max_tokens=4096,
+            system=system_prompt,
+            user=user_prompt,
+            schema=PlanningOutput,
+            config=InvokeConfig(max_tokens=4096),
         )
 
         # Convert to state format
@@ -57,8 +57,7 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
             if len(valid_anchors) < len(dd.anchor_keys):
                 invalid = set(dd.anchor_keys) - set(valid_anchors)
                 logger.warning(
-                    f"Deep-dive {dd.id} has invalid anchor keys: {invalid}. "
-                    f"Using only valid keys: {valid_anchors}"
+                    f"Deep-dive {dd.id} has invalid anchor keys: {invalid}. Using only valid keys: {valid_anchors}"
                 )
 
             deep_dive_assignments.append(
@@ -72,9 +71,7 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
                 )
             )
 
-        logger.info(
-            f"Planned series: {[(dd['title'], dd['structural_approach']) for dd in deep_dive_assignments]}"
-        )
+        logger.info(f"Planned series: {[(dd['title'], dd['structural_approach']) for dd in deep_dive_assignments]}")
 
         return {
             "deep_dive_assignments": deep_dive_assignments,

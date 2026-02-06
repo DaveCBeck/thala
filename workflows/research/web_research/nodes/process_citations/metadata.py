@@ -7,7 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from core.stores.translation_server import TranslationResult
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +16,10 @@ class EnhancedMetadata(BaseModel):
     """Enhanced bibliographic metadata."""
 
     title: str = Field(description="Page/article title")
-    authors: list[str] = Field(
-        default_factory=list, description="Author names in 'First Last' format"
-    )
-    date: Optional[str] = Field(
-        default=None, description="Publication date (YYYY or YYYY-MM-DD)"
-    )
-    publication_title: Optional[str] = Field(
-        default=None, description="Publication/website/journal name"
-    )
-    abstract: Optional[str] = Field(
-        default=None, description="Brief description (1-2 sentences)"
-    )
+    authors: list[str] = Field(default_factory=list, description="Author names in 'First Last' format")
+    date: Optional[str] = Field(default=None, description="Publication date (YYYY or YYYY-MM-DD)")
+    publication_title: Optional[str] = Field(default=None, description="Publication/website/journal name")
+    abstract: Optional[str] = Field(default=None, description="Brief description (1-2 sentences)")
     doi: Optional[str] = Field(default=None, description="DOI if mentioned")
     item_type: str = Field(default="webpage", description="Zotero item type")
 
@@ -87,13 +79,11 @@ async def _enhance_metadata_with_llm(
     content = scraped_content[:6000] if scraped_content else "No content available."
 
     try:
-        result = await get_structured_output(
-            output_schema=EnhancedMetadata,
-            user_prompt=f"Page content:\n{content}",
-            system_prompt=METADATA_ENHANCEMENT_PROMPT.format(
-                translation_json=translation_json
-            ),
+        result = await invoke(
             tier=ModelTier.HAIKU,
+            system=METADATA_ENHANCEMENT_PROMPT.format(translation_json=translation_json),
+            user=f"Page content:\n{content}",
+            schema=EnhancedMetadata,
         )
         return result.model_dump()
     except Exception as e:
@@ -104,8 +94,7 @@ async def _enhance_metadata_with_llm(
                 "title": translation_result.title or url,
                 "authors": [c.to_full_name() for c in translation_result.creators],
                 "date": translation_result.date,
-                "publication_title": translation_result.publication_title
-                or translation_result.website_title,
+                "publication_title": translation_result.publication_title or translation_result.website_title,
                 "abstract": translation_result.abstract_note,
                 "doi": translation_result.doi,
                 "item_type": translation_result.item_type,

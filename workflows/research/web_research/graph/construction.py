@@ -60,9 +60,7 @@ def create_deep_research_graph():
 
     # Entry flow
     builder.add_edge(START, "clarify_intent")
-    builder.add_conditional_edges(
-        "clarify_intent", route_after_clarify, ["create_brief"]
-    )
+    builder.add_conditional_edges("clarify_intent", route_after_clarify, ["create_brief"])
     builder.add_edge("create_brief", "search_memory")
     builder.add_edge("search_memory", "iterate_plan")
     builder.add_edge("iterate_plan", "supervisor")

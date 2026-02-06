@@ -151,15 +151,9 @@ async def enhance_report(
         final_state = await graph.ainvoke(initial_state)
 
     # Extract loops that were run from progress
-    loops_run = [
-        entry.get("loop", "unknown")
-        for entry in final_state.get("loop_progress", [])
-    ]
+    loops_run = [entry.get("loop", "unknown") for entry in final_state.get("loop_progress", [])]
 
-    logger.info(
-        f"Enhancement complete: loops_run={loops_run}, "
-        f"final_length={len(final_state.get('final_review', ''))}"
-    )
+    logger.info(f"Enhancement complete: loops_run={loops_run}, final_length={len(final_state.get('final_review', ''))}")
 
     return EnhanceResult(
         final_report=final_state.get("final_review", report),

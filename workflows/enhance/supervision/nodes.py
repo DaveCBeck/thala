@@ -56,21 +56,25 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
                 "changes_summary": result.changes_summary,
                 "issues_explored": result.issues_explored,
             },
-            "loop_progress": [{
-                "loop": "loop1",
-                "changes_summary": result.changes_summary,
-                "issues_explored": result.issues_explored,
-            }],
+            "loop_progress": [
+                {
+                    "loop": "loop1",
+                    "changes_summary": result.changes_summary,
+                    "issues_explored": result.issues_explored,
+                }
+            ],
         }
 
     except Exception as e:
         logger.error(f"Loop 1 failed: {e}")
         return {
             "review_loop1": current_review,  # Keep original on failure
-            "errors": [{
-                "loop": "loop1",
-                "error": str(e),
-            }],
+            "errors": [
+                {
+                    "loop": "loop1",
+                    "error": str(e),
+                }
+            ],
         }
 
 
@@ -135,22 +139,26 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
                 "iteration": result.get("iteration", 0),
                 "errors": result.get("errors", []),
             },
-            "loop_progress": [{
-                "loop": "loop2",
-                "explored_bases": result.get("explored_bases", []),
-                "iteration": result.get("iteration", 0),
-                "errors": result.get("errors", []),
-            }],
+            "loop_progress": [
+                {
+                    "loop": "loop2",
+                    "explored_bases": result.get("explored_bases", []),
+                    "iteration": result.get("iteration", 0),
+                    "errors": result.get("errors", []),
+                }
+            ],
         }
 
     except Exception as e:
         logger.error(f"Loop 2 failed: {e}")
         return {
             "review_loop2": current_review,  # Keep current on failure
-            "errors": [{
-                "loop": "loop2",
-                "error": str(e),
-            }],
+            "errors": [
+                {
+                    "loop": "loop2",
+                    "error": str(e),
+                }
+            ],
         }
 
 

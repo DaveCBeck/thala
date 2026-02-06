@@ -7,7 +7,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Zotero citation pattern: [@8ALPHANUMERIC]
-ZOTERO_CITATION_PATTERN = re.compile(r'\[@([A-Za-z0-9]{8})\]')
+ZOTERO_CITATION_PATTERN = re.compile(r"\[@([A-Za-z0-9]{8})\]")
 
 
 def extract_citation_keys(text: str) -> list[str]:
@@ -49,6 +49,7 @@ async def detect_citations_node(state: dict) -> dict[str, Any]:
     # If we have a document model dict, render to markdown
     if isinstance(document_model, dict) and "sections" in document_model:
         from workflows.enhance.editing.document_model import DocumentModel
+
         doc = DocumentModel.from_dict(document_model)
         text = doc.to_markdown()
     else:
@@ -61,15 +62,11 @@ async def detect_citations_node(state: dict) -> dict[str, Any]:
 
     if has_citations:
         logger.info(
-            f"Detected {len(citation_keys)} unique citations in document. "
-            f"Enhancement and verification phases will run."
+            f"Detected {len(citation_keys)} unique citations in document. Enhancement and verification phases will run."
         )
         logger.debug(f"Citation keys: {citation_keys[:10]}{'...' if len(citation_keys) > 10 else ''}")
     else:
-        logger.info(
-            "No Zotero citations detected in document. "
-            "Skipping enhancement and verification phases."
-        )
+        logger.info("No Zotero citations detected in document. Skipping enhancement and verification phases.")
 
     return {
         "has_citations": has_citations,

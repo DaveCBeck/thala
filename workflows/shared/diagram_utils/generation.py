@@ -6,7 +6,7 @@ and generating SVG diagrams using Claude.
 
 import logging
 
-from ..llm_utils import ModelTier, get_llm, get_structured_output
+from ..llm_utils import ModelTier, get_llm, invoke, InvokeConfig
 from .prompts import (
     DIAGRAM_ANALYSIS_SYSTEM,
     DIAGRAM_ANALYSIS_USER,
@@ -40,14 +40,14 @@ async def analyze_content_for_diagram(
     truncated_content = content[:8000] if len(content) > 8000 else content
 
     try:
-        result = await get_structured_output(
-            output_schema=DiagramAnalysis,
-            user_prompt=DIAGRAM_ANALYSIS_USER.format(
+        result = await invoke(
+            tier=tier,
+            system=DIAGRAM_ANALYSIS_SYSTEM,
+            user=DIAGRAM_ANALYSIS_USER.format(
                 title=title, content=truncated_content
             ),
-            system_prompt=DIAGRAM_ANALYSIS_SYSTEM,
-            tier=tier,
-            max_tokens=1000,
+            schema=DiagramAnalysis,
+            config=InvokeConfig(max_tokens=1000),
         )
         logger.info(
             f"Diagram analysis for '{title}': "
@@ -229,17 +229,17 @@ async def parse_instructions_to_analysis(
         DiagramAnalysis with should_generate=True, or None on failure
     """
     try:
-        result = await get_structured_output(
-            output_schema=DiagramAnalysis,
-            user_prompt=f"""Parse these diagram instructions into structured components:
+        result = await invoke(
+            tier=tier,
+            system=INSTRUCTIONS_PARSE_SYSTEM,
+            user=f"""Parse these diagram instructions into structured components:
 
 INSTRUCTIONS:
 {instructions}
 
 Extract the diagram type, title, key elements, and relationships.""",
-            system_prompt=INSTRUCTIONS_PARSE_SYSTEM,
-            tier=tier,
-            max_tokens=1000,
+            schema=DiagramAnalysis,
+            config=InvokeConfig(max_tokens=1000),
         )
         # Custom instructions always mean we should generate
         result.should_generate = True

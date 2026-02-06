@@ -92,9 +92,7 @@ async def deep_research(
 
     # Determine primary language
     primary_lang = language or "en"
-    primary_lang_config = (
-        get_language_config(primary_lang) if primary_lang != "en" else None
-    )
+    primary_lang_config = get_language_config(primary_lang) if primary_lang != "en" else None
 
     initial_state: DeepResearchState = {
         "input": {

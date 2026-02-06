@@ -91,9 +91,7 @@ async def _search_single_book(
     pdf_books = [b for b in unique_results if b.get("format", "").lower() == "pdf"]
     best_book = pdf_books[0] if pdf_books else unique_results[0]
 
-    logger.debug(
-        f"Matched '{recommendation_title}' to '{best_book.get('title', 'Unknown')}'"
-    )
+    logger.debug(f"Matched '{recommendation_title}' to '{best_book.get('title', 'Unknown')}'")
 
     return BookResult(
         title=best_book.get("title", ""),
@@ -129,9 +127,7 @@ async def search_books(state: dict) -> dict[str, Any]:
     language_config = state.get("language_config")
     language = language_config.get("code") if language_config else None
 
-    logger.debug(
-        f"Searching for {len(all_recommendations)} book recommendations (language: {language})"
-    )
+    logger.debug(f"Searching for {len(all_recommendations)} book recommendations (language: {language})")
 
     # Limit concurrency to avoid overwhelming the service
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
@@ -169,8 +165,6 @@ async def search_books(state: dict) -> dict[str, Any]:
 
             results.append(book)
 
-    logger.info(
-        f"Book search complete: found {len(results)}/{len(all_recommendations)} books"
-    )
+    logger.info(f"Book search complete: found {len(results)}/{len(all_recommendations)} books")
 
     return {"search_results": results}

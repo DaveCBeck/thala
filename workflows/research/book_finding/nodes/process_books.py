@@ -42,9 +42,7 @@ async def _process_single_book(
     try:
         # Only process PDFs for now
         if book["format"].lower() != "pdf":
-            logger.debug(
-                f"Skipping non-PDF: '{book['title']}' (format: {book['format']})"
-            )
+            logger.debug(f"Skipping non-PDF: '{book['title']}' (format: {book['format']})")
             return None, book["title"]
 
         # Download PDF to temporary location
@@ -82,10 +80,7 @@ async def _process_single_book(
             )
 
             if not result["success"]:
-                logger.warning(
-                    f"Document processing failed for '{book['title']}': "
-                    f"{result.get('errors', [])}"
-                )
+                logger.warning(f"Document processing failed for '{book['title']}': {result.get('errors', [])}")
                 return None, book["title"]
 
             # Create updated book with new fields from document_processing
@@ -108,10 +103,7 @@ async def _process_single_book(
                 store_records=result.get("store_records"),
             )
 
-            logger.info(
-                f"Successfully processed '{book['title']}' "
-                f"(zotero_key={result.get('zotero_key')})"
-            )
+            logger.info(f"Successfully processed '{book['title']}' (zotero_key={result.get('zotero_key')})")
             return updated_book, None
 
         finally:
@@ -143,10 +135,7 @@ async def process_books(state: dict) -> dict[str, Any]:
         logger.warning("No books to process")
         return {"processed_books": [], "processing_failed": []}
 
-    logger.info(
-        f"Processing {len(books)} books with max_concurrent="
-        f"{quality_settings['max_concurrent_downloads']}"
-    )
+    logger.info(f"Processing {len(books)} books with max_concurrent={quality_settings['max_concurrent_downloads']}")
 
     # Process books with limited concurrency based on quality settings
     max_concurrent = quality_settings["max_concurrent_downloads"]

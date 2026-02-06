@@ -46,9 +46,7 @@ def _extract_citations(text: str) -> list[str]:
     return sorted(keys)
 
 
-def _extract_relevant_sections(
-    lit_review: str, section_names: list[str], max_chars: int = 20000
-) -> str:
+def _extract_relevant_sections(lit_review: str, section_names: list[str], max_chars: int = 20000) -> str:
     """Extract sections from the literature review that match the given names.
 
     Falls back to returning a truncated version if no sections match.
@@ -57,9 +55,7 @@ def _extract_relevant_sections(
         # No sections specified, return truncated review
         result = lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
         if len(lit_review) > max_chars:
-            logger.warning(
-                f"No sections specified; truncated lit review from {len(lit_review)} to {max_chars} chars"
-            )
+            logger.warning(f"No sections specified; truncated lit review from {len(lit_review)} to {max_chars} chars")
         return result
 
     # Try to find markdown headers matching the section names
@@ -77,9 +73,7 @@ def _extract_relevant_sections(
             header_text = header_match.group(2).strip()
 
             # Check if this header matches any of our section names
-            matches_section = any(
-                section.lower() in header_text.lower() for section in section_names
-            )
+            matches_section = any(section.lower() in header_text.lower() for section in section_names)
 
             if matches_section:
                 in_relevant_section = True
@@ -98,25 +92,17 @@ def _extract_relevant_sections(
         excerpt = "\n".join(relevant_lines)
         original_len = len(excerpt)
         if original_len > max_chars:
-            logger.warning(
-                f"Truncating lit review excerpt from {original_len} to {max_chars} chars"
-            )
+            logger.warning(f"Truncating lit review excerpt from {original_len} to {max_chars} chars")
             excerpt = excerpt[:max_chars] + "\n\n[... truncated ...]"
-        logger.info(
-            f"Extracted {len(excerpt)} chars from {len(matched_headers)} sections: {matched_headers}"
-        )
+        logger.info(f"Extracted {len(excerpt)} chars from {len(matched_headers)} sections: {matched_headers}")
         return excerpt
 
     # Fallback: return truncated full review
     result = lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
     if len(lit_review) > max_chars:
-        logger.warning(
-            f"No matching sections found; truncated full review from {len(lit_review)} to {max_chars} chars"
-        )
+        logger.warning(f"No matching sections found; truncated full review from {len(lit_review)} to {max_chars} chars")
     else:
-        logger.info(
-            f"No matching sections found; returning full review ({len(lit_review)} chars)"
-        )
+        logger.info(f"No matching sections found; returning full review ({len(lit_review)} chars)")
     return result
 
 
@@ -138,9 +124,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     Returns:
         State update with deep_dive_drafts list (aggregated via add reducer)
     """
-    deep_dive_id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"] = state.get(
-        "deep_dive_id"
-    )
+    deep_dive_id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"] = state.get("deep_dive_id")
     title = state.get("title", "Untitled")
     theme = state.get("theme", "")
     structural_approach = state.get("structural_approach", "puzzle")
@@ -151,39 +135,24 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     editorial_stance = state.get("editorial_stance", "")
 
     if not deep_dive_id:
-        return {
-            "errors": [{"node": "write_deep_dive", "error": "Missing deep_dive_id"}]
-        }
+        return {"errors": [{"node": "write_deep_dive", "error": "Missing deep_dive_id"}]}
 
     # Build source content from enriched content for this deep-dive
     source_parts = []
     for ec in enriched_content:
         if ec["deep_dive_id"] == deep_dive_id:
-            source_parts.append(
-                f"## Source: {ec['zotero_key']} ({ec['content_level']})\n\n"
-                f"{ec['content']}"
-            )
+            source_parts.append(f"## Source: {ec['zotero_key']} ({ec['content_level']})\n\n{ec['content']}")
 
-    source_content = (
-        "\n\n---\n\n".join(source_parts)
-        if source_parts
-        else "[No source content available]"
-    )
+    source_content = "\n\n---\n\n".join(source_parts) if source_parts else "[No source content available]"
 
     # Extract relevant sections from the literature review
     lit_review_excerpt = _extract_relevant_sections(lit_review, relevant_sections)
 
     # Build must_avoid string
-    must_avoid_str = (
-        "\n".join(f"- {item}" for item in must_avoid)
-        if must_avoid
-        else "None specified"
-    )
+    must_avoid_str = "\n".join(f"- {item}" for item in must_avoid) if must_avoid else "None specified"
 
     # Select prompt based on structural approach
-    prompt_template = STRUCTURAL_PROMPTS.get(
-        structural_approach, STRUCTURAL_PROMPTS["puzzle"]
-    )
+    prompt_template = STRUCTURAL_PROMPTS.get(structural_approach, STRUCTURAL_PROMPTS["puzzle"])
 
     # Format system prompt with assignment details
     system_prompt = prompt_template.format(
@@ -216,18 +185,11 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
             ]
         )
 
-        content = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
-        )
+        content = response.content if isinstance(response.content, str) else str(response.content)
         word_count = len(content.split())
         citation_keys = _extract_citations(content)
 
-        logger.info(
-            f"Generated deep-dive {deep_dive_id}: {word_count} words, "
-            f"{len(citation_keys)} citations"
-        )
+        logger.info(f"Generated deep-dive {deep_dive_id}: {word_count} words, {len(citation_keys)} citations")
 
         draft = DeepDiveDraft(
             id=deep_dive_id,
@@ -241,8 +203,4 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to write deep-dive {deep_dive_id}: {e}")
-        return {
-            "errors": [
-                {"node": f"write_deep_dive_{deep_dive_id}", "error": str(e)}
-            ]
-        }
+        return {"errors": [{"node": f"write_deep_dive_{deep_dive_id}", "error": str(e)}]}

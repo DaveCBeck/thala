@@ -33,9 +33,9 @@ def _normalize_heading(text: str) -> str:
     """
     text = text.lower()
     # Strip leading section/chapter numbers: "1.", "1.2.", "Chapter 1:", "Section 2.3"
-    text = re.sub(r'^(?:chapter|section)?\s*[\d.]+[.:)]*\s*', '', text)
+    text = re.sub(r"^(?:chapter|section)?\s*[\d.]+[.:)]*\s*", "", text)
     # Remove remaining non-alphabetic characters
-    return re.sub(r'[^a-z]', '', text)
+    return re.sub(r"[^a-z]", "", text)
 
 
 def _strip_leading_header(content: str, section_heading: str | None = None) -> str:
@@ -50,7 +50,7 @@ def _strip_leading_header(content: str, section_heading: str | None = None) -> s
     this removes it to avoid breaking document structure.
     """
     # Match markdown header at start of content
-    header_match = re.match(r'^(#{1,6})\s+(.+?)(?:\n|$)', content.strip())
+    header_match = re.match(r"^(#{1,6})\s+(.+?)(?:\n|$)", content.strip())
     if not header_match:
         return content
 
@@ -58,12 +58,12 @@ def _strip_leading_header(content: str, section_heading: str | None = None) -> s
 
     # If no section_heading provided, strip any header unconditionally
     if section_heading is None:
-        stripped = content.strip()[header_match.end():].lstrip('\n')
+        stripped = content.strip()[header_match.end() :].lstrip("\n")
         return stripped
 
     # Otherwise only strip if it matches the section heading
     if _normalize_heading(header_text) == _normalize_heading(section_heading):
-        stripped = content.strip()[header_match.end():].lstrip('\n')
+        stripped = content.strip()[header_match.end() :].lstrip("\n")
         return stripped
 
     return content
@@ -83,9 +83,7 @@ class ContentBlock:
     word_count: int
 
     @classmethod
-    def from_content(
-        cls, content: str, block_type: str = "paragraph"
-    ) -> "ContentBlock":
+    def from_content(cls, content: str, block_type: str = "paragraph") -> "ContentBlock":
         """Create block with content-derived stable ID."""
         content_hash = hashlib.sha256(content[:200].encode()).hexdigest()[:12]
         return cls(
@@ -136,9 +134,7 @@ class Section:
     parent_id: str | None = None
 
     @classmethod
-    def from_heading(
-        cls, heading: str, level: int, parent_id: str | None = None
-    ) -> "Section":
+    def from_heading(cls, heading: str, level: int, parent_id: str | None = None) -> "Section":
         """Create section with heading-derived stable ID."""
         heading_hash = hashlib.sha256(f"{level}:{heading}".encode()).hexdigest()[:12]
         return cls(
@@ -218,9 +214,7 @@ class Section:
             parent_id=data.get("parent_id"),
         )
         section.blocks = [ContentBlock.from_dict(b) for b in data.get("blocks", [])]
-        section.subsections = [
-            Section.from_dict(s) for s in data.get("subsections", [])
-        ]
+        section.subsections = [Section.from_dict(s) for s in data.get("subsections", [])]
         return section
 
 
@@ -238,9 +232,7 @@ class DocumentModel:
 
     # Indexes built on init
     _section_index: dict[str, Section] = field(default_factory=dict, repr=False)
-    _block_index: dict[str, tuple[ContentBlock, str]] = field(
-        default_factory=dict, repr=False
-    )
+    _block_index: dict[str, tuple[ContentBlock, str]] = field(default_factory=dict, repr=False)
     # block_id -> (block, parent_section_id or "__preamble__")
 
     def __post_init__(self):
@@ -280,9 +272,7 @@ class DocumentModel:
         section = self.get_section(section_id)
         while section:
             path.insert(0, section.heading)
-            section = (
-                self.get_section(section.parent_id) if section.parent_id else None
-            )
+            section = self.get_section(section.parent_id) if section.parent_id else None
         return path
 
     def get_all_sections(self) -> list[Section]:
@@ -341,9 +331,7 @@ class DocumentModel:
         model = cls(
             title=data.get("title", ""),
             sections=[Section.from_dict(s) for s in data.get("sections", [])],
-            preamble_blocks=[
-                ContentBlock.from_dict(b) for b in data.get("preamble_blocks", [])
-            ],
+            preamble_blocks=[ContentBlock.from_dict(b) for b in data.get("preamble_blocks", [])],
         )
         return model
 
@@ -406,16 +394,14 @@ class DocumentModel:
         def render_section(section: Section, indent: int = 0):
             prefix = "  " * indent
             lines.append(
-                f'{prefix}<section id="{section.section_id}" '
-                f'level="{section.level}" words="{section.total_words}">'
+                f'{prefix}<section id="{section.section_id}" level="{section.level}" words="{section.total_words}">'
             )
             lines.append(f"{prefix}  <heading>{section.heading}</heading>")
 
             if section.blocks:
                 for block in section.blocks:
                     lines.append(
-                        f'{prefix}  <block id="{block.block_id}" '
-                        f'type="{block.block_type}" words="{block.word_count}">'
+                        f'{prefix}  <block id="{block.block_id}" type="{block.block_type}" words="{block.word_count}">'
                     )
                     # Truncate very long blocks for analysis
                     content = block.content
@@ -608,10 +594,7 @@ class DocumentModel:
             # Score each duplicate: prefer more words, more citations
             def score_section(sec: Section) -> tuple[int, int]:
                 words = sec.total_words
-                citations = sum(
-                    block.content.count('[@') + block.content.count('](')
-                    for block in sec.blocks
-                )
+                citations = sum(block.content.count("[@") + block.content.count("](") for block in sec.blocks)
                 return (words, citations)
 
             # Sort by score descending, keep the best
@@ -619,12 +602,9 @@ class DocumentModel:
             scored.sort(key=lambda x: x[0], reverse=True)
 
             # Keep first (best), mark rest for removal
-            for (score, idx, sec) in scored[1:]:
+            for score, idx, sec in scored[1:]:
                 indices_to_remove.append(idx)
-                removed.append(
-                    f"Removed duplicate '{sec.heading}' "
-                    f"({sec.total_words} words, score={score})"
-                )
+                removed.append(f"Removed duplicate '{sec.heading}' ({sec.total_words} words, score={score})")
 
         # Remove in reverse order to preserve indices
         for idx in sorted(indices_to_remove, reverse=True):
@@ -689,13 +669,9 @@ class DocumentTransaction:
 
     def __post_init__(self):
         # Create a working copy for modifications
-        self._working_copy = DocumentModel.from_dict(
-            copy.deepcopy(self._original_model.to_dict())
-        )
+        self._working_copy = DocumentModel.from_dict(copy.deepcopy(self._original_model.to_dict()))
 
-    def insert_section_after(
-        self, after_section_id: str, new_section: Section
-    ) -> bool:
+    def insert_section_after(self, after_section_id: str, new_section: Section) -> bool:
         """Insert a new section after the specified section.
 
         Returns True if successful.
@@ -704,11 +680,13 @@ class DocumentTransaction:
         for i, section in enumerate(self._working_copy.sections):
             if section.section_id == after_section_id:
                 self._working_copy.sections.insert(i + 1, new_section)
-                self._operations.append({
-                    "type": "insert_section",
-                    "after": after_section_id,
-                    "section_id": new_section.section_id,
-                })
+                self._operations.append(
+                    {
+                        "type": "insert_section",
+                        "after": after_section_id,
+                        "section_id": new_section.section_id,
+                    }
+                )
                 self._working_copy._build_indexes()
                 return True
             # Check subsections recursively
@@ -716,36 +694,36 @@ class DocumentTransaction:
 
         return False
 
-    def insert_block_at_end(
-        self, section_id: str, block: ContentBlock
-    ) -> bool:
+    def insert_block_at_end(self, section_id: str, block: ContentBlock) -> bool:
         """Insert a block at the end of a section."""
         section = self._working_copy.get_section(section_id)
         if section:
             section.blocks.append(block)
-            self._operations.append({
-                "type": "insert_block",
-                "section_id": section_id,
-                "block_id": block.block_id,
-                "position": "end",
-            })
+            self._operations.append(
+                {
+                    "type": "insert_block",
+                    "section_id": section_id,
+                    "block_id": block.block_id,
+                    "position": "end",
+                }
+            )
             self._working_copy._build_indexes()
             return True
         return False
 
-    def insert_block_at_start(
-        self, section_id: str, block: ContentBlock
-    ) -> bool:
+    def insert_block_at_start(self, section_id: str, block: ContentBlock) -> bool:
         """Insert a block at the start of a section."""
         section = self._working_copy.get_section(section_id)
         if section:
             section.blocks.insert(0, block)
-            self._operations.append({
-                "type": "insert_block",
-                "section_id": section_id,
-                "block_id": block.block_id,
-                "position": "start",
-            })
+            self._operations.append(
+                {
+                    "type": "insert_block",
+                    "section_id": section_id,
+                    "block_id": block.block_id,
+                    "position": "start",
+                }
+            )
             self._working_copy._build_indexes()
             return True
         return False
@@ -755,10 +733,12 @@ class DocumentTransaction:
         for i, section in enumerate(self._working_copy.sections):
             if section.section_id == section_id:
                 del self._working_copy.sections[i]
-                self._operations.append({
-                    "type": "delete_section",
-                    "section_id": section_id,
-                })
+                self._operations.append(
+                    {
+                        "type": "delete_section",
+                        "section_id": section_id,
+                    }
+                )
                 self._working_copy._build_indexes()
                 return True
         return False
@@ -774,10 +754,12 @@ class DocumentTransaction:
             for i, b in enumerate(self._working_copy.preamble_blocks):
                 if b.block_id == block_id:
                     del self._working_copy.preamble_blocks[i]
-                    self._operations.append({
-                        "type": "delete_block",
-                        "block_id": block_id,
-                    })
+                    self._operations.append(
+                        {
+                            "type": "delete_block",
+                            "block_id": block_id,
+                        }
+                    )
                     self._working_copy._build_indexes()
                     return True
         else:
@@ -786,10 +768,12 @@ class DocumentTransaction:
                 for i, b in enumerate(section.blocks):
                     if b.block_id == block_id:
                         del section.blocks[i]
-                        self._operations.append({
-                            "type": "delete_block",
-                            "block_id": block_id,
-                        })
+                        self._operations.append(
+                            {
+                                "type": "delete_block",
+                                "block_id": block_id,
+                            }
+                        )
                         self._working_copy._build_indexes()
                         return True
         return False
@@ -811,9 +795,7 @@ class DocumentTransaction:
                 for block in section.blocks:
                     # Check if block looks like non-citation content
                     if len(block.content) > 500 and not block.content.strip().startswith("["):
-                        issues.append(
-                            f"Large non-citation content in '{section.heading}'"
-                        )
+                        issues.append(f"Large non-citation content in '{section.heading}'")
 
         # Check for orphaned sections (no content)
         for section in self._working_copy.get_all_sections():

@@ -142,7 +142,9 @@ Do NOT refer to yourself as the writer.
 Each section should be thorough - users expect depth.
 """
 
-FINAL_REPORT_HUMAN = """Generate the final research report now. Make it genuinely useful and insightful for this specific user."""
+FINAL_REPORT_HUMAN = (
+    """Generate the final research report now. Make it genuinely useful and insightful for this specific user."""
+)
 
 REFINE_DRAFT_SYSTEM = """Refine the draft report based on new research findings.
 

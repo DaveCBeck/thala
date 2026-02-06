@@ -83,9 +83,7 @@ def sync_after_generation(state: IllustrateState) -> dict:
     """Synchronization barrier after all generations complete."""
     generation_results = state.get("generation_results", [])
     successful = sum(1 for r in generation_results if r["success"])
-    logger.info(
-        f"Generation sync: {successful}/{len(generation_results)} successful"
-    )
+    logger.info(f"Generation sync: {successful}/{len(generation_results)} successful")
     return {}
 
 
@@ -147,10 +145,7 @@ def sync_after_review(state: IllustrateState) -> dict:
     for loc_id in pending_retries:
         retry_count[loc_id] = retry_count.get(loc_id, 0) + 1
 
-    logger.info(
-        f"Review sync: {passed}/{len(review_results)} passed, "
-        f"{len(pending_retries)} pending retries"
-    )
+    logger.info(f"Review sync: {passed}/{len(review_results)} passed, {len(pending_retries)} pending retries")
 
     return {"retry_count": retry_count}
 
@@ -169,11 +164,7 @@ def route_after_review(state: IllustrateState) -> list[Send] | str:
     document = state["input"]["markdown_document"]
 
     # Filter to retries within limit
-    eligible_retries = [
-        loc_id
-        for loc_id in pending_retries
-        if retry_count.get(loc_id, 0) <= config.max_retries
-    ]
+    eligible_retries = [loc_id for loc_id in pending_retries if retry_count.get(loc_id, 0) <= config.max_retries]
 
     if not eligible_retries:
         logger.info("No eligible retries, going to finalize")

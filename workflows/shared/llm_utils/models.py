@@ -135,9 +135,7 @@ def get_llm(
 
     if thinking_budget is not None:
         if thinking_budget >= max_tokens:
-            raise ValueError(
-                f"thinking_budget ({thinking_budget}) must be less than max_tokens ({max_tokens})"
-            )
+            raise ValueError(f"thinking_budget ({thinking_budget}) must be less than max_tokens ({max_tokens})")
         kwargs["thinking"] = {
             "type": "enabled",
             "budget_tokens": thinking_budget,

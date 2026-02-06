@@ -11,7 +11,7 @@ from workflows.enhance.editing.prompts import (
     STRUCTURE_ANALYSIS_SYSTEM,
     STRUCTURE_ANALYSIS_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +30,7 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
         State update with structural_analysis
     """
     # Use updated document model if available (from previous iterations)
-    document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
-    )
+    document_model = DocumentModel.from_dict(state.get("updated_document_model", state["document_model"]))
     topic = state["input"]["topic"]
     iteration = state.get("structure_iteration", 0)
     max_iterations = state.get("max_structure_iterations", 3)
@@ -63,20 +61,20 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
     )
 
     logger.info(
-        f"Analyzing structure (iteration {iteration + 1}/{max_iterations}), "
-        f"doc: {document_model.total_words} words"
+        f"Analyzing structure (iteration {iteration + 1}/{max_iterations}), doc: {document_model.total_words} words"
     )
 
     try:
-        analysis = await get_structured_output(
-            output_schema=StructuralAnalysis,
-            user_prompt=user_prompt,
-            system_prompt=STRUCTURE_ANALYSIS_SYSTEM,
+        analysis = await invoke(
             tier=ModelTier.OPUS if use_opus else ModelTier.SONNET,
-            thinking_budget=thinking_budget if use_opus else None,
-            max_tokens=8000,
-            use_json_schema_method=True,
-            max_retries=2,
+            system=STRUCTURE_ANALYSIS_SYSTEM,
+            user=user_prompt,
+            schema=StructuralAnalysis,
+            config=InvokeConfig(
+                max_tokens=8000,
+                thinking_budget=thinking_budget if use_opus else None,
+                cache=False if thinking_budget else True,
+            ),
         )
 
         logger.info(
@@ -89,10 +87,7 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
         # Log issues at appropriate levels with full details for debugging
         for issue in analysis.issues:
             log_fn = logger.warning if issue.severity in ("critical", "major") else logger.debug
-            log_fn(
-                f"Issue {issue.issue_id} ({issue.issue_type}, {issue.severity}): "
-                f"{issue.description[:100]}"
-            )
+            log_fn(f"Issue {issue.issue_id} ({issue.issue_type}, {issue.severity}): {issue.description[:100]}")
             # Always log full issue details at DEBUG level for troubleshooting
             logger.debug(
                 f"  Issue {issue.issue_id} details: "
@@ -105,10 +100,7 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
         # Store baseline coherence on first iteration for regression detection
         baseline_update = {}
         if iteration == 0:
-            baseline_coherence = (
-                analysis.narrative_coherence_score +
-                analysis.section_organization_score
-            ) / 2
+            baseline_coherence = (analysis.narrative_coherence_score + analysis.section_organization_score) / 2
             baseline_update["baseline_coherence_score"] = baseline_coherence
             logger.info(f"Baseline coherence captured: {baseline_coherence:.2f}")
 

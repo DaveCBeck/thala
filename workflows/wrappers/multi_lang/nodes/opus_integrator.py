@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.wrappers.multi_lang.prompts.integration import (
     INITIAL_SYNTHESIS_SYSTEM,
     INITIAL_SYNTHESIS_USER,
@@ -25,28 +25,20 @@ logger = logging.getLogger(__name__)
 class InitialSynthesisOutput(BaseModel):
     """Structured output from initial synthesis creation."""
 
-    synthesis_document: str = Field(
-        description="The initial synthesis document from English findings"
-    )
+    synthesis_document: str = Field(description="The initial synthesis document from English findings")
 
 
 class IntegrationOutput(BaseModel):
     """Structured output from integrating one language."""
 
-    updated_document: str = Field(
-        description="The synthesis document with new language integrated"
-    )
-    enhancement_notes: str = Field(
-        description="What was added or changed during integration"
-    )
+    updated_document: str = Field(description="The synthesis document with new language integrated")
+    enhancement_notes: str = Field(description="What was added or changed during integration")
 
 
 class FinalEnhancementOutput(BaseModel):
     """Structured output from final document enhancement."""
 
-    finalized_document: str = Field(
-        description="The polished, finalized synthesis document"
-    )
+    finalized_document: str = Field(description="The polished, finalized synthesis document")
 
 
 async def _create_initial_synthesis(
@@ -57,28 +49,22 @@ async def _create_initial_synthesis(
     """Create the initial synthesis document from English findings."""
     logger.debug("Creating initial synthesis from English findings")
 
-    questions_formatted = (
-        "\n".join(f"- {q}" for q in research_questions)
-        if research_questions
-        else "None specified"
-    )
+    questions_formatted = "\n".join(f"- {q}" for q in research_questions) if research_questions else "None specified"
 
     # Use full_report to preserve citation keys like [@ABC123]
-    english_findings = (
-        english_result.get("full_report") or english_result["findings_summary"]
-    )
+    english_findings = english_result.get("full_report") or english_result["findings_summary"]
     user_prompt = INITIAL_SYNTHESIS_USER.format(
         topic=topic,
         research_questions=questions_formatted,
         english_findings=english_findings,
     )
 
-    result: InitialSynthesisOutput = await get_structured_output(
-        output_schema=InitialSynthesisOutput,
-        user_prompt=user_prompt,
-        system_prompt=INITIAL_SYNTHESIS_SYSTEM,
+    result: InitialSynthesisOutput = await invoke(
         tier=ModelTier.OPUS,
-        max_tokens=64000,
+        system=INITIAL_SYNTHESIS_SYSTEM,
+        user=user_prompt,
+        schema=InitialSynthesisOutput,
+        config=InvokeConfig(max_tokens=64000),
     )
 
     return result.synthesis_document
@@ -99,9 +85,7 @@ async def _integrate_language(
 
     system_prompt = INTEGRATION_SYSTEM.format(language_name=language_name)
     # Use full_report to preserve citation keys like [@ABC123]
-    language_findings = (
-        language_result.get("full_report") or language_result["findings_summary"]
-    )
+    language_findings = language_result.get("full_report") or language_result["findings_summary"]
     user_prompt = INTEGRATION_USER.format(
         current_document=current_document,
         language_name=language_name,
@@ -110,12 +94,12 @@ async def _integrate_language(
     )
 
     # Note: thinking_budget cannot be used with batch API + tool_choice
-    result: IntegrationOutput = await get_structured_output(
-        output_schema=IntegrationOutput,
-        user_prompt=user_prompt,
-        system_prompt=system_prompt,
+    result: IntegrationOutput = await invoke(
         tier=ModelTier.OPUS,
-        max_tokens=64000,
+        system=system_prompt,
+        user=user_prompt,
+        schema=IntegrationOutput,
+        config=InvokeConfig(max_tokens=64000),
     )
 
     integration_step: OpusIntegrationStep = {
@@ -153,12 +137,12 @@ async def _finalize_synthesis(
         integration_notes=integration_notes_formatted,
     )
 
-    result: FinalEnhancementOutput = await get_structured_output(
-        output_schema=FinalEnhancementOutput,
-        user_prompt=user_prompt,
-        system_prompt=FINAL_ENHANCEMENT_SYSTEM,
+    result: FinalEnhancementOutput = await invoke(
         tier=ModelTier.OPUS,
-        max_tokens=64000,
+        system=FINAL_ENHANCEMENT_SYSTEM,
+        user=user_prompt,
+        schema=FinalEnhancementOutput,
+        config=InvokeConfig(max_tokens=64000),
     )
 
     return result.finalized_document
@@ -180,9 +164,7 @@ async def run_opus_integration(state: MultiLangState) -> dict:
             }
 
         # Find English result or use first available
-        english_result = next(
-            (r for r in language_results if r["language_code"] == "en"), None
-        )
+        english_result = next((r for r in language_results if r["language_code"] == "en"), None)
         baseline_result = english_result or language_results[0]
 
         # Create initial synthesis
@@ -191,16 +173,12 @@ async def run_opus_integration(state: MultiLangState) -> dict:
 
         logger.info("Starting Opus integration")
 
-        current_document = await _create_initial_synthesis(
-            baseline_result, topic, research_questions
-        )
+        current_document = await _create_initial_synthesis(baseline_result, topic, research_questions)
 
         # Get integration priority from Sonnet (excluding English)
         integration_priority = []
         if sonnet_analysis and sonnet_analysis.get("integration_priority"):
-            integration_priority = [
-                code for code in sonnet_analysis["integration_priority"] if code != "en"
-            ]
+            integration_priority = [code for code in sonnet_analysis["integration_priority"] if code != "en"]
 
         # Build language code -> result mapping
         results_by_code = {r["language_code"]: r for r in language_results}
@@ -218,14 +196,10 @@ async def run_opus_integration(state: MultiLangState) -> dict:
             # Get unique contributions from Sonnet
             sonnet_guidance = []
             if sonnet_analysis and sonnet_analysis.get("unique_contributions"):
-                sonnet_guidance = sonnet_analysis["unique_contributions"].get(
-                    language_code, []
-                )
+                sonnet_guidance = sonnet_analysis["unique_contributions"].get(language_code, [])
 
             try:
-                current_document, step = await _integrate_language(
-                    current_document, language_result, sonnet_guidance
-                )
+                current_document, step = await _integrate_language(current_document, language_result, sonnet_guidance)
                 integration_steps.append(step)
                 logger.debug(f"Integrated {language_result['language_name']}")
 
@@ -246,21 +220,13 @@ async def run_opus_integration(state: MultiLangState) -> dict:
         ]
 
         # Collect all unique workflows used
-        workflows_used = list(
-            set(
-                workflow
-                for result in language_results
-                for workflow in result["workflows_run"]
-            )
-        )
+        workflows_used = list(set(workflow for result in language_results for workflow in result["workflows_run"]))
 
         final_document = await _finalize_synthesis(
             current_document, languages_integrated, workflows_used, integration_steps
         )
 
-        logger.info(
-            f"Integration complete: {len(languages_integrated)} languages integrated"
-        )
+        logger.info(f"Integration complete: {len(languages_integrated)} languages integrated")
 
         return {
             "integration_steps": integration_steps,

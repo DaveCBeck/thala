@@ -133,9 +133,7 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         # Extract citations from report
         citations = _extract_citations(report, findings)
 
-        logger.info(
-            f"Generated final report: {len(report)} chars, {len(citations)} citations"
-        )
+        logger.info(f"Generated final report: {len(report)} chars, {len(citations)} citations")
 
         return {
             "final_report": report,

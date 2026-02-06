@@ -85,9 +85,7 @@ async def scrape_pages(
     logger.debug(f"Scraping {len(urls_to_scrape)} URLs in parallel")
 
     # Create scraping tasks for parallel execution
-    scraping_tasks = [
-        scrape_single_url(result, i) for i, result in enumerate(results[:max_scrapes])
-    ]
+    scraping_tasks = [scrape_single_url(result, i) for i, result in enumerate(results[:max_scrapes])]
 
     # Execute all scrapes concurrently
     task_results = await asyncio.gather(*scraping_tasks, return_exceptions=True)

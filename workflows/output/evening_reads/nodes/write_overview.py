@@ -43,8 +43,7 @@ def _format_deep_dive_summaries(drafts: list[DeepDiveDraft]) -> str:
         # Extract first paragraph as a summary hint
         first_para = draft["content"].split("\n\n")[0][:300] if draft["content"] else ""
         summaries.append(
-            f"**{draft['id'].replace('_', ' ').title()}**: \"{draft['title']}\"\n"
-            f"Theme preview: {first_para}..."
+            f'**{draft["id"].replace("_", " ").title()}**: "{draft["title"]}"\nTheme preview: {first_para}...'
         )
 
     return "\n\n".join(summaries)
@@ -57,7 +56,7 @@ def _format_deep_dive_list(drafts: list[DeepDiveDraft]) -> str:
 
     items = []
     for i, draft in enumerate(drafts, 1):
-        items.append(f"{i}. \"{draft['title']}\" ({draft['id']})")
+        items.append(f'{i}. "{draft["title"]}" ({draft["id"]})')
 
     return "\n".join(items)
 
@@ -77,11 +76,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
 
     if not deep_dive_drafts:
         logger.warning("No deep-dive drafts available for overview")
-        return {
-            "errors": [
-                {"node": "write_overview", "error": "No deep-dive drafts available"}
-            ]
-        }
+        return {"errors": [{"node": "write_overview", "error": "No deep-dive drafts available"}]}
 
     # Format deep-dive information for prompts
     deep_dive_summaries = _format_deep_dive_summaries(deep_dive_drafts)
@@ -101,9 +96,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
         deep_dive_list=deep_dive_list,
     )
 
-    logger.info(
-        f"Writing overview referencing {len(deep_dive_drafts)} deep-dives"
-    )
+    logger.info(f"Writing overview referencing {len(deep_dive_drafts)} deep-dives")
 
     try:
         llm = get_llm(tier=ModelTier.OPUS, max_tokens=MAX_TOKENS)
@@ -115,11 +108,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
             ]
         )
 
-        content = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
-        )
+        content = response.content if isinstance(response.content, str) else str(response.content)
         word_count = len(content.split())
         citation_keys = _extract_citations(content)
 
@@ -127,9 +116,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
         # For now, use a generic title - could be enhanced with LLM call
         title = _generate_overview_title(overview_scope, lit_review)
 
-        logger.info(
-            f"Generated overview: {word_count} words, {len(citation_keys)} citations"
-        )
+        logger.info(f"Generated overview: {word_count} words, {len(citation_keys)} citations")
 
         overview = OverviewDraft(
             title=title,
@@ -142,9 +129,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to write overview: {e}")
-        return {
-            "errors": [{"node": "write_overview", "error": str(e)}]
-        }
+        return {"errors": [{"node": "write_overview", "error": str(e)}]}
 
 
 def _generate_overview_title(scope: str, lit_review: str) -> str:

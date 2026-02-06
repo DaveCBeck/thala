@@ -23,9 +23,7 @@ from ..schemas import (
 logger = logging.getLogger(__name__)
 
 
-def get_context_window(
-    sections: list[TopLevelSection], index: int, position: str, max_words: int = 500
-) -> str:
+def get_context_window(sections: list[TopLevelSection], index: int, position: str, max_words: int = 500) -> str:
     """Get context from adjacent sections.
 
     Args:
@@ -116,14 +114,10 @@ def validate_rewrite(
     length_warning = None
     if original_words > 0:
         if ratio < warn_min_ratio:
-            length_warning = (
-                f"Aggressive reduction: {rewritten_words} words "
-                f"({ratio:.1%} of original {original_words})"
-            )
+            length_warning = f"Aggressive reduction: {rewritten_words} words ({ratio:.1%} of original {original_words})"
         elif ratio > warn_max_ratio:
             length_warning = (
-                f"Significant expansion: {rewritten_words} words "
-                f"({ratio:.1%} of original {original_words})"
+                f"Significant expansion: {rewritten_words} words ({ratio:.1%} of original {original_words})"
             )
 
     # Check for failures (hard limits) - only fail on extreme expansion
@@ -187,10 +181,7 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
     section_index = instruction.section_index
     section = sections[section_index]
 
-    logger.info(
-        f"Rewriting section [{section_index}] '{section.heading}' "
-        f"({instruction.instruction_type})"
-    )
+    logger.info(f"Rewriting section [{section_index}] '{section.heading}' ({instruction.instruction_type})")
 
     # Handle delete instruction - no LLM call needed
     if instruction.instruction_type == "delete":
@@ -310,18 +301,13 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
     )
 
     if not validation.passes_validation:
-        logger.warning(
-            f"Section [{section_index}] rewrite failed validation: "
-            f"{validation.rejection_reason}"
-        )
+        logger.warning(f"Section [{section_index}] rewrite failed validation: {validation.rejection_reason}")
         # Still return the result, but flag it as failed validation
         # The reassemble phase will decide what to do
 
     # Log length warnings (soft limits - for review but doesn't fail)
     if validation.length_warning:
-        logger.warning(
-            f"Section [{section_index}] '{section.heading}': {validation.length_warning}"
-        )
+        logger.warning(f"Section [{section_index}] '{section.heading}': {validation.length_warning}")
 
     result = RewrittenSection(
         section_index=section_index,

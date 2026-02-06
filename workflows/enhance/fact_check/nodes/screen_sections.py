@@ -11,7 +11,7 @@ from workflows.enhance.fact_check.prompts import (
     FACT_CHECK_SCREENING_SYSTEM,
     FACT_CHECK_SCREENING_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,24 +45,22 @@ async def screen_sections_for_fact_check(state: dict) -> dict[str, Any]:
     for section in leaf_sections:
         content = document_model.get_section_content(section.section_id, include_subsections=False)
         preview = content[:150].replace("\n", " ").strip()
-        sections_summary_parts.append(
-            f"- {section.section_id}: \"{section.heading}\"\n  Preview: {preview}..."
-        )
+        sections_summary_parts.append(f'- {section.section_id}: "{section.heading}"\n  Preview: {preview}...')
 
     sections_summary = "\n".join(sections_summary_parts)
 
     logger.debug(f"Pre-screening {len(leaf_sections)} sections for fact-check priority")
 
     try:
-        result = await get_structured_output(
-            output_schema=FactCheckScreeningResult,
-            user_prompt=FACT_CHECK_SCREENING_USER.format(
+        result = await invoke(
+            tier=ModelTier.DEEPSEEK_V3,
+            system=FACT_CHECK_SCREENING_SYSTEM,
+            user=FACT_CHECK_SCREENING_USER.format(
                 topic=topic,
                 sections_summary=sections_summary,
             ),
-            system_prompt=FACT_CHECK_SCREENING_SYSTEM,
-            tier=ModelTier.DEEPSEEK_V3,  # DeepSeek V3 for screening
-            max_tokens=2000,  # Simplified schema needs less tokens
+            schema=FactCheckScreeningResult,
+            config=InvokeConfig(max_tokens=2000),
         )
 
         sections_to_check = result.sections_to_check

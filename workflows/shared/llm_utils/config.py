@@ -7,6 +7,8 @@ batching, extended thinking, and other LLM invocation parameters.
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from langchain_core.tools import BaseTool
+
 if TYPE_CHECKING:
     from core.llm_broker import BatchPolicy
 
@@ -30,6 +32,14 @@ class InvokeConfig:
         metadata: Additional metadata for tracking and observability.
         max_tokens: Maximum output tokens (default: 4096).
 
+        # Structured output options (used when schema= is provided):
+        max_retries: Maximum retry attempts on extraction failure (default: 2).
+        retry_backoff: Backoff multiplier between retries (default: 2.0).
+        enable_context_fallback: Auto-upgrade to SONNET_1M on context limit errors.
+        use_json_schema_method: Use method="json_schema" for stricter validation.
+        max_tool_calls: Maximum tool calls for TOOL_AGENT strategy (default: 12).
+        max_tool_result_chars: Maximum chars from tool results (default: 100000).
+
     Example:
         # Simple cached call
         config = InvokeConfig()
@@ -42,6 +52,9 @@ class InvokeConfig:
 
         # With tools
         config = InvokeConfig(tools=[my_tool], tool_choice={"type": "auto"})
+
+        # Structured output with tools (TOOL_AGENT strategy)
+        config = InvokeConfig(tools=[search_tool], max_tool_calls=10)
     """
 
     # Caching
@@ -54,8 +67,8 @@ class InvokeConfig:
     # Extended thinking (Anthropic models only)
     thinking_budget: int | None = None
 
-    # Tools
-    tools: list[dict[str, Any]] | None = None
+    # Tools (for both text and structured output)
+    tools: list[BaseTool] | list[dict[str, Any]] | None = None
     tool_choice: dict[str, Any] | None = None
 
     # Metadata
@@ -66,6 +79,14 @@ class InvokeConfig:
 
     # Concurrency control for direct invocation
     max_concurrent: int = 10
+
+    # Structured output options
+    max_retries: int = 2
+    retry_backoff: float = 2.0
+    enable_context_fallback: bool = True
+    use_json_schema_method: bool = False
+    max_tool_calls: int = 12
+    max_tool_result_chars: int = 100000
 
     def __post_init__(self) -> None:
         """Validate constraint combinations.

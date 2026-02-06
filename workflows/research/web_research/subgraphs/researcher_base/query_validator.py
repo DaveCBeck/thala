@@ -3,7 +3,7 @@
 import logging
 
 from workflows.research.web_research.state import QueryValidationBatch
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +34,7 @@ async def validate_queries(
     if research_brief:
         context_parts.append(f"Topic: {research_brief.get('topic', '')}")
         if research_brief.get("objectives"):
-            context_parts.append(
-                f"Objectives: {', '.join(research_brief['objectives'][:3])}"
-            )
+            context_parts.append(f"Objectives: {', '.join(research_brief['objectives'][:3])}")
     if draft_notes:
         context_parts.append(f"Current Notes: {draft_notes[:500]}...")
 
@@ -60,10 +58,10 @@ Accept queries that would help find information about the research topic.
 """
 
     try:
-        result: QueryValidationBatch = await get_structured_output(
-            output_schema=QueryValidationBatch,
-            user_prompt=prompt,
+        result: QueryValidationBatch = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
+            user=prompt,
+            schema=QueryValidationBatch,
         )
 
         valid_queries = []
@@ -71,9 +69,7 @@ Accept queries that would help find information about the research topic.
             if validation.is_relevant:
                 valid_queries.append(query)
             else:
-                logger.warning(
-                    f"Query rejected: {query[:50]}... Reason: {validation.reason}"
-                )
+                logger.warning(f"Query rejected: {query[:50]}... Reason: {validation.reason}")
 
         return valid_queries
 

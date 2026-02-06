@@ -101,9 +101,7 @@ async def fetch_content_node(state: dict) -> dict[str, Any]:
 
     if not deep_dive_id or not anchor_keys:
         logger.error(f"Missing required state: deep_dive_id={deep_dive_id}, anchor_keys={anchor_keys}")
-        return {
-            "errors": [{"node": "fetch_content", "error": "Missing deep_dive_id or anchor_keys"}]
-        }
+        return {"errors": [{"node": "fetch_content", "error": "Missing deep_dive_id or anchor_keys"}]}
 
     store_manager = get_store_manager()
     store = store_manager.es_stores.store

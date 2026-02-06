@@ -20,7 +20,7 @@ from workflows.research.web_research.prompts import (
     get_today_str,
 )
 from workflows.research.web_research.utils import load_prompts_with_translation
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,7 @@ class ClarificationQuestionModel(BaseModel):
 class ClarificationResponse(BaseModel):
     """Structured output for clarification decision."""
 
-    need_clarification: bool = Field(
-        description="Whether the request needs clarification"
-    )
+    need_clarification: bool = Field(description="Whether the request needs clarification")
     questions: list[ClarificationQuestionModel] = Field(
         default_factory=list, description="List of clarifying questions if needed"
     )
@@ -66,11 +64,11 @@ async def clarify_intent(state: DeepResearchState) -> dict[str, Any]:
     human_prompt = human_prompt_template.format(query=query)
 
     try:
-        result: ClarificationResponse = await get_structured_output(
-            output_schema=ClarificationResponse,
-            user_prompt=human_prompt,
-            system_prompt=system_prompt,
+        result: ClarificationResponse = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
+            system=system_prompt,
+            user=human_prompt,
+            schema=ClarificationResponse,
         )
 
         if result.need_clarification:

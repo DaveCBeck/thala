@@ -12,10 +12,10 @@ from workflows.research.academic_lit_review.state import (
     PaperMetadata,
     PaperSummary,
 )
-from workflows.shared.llm_utils import ModelTier
+from workflows.shared.llm_utils import ModelTier, invoke
 from workflows.shared.llm_utils.structured import (
     StructuredRequest,
-    get_structured_output,
+    get_structured_output,  # Still used for batch requests with broker integration
 )
 
 from .parsers import _fetch_content_for_extraction
@@ -77,12 +77,11 @@ Extract structured information from this paper."""
     tier = ModelTier.SONNET_1M if len(content) > 400_000 else ModelTier.DEEPSEEK_V3
 
     try:
-        extracted = await get_structured_output(
-            output_schema=PaperSummarySchema,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        extracted = await invoke(
             tier=tier,
-            enable_prompt_cache=True,
+            system=system_prompt,
+            user=user_prompt,
+            schema=PaperSummarySchema,
         )
 
         return PaperSummary(
@@ -166,12 +165,11 @@ Extract structured information based on this metadata."""
     generated_zotero_key = doi.replace("/", "_").replace(".", "")[:20].upper()
 
     try:
-        extracted = await get_structured_output(
-            output_schema=PaperSummarySchema,
-            user_prompt=user_prompt,
-            system_prompt=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+        extracted = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            enable_prompt_cache=True,
+            system=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+            user=user_prompt,
+            schema=PaperSummarySchema,
         )
 
         # Use existing short_summary from document processing if available,

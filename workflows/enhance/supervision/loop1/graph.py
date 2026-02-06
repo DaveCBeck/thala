@@ -101,9 +101,7 @@ def finalize_loop1_node(state: dict[str, Any]) -> dict[str, Any]:
         max_iterations = state.get("max_iterations", 3)
         completion_reason = f"Reached maximum iterations ({max_iterations})"
 
-    logger.info(
-        f"Finalizing Loop 1 after {iteration} iterations. Reason: {completion_reason}"
-    )
+    logger.info(f"Finalizing Loop 1 after {iteration} iterations. Reason: {completion_reason}")
 
     return {
         "final_review": current_review,
@@ -225,8 +223,12 @@ async def run_loop1_standalone(
         "supervision_expansions": resumed_supervision_expansions,
         "final_review": None,
         "completion_reason": None,
-        "paper_corpus": incremental_state.get("partial_results", {}).get("paper_corpus", {}) if incremental_state else {},
-        "paper_summaries": incremental_state.get("partial_results", {}).get("paper_summaries", {}) if incremental_state else {},
+        "paper_corpus": incremental_state.get("partial_results", {}).get("paper_corpus", {})
+        if incremental_state
+        else {},
+        "paper_summaries": incremental_state.get("partial_results", {}).get("paper_summaries", {})
+        if incremental_state
+        else {},
         "zotero_keys": incremental_state.get("partial_results", {}).get("zotero_keys", {}) if incremental_state else {},
         "loop_error": None,
         "expansion_failed": False,
@@ -241,10 +243,7 @@ async def run_loop1_standalone(
             f"review length={len(resumed_review)} chars"
         )
     else:
-        logger.info(
-            f"Starting Loop 1: max_iterations={max_iterations}, "
-            f"review length={len(review)} chars"
-        )
+        logger.info(f"Starting Loop 1: max_iterations={max_iterations}, review length={len(review)} chars")
 
     if config:
         final_state = await loop1_graph.ainvoke(initial_state, config=config)
@@ -257,9 +256,7 @@ async def run_loop1_standalone(
     # Build changes summary
     if expansions:
         topics_explored = [exp.get("topic", "unknown") for exp in expansions]
-        changes_summary = (
-            f"Explored {len(expansions)} theoretical gaps: {', '.join(topics_explored)}"
-        )
+        changes_summary = f"Explored {len(expansions)} theoretical gaps: {', '.join(topics_explored)}"
     else:
         changes_summary = "No theoretical gaps identified"
 

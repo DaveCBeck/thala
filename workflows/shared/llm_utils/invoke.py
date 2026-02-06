@@ -11,6 +11,7 @@ Features:
     - Prompt caching for Anthropic models
     - Extended thinking support
     - Batch input support (list of user prompts)
+    - Structured output via schema= parameter
 
 Example:
     from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
@@ -37,14 +38,30 @@ Example:
         system="Summarize this.",
         user=["Doc 1...", "Doc 2...", "Doc 3..."],
     )
+
+    # Structured output
+    from pydantic import BaseModel
+
+    class Analysis(BaseModel):
+        summary: str
+        score: float
+
+    result = await invoke(
+        tier=ModelTier.SONNET,
+        system="Analyze the document.",
+        user="Document content...",
+        schema=Analysis,
+    )
+    print(result.summary)  # Typed access
 """
 
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, Type, TypeVar, Union, overload
 
 from langchain_core.messages import AIMessage
+from pydantic import BaseModel
 
 from .config import InvokeConfig
 from .models import ModelTier, get_llm, is_deepseek_tier
@@ -54,6 +71,8 @@ if TYPE_CHECKING:
     from core.llm_broker import LLMResponse
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
 
 
 def _broker_response_to_message(response: "LLMResponse") -> AIMessage:
@@ -78,10 +97,7 @@ def _broker_response_to_message(response: "LLMResponse") -> AIMessage:
         usage_metadata = {
             "input_tokens": response.usage.get("input_tokens", 0),
             "output_tokens": response.usage.get("output_tokens", 0),
-            "total_tokens": (
-                response.usage.get("input_tokens", 0)
-                + response.usage.get("output_tokens", 0)
-            ),
+            "total_tokens": (response.usage.get("input_tokens", 0) + response.usage.get("output_tokens", 0)),
         }
         # Include cache details if present (Anthropic prompt caching)
         if "cache_creation_input_tokens" in response.usage:
@@ -203,13 +219,65 @@ async def _invoke_via_broker(
     return results
 
 
+# Type overloads for invoke()
+
+
+# Single text input, no schema -> AIMessage
+@overload
+async def invoke(
+    *,
+    tier: ModelTier,
+    system: str,
+    user: str,
+    config: InvokeConfig | None = None,
+    schema: None = None,
+) -> AIMessage: ...
+
+
+# Batch text input, no schema -> list[AIMessage]
+@overload
+async def invoke(
+    *,
+    tier: ModelTier,
+    system: str,
+    user: list[str],
+    config: InvokeConfig | None = None,
+    schema: None = None,
+) -> list[AIMessage]: ...
+
+
+# Single input with schema -> T
+@overload
+async def invoke(
+    *,
+    tier: ModelTier,
+    system: str,
+    user: str,
+    config: InvokeConfig | None = None,
+    schema: Type[T],
+) -> T: ...
+
+
+# Batch input with schema -> list[T]
+@overload
+async def invoke(
+    *,
+    tier: ModelTier,
+    system: str,
+    user: list[str],
+    config: InvokeConfig | None = None,
+    schema: Type[T],
+) -> list[T]: ...
+
+
 async def invoke(
     *,
     tier: ModelTier,
     system: str,
     user: str | list[str],
     config: InvokeConfig | None = None,
-) -> AIMessage | list[AIMessage]:
+    schema: Type[T] | None = None,
+) -> Union[AIMessage, T, list[AIMessage], list[T]]:
     """Unified LLM invocation with automatic routing.
 
     Routes requests through the optimal path based on model tier and configuration:
@@ -217,21 +285,26 @@ async def invoke(
     - Anthropic with batch_policy: Routes through central broker for cost optimization
     - Otherwise: Direct invocation with prompt caching
 
+    When schema= is provided, returns validated Pydantic model(s) instead of AIMessage.
+
     Args:
         tier: Model tier to use (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
         system: System prompt
         user: User prompt (single string) or list of user prompts (batch)
-        config: Optional configuration for caching, batching, thinking, etc.
+        config: Optional configuration for caching, batching, thinking, tools, etc.
+        schema: Optional Pydantic model class for structured output
 
     Returns:
-        AIMessage for single user prompt, list[AIMessage] for batch input
+        - Without schema: AIMessage for single input, list[AIMessage] for batch
+        - With schema: Validated Pydantic model (T) for single, list[T] for batch
 
     Raises:
         RuntimeError: If broker request fails
         ValueError: If config has invalid constraint combinations
+        StructuredOutputError: If structured extraction fails after retries
 
     Example:
-        # Simple call
+        # Simple text call
         response = await invoke(
             tier=ModelTier.SONNET,
             system="You are helpful.",
@@ -254,16 +327,41 @@ async def invoke(
             system="Summarize this.",
             user=["Doc 1...", "Doc 2...", "Doc 3..."],
         )
+
+        # Structured output
+        class Analysis(BaseModel):
+            summary: str
+            score: float
+
+        result = await invoke(
+            tier=ModelTier.SONNET,
+            system="Analyze the document.",
+            user="Document content...",
+            schema=Analysis,
+        )
+        print(result.summary, result.score)  # Typed access
+
+        # Batch structured output
+        results = await invoke(
+            tier=ModelTier.HAIKU,
+            system="Extract metadata.",
+            user=["Doc 1...", "Doc 2..."],
+            schema=Metadata,
+        )  # Returns list[Metadata]
     """
     config = config or InvokeConfig()
 
     # Validate tier-specific constraints
     if config.cache and config.thinking_budget and not is_deepseek_tier(tier):
         raise ValueError(
-            "Cannot use cache with extended thinking on Anthropic. "
-            "Set cache=False when using thinking_budget."
+            "Cannot use cache with extended thinking on Anthropic. Set cache=False when using thinking_budget."
         )
 
+    # Route to structured output path if schema provided
+    if schema is not None:
+        return await _invoke_structured(tier, system, user, config, schema)
+
+    # Text output path
     # Normalize to list for internal processing
     is_batch = isinstance(user, list)
     user_prompts = user if is_batch else [user]
@@ -290,6 +388,121 @@ async def invoke(
         results = await _invoke_direct(tier, system, user_prompts, config)
 
     return results if is_batch else results[0]
+
+
+async def _invoke_structured(
+    tier: ModelTier,
+    system: str,
+    user: str | list[str],
+    config: InvokeConfig,
+    schema: Type[T],
+) -> T | list[T]:
+    """Invoke LLM with structured output.
+
+    Selects strategy based on configuration:
+    - TOOL_AGENT: When tools are provided (multi-turn agent)
+    - LANGCHAIN_STRUCTURED: Default strategy using .with_structured_output()
+
+    Args:
+        tier: Model tier to use
+        system: System prompt
+        user: User prompt (single or list)
+        config: Invocation configuration
+        schema: Pydantic model class for output
+
+    Returns:
+        Validated Pydantic model (single) or list of models (batch)
+
+    Raises:
+        StructuredOutputError: If extraction fails after retries
+    """
+    from .structured.types import (
+        StructuredOutputConfig,
+        StructuredOutputError,
+        StructuredOutputResult,
+        StructuredOutputStrategy,
+    )
+    from .structured.executors import get_executor
+    from .structured.retry import with_retries
+
+    # Normalize to list
+    is_batch = isinstance(user, list)
+    user_prompts = user if is_batch else [user]
+
+    # Select strategy
+    if config.tools:
+        selected_strategy = StructuredOutputStrategy.TOOL_AGENT
+    else:
+        selected_strategy = StructuredOutputStrategy.LANGCHAIN_STRUCTURED
+
+    logger.debug(f"Structured output strategy: {selected_strategy.name}")
+
+    # Build StructuredOutputConfig from InvokeConfig
+    output_config = StructuredOutputConfig(
+        tier=tier,
+        max_tokens=config.max_tokens,
+        thinking_budget=config.thinking_budget,
+        strategy=selected_strategy,
+        use_json_schema_method=config.use_json_schema_method,
+        batch_policy=config.batch_policy,
+        max_retries=config.max_retries,
+        retry_backoff=config.retry_backoff,
+        enable_context_fallback=config.enable_context_fallback,
+        enable_prompt_cache=config.cache,
+        cache_ttl=config.cache_ttl,
+        tools=config.tools if config.tools else [],
+        max_tool_calls=config.max_tool_calls,
+        max_tool_result_chars=config.max_tool_result_chars,
+    )
+
+    # Single request path with retry logic
+    async def execute_single(user_prompt: str) -> T:
+        def make_invoke_fn(cfg: StructuredOutputConfig):
+            """Factory to create invoke function with given config."""
+            executor = get_executor(selected_strategy)
+
+            async def _invoke() -> StructuredOutputResult[T]:
+                return await executor.execute(
+                    output_schema=schema,
+                    user_prompt=user_prompt,
+                    system_prompt=system,
+                    output_config=cfg,
+                )
+
+            return _invoke
+
+        result = await with_retries(
+            make_invoke_fn(output_config),
+            output_config,
+            schema,
+            selected_strategy,
+            fallback_fn_factory=make_invoke_fn,
+        )
+
+        if not result.success:
+            raise StructuredOutputError(
+                message=result.error or "Unknown error",
+                schema=schema,
+                strategy=selected_strategy,
+                attempts=output_config.max_retries,
+            )
+
+        return result.value
+
+    # Execute based on batch size
+    if len(user_prompts) == 1:
+        result = await execute_single(user_prompts[0])
+        return result if not is_batch else [result]
+    else:
+        # Batch path with concurrent execution
+        semaphore = asyncio.Semaphore(10)
+
+        async def execute_one(user_prompt: str) -> T:
+            async with semaphore:
+                return await execute_single(user_prompt)
+
+        results = await asyncio.gather(*[execute_one(p) for p in user_prompts])
+        return list(results)
 
 
 class InvokeBatch:

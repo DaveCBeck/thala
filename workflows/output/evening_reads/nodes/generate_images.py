@@ -70,9 +70,7 @@ async def generate_images_node(state: EveningReadsState) -> dict[str, Any]:
         elif result is not None:
             image_outputs.append(result)
 
-    logger.info(
-        f"Image generation complete: {len(image_outputs)}/{len(tasks)} successful"
-    )
+    logger.info(f"Image generation complete: {len(image_outputs)}/{len(tasks)} successful")
 
     return {"image_outputs": image_outputs}
 

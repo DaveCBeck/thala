@@ -56,10 +56,7 @@ async def run_mini_review(
             - clusters: List of ThematicClusters
             - references: List of FormattedCitations
     """
-    logger.info(
-        f"Mini-review starting: {literature_base.name} "
-        f"(excluding {len(exclude_dois)} parent DOIs)"
-    )
+    logger.info(f"Mini-review starting: {literature_base.name} (excluding {len(exclude_dois)} parent DOIs)")
 
     search_topic = f"{parent_topic} - {literature_base.name} perspective"
     keyword_result = await run_keyword_search(
@@ -71,13 +68,8 @@ async def run_mini_review(
 
     discovered_papers = keyword_result.get("discovered_papers", [])
 
-    filtered_papers = [
-        p for p in discovered_papers if p.get("doi") and p["doi"] not in exclude_dois
-    ]
-    logger.debug(
-        f"Keyword search: {len(discovered_papers)} found, "
-        f"{len(filtered_papers)} after filtering"
-    )
+    filtered_papers = [p for p in discovered_papers if p.get("doi") and p["doi"] not in exclude_dois]
+    logger.debug(f"Keyword search: {len(discovered_papers)} found, {len(filtered_papers)} after filtering")
 
     if not filtered_papers:
         logger.warning("No new papers found after filtering, returning empty review")
@@ -104,9 +96,7 @@ async def run_mini_review(
     final_corpus_dois = diffusion_result.get("final_corpus_dois", [])
     full_corpus = diffusion_result.get("paper_corpus", initial_corpus)
     final_corpus = {
-        doi: full_corpus[doi]
-        for doi in final_corpus_dois
-        if doi in full_corpus and doi not in exclude_dois
+        doi: full_corpus[doi] for doi in final_corpus_dois if doi in full_corpus and doi not in exclude_dois
     }
     logger.debug(f"Diffusion: {len(final_corpus)} papers after filtering")
 

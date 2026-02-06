@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import QUALITY_CHECK_SYSTEM_PROMPT, DEFAULT_TARGET_WORDS
@@ -43,12 +43,12 @@ async def verify_quality_node(state: SynthesisState) -> dict[str, Any]:
                 prompt_name="lit_review_quality_system",
             )
 
-        quality_result: QualityCheckOutput = await get_structured_output(
-            output_schema=QualityCheckOutput,
-            user_prompt=f"Review this literature review sample for quality:\n\n{sample}",
-            system_prompt=quality_system,
+        quality_result: QualityCheckOutput = await invoke(
             tier=ModelTier.HAIKU,
-            max_tokens=2000,
+            system=quality_system,
+            user=f"Review this literature review sample for quality:\n\n{sample}",
+            schema=QualityCheckOutput,
+            config=InvokeConfig(max_tokens=2000),
         )
 
         if quality_result.issues:

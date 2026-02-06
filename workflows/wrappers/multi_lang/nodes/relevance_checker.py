@@ -12,7 +12,7 @@ from workflows.wrappers.multi_lang.prompts.relevance import (
 )
 from workflows.wrappers.multi_lang.state import LanguageRelevanceCheck, MultiLangState
 from workflows.shared.language.query_translator import translate_query
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,7 @@ logger = logging.getLogger(__name__)
 class RelevanceDecision(BaseModel):
     """Structured output for Haiku relevance check."""
 
-    has_meaningful_discussion: bool = Field(
-        description="Whether meaningful discussion exists in this language"
-    )
+    has_meaningful_discussion: bool = Field(description="Whether meaningful discussion exists in this language")
     confidence: float = Field(ge=0, le=1, description="Confidence 0-1")
     reasoning: str = Field(description="Brief explanation (1-2 sentences)")
     suggested_depth: Literal["skip", "quick", "standard", "comprehensive"] = Field(
@@ -40,9 +38,7 @@ async def _quick_web_search(query: str, language_config: dict) -> list[dict]:
     preferred_domains = language_config.get("preferred_domains")
 
     try:
-        search_result = await web_search(
-            query=query, limit=5, locale=locale, preferred_domains=preferred_domains
-        )
+        search_result = await web_search(query=query, limit=5, locale=locale, preferred_domains=preferred_domains)
 
         results = search_result.get("results", [])
 
@@ -90,9 +86,7 @@ async def _check_language_relevance(
 
     # Format research questions
     questions_text = (
-        "\n".join(f"- {q}" for q in research_questions)
-        if research_questions
-        else "(No specific questions provided)"
+        "\n".join(f"- {q}" for q in research_questions) if research_questions else "(No specific questions provided)"
     )
 
     # Build prompts
@@ -105,12 +99,12 @@ async def _check_language_relevance(
     )
 
     try:
-        decision: RelevanceDecision = await get_structured_output(
-            output_schema=RelevanceDecision,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        decision: RelevanceDecision = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            max_tokens=512,
+            system=system_prompt,
+            user=user_prompt,
+            schema=RelevanceDecision,
+            config=InvokeConfig(max_tokens=512),
         )
 
         return {
@@ -178,27 +172,19 @@ async def check_relevance_batch(state: MultiLangState) -> dict:
             continue
 
         # Check relevance for other languages
-        check = await _check_language_relevance(
-            topic, research_questions, lang_code, language_config
-        )
+        check = await _check_language_relevance(topic, research_questions, lang_code, language_config)
         relevance_checks.append(check)
 
-        decision_text = (
-            "has content" if check["has_meaningful_discussion"] else "skipped"
-        )
+        decision_text = "has content" if check["has_meaningful_discussion"] else "skipped"
         logger.debug(
             f"{language_config['name']}: {decision_text} "
             f"(confidence: {check['confidence']:.2f}, depth: {check['suggested_depth']})"
         )
 
     # Count languages with content
-    languages_with_content = sum(
-        1 for check in relevance_checks if check["has_meaningful_discussion"]
-    )
+    languages_with_content = sum(1 for check in relevance_checks if check["has_meaningful_discussion"])
 
-    logger.info(
-        f"Relevance check complete: {languages_with_content}/{len(relevance_checks)} languages have content"
-    )
+    logger.info(f"Relevance check complete: {languages_with_content}/{len(relevance_checks)} languages have content")
 
     return {
         "relevance_checks": relevance_checks,
@@ -233,13 +219,9 @@ async def filter_relevant_languages(state: MultiLangState) -> dict:
         if (has_discussion and confidence >= 0.5) or lang_code == "en":
             languages_with_content.append(lang_code)
 
-    language_names = ", ".join(
-        state["language_configs"][code]["name"] for code in languages_with_content
-    )
+    language_names = ", ".join(state["language_configs"][code]["name"] for code in languages_with_content)
 
-    logger.info(
-        f"Filtered to {len(languages_with_content)} languages: {language_names}"
-    )
+    logger.info(f"Filtered to {len(languages_with_content)} languages: {language_names}")
 
     return {
         "languages_with_content": languages_with_content,

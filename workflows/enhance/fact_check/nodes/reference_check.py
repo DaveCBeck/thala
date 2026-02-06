@@ -15,12 +15,12 @@ from workflows.enhance.fact_check.prompts import (
     REFERENCE_CHECK_SYSTEM,
     REFERENCE_CHECK_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
 # Zotero citation pattern: [@8ALPHANUMERIC]
-ZOTERO_CITATION_PATTERN = re.compile(r'\[@([A-Za-z0-9]{8})\]')
+ZOTERO_CITATION_PATTERN = re.compile(r"\[@([A-Za-z0-9]{8})\]")
 
 # Module-level citation cache (cleared between workflow runs)
 _citation_validation_cache: dict[str, dict] = {}
@@ -92,8 +92,7 @@ async def pre_validate_citations(state: dict) -> dict[str, Any]:
 
     exists_count = sum(1 for v in validated.values() if v.get("exists"))
     logger.info(
-        f"Pre-validated {len(validated)} citations: "
-        f"{exists_count} exist, {len(validated) - exists_count} not found"
+        f"Pre-validated {len(validated)} citations: {exists_count} exist, {len(validated) - exists_count} not found"
     )
 
     return {"citation_cache": validated}
@@ -135,7 +134,8 @@ def route_to_reference_check_sections(state: dict) -> list[Send] | str:
             # Filter out citations that are already known to not exist
             # (still need to check claim support for ones that do exist)
             valid_citations = [
-                c for c in citations
+                c
+                for c in citations
                 if citation_cache.get(c, {}).get("exists", True)  # Default to checking if not cached
             ]
             if valid_citations or not citation_cache:  # Always check if no cache yet
@@ -196,9 +196,7 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
     citations_to_check = [c for c in citations if c not in cached_invalid]
 
     if cached_invalid:
-        logger.debug(
-            f"Skipping {len(cached_invalid)} cached-invalid citations in '{section_heading}'"
-        )
+        logger.debug(f"Skipping {len(cached_invalid)} cached-invalid citations in '{section_heading}'")
 
     logger.debug(
         f"Reference-checking section '{section_heading}' "
@@ -207,6 +205,7 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
 
     # Get paper tools
     from langchain_tools import search_papers, get_paper_content
+
     tools = [search_papers, get_paper_content]
 
     # Build prompt with cache context
@@ -221,24 +220,29 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
         if cached_info:
             cache_context = "\n\nPRE-VALIDATED CITATIONS:\n" + "\n".join(cached_info)
 
-    user_prompt = REFERENCE_CHECK_USER.format(
-        section_heading=section_heading,
-        section_content=section_content,
-        citations=", ".join(f"[@{c}]" for c in citations_to_check) if citations_to_check else "(none)",
-        topic=topic,
-        confidence_threshold=confidence_threshold,
-    ) + cache_context
+    user_prompt = (
+        REFERENCE_CHECK_USER.format(
+            section_heading=section_heading,
+            section_content=section_content,
+            citations=", ".join(f"[@{c}]" for c in citations_to_check) if citations_to_check else "(none)",
+            topic=topic,
+            confidence_threshold=confidence_threshold,
+        )
+        + cache_context
+    )
 
     try:
-        result = await get_structured_output(
-            output_schema=ReferenceCheckResult,
-            user_prompt=user_prompt,
-            system_prompt=REFERENCE_CHECK_SYSTEM,
+        result = await invoke(
             tier=ModelTier.HAIKU,
+            system=REFERENCE_CHECK_SYSTEM,
+            user=user_prompt,
+            schema=ReferenceCheckResult,
             tools=tools,
-            max_tokens=4000,
-            max_tool_calls=max_tool_calls,
-            use_json_schema_method=True,
+            config=InvokeConfig(
+                max_tokens=4000,
+                max_tool_calls=max_tool_calls,
+                use_json_schema_method=True,
+            ),
         )
 
         # Add cached-invalid citations to invalid list
@@ -251,9 +255,7 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
         # Log invalid and unsupported citations at INFO level
         if result.invalid_citations:
             for citation in result.invalid_citations:
-                logger.info(
-                    f"Invalid citation in '{section_heading}': [@{citation}] - not found in corpus"
-                )
+                logger.info(f"Invalid citation in '{section_heading}': [@{citation}] - not found in corpus")
 
         if result.unsupported_citations:
             for citation in result.unsupported_citations:
@@ -263,20 +265,11 @@ async def reference_check_section_worker(state: dict) -> dict[str, Any]:
                 )
 
         # Filter suggested edits by confidence threshold
-        valid_edits = [
-            e for e in result.suggested_edits
-            if e.confidence >= confidence_threshold
-        ]
-        low_confidence_edits = [
-            e for e in result.suggested_edits
-            if e.confidence < confidence_threshold
-        ]
+        valid_edits = [e for e in result.suggested_edits if e.confidence >= confidence_threshold]
+        low_confidence_edits = [e for e in result.suggested_edits if e.confidence < confidence_threshold]
 
         if low_confidence_edits:
-            logger.debug(
-                f"Skipping {len(low_confidence_edits)} low-confidence citation edits "
-                f"in '{section_heading}'"
-            )
+            logger.debug(f"Skipping {len(low_confidence_edits)} low-confidence citation edits in '{section_heading}'")
 
         result.suggested_edits = valid_edits
 
@@ -343,19 +336,23 @@ async def assemble_reference_checks_node(state: dict) -> dict[str, Any]:
 
         for citation in result.get("invalid_citations", []):
             if citation not in suggested_edit_citations:
-                unresolved_items.append({
-                    "source": "reference_check",
-                    "section_id": section_id,
-                    "issue": f"Invalid citation [@{citation}] - not found and no alternative available",
-                })
+                unresolved_items.append(
+                    {
+                        "source": "reference_check",
+                        "section_id": section_id,
+                        "issue": f"Invalid citation [@{citation}] - not found and no alternative available",
+                    }
+                )
 
         for citation in result.get("unsupported_citations", []):
             if citation not in suggested_edit_citations:
-                unresolved_items.append({
-                    "source": "reference_check",
-                    "section_id": section_id,
-                    "issue": f"Unsupported citation [@{citation}] - paper doesn't support the claim",
-                })
+                unresolved_items.append(
+                    {
+                        "source": "reference_check",
+                        "section_id": section_id,
+                        "issue": f"Unsupported citation [@{citation}] - paper doesn't support the claim",
+                    }
+                )
 
     return {
         "unresolved_items": unresolved_items,

@@ -25,6 +25,7 @@ from workflows.wrappers.synthesis.quality_presets import (
 def __getattr__(name: str):
     if name == "synthesis":
         from workflows.wrappers.synthesis.graph.api import synthesis
+
         return synthesis
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

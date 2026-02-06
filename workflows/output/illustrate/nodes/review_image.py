@@ -3,7 +3,7 @@
 import base64
 import logging
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..prompts import VISION_REVIEW_SYSTEM, VISION_REVIEW_USER
 from ..schemas import ImageLocationPlan, VisionReviewResult
@@ -83,12 +83,12 @@ async def review_image_node(state: dict) -> dict:
             },
         ]
 
-        review = await get_structured_output(
-            output_schema=VisionReviewResult,
-            user_prompt=content,
-            system_prompt=VISION_REVIEW_SYSTEM,
+        review = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=1000,
+            system=VISION_REVIEW_SYSTEM,
+            user=content,
+            schema=VisionReviewResult,
+            config=InvokeConfig(max_tokens=1000),
         )
 
         logger.info(
@@ -111,9 +111,7 @@ async def review_image_node(state: dict) -> dict:
             }
 
         elif review.recommendation == "accept_with_warning":
-            logger.warning(
-                f"Image {location_id} accepted with warnings: {review.issues}"
-            )
+            logger.warning(f"Image {location_id} accepted with warnings: {review.issues}")
             return {
                 "review_results": [
                     ImageReviewResult(
@@ -147,15 +145,11 @@ async def review_image_node(state: dict) -> dict:
                     )
                 ],
                 "pending_retries": [location_id],
-                "retry_briefs": {location_id: review.improved_brief}
-                if review.improved_brief
-                else {},
+                "retry_briefs": {location_id: review.improved_brief} if review.improved_brief else {},
             }
 
         else:  # fail
-            logger.warning(
-                f"Image {location_id} failed review, skipping: {review.issues}"
-            )
+            logger.warning(f"Image {location_id} failed review, skipping: {review.issues}")
             return {
                 "review_results": [
                     ImageReviewResult(

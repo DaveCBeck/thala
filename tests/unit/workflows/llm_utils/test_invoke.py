@@ -39,10 +39,42 @@ class TestInvokeConfig:
         assert config.thinking_budget is None
         assert config.max_tokens == 4096
 
-    def test_cache_with_thinking_budget_raises(self):
-        """Cannot use cache with thinking_budget."""
+    def test_cache_with_thinking_budget_allowed_in_config(self):
+        """InvokeConfig allows cache+thinking_budget; validation deferred to invoke().
+
+        This is because DeepSeek R1 supports cache+thinking (automatic prefix caching
+        is independent of thinking). The validation is tier-specific in invoke().
+        """
+        config = InvokeConfig(cache=True, thinking_budget=8000)
+        assert config.cache is True
+        assert config.thinking_budget == 8000
+
+    @pytest.mark.asyncio
+    async def test_anthropic_cache_with_thinking_budget_raises_in_invoke(self):
+        """For Anthropic models, cache+thinking_budget raises ValueError in invoke()."""
         with pytest.raises(ValueError, match="Cannot use cache with extended thinking"):
-            InvokeConfig(cache=True, thinking_budget=8000)
+            await invoke(
+                tier=ModelTier.OPUS,
+                system="Test",
+                user="Test",
+                config=InvokeConfig(cache=True, thinking_budget=8000),
+            )
+
+    @pytest.mark.asyncio
+    async def test_deepseek_cache_with_thinking_budget_allowed(self):
+        """DeepSeek allows cache+thinking_budget (automatic prefix caching)."""
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = AIMessage(content="Response")
+
+        with patch("workflows.shared.llm_utils.invoke.get_llm", return_value=mock_llm):
+            # Should NOT raise - DeepSeek supports this combination
+            result = await invoke(
+                tier=ModelTier.DEEPSEEK_R1,
+                system="Test",
+                user="Test",
+                config=InvokeConfig(cache=True, thinking_budget=8000),
+            )
+            assert result.content == "Response"
 
     def test_thinking_budget_without_cache_ok(self):
         """thinking_budget with cache=False is valid."""
@@ -383,6 +415,162 @@ class TestInvokeViaBroker:
 
             with pytest.raises(RuntimeError, match="Broker request failed"):
                 await _invoke_via_broker(ModelTier.SONNET, "System", ["User"], config)
+
+
+class TestInvokeStructuredOutput:
+    """Tests for invoke() with schema= parameter."""
+
+    @pytest.mark.asyncio
+    async def test_schema_returns_pydantic_model(self):
+        """When schema is provided, should return validated Pydantic model."""
+        from pydantic import BaseModel
+        from workflows.shared.llm_utils.structured.types import StructuredOutputResult
+
+        class TestOutput(BaseModel):
+            value: str
+            score: float
+
+        mock_result = StructuredOutputResult.ok(
+            value=TestOutput(value="test", score=0.9),
+            strategy=MagicMock(),
+        )
+
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            patch("workflows.shared.llm_utils.structured.executors.get_executor", return_value=mock_executor),
+            patch("workflows.shared.llm_utils.structured.retry.with_retries", return_value=mock_result),
+        ):
+            result = await invoke(
+                tier=ModelTier.SONNET,
+                system="Extract data.",
+                user="Some content",
+                schema=TestOutput,
+            )
+
+        assert isinstance(result, TestOutput)
+        assert result.value == "test"
+        assert result.score == 0.9
+
+    @pytest.mark.asyncio
+    async def test_schema_with_list_input_returns_list(self):
+        """When schema and list input provided, should return list of models."""
+        from pydantic import BaseModel
+        from workflows.shared.llm_utils.structured.types import StructuredOutputResult
+
+        class TestOutput(BaseModel):
+            value: str
+
+        mock_results = [
+            StructuredOutputResult.ok(value=TestOutput(value="a"), strategy=MagicMock()),
+            StructuredOutputResult.ok(value=TestOutput(value="b"), strategy=MagicMock()),
+        ]
+
+        call_count = 0
+
+        async def mock_with_retries_impl(*args, **kwargs):
+            nonlocal call_count
+            result = mock_results[call_count]
+            call_count += 1
+            return result
+
+        mock_executor = MagicMock()
+
+        with (
+            patch("workflows.shared.llm_utils.structured.executors.get_executor", return_value=mock_executor),
+            patch("workflows.shared.llm_utils.structured.retry.with_retries", side_effect=mock_with_retries_impl),
+        ):
+            results = await invoke(
+                tier=ModelTier.HAIKU,
+                system="Extract data.",
+                user=["Content 1", "Content 2"],
+                schema=TestOutput,
+            )
+
+        assert isinstance(results, list)
+        assert len(results) == 2
+        assert results[0].value == "a"
+        assert results[1].value == "b"
+
+    @pytest.mark.asyncio
+    async def test_schema_with_tools_uses_tool_agent(self):
+        """When schema and tools provided, should use TOOL_AGENT strategy."""
+        from pydantic import BaseModel
+        from workflows.shared.llm_utils.structured.types import (
+            StructuredOutputResult,
+            StructuredOutputStrategy,
+        )
+
+        class TestOutput(BaseModel):
+            value: str
+
+        mock_result = StructuredOutputResult.ok(
+            value=TestOutput(value="tool result"),
+            strategy=StructuredOutputStrategy.TOOL_AGENT,
+        )
+
+        captured_strategy = None
+
+        def capture_executor(strategy):
+            nonlocal captured_strategy
+            captured_strategy = strategy
+            mock_executor = MagicMock()
+            mock_executor.execute = AsyncMock(return_value=mock_result)
+            return mock_executor
+
+        with (
+            patch("workflows.shared.llm_utils.structured.executors.get_executor", side_effect=capture_executor),
+            patch("workflows.shared.llm_utils.structured.retry.with_retries", return_value=mock_result),
+        ):
+            await invoke(
+                tier=ModelTier.SONNET,
+                system="Research topic.",
+                user="Find info about...",
+                schema=TestOutput,
+                config=InvokeConfig(tools=[MagicMock()]),
+            )
+
+        assert captured_strategy == StructuredOutputStrategy.TOOL_AGENT
+
+    @pytest.mark.asyncio
+    async def test_schema_without_tools_uses_langchain_structured(self):
+        """Without tools, should use LANGCHAIN_STRUCTURED strategy."""
+        from pydantic import BaseModel
+        from workflows.shared.llm_utils.structured.types import (
+            StructuredOutputResult,
+            StructuredOutputStrategy,
+        )
+
+        class TestOutput(BaseModel):
+            value: str
+
+        mock_result = StructuredOutputResult.ok(
+            value=TestOutput(value="result"),
+            strategy=StructuredOutputStrategy.LANGCHAIN_STRUCTURED,
+        )
+
+        captured_strategy = None
+
+        def capture_executor(strategy):
+            nonlocal captured_strategy
+            captured_strategy = strategy
+            mock_executor = MagicMock()
+            mock_executor.execute = AsyncMock(return_value=mock_result)
+            return mock_executor
+
+        with (
+            patch("workflows.shared.llm_utils.structured.executors.get_executor", side_effect=capture_executor),
+            patch("workflows.shared.llm_utils.structured.retry.with_retries", return_value=mock_result),
+        ):
+            await invoke(
+                tier=ModelTier.SONNET,
+                system="Extract.",
+                user="Content",
+                schema=TestOutput,
+            )
+
+        assert captured_strategy == StructuredOutputStrategy.LANGCHAIN_STRUCTURED
 
 
 class TestInvokeBatchContextManager:

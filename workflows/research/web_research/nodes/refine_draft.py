@@ -111,8 +111,7 @@ async def refine_draft(state: DeepResearchState) -> dict[str, Any]:
         )
 
         logger.debug(
-            f"Refined draft to version {version}, {len(unique_gaps)} gaps, "
-            f"completeness: {new_completeness:.0%}"
+            f"Refined draft to version {version}, {len(unique_gaps)} gaps, completeness: {new_completeness:.0%}"
         )
 
         return {
