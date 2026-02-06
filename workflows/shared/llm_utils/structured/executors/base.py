@@ -1,13 +1,16 @@
 """Abstract base class for structured output strategy executors."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Optional, Type, TypeVar, get_origin
+from typing import Any, Generic, Optional, Type, TypeVar, Union, get_origin
 
 from pydantic import BaseModel
 
 from ..types import StructuredOutputConfig, StructuredOutputResult
 
 T = TypeVar("T", bound=BaseModel)
+
+# Type alias for user content - either string or multimodal content blocks
+UserContent = Union[str, list[dict[str, Any]]]
 
 
 def coerce_to_schema(data: dict[str, Any], schema: Type[BaseModel]) -> dict[str, Any]:
@@ -56,11 +59,18 @@ class StrategyExecutor(ABC, Generic[T]):
     async def execute(
         self,
         output_schema: Type[T],
-        user_prompt: str,
+        user_prompt: UserContent,
         system_prompt: Optional[str],
         output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
         """Execute the strategy and return result.
+
+        Args:
+            output_schema: Pydantic model class for structured output
+            user_prompt: Either a string or multimodal content blocks
+                (list of dicts with "type" key, e.g. [{"type": "text", ...}, {"type": "image", ...}])
+            system_prompt: Optional system prompt
+            output_config: Configuration for the structured output operation
 
         Note: Parameter is named 'output_config' (not 'config') to avoid conflict
         with LangSmith's @traceable decorator which treats 'config' as a LangChain
@@ -69,4 +79,4 @@ class StrategyExecutor(ABC, Generic[T]):
         pass
 
 
-__all__ = ["StrategyExecutor", "coerce_to_schema"]
+__all__ = ["StrategyExecutor", "coerce_to_schema", "UserContent"]

@@ -390,14 +390,14 @@ async def _poll_marker_job(
 
     Args:
         job_id: Job ID to poll
-        max_wait: Maximum wait time in seconds (None = no limit)
+        max_wait: Maximum wait time in seconds (None = no limit, waits until job completes or service unavailable)
         max_retries: Max retries for transient network errors per poll attempt
 
     Returns:
         Markdown content
 
     Raises:
-        MarkerProcessingError: If job fails or times out
+        MarkerProcessingError: If job fails, times out, or service becomes unavailable
     """
     start_time = asyncio.get_event_loop().time()
 
@@ -408,23 +408,30 @@ async def _poll_marker_job(
             if max_wait is not None and elapsed > max_wait:
                 raise MarkerProcessingError(f"Marker job {job_id} did not complete within {max_wait}s")
 
-            # Retry transient network errors with longer backoffs for busy service
-            backoff_multipliers = (2, 5, 10)  # 30s, 75s, 150s
+            # Retry transient network errors with backoffs
+            # Short backoffs to detect service unavailability quickly (~90s total)
+            backoff_multipliers = (1, 2, 3)  # 15s, 30s, 45s
             for attempt in range(max_retries):
                 try:
                     response = await client.get(f"/jobs/{job_id}")
                     response.raise_for_status()
                     break
-                except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
                     if attempt < max_retries - 1:
                         wait_time = MARKER_POLL_INTERVAL * backoff_multipliers[attempt]
                         logger.warning(
-                            f"Marker poll timeout for job {job_id} (attempt {attempt + 1}/{max_retries}), "
-                            f"retrying in {wait_time}s"
+                            f"Marker poll error for job {job_id} (attempt {attempt + 1}/{max_retries}): "
+                            f"{type(e).__name__}, retrying in {wait_time}s"
                         )
                         await asyncio.sleep(wait_time)
                     else:
-                        raise MarkerProcessingError(f"Marker poll failed after {max_retries} retries: {e}") from e
+                        logger.warning(
+                            f"Marker service unavailable during polling for job {job_id}: "
+                            f"{type(e).__name__}: {e}"
+                        )
+                        raise MarkerProcessingError(
+                            f"Marker service unavailable: {type(e).__name__}"
+                        ) from e
 
             data = response.json()
             status = data["status"]

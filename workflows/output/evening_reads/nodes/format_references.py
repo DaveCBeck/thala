@@ -235,7 +235,7 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
             )
         )
 
-    status = "success" if not missing_refs else "partial"
+    status = "completed" if not missing_refs else "partial"
 
     return {
         "formatted_references": formatted_refs,

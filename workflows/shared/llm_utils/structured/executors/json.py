@@ -17,7 +17,7 @@ from ..types import (
     StructuredOutputResult,
     StructuredOutputStrategy,
 )
-from .base import StrategyExecutor, coerce_to_schema
+from .base import StrategyExecutor, UserContent, coerce_to_schema
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -29,10 +29,15 @@ class JSONPromptingExecutor(StrategyExecutor[T]):
     async def execute(
         self,
         output_schema: Type[T],
-        user_prompt: str,
+        user_prompt: UserContent,
         system_prompt: Optional[str],
         output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
+        # JSON prompting doesn't support multimodal content
+        if isinstance(user_prompt, list):
+            return StructuredOutputResult.err(
+                error="JSON prompting strategy does not support multimodal content"
+            )
         llm = get_llm(
             tier=output_config.tier,
             max_tokens=output_config.max_tokens,

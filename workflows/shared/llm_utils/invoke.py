@@ -74,6 +74,24 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+# Type alias for multimodal content (list of content blocks)
+MultimodalContent = list[dict[str, Any]]
+
+
+def _is_multimodal_content(user: Any) -> bool:
+    """Check if user input is multimodal content (list of content dicts).
+
+    Multimodal content is a list of dicts with "type" keys, e.g.:
+    [{"type": "text", "text": "..."}, {"type": "image", "source": {...}}]
+
+    This is distinct from a batch of string prompts: ["prompt1", "prompt2"]
+    """
+    if not isinstance(user, list) or len(user) == 0:
+        return False
+    # Check if first element is a content dict (has "type" key)
+    first = user[0]
+    return isinstance(first, dict) and "type" in first
+
 
 def _broker_response_to_message(response: "LLMResponse") -> AIMessage:
     """Convert broker LLMResponse to proper AIMessage.
@@ -425,8 +443,9 @@ async def _invoke_structured(
     from .structured.executors import get_executor
     from .structured.retry import with_retries
 
-    # Normalize to list
-    is_batch = isinstance(user, list)
+    # Normalize to list - multimodal content is NOT a batch, it's a single prompt
+    is_multimodal = _is_multimodal_content(user)
+    is_batch = isinstance(user, list) and not is_multimodal
     user_prompts = user if is_batch else [user]
 
     # Select strategy
@@ -456,7 +475,7 @@ async def _invoke_structured(
     )
 
     # Single request path with retry logic
-    async def execute_single(user_prompt: str) -> T:
+    async def execute_single(user_prompt: str | MultimodalContent) -> T:
         def make_invoke_fn(cfg: StructuredOutputConfig):
             """Factory to create invoke function with given config."""
             executor = get_executor(selected_strategy)
@@ -497,7 +516,7 @@ async def _invoke_structured(
         # Batch path with concurrent execution
         semaphore = asyncio.Semaphore(10)
 
-        async def execute_one(user_prompt: str) -> T:
+        async def execute_one(user_prompt: str | MultimodalContent) -> T:
             async with semaphore:
                 return await execute_single(user_prompt)
 

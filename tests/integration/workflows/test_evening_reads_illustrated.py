@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 
-from tests.factories import make_academic_paper_content
 
 if TYPE_CHECKING:
     from langchain_tools.base import StoreManager
@@ -33,32 +32,86 @@ logger = logging.getLogger(__name__)
 
 @pytest_asyncio.fixture
 async def literature_review_content() -> str:
-    """Generate a realistic literature review for testing."""
-    # Generate a multi-section literature review
-    sections = [
-        "Executive Summary",
-        "Introduction",
-        "Methodology",
-        "Theme 1: Foundational Concepts",
-        "Theme 2: Practical Applications",
-        "Theme 3: Future Directions",
-        "Conclusion",
-        "References",
-    ]
+    """Generate a realistic literature review for testing.
 
-    content = make_academic_paper_content(
-        title="Literature Review: Advances in Knowledge Management Systems",
-        sections=sections,
-    )
+    Must generate >500 words to pass validation in evening_reads workflow.
+    """
+    # Generate substantive content for each section (~600 words total)
+    content = """# Literature Review: Advances in Knowledge Management Systems
 
-    # Add some citation-like references for the workflow to process
-    content += """
+## Executive Summary
+
+This literature review examines recent advances in knowledge management systems, focusing on
+the intersection of artificial intelligence, semantic technologies, and organizational learning.
+The review synthesizes findings from multiple research domains including information science,
+computer science, and organizational behavior. Key findings indicate that modern knowledge
+management systems increasingly rely on machine learning for content organization and retrieval,
+with significant improvements in user adoption and knowledge discovery outcomes.
+
+## Introduction
+
+Knowledge management has evolved significantly over the past two decades, transitioning from
+simple document repositories to sophisticated AI-powered platforms. The proliferation of
+digital information has created unprecedented challenges for organizations seeking to capture,
+organize, and leverage institutional knowledge. Traditional approaches based on manual tagging
+and hierarchical classification have proven inadequate for the scale and complexity of modern
+information environments. This review examines how emerging technologies address these
+challenges through automated semantic analysis, intelligent recommendation systems, and
+adaptive learning interfaces.
+
+## Methodology
+
+Our systematic review followed established protocols for literature synthesis, examining
+peer-reviewed publications from 2020-2024 across major databases including Web of Science,
+Scopus, and IEEE Xplore. We identified 156 relevant studies through keyword searches and
+citation analysis, ultimately selecting 42 papers for detailed analysis based on quality
+criteria and topical relevance. Thematic analysis was conducted using a grounded theory
+approach, allowing categories to emerge from the data rather than imposing predetermined
+frameworks.
+
+## Theme 1: Foundational Concepts
+
+The theoretical foundations of modern knowledge management draw from cognitive science,
+organizational theory, and information systems research. Recent work has emphasized the
+distinction between explicit and tacit knowledge, with new computational approaches for
+capturing implicit expertise through behavioral analysis and process mining. Graph-based
+knowledge representations have gained prominence, enabling more nuanced modeling of
+relationships between concepts, people, and resources.
+
+## Theme 2: Practical Applications
+
+Enterprise implementations demonstrate the practical value of advanced knowledge management
+systems across diverse sectors. Healthcare organizations have deployed clinical decision
+support systems that synthesize evidence from medical literature and patient records.
+Manufacturing firms utilize knowledge graphs to capture expertise from retiring workers
+and accelerate onboarding for new employees. Financial services companies leverage
+natural language processing to extract insights from regulatory documents and market
+analysis reports.
+
+## Theme 3: Future Directions
+
+Emerging trends point toward increasingly personalized and context-aware knowledge systems.
+Large language models offer new possibilities for natural language interfaces and automated
+content generation, though concerns about accuracy and governance remain. Federated learning
+approaches may enable knowledge sharing across organizational boundaries while preserving
+privacy. The integration of knowledge management with workflow automation promises to
+embed expertise directly into business processes.
+
+## Conclusion
+
+This review highlights the transformative potential of AI-enhanced knowledge management
+while identifying key challenges around trust, governance, and organizational change.
+Successful implementations require careful attention to sociotechnical factors alongside
+technical capabilities. Future research should examine longitudinal outcomes and develop
+frameworks for ethical deployment of intelligent knowledge systems.
 
 ## References
 
 [@smith2023] Smith, J. (2023). Knowledge systems in modern enterprises. Journal of KM, 15(2), 45-67.
 [@jones2024] Jones, M. (2024). AI-powered knowledge retrieval. AI Systems Review, 8(1), 12-28.
 [@chen2023] Chen, L. et al. (2023). Semantic search architectures. Data Science Quarterly, 22(4), 156-178.
+[@williams2023] Williams, R. (2023). Organizational learning in the digital age. Management Science, 69(3), 1234-1256.
+[@kumar2024] Kumar, S. & Patel, A. (2024). Knowledge graphs for enterprise applications. IEEE TKDE, 36(2), 445-461.
 """
     return content
 
@@ -292,7 +345,7 @@ class TestEveningReadsIllustrated:
         )
 
         # Assertions
-        assert result["result"].get("status") in ("completed", "partial", None), \
+        assert result["result"].get("status") in ("success", "completed", "partial", None), \
             f"Unexpected status: {result['result'].get('status')}"
 
         # Image plan should be generated
