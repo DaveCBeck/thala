@@ -1,15 +1,14 @@
 """Thematic section writing nodes.
 
-Routes through central LLM broker for unified cost/speed management.
+Routes through unified invoke() for automatic broker routing and cost optimization.
 """
 
-import asyncio
 import logging
 from typing import Any
 
-from core.llm_broker import BatchPolicy, get_broker
+from core.llm_broker import BatchPolicy
 from workflows.shared.language import get_translated_prompt
-from workflows.shared.llm_utils import ModelTier
+from workflows.shared.llm_utils import ModelTier, invoke_batch, InvokeConfig
 
 from ...citation_utils import format_papers_with_keys
 from ...types import SynthesisState
@@ -25,7 +24,8 @@ logger = logging.getLogger(__name__)
 async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
     """Write a section for each thematic cluster.
 
-    Routes through central LLM broker for unified cost/speed management.
+    Uses invoke_batch() for efficient batched LLM calls with automatic
+    broker routing and cost optimization.
     """
     clusters = state.get("clusters", [])
     cluster_analyses = state.get("cluster_analyses", [])
@@ -59,13 +59,12 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             prompt_name="lit_review_thematic_user",
         )
 
-    broker = get_broker()
-    pending_futures: dict[str, asyncio.Future] = {}
     cluster_labels = []
 
-    logger.info(f"Submitting {len(clusters)} thematic sections via broker")
+    logger.info(f"Submitting {len(clusters)} thematic sections")
 
-    async with broker.batch_group():
+    # Use invoke_batch for efficient batching
+    async with invoke_batch() as batch:
         for cluster in clusters:
             analysis = analysis_lookup.get(cluster["cluster_id"], {})
 
@@ -85,26 +84,24 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
                 narrative_summary=analysis.get("narrative_summary", "No analysis available"),
             )
 
-            future = await broker.request(
-                prompt=user_prompt,
-                model=ModelTier.SONNET,
-                policy=BatchPolicy.PREFER_BALANCE,
-                max_tokens=6000,
+            batch.add(
+                tier=ModelTier.SONNET,
                 system=thematic_system,
+                user=user_prompt,
+                config=InvokeConfig(
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                    max_tokens=6000,
+                ),
             )
-            pending_futures[cluster["label"]] = future
             cluster_labels.append(cluster["label"])
 
     # Collect results
+    batch_results = await batch.results()
     section_drafts = {}
-    for label in cluster_labels:
+    for i, label in enumerate(cluster_labels):
         try:
-            response = await pending_futures[label]
-            if response.success:
-                section_drafts[label] = response.content
-            else:
-                logger.error(f"Failed to write section for {label}: {response.error}")
-                section_drafts[label] = f"[Section generation failed: {response.error}]"
+            response = batch_results[i]
+            section_drafts[label] = response.content
         except Exception as e:
             logger.error(f"Failed to write section for {label}: {e}")
             section_drafts[label] = f"[Section generation failed: {e}]"
