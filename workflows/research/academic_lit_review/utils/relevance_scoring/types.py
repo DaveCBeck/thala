@@ -1,5 +1,29 @@
 """Types and prompts for relevance scoring."""
 
+from pydantic import BaseModel, Field
+
+
+class RelevanceScore(BaseModel):
+    """Single paper relevance score."""
+
+    relevance_score: float = Field(ge=0.0, le=1.0, description="Relevance score from 0.0 to 1.0")
+    reasoning: str = Field(description="Brief 1-2 sentence explanation")
+
+
+class BatchPaperScore(BaseModel):
+    """Single paper score in a batch response."""
+
+    doi: str = Field(description="Paper DOI")
+    relevance_score: float = Field(ge=0.0, le=1.0, description="Relevance score from 0.0 to 1.0")
+    reasoning: str = Field(description="Brief 1-2 sentence explanation")
+
+
+class BatchRelevanceScores(BaseModel):
+    """Batch relevance scoring response."""
+
+    papers: list[BatchPaperScore] = Field(description="List of paper scores in input order")
+
+
 RELEVANCE_SCORING_SYSTEM = """You are an academic literature review assistant evaluating paper relevance.
 
 Given a research topic and a paper's metadata, score its relevance from 0.0 to 1.0:
@@ -41,11 +65,13 @@ Consider for each paper:
 - Disciplinary alignment
 - Corpus Co-citations: If provided, this indicates how many papers already in our corpus cite or are cited by this paper. Higher counts suggest the paper is well-connected to the existing literature we've collected. Use this as supporting evidence - a paper with high co-citations that also has relevant content should score higher, but co-citations alone don't guarantee relevance.
 
-Output ONLY a JSON array with one object per paper (in the same order as input):
-[
-  {"doi": "<paper DOI>", "relevance_score": <float 0.0-1.0>, "reasoning": "<brief 1-2 sentence explanation>"},
-  ...
-]"""
+Output ONLY a JSON object with a "papers" array containing one object per paper (in the same order as input):
+{
+  "papers": [
+    {"doi": "<paper DOI>", "relevance_score": <float 0.0-1.0>, "reasoning": "<brief 1-2 sentence explanation>"},
+    ...
+  ]
+}"""
 
 RELEVANCE_SCORING_USER_TEMPLATE = """Research Topic: {topic}
 Research Questions: {research_questions}
@@ -66,4 +92,4 @@ Research Questions: {research_questions}
 Papers to Evaluate:
 {papers}
 
-Score each paper's relevance to the research topic. Return a JSON array with one object per paper."""
+Score each paper's relevance to the research topic. Return a JSON object with a "papers" array."""
