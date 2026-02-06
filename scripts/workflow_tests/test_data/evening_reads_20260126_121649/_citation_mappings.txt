@@ -1,0 +1,298 @@
+Citation Key Mappings
+========================================
+
+[@2S4QVJSR]
+  ES Record: 6024fe27-2760-47b0-af2b-a61de991f635
+  Title: Assessing the Contributions of Comet Impact and Volcanism Toward the Climate Perturbations of the Paleocene‐Eocene Thermal Maximum
+
+[@362Y5E26]
+  ES Record: None
+  Title: None
+
+[@3EA4CMM2]
+  ES Record: 29bf581b-8eff-492d-b6c5-8d047ed546ec
+  Title: Lithium isotope evidence for enhanced weathering and erosion during the Paleocene-Eocene Thermal Maximum
+
+[@3HVXCE9H]
+  ES Record: db548991-748a-4cf9-950f-af8820eade47
+  Title: Assessing offsets between the <i>δ</i><sup>13</sup>C of sedimentary components and the global exogenic carbon pool across early Paleogene carbon cycle perturbations
+
+[@47YBCEFM]
+  ES Record: 0494b0a4-34ed-45da-9d68-9fe60b021b2f
+  Title: Tracing North Atlantic volcanism and seaway connectivity across the Paleocene–Eocene Thermal Maximum (PETM)
+
+[@4VJB3IE6]
+  ES Record: None
+  Title: None
+
+[@69H5XANR]
+  ES Record: 398f66b4-cf9c-489f-a431-24f3911218ae
+  Title: A High‐Fidelity Benthic Stable Isotope Record of Late Cretaceous–Early Eocene Climate Change and Carbon‐Cycling
+
+[@7B8GX4DL]
+  ES Record: 028cf226-41e3-4e9b-8f95-a05d67451839
+  Title: Assessing the Duration of the Paleocene‐Eocene Thermal Maximum
+
+[@7U76VLJY]
+  ES Record: ef45518d-e25f-4ad7-9f40-8395e34880bd
+  Title: Rapid and sustained environmental responses to global warming: the Paleocene–Eocene Thermal Maximum in the eastern North Sea
+
+[@9DLALEHA]
+  ES Record: cc64121d-1796-4e1a-804b-5ee27e3b1981
+  Title: Methane and environmental change during the Paleocene-Eocene thermal maximum (PETM): Modeling the PETM onset as a two-stage event
+
+[@9L889AVK]
+  ES Record: None
+  Title: None
+
+[@9P97Q29C]
+  ES Record: 5c202faa-0a51-4327-bcd9-7ae6d0336442
+  Title: Strong Coupling Between Carbon Cycle, Climate, and Weathering During the Paleocene‐Eocene Thermal Maximum
+
+[@9SVR963C]
+  ES Record: None
+  Title: None
+
+[@AD2MKDMV]
+  ES Record: None
+  Title: None
+
+[@AG7I2UA9]
+  ES Record: 7711df16-1f02-4b3b-accc-3039e6ecfbfd
+  Title: Surface ocean warming and acidification driven by rapid carbon release precedes Paleocene-Eocene Thermal Maximum
+
+[@ASJD2TES]
+  ES Record: 5ea09cdb-f864-405e-b70f-4a71bd81015a
+  Title: Carbon release from Large Igneous Province magmas estimated from trace element-gas correlations
+
+[@AX9TEFK3]
+  ES Record: b88796d6-1f89-49ea-a6bb-9914ac271fe4
+  Title: Bighorn Basin Coring Project (BBCP): a continental perspective on early Paleogene hyperthermals
+
+[@AYDNQMFP]
+  ES Record: 9309a2d1-cb2e-46ef-9156-99eb68f14c2d
+  Title: An early Cenozoic perspective on greenhouse warming and carbon-cycle dynamics
+
+[@AYMERNS9]
+  ES Record: None
+  Title: None
+
+[@BXXAU5WS]
+  ES Record: None
+  Title: None
+
+[@C5A4BTTB]
+  ES Record: 4ef50976-b7de-4862-9a61-feadeba87e49
+  Title: Warming, euxinia and sea level rise during the Paleocene–Eocene Thermal Maximum on the Gulf Coastal Plain: implications for ocean oxygenation and nutrient cycling
+
+[@DR9EQIKF]
+  ES Record: None
+  Title: None
+
+[@FB8PIYHQ]
+  ES Record: ead783d6-fdaa-4d70-be95-04593224f9b9
+  Title: A dynamic climate and ecosystem state during the Paleocene-Eocene Thermal Maximum: inferences from dinoflagellate cyst assemblages on the New Jersey Shelf
+
+[@FQ4RI4B9]
+  ES Record: 9ce9aa65-5751-4c37-89ee-f7128dc58124
+  Title: Rapid Acidification of the Ocean During the Paleocene-Eocene Thermal Maximum
+
+[@FVQEB59G]
+  ES Record: None
+  Title: None
+
+[@G5QN8JFL]
+  ES Record: 9be44984-9d09-4a92-8ef7-2bf54875eec8
+  Title: Eocene hyperthermal event offers insight into greenhouse warming
+
+[@GTA8KIWY]
+  ES Record: a84c4a7c-0c32-42d2-ba86-a01ee0711826
+  Title: Spatial and Temporal Patterns in Petrogenic Organic Carbon Mobilization During the Paleocene‐Eocene Thermal Maximum
+
+[@HGJY9YK6]
+  ES Record: None
+  Title: None
+
+[@HP97NAV7]
+  ES Record: 5f59cc68-8667-4421-beb9-4774454b9e8b
+  Title: An osmium isotope excursion associated with the Late Paleocene thermal maximum: Evidence of intensified chemical weathering
+
+[@I3FZQVMT]
+  ES Record: 7377b0ab-a83f-4975-9b3a-d8b041e43f91
+  Title: Proxy evidence for state-dependence of climate sensitivity in the Eocene greenhouse
+
+[@IAXX62EA]
+  ES Record: None
+  Title: None
+
+[@INWM2JEG]
+  ES Record: None
+  Title: None
+
+[@IRAWFJDL]
+  ES Record: ad292e45-1774-43f4-b777-48deb930e1b4
+  Title: A probabilistic assessment of the rapidity of PETM onset
+
+[@IVXWGMUC]
+  ES Record: c496a099-5f51-45f9-9151-5993557fb8ef
+  Title: Large-Amplitude Variations in Carbon Cycling and Terrestrial Weathering during the Latest Paleocene and Earliest Eocene: The Record at Mead Stream, New Zealand
+
+[@JM6F7DZE]
+  ES Record: None
+  Title: None
+
+[@JUNM4JH9]
+  ES Record: None
+  Title: None
+
+[@JUUPBBR2]
+  ES Record: c772655a-5520-48d4-8760-f67e630cb49d
+  Title: The Paleocene–Eocene carbon isotope excursion in higher plant organic matter: Differential fractionation of angiosperms and conifers in the Arctic
+
+[@JXURUCG8]
+  ES Record: e07013c0-306a-41bd-8dd7-405c4ebf527e
+  Title: Frequency, magnitude and character of hyperthermal events at the onset of the Early Eocene Climatic Optimum
+
+[@KPX8V7AQ]
+  ES Record: None
+  Title: None
+
+[@L358KUND]
+  ES Record: None
+  Title: None
+
+[@LTT7MHM2]
+  ES Record: 1ab22de5-7ab6-4b8e-a778-b1b26864a73b
+  Title: Astronomical pacing of late Palaeocene to early Eocene global warming events
+
+[@LVFPSGAY]
+  ES Record: 3696234d-0a84-46aa-b3b4-728c93829050
+  Title: Mercury anomalies across the Palaeocene–Eocene Thermal Maximum
+
+[@NL8GKWDD]
+  ES Record: fca5f3ab-e0df-4104-ac47-94c2301b6f67
+  Title: The DeepMIP contribution to PMIP4: experimental design for model simulations of the EECO, PETM, and pre-PETM (version 1.0)
+
+[@NT6V92TQ]
+  ES Record: None
+  Title: None
+
+[@NVB36TDB]
+  ES Record: 08fd0ae7-bb2a-4817-b170-417be3e3a504
+  Title: Freshwater ecosystem collapse and mass mortalities at the Paleocene-Eocene thermal maximum
+
+[@NZHCUYVP]
+  ES Record: 85e9ec93-a453-458e-9b06-c6f479019696
+  Title: An Assessment of Earth's Climate Sensitivity Using Multiple Lines of Evidence
+
+[@PIRZNVRE]
+  ES Record: dce57d88-886d-44e9-b739-4c4b297dc372
+  Title: Dissociation of oceanic methane hydrate as a cause of the carbon isotope excursion at the end of the Paleocene
+
+[@PKCA3IP9]
+  ES Record: 1ebabce1-a1be-4d0f-a2c5-b2999e521584
+  Title: Depth dependency of the Paleocene‐Eocene carbon isotope excursion: Paired benthic and terrestrial biomarker records (Ocean Drilling Program Leg 208, Walvis Ridge)
+
+[@PXR3JYSE]
+  ES Record: None
+  Title: None
+
+[@PZ3PSHWV]
+  ES Record: 906e13b9-aca4-47c4-96d2-feafb874a5d5
+  Title: Astrochronology of the Paleocene-Eocene Thermal Maximum on the Atlantic Coastal Plain
+
+[@PZUTM9CI]
+  ES Record: 1e781e57-cd84-43a8-858d-582a8c46670f
+  Title: Modeling hyperthermal events in the Mesozoic-Paleogene periods: a review
+
+[@Q69ZBYNY]
+  ES Record: 9489a3d8-8689-44ce-a0b8-242ad3342af0
+  Title: The Temperature of the Deep Ocean Is a Robust Proxy for Global Mean Surface Temperature During the Cenozoic
+
+[@Q75969Z3]
+  ES Record: b1b4a345-a7d7-4e88-9890-6e89c1e0a86b
+  Title: Methane hydrate stability and anthropogenic climate change
+
+[@QBL568GM]
+  ES Record: None
+  Title: None
+
+[@RBGG85SP]
+  ES Record: be8bd78b-8512-4aaa-a669-1bc7cb55b66c
+  Title: A seasonality trigger for carbon injection at the Paleocene–Eocene Thermal Maximum
+
+[@RP85YAF8]
+  ES Record: 2ea4f44a-082b-49c1-b0cc-9bde71e22f71
+  Title: All aboard! Earth system investigations with the CH2O-CHOO TRAIN v1.0
+
+[@RV2M2PC2]
+  ES Record: 588d6d6d-4da8-4a99-840d-89de4a5d066b
+  Title: Paleogene Earth perturbations in the US Atlantic Coastal Plain (PEP-US): coring transects of hyperthermals to understand past carbon injections and ecosystem responses
+
+[@SAB4DKXU]
+  ES Record: None
+  Title: None
+
+[@SFHXHQXJ]
+  ES Record: 8c70a5d5-2af0-4783-a00b-48b7a08737db
+  Title: Shallow-water hydrothermal venting linked to the Palaeocene–Eocene Thermal Maximum
+
+[@SH7DIUT5]
+  ES Record: 8f3138b6-abf7-4413-8790-41691d1ea3a0
+  Title: Polar amplification of orbital-scale climate variability in the early Eocene greenhouse world
+
+[@TBYRHSCY]
+  ES Record: 26eeb1b2-3125-4a8e-a08f-cfbee7c4669a
+  Title: Widespread Warming Before and Elevated Barium Burial During the Paleocene‐Eocene Thermal Maximum: Evidence for Methane Hydrate Release?
+
+[@U99V935D]
+  ES Record: 5579d997-c747-4cf4-a545-e45cef3e8fff
+  Title: A model–data comparison for a multi-model ensemble of early Eocene atmosphere–ocean simulations: EoMIP
+
+[@US3YQCWH]
+  ES Record: b57c1e39-e63d-40fd-bfd2-85794f4a2f52
+  Title: What caused the long duration of the Paleocene‐Eocene Thermal Maximum?
+
+[@UTQMAH7X]
+  ES Record: d8a50f97-4cd6-4ec2-bdb0-dd81c3b5ae74
+  Title: Paleocene/Eocene carbon feedbacks triggered by volcanic activity
+
+[@WF4KD8NA]
+  ES Record: 83bf69c9-8b30-450f-a400-7a37cdd7759a
+  Title: A case for a comet impact trigger for the Paleocene/Eocene thermal maximum and carbon isotope excursion
+
+[@WLLAETYT]
+  ES Record: None
+  Title: None
+
+[@XTJBAAM5]
+  ES Record: 60b49d0a-e204-46c9-85a3-6a471b9c4b7e
+  Title: Carbon isotope chemostratigraphy, geochemistry, and biostratigraphy of the Paleocene–Eocene Thermal Maximum, deepwater Wilcox Group, Gulf of Mexico (USA)
+
+[@XUVKNSJN]
+  ES Record: d08f3760-b33c-4f37-921f-b62ab433476f
+  Title: Astronomical calibration of the Ypresian timescale: implications for seafloor spreading rates and the chaotic behavior of the solar system?
+
+[@Y4DAR7Z9]
+  ES Record: 492afdff-b054-4620-8675-2e66371c994d
+  Title: Down the Rabbit Hole: toward appropriate discussion of methane release from gas hydrate systems during the Paleocene-Eocene thermal maximum and other past hyperthermal events
+
+[@YFSXQJH4]
+  ES Record: 648ec57c-9a76-4136-b53a-04a89799b170
+  Title: Large Igneous Province Control on Ocean Anoxia and Eutrophication in the North Sea at the Paleocene–Eocene Thermal Maximum
+
+[@YZQLK569]
+  ES Record: cb0dbd8f-7d63-44b6-81d3-cca4ccdd82f6
+  Title: High resolution cyclostratigraphy of the early Eocene – new insights into the origin of the Cenozoic cooling trend
+
+[@Z9CK6LP9]
+  ES Record: 1fdf85e7-9107-49a6-b819-8a82727a1787
+  Title: An Exceptional Chronologic, Isotopic, and Clay Mineralogic Record of the Latest Paleocene Thermal Maximum, Bass River, NJ, ODP 174AX
+
+[@ZJKKET9V]
+  ES Record: fb72b2f9-58b0-4701-ad3b-6a0571ff3b32
+  Title: Environmental impact and magnitude of paleosol carbonate carbon isotope excursions marking five early Eocene hyperthermals in the Bighorn Basin, Wyoming
+
+[@ZUEWG4SR]
+  ES Record: 1ba2e05e-3143-4cb9-8101-207c7b46d50a
+  Title: The Paleocene-Eocene Thermal Maximum: A Perturbation of Carbon Cycle, Climate, and Biosphere with Implications for the Future

@@ -1,0 +1,24 @@
+{
+  "metrics": {
+    "completed": true,
+    "output_length": 85415,
+    "word_count": 11050,
+    "source_count": 318,
+    "error_count": 0,
+    "papers_discovered": 318,
+    "papers_processed": 50,
+    "processing_rate": 0.15723270440251572,
+    "cluster_count": 6,
+    "papers_clustered": 51,
+    "gaps_identified": 18,
+    "conflicts_identified": 16,
+    "diffusion_stages": 1,
+    "saturation_reached": true,
+    "reference_count": 48
+  },
+  "issues": [
+    "Output may be too long (11050 words)",
+    "Low processing rate (16%)"
+  ],
+  "suggestions": []
+}

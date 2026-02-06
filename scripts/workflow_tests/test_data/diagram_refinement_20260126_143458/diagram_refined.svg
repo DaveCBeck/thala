@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 700" width="900" height="700">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowhead-feedback" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+  </defs>
+  
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  
+  <text x="450" y="35" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#1e293b">Paper Processing Pipeline Flow</text>
+  
+  <rect x="350" y="75" width="200" height="80" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="450" y="110" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Document</text>
+  <text x="450" y="130" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Ingestion</text>
+  
+  <line x1="450" y1="155" x2="450" y2="185" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <rect x="350" y="185" width="200" height="80" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="450" y="220" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Content</text>
+  <text x="450" y="240" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Extraction</text>
+  
+  <line x1="450" y1="265" x2="450" y2="295" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <rect x="350" y="295" width="200" height="80" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="450" y="330" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Semantic</text>
+  <text x="450" y="350" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Analysis</text>
+  
+  <line x1="450" y1="375" x2="450" y2="405" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <rect x="350" y="405" width="200" height="80" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="450" y="440" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Knowledge</text>
+  <text x="450" y="460" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Integration</text>
+  
+  <line x1="450" y1="485" x2="450" y2="515" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <rect x="350" y="515" width="200" height="80" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="450" y="550" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Quality</text>
+  <text x="450" y="570" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Validation</text>
+  
+  <path d="M 350 555 Q 180 555 180 445 Q 180 335 180 225 Q 180 115 350 115" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead-feedback)"/>
+  
+  <text x="105" y="110" font-family="Arial, sans-serif" font-size="14" fill="#dc2626">Error</text>
+  <text x="95" y="130" font-family="Arial, sans-serif" font-size="14" fill="#dc2626">Feedback</text>
+  
+  <rect x="600" y="495" width="240" height="120" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text x="720" y="525" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e293b">Error Correction Loop</text>
+  <text x="720" y="550" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#4b5563">Validates data quality</text>
+  <text x="720" y="570" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#4b5563">and triggers re-processing</text>
+  <text x="720" y="590" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#4b5563">of erroneous stages</text>
+  
+  <line x1="550" y1="555" x2="600" y2="555" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowhead)"/>
+</svg>

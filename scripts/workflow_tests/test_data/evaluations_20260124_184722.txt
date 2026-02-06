@@ -1,0 +1,15 @@
+
+=== PUZZLE ===
+Primary strength: Exceptional structural architecture that builds complexity systematically—each section introduces a new constraint or complication that deepens understanding while maintaining narrative momentum through the central puzzle of carbon source identification
+Primary weakness: The final section on modern relevance feels slightly obligatory and less technically grounded than the preceding material, transitioning from rigorous uncertainty-acknowledgment to somewhat generic warming warnings
+Scores: hook=5, momentum=5, payoff=5, tone=5, complexity=5, fit=5
+
+=== FINDING ===
+Primary strength: Strong technical depth with clear explanations of mechanisms—the heat transfer physics section explaining prolonged duration is particularly well-integrated and illuminating
+Primary weakness: The framing as a 'striking finding' (cascade/tipping points) somewhat oversells what is actually a nuanced story of persistent uncertainty; the opening implies we've discovered something decisive when the body reveals we haven't
+Scores: hook=4, momentum=4, payoff=4, tone=4, complexity=4, fit=3
+
+=== CONTRARIAN ===
+Primary strength: The epistemological framing about what ancient events can and cannot tell us is genuinely thoughtful and the essay does excellent work exposing methodological limitations in proxy records
+Primary weakness: The contrarian frame is somewhat forced—the 'comfortable story' it pushes against (that we understand the PETM) is already contested within the scientific community; this isn't contrarian so much as accurate representation of existing scientific debate
+Scores: hook=4, momentum=4, payoff=4, tone=4, complexity=5, fit=3
