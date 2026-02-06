@@ -64,9 +64,14 @@ class InvokeConfig:
     # Tokens
     max_tokens: int = 4096
 
+    # Concurrency control for direct invocation
+    max_concurrent: int = 10
+
     def __post_init__(self) -> None:
-        """Validate constraint combinations."""
-        if self.cache and self.thinking_budget:
-            raise ValueError(
-                "Cannot use cache with extended thinking on Anthropic. Set cache=False when using thinking_budget."
-            )
+        """Validate constraint combinations.
+
+        Note: Cache + thinking_budget validation is deferred to invoke()
+        where we know the model tier. DeepSeek R1 allows this combination
+        since it has automatic prefix caching independent of thinking.
+        """
+        pass

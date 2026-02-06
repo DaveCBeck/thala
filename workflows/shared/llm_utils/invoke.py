@@ -60,7 +60,7 @@ def _broker_response_to_message(response: "LLMResponse") -> AIMessage:
     """Convert broker LLMResponse to proper AIMessage.
 
     This ensures LangSmith can track token usage and costs correctly
-    by populating response_metadata with usage data.
+    by populating both response_metadata and usage_metadata.
 
     Args:
         response: LLMResponse from the broker
@@ -72,13 +72,32 @@ def _broker_response_to_message(response: "LLMResponse") -> AIMessage:
     if response.thinking:
         additional_kwargs["thinking"] = response.thinking
 
+    # Build standardized usage_metadata for LangSmith
+    usage_metadata = None
+    if response.usage:
+        usage_metadata = {
+            "input_tokens": response.usage.get("input_tokens", 0),
+            "output_tokens": response.usage.get("output_tokens", 0),
+            "total_tokens": (
+                response.usage.get("input_tokens", 0)
+                + response.usage.get("output_tokens", 0)
+            ),
+        }
+        # Include cache details if present (Anthropic prompt caching)
+        if "cache_creation_input_tokens" in response.usage:
+            usage_metadata["input_token_details"] = {
+                "cache_creation": response.usage.get("cache_creation_input_tokens", 0),
+                "cache_read": response.usage.get("cache_read_input_tokens", 0),
+            }
+
     return AIMessage(
         content=response.content,
         response_metadata={
-            "usage": response.usage,  # Required for LangSmith token/cost tracking
+            "usage": response.usage,  # Keep raw for debugging
             "model": response.model,
             "stop_reason": response.stop_reason,
         },
+        usage_metadata=usage_metadata,  # Standard field for LangSmith
         additional_kwargs=additional_kwargs,
     )
 
@@ -92,6 +111,7 @@ async def _invoke_direct(
     """Invoke LLM directly without broker.
 
     Handles both Anthropic (with caching) and DeepSeek models.
+    Uses asyncio.gather() for concurrent processing with rate limiting.
 
     Args:
         tier: Model tier to use
@@ -100,7 +120,7 @@ async def _invoke_direct(
         config: Invocation configuration
 
     Returns:
-        List of AIMessage responses
+        List of AIMessage responses (order preserved)
     """
     llm = get_llm(
         tier=tier,
@@ -108,27 +128,27 @@ async def _invoke_direct(
         max_tokens=config.max_tokens,
     )
 
-    results: list[AIMessage] = []
+    # Rate limiting semaphore
+    semaphore = asyncio.Semaphore(config.max_concurrent)
 
-    for user_prompt in user_prompts:
-        # Build messages with caching for Anthropic
-        if not is_deepseek_tier(tier) and config.cache:
-            messages = create_cached_messages(
-                system_content=system,
-                user_content=user_prompt,
-                cache_system=True,
-                cache_ttl=config.cache_ttl,
-            )
-        else:
-            messages = [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_prompt},
-            ]
+    async def invoke_one(user_prompt: str) -> AIMessage:
+        async with semaphore:
+            # Build messages with caching for Anthropic
+            if not is_deepseek_tier(tier) and config.cache:
+                messages = create_cached_messages(
+                    system_content=system,
+                    user_content=user_prompt,
+                    cache_system=True,
+                    cache_ttl=config.cache_ttl,
+                )
+            else:
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ]
+            return await llm.ainvoke(messages)
 
-        response = await llm.ainvoke(messages)
-        results.append(response)
-
-    return results
+    return list(await asyncio.gather(*[invoke_one(p) for p in user_prompts]))
 
 
 async def _invoke_via_broker(
@@ -236,6 +256,13 @@ async def invoke(
         )
     """
     config = config or InvokeConfig()
+
+    # Validate tier-specific constraints
+    if config.cache and config.thinking_budget and not is_deepseek_tier(tier):
+        raise ValueError(
+            "Cannot use cache with extended thinking on Anthropic. "
+            "Set cache=False when using thinking_budget."
+        )
 
     # Normalize to list for internal processing
     is_batch = isinstance(user, list)

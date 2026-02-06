@@ -12,8 +12,7 @@ Unified Invocation (Recommended):
     The invoke() function is the recommended way to call LLMs. It handles
     routing, caching, and broker integration automatically:
 
-    from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
-    from core.llm_broker import BatchPolicy
+    from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier, BatchPolicy
 
     # Simple call
     response = await invoke(
@@ -55,6 +54,7 @@ Prompt Caching:
     handles caching automatically. For manual control, use create_cached_messages().
 """
 
+from core.llm_broker import BatchPolicy
 from .models import ModelTier, get_llm
 from .config import InvokeConfig
 from .invoke import invoke, invoke_batch, InvokeBatch
@@ -86,6 +86,7 @@ __all__ = [
     "invoke_batch",
     "InvokeBatch",
     "InvokeConfig",
+    "BatchPolicy",
     # Model utilities
     "ModelTier",
     "get_llm",
