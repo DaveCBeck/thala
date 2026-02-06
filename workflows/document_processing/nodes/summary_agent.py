@@ -14,7 +14,7 @@ from core.config import truncate_for_trace
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM, TRANSLATION_SYSTEM
 from workflows.shared.language import LANGUAGE_NAMES
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke
 from workflows.shared.llm_utils.response_parsing import extract_response_content
 from workflows.shared.retry_utils import with_retry
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
@@ -76,13 +76,11 @@ Guidelines:
 - Highlight what makes this work significant"""
 
         # Generate summary via LLM with prompt caching
-        llm = get_llm(tier=ModelTier.DEEPSEEK_R1)
-
         async def _summarize():
-            response = await invoke_with_cache(
-                llm,
-                system_prompt=DOCUMENT_ANALYSIS_SYSTEM,
-                user_prompt=user_prompt,
+            response = await invoke(
+                tier=ModelTier.DEEPSEEK_R1,
+                system=DOCUMENT_ANALYSIS_SYSTEM,
+                user=user_prompt,
             )
             return extract_response_content(response)
 
@@ -112,14 +110,13 @@ Guidelines:
 
 
 async def _translate_to_english(text: str) -> str:
-    """Translate text to English using Sonnet."""
-    llm = get_llm(tier=ModelTier.DEEPSEEK_R1)
+    """Translate text to English using DeepSeek."""
 
     async def _invoke():
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=TRANSLATION_SYSTEM,
-            user_prompt=f"Translate this text to English:\n\n{text}",
+        response = await invoke(
+            tier=ModelTier.DEEPSEEK_R1,
+            system=TRANSLATION_SYSTEM,
+            user=f"Translate this text to English:\n\n{text}",
         )
         return extract_response_content(response)
 

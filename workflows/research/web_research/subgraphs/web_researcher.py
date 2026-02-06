@@ -37,7 +37,7 @@ from workflows.research.web_research.subgraphs.researcher_base import (
     create_generate_queries,
     scrape_pages as base_scrape_pages,
 )
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -178,14 +178,12 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
         raw_research=raw_research[:15000],
     )
 
-    llm = get_llm(ModelTier.HAIKU)
-
     try:
         # Use cached system prompt for 90% cost reduction on repeated calls
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+        response = await invoke(
+            tier=ModelTier.HAIKU,
+            system=system_prompt,
+            user=user_prompt,
         )
         content = (
             response.content

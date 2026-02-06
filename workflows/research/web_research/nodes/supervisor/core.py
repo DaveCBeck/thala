@@ -27,7 +27,7 @@ from workflows.research.web_research.prompts import (
     get_today_str,
 )
 from workflows.research.web_research.utils import load_prompts_with_translation
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke
 
 from .llm_integration import _get_supervisor_decision_structured
 from .action_handlers import (
@@ -145,8 +145,6 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
         max_concurrent_research_units=MAX_CONCURRENT_RESEARCHERS,
     )
 
-    llm = get_llm(ModelTier.OPUS)
-
     # Try structured output first (more reliable), fall back to text parsing
     action = None
     action_data = {}
@@ -155,7 +153,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     try:
         action, action_data, decision = await _get_supervisor_decision_structured(
-            llm, system_prompt_cached, user_prompt, brief
+            None, system_prompt_cached, user_prompt, brief  # llm unused by function
         )
         logger.debug(f"Supervisor decision: {action}")
     except Exception as structured_error:
@@ -168,10 +166,10 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
     if not use_structured:
         try:
             # Use cached system prompt for 90% cost reduction on repeated calls
-            response = await invoke_with_cache(
-                llm,
-                system_prompt=system_prompt_cached,
-                user_prompt=user_prompt,
+            response = await invoke(
+                tier=ModelTier.OPUS,
+                system=system_prompt_cached,
+                user=user_prompt,
             )
             content = response.content
 

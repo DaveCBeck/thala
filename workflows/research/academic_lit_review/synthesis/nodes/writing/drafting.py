@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.language import get_translated_prompt
 from ...types import SynthesisState
 from .prompts import (
@@ -83,12 +83,11 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         date_range=actual_range,
     )
 
-    llm = get_llm(tier=ModelTier.SONNET, max_tokens=4096)
-
-    intro_response = await invoke_with_cache(
-        llm,
-        system_prompt=intro_system,
-        user_prompt=intro_prompt,
+    intro_response = await invoke(
+        tier=ModelTier.SONNET,
+        system=intro_system,
+        user=intro_prompt,
+        config=InvokeConfig(max_tokens=4096),
     )
 
     introduction = (
@@ -111,10 +110,11 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         cluster_count=len(clusters),
     )
 
-    method_response = await invoke_with_cache(
-        llm,
-        system_prompt=method_system,
-        user_prompt=method_prompt,
+    method_response = await invoke(
+        tier=ModelTier.SONNET,
+        system=method_system,
+        user=method_prompt,
+        config=InvokeConfig(max_tokens=4096),
     )
 
     methodology = (
@@ -191,12 +191,11 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
     )
 
-    llm = get_llm(tier=ModelTier.SONNET, max_tokens=4096)
-
-    discussion_response = await invoke_with_cache(
-        llm,
-        system_prompt=discussion_system,
-        user_prompt=discussion_prompt,
+    discussion_response = await invoke(
+        tier=ModelTier.SONNET,
+        system=discussion_system,
+        user=discussion_prompt,
+        config=InvokeConfig(max_tokens=4096),
     )
 
     discussion = (
@@ -216,10 +215,11 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         main_contributions=f"Systematic review of {sum(len(c['paper_dois']) for c in clusters)} papers organized into {len(clusters)} themes",
     )
 
-    conclusions_response = await invoke_with_cache(
-        llm,
-        system_prompt=conclusions_system,
-        user_prompt=conclusions_prompt,
+    conclusions_response = await invoke(
+        tier=ModelTier.SONNET,
+        system=conclusions_system,
+        user=conclusions_prompt,
+        config=InvokeConfig(max_tokens=4096),
     )
 
     conclusions = (
