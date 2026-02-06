@@ -33,8 +33,8 @@ Options:
 What gets cleared (always):
   - .cache/*           (embeddings, marker, openalex, test caches)
   - logs/              (workflow logs)
-  - testing/test_data  (test output files)
-  - testing/traces     (trace files)
+  - tests/test_data    (test output files)
+  - tests/traces       (trace files)
   - **/__pycache__     (Python bytecode caches)
 
 What gets cleared with --full:
@@ -108,10 +108,10 @@ done
 log "Clearing logs..."
 empty_dir "${PROJECT_DIR}/logs"
 
-# 3. Empty testing directories
+# 3. Empty test directories
 log "Clearing test data..."
-empty_dir "${PROJECT_DIR}/testing/test_data"
-empty_dir "${PROJECT_DIR}/testing/traces"
+empty_dir "${PROJECT_DIR}/tests/test_data"
+empty_dir "${PROJECT_DIR}/tests/traces"
 
 # 4. Delete __pycache__ directories
 log "Removing __pycache__ directories..."

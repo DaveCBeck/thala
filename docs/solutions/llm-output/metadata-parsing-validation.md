@@ -399,7 +399,7 @@ async def update_zotero(state: DocumentProcessingState) -> dict[str, Any]:
 - `workflows/shared/__init__.py` - Export new utilities
 - `workflows/document_processing/nodes/metadata_agent.py` - Added year field and Pydantic validator
 - `workflows/document_processing/nodes/update_zotero.py` - Use proper name parsing and baseline merge
-- `testing/test_metadata_utils.py` - Comprehensive unit tests (38 tests)
+- `tests/unit/workflows/test_metadata_utils.py` - Comprehensive unit tests (38 tests)
 
 ## Testing
 

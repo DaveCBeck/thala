@@ -3,6 +3,8 @@ Pytest configuration for thala tests.
 
 This conftest provides:
 - Test infrastructure fixtures (testcontainers, mocks)
+- LLM broker configuration (fast mode for direct calls)
+- Command-line options for workflow tests
 - Logging isolation per test module
 
 Usage:
@@ -12,11 +14,15 @@ Usage:
     # Run integration tests (uses testcontainers)
     pytest tests/ -m integration
 
+    # Run with quality level for workflow tests
+    pytest tests/ --quality quick --language en
+
     # Run with parallel workers (uses --dist loadscope for container efficiency)
     pytest tests/ -n auto --dist loadscope
 """
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator, Generator
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
@@ -50,6 +56,7 @@ __all__ = [
     "mock_marker",
     "ContainerConfig",
     "test_store_manager",
+    "configure_llm_broker_fast_mode",
 ]
 
 
@@ -65,6 +72,44 @@ def event_loop():
     loop.close()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def configure_llm_broker_fast_mode():
+    """Configure LLM broker for fast mode in integration tests.
+
+    This ensures LLM calls go through the broker but are made directly
+    (not batched), which is appropriate for testing with real LLM calls.
+
+    Session-scoped and autouse to apply to all tests in the session.
+    """
+    from core.llm_broker.config import reset_broker_config
+
+    # Save original values
+    orig_enabled = os.environ.get("THALA_LLM_BROKER_ENABLED")
+    orig_mode = os.environ.get("THALA_LLM_BROKER_MODE")
+
+    # Configure broker for fast mode (direct calls, no batching)
+    os.environ["THALA_LLM_BROKER_ENABLED"] = "1"
+    os.environ["THALA_LLM_BROKER_MODE"] = "fast"
+
+    # Reset config so it picks up new env vars
+    reset_broker_config()
+
+    yield
+
+    # Restore original values
+    if orig_enabled is None:
+        os.environ.pop("THALA_LLM_BROKER_ENABLED", None)
+    else:
+        os.environ["THALA_LLM_BROKER_ENABLED"] = orig_enabled
+
+    if orig_mode is None:
+        os.environ.pop("THALA_LLM_BROKER_MODE", None)
+    else:
+        os.environ["THALA_LLM_BROKER_MODE"] = orig_mode
+
+    reset_broker_config()
+
+
 @pytest.fixture(autouse=True)
 def logging_run(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     """Rotate logs at test module boundaries.
@@ -75,8 +120,6 @@ def logging_run(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     When running with pytest-xdist, each worker uses a separate log directory
     to prevent file corruption from concurrent writes.
     """
-    import os
-
     # Handle pytest-xdist worker isolation to prevent log file corruption
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     if worker_id:
@@ -88,6 +131,43 @@ def logging_run(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     start_run(f"test-{test_name}")
     yield
     end_run()
+
+
+def pytest_addoption(parser):
+    """Add custom command line options for pytest."""
+    parser.addoption(
+        "--quality",
+        action="store",
+        default="quick",
+        choices=["test", "quick", "standard", "comprehensive", "high_quality"],
+        help="Quality level for workflow tests (default: quick)",
+    )
+    parser.addoption(
+        "--language",
+        action="store",
+        default="en",
+        help="Language code for workflow tests (default: en)",
+    )
+
+
+@pytest.fixture
+def quality_level(request):
+    """Get the quality level from pytest options."""
+    return request.config.getoption("--quality")
+
+
+@pytest.fixture
+def language(request):
+    """Get the language code from pytest options."""
+    return request.config.getoption("--language")
+
+
+@pytest.fixture
+def output_dir(tmp_path):
+    """Create a temporary output directory for test results."""
+    output = tmp_path / "test_output"
+    output.mkdir()
+    return output
 
 
 def pytest_configure(config):

@@ -8,9 +8,9 @@ from collections import defaultdict
 
 def main():
     trace_path = Path(
-        "/home/dave/thala/testing/traces/019ba18e-7124-7923-9dca-4565ead80738.json"
+        "/home/dave/thala/tests/traces/019ba18e-7124-7923-9dca-4565ead80738.json"
     )
-    output_path = Path("/home/dave/thala/testing/traces/loop5_flagged_items.json")
+    output_path = Path("/home/dave/thala/tests/traces/loop5_flagged_items.json")
 
     print(f"Reading trace file: {trace_path}")
     with open(trace_path) as f:

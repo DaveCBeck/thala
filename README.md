@@ -89,7 +89,7 @@ thala/
 │   └── retrieve-academic/         # Academic document retrieval
 │
 ├── mcp_server/                    # MCP server interface
-├── testing/                       # Test utilities and fixtures
+├── tests/                         # Test utilities and fixtures
 └── scripts/                       # Operational scripts
 ```
 

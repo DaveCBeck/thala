@@ -134,6 +134,6 @@ def analyze_trace(trace_file: str):
 
 if __name__ == "__main__":
     trace_file = (
-        sys.argv[1] if len(sys.argv) > 1 else "testing/traces/supervision_trace.json"
+        sys.argv[1] if len(sys.argv) > 1 else "traces/supervision_trace.json"
     )
     analyze_trace(trace_file)

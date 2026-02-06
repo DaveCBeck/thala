@@ -163,7 +163,7 @@ async def cleanup_all_clients() -> None:
 - `langchain_tools/openalex/client.py` - Added registration
 - `langchain_tools/perplexity.py` - Added registration
 - `core/scraping/service.py` - Added registration
-- `testing/test_supervised_lit_review.py` - Added cleanup call
+- `tests/integration/workflows/` - Added cleanup calls to workflow tests
 
 ## Prevention
 

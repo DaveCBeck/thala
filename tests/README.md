@@ -11,6 +11,9 @@ pytest tests/ -m unit
 # Run integration tests (requires Docker for testcontainers)
 pytest tests/ -m integration
 
+# Run workflow tests with quality level
+pytest tests/integration/workflows/ -m integration --quality quick
+
 # Run all tests with parallel workers
 pytest tests/ -n auto --dist loadscope
 
@@ -31,16 +34,29 @@ tests/
 │   └── mocks.py        # Mock fixtures (Zotero, Marker)
 ├── factories/          # Test data factories
 │   └── __init__.py     # Factory functions for test data
+├── utils/              # Test utilities
+│   ├── __init__.py     # Exports all utilities
+│   ├── quality_analyzer.py   # Quality analysis framework
+│   ├── datetime_utils.py     # Duration formatting, ISO parsing
+│   ├── file_management.py    # Output file management
+│   ├── cli_parser.py         # CLI argument helpers
+│   └── result_display.py     # Result formatting
 ├── unit/               # Unit tests (no external services)
-│   └── core/
-│       ├── llm_broker/
-│       ├── scraping/pdf/
-│       ├── task_queue/
-│       └── ...
+│   ├── core/
+│   │   ├── llm_broker/
+│   │   ├── scraping/pdf/
+│   │   ├── task_queue/
+│   │   └── ...
 │   └── workflows/
 │       └── ...
 └── integration/        # Integration tests (uses testcontainers)
-    └── llm_broker/
+    ├── llm_broker/
+    ├── llm_utils/
+    └── workflows/      # End-to-end workflow tests
+        ├── test_academic_lit_review.py
+        ├── test_document_processing.py
+        ├── test_evening_reads_illustrated.py
+        └── test_lit_review_then_enhance.py
 ```
 
 ## Fixture Ownership Policy

@@ -21,20 +21,17 @@ result = await academic_lit_review(
 final_review = result["final_report"]
 ```
 
-### Examples
+### Testing
 
 ```bash
-# Quick review for exploratory research
-python testing/test_academic_lit_review.py "Attention mechanisms" quick
+# Run with test quality (fast, minimal)
+pytest tests/integration/workflows/test_academic_lit_review.py -m integration --quality test
 
-# Standard quality (recommended)
-python testing/test_academic_lit_review.py "Transformer architectures" standard
+# Run with quick quality
+pytest tests/integration/workflows/test_academic_lit_review.py -m integration --quality quick
 
-# Comprehensive review for publication
-python testing/test_academic_lit_review.py "Vision transformers" comprehensive
-
-# With language option
-python testing/test_academic_lit_review.py "Transformer architectures" standard --language es
+# Run with different language
+pytest tests/integration/workflows/test_academic_lit_review.py -m integration --quality test --language es
 ```
 
 ## Input/Output

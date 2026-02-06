@@ -263,7 +263,7 @@ timeout = httpx.Timeout(None)  # No timeout
 Add checkpoint save/load functions for resuming from expensive phases:
 
 ```python
-# testing/test_academic_lit_review.py
+# tests/integration/workflows/test_academic_lit_review.py
 
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 
@@ -385,7 +385,7 @@ async def run_from_diffusion_checkpoint(checkpoint_prefix: str) -> dict:
 - `workflows/research/subgraphs/academic_lit_review/paper_processor.py`: Cache check, cache hit tracking
 - `services/retrieve-academic/app/retriever.py`: Multi-source retry logic
 - `workflows/shared/marker_client.py`: Remove timeout
-- `testing/test_academic_lit_review.py`: Checkpoint save/load, phase-by-phase execution
+- `tests/integration/workflows/test_academic_lit_review.py`: Checkpoint save/load, phase-by-phase execution
 
 ## Related Patterns
 

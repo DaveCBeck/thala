@@ -50,6 +50,32 @@ class MarkerProcessingError(Exception):
     pass
 
 
+# Health check timeout - fail fast if Marker isn't available
+MARKER_HEALTH_TIMEOUT = 5.0
+
+
+async def check_marker_available() -> bool:
+    """Check if Marker service is available.
+
+    Uses a short timeout to fail fast if the service isn't running.
+
+    Returns:
+        True if Marker is reachable, False otherwise
+    """
+    try:
+        async with httpx.AsyncClient(
+            base_url=MARKER_BASE_URL, timeout=MARKER_HEALTH_TIMEOUT
+        ) as client:
+            response = await client.get("/health")
+            return response.status_code == 200
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+        logger.warning(f"Marker service unavailable: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"Marker health check failed: {e}")
+        return False
+
+
 async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
     """Download PDF from URL using httpx (simple/fast method).
 
@@ -477,6 +503,10 @@ async def process_pdf_bytes(
     """
     if not validate_pdf_bytes(content):
         raise MarkerProcessingError("Content is not a valid PDF")
+
+    # Check Marker availability (fail fast)
+    if not await check_marker_available():
+        raise MarkerProcessingError("Marker service unavailable")
 
     # Check file size limit
     if len(content) > MARKER_MAX_FILE_SIZE:

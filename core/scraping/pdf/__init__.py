@@ -3,6 +3,7 @@
 from .analysis import DocumentAnalysis, DocumentComplexity, analyze_document
 from .detector import is_pdf_url
 from .processor import (
+    check_marker_available,
     download_pdf_by_md5,
     MarkerProcessingError,
     process_pdf_by_md5,
@@ -26,6 +27,7 @@ __all__ = [
     "process_document_smart_url",
     "ProcessingResult",
     # Legacy/direct Marker processing
+    "check_marker_available",
     "is_pdf_url",
     "download_pdf_by_md5",
     "MarkerProcessingError",
