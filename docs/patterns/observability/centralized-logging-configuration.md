@@ -335,8 +335,8 @@ THALA_LOG_DIR=/var/log/thala python script.py
 
 - `core/config.py`: Main `configure_logging()` implementation
 - `mcp_server/server.py`: MCP server entry point
-- `testing/test_academic_lit_review.py`: Test script with custom log name
-- `testing/test_book_finding.py`: Test script entry point
+- `tests/integration/workflows/test_academic_lit_review.py`: Test script with custom log name
+- `tests/integration/workflows/`: Workflow test entry points
 - All workflow entry points in `workflows/*/graph/api.py`
 
 ## References

@@ -91,15 +91,11 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
     for assignment in assignments:
         # Themes to avoid = all themes except this one
         must_avoid = [
-            f"{other_id}: {theme}"
-            for other_id, theme in themes_by_id.items()
-            if other_id != assignment["id"]
+            f"{other_id}: {theme}" for other_id, theme in themes_by_id.items() if other_id != assignment["id"]
         ]
 
         # Filter enriched content for this deep-dive
-        dd_content = [
-            ec for ec in enriched_content if ec["deep_dive_id"] == assignment["id"]
-        ]
+        dd_content = [ec for ec in enriched_content if ec["deep_dive_id"] == assignment["id"]]
 
         sends.append(
             Send(
@@ -133,9 +129,7 @@ async def sync_before_write_node(state: EveningReadsState) -> dict[str, Any]:
     enriched = state.get("enriched_content", [])
     import logging
 
-    logging.getLogger(__name__).info(
-        f"All fetches complete. Enriched content: {len(enriched)} items"
-    )
+    logging.getLogger(__name__).info(f"All fetches complete. Enriched content: {len(enriched)} items")
     return {}
 
 

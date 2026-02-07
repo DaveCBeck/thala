@@ -6,8 +6,8 @@ dev.md
 claude.md
 todo.md
 logs/
-testing/test_data/
-testing/traces/
+tests/test_data/
+tests/traces/
 **/claude.md
 
 # Thala local state (queue, outputs, credentials)

@@ -76,11 +76,6 @@ def calculate_completeness(
     gap_score = max(0, 1.0 - min(len(gaps_remaining), 10) * 0.05)
 
     # Weighted sum
-    completeness = (
-        0.40 * iteration_score
-        + 0.30 * coverage_score
-        + 0.20 * avg_confidence
-        + 0.15 * gap_score
-    )
+    completeness = 0.40 * iteration_score + 0.30 * coverage_score + 0.20 * avg_confidence + 0.15 * gap_score
 
     return min(completeness, 1.0)

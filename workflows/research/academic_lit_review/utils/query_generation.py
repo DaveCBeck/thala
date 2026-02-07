@@ -8,7 +8,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 from workflows.shared.language import LanguageConfig, get_translated_prompt, translate_queries
 
 logger = logging.getLogger(__name__)
@@ -87,11 +87,11 @@ async def generate_search_queries(
     )
 
     try:
-        result: AcademicQueryResponse = await get_structured_output(
-            output_schema=AcademicQueryResponse,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        result: AcademicQueryResponse = await invoke(
             tier=tier,
+            system=system_prompt,
+            user=user_prompt,
+            schema=AcademicQueryResponse,
         )
 
         queries = result.queries

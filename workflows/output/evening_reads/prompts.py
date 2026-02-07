@@ -137,7 +137,9 @@ Curious, direct, intellectually honest. You're thinking through material with th
 """
 
 
-DEEP_DIVE_PUZZLE_PROMPT = _DEEP_DIVE_HEADER + """
+DEEP_DIVE_PUZZLE_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
 ## Approach: Narrative Entry Through a Specific Puzzle
 Find a specific, concrete detail from the source material—an unexpected finding, a revealing anecdote, a tool or technique that exposes something non-obvious—and use it as your entry point. The hook should make the reader feel they've stumbled onto something interesting that demands explanation.
 
@@ -147,10 +149,14 @@ Structure your essay as an unfolding investigation:
 3. **Main body** (bulk of piece): Work through the theme, treating each element as a piece of the puzzle
 4. **Synthesis** (1-2 paragraphs): Surface the tensions and what this reveals
 5. **Open questions** (1 paragraph): What we still don't know and why it matters
-""" + _DEEP_DIVE_STYLE
+"""
+    + _DEEP_DIVE_STYLE
+)
 
 
-DEEP_DIVE_FINDING_PROMPT = _DEEP_DIVE_HEADER + """
+DEEP_DIVE_FINDING_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
 ## Approach: Lead With the Striking Empirical Finding
 Scan the source material for the most surprising quantitative result, the biggest gap, the finding that made you stop and re-read. Open with that number or comparison, then immediately surface its implications—what does this tell us about what we thought we knew?
 
@@ -161,10 +167,14 @@ Structure your essay as implications rippling outward:
 4. **Connections** (several paragraphs): How does this finding connect to other work?
 5. **Limitations** (1-2 paragraphs): Address trade-offs and what the finding doesn't tell us
 6. **Open questions** (1 paragraph): What remains unclear and future directions
-""" + _DEEP_DIVE_STYLE
+"""
+    + _DEEP_DIVE_STYLE
+)
 
 
-DEEP_DIVE_CONTRARIAN_PROMPT = _DEEP_DIVE_HEADER + """
+DEEP_DIVE_CONTRARIAN_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
 ## Approach: Contrarian Framing
 Identify the comfortable assumption, the conventional wisdom, or the "obvious" interpretation that the evidence actually complicates or undermines. Open by stating that assumption clearly—make it feel solid—then reveal the crack in the foundation.
 
@@ -176,7 +186,9 @@ Structure your essay as assumption-tested-by-evidence:
 3. **The evidence** (bulk of piece): Work through the evidence that complicates the simple story
 4. **Resolution attempts** (several paragraphs): Examine attempts to address or work around the problem
 5. **Productive uncertainty** (1-2 paragraphs): Why the complication matters, what it opens up
-""" + _DEEP_DIVE_STYLE
+"""
+    + _DEEP_DIVE_STYLE
+)
 
 
 DEEP_DIVE_USER_TEMPLATE = """## Relevant Source Material:

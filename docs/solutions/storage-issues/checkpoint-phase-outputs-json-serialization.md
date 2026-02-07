@@ -254,11 +254,11 @@ async def test_checkpoint_with_complex_types():
 | `core/task_queue/workflow_executor.py` | Log exceptions, fix variable shadowing |
 | `core/task_queue/checkpoint/state_manager.py` | Validate task exists, add diagnostic logging |
 | `core/task_queue/checkpoint/storage.py` | Add `CheckpointJSONEncoder` |
-| `testing/test_task_queue_interruption.py` | Add regression tests |
+| `tests/unit/core/task_queue/test_task_queue_interruption.py` | Add regression tests |
 
 ## Verification
 
-1. Run tests: `PYTHONPATH=/home/dave/thala python testing/test_task_queue_interruption.py`
+1. Run tests: `pytest tests/unit/core/task_queue/test_task_queue_interruption.py`
 2. Run workflow and watch for log: `"Checkpoint {task_id}: saving phase_outputs keys = ['lit_result']"`
 3. Check `current_work.json` shows populated `phase_outputs`
 4. CTRL-C during supervision, resume, verify `lit_result` loads correctly

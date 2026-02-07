@@ -4,7 +4,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke
 
 from .types import ImageResult
 
@@ -95,11 +95,11 @@ async def select_best_image(
                 candidates=candidate_text,
             )
 
-        result = await get_structured_output(
-            output_schema=ImageSelection,
-            user_prompt=user_prompt,
-            system_prompt=SELECTION_SYSTEM,
-            tier=ModelTier.HAIKU,  # Cheapest tier for simple selection
+        result = await invoke(
+            tier=ModelTier.HAIKU,
+            system=SELECTION_SYSTEM,
+            user=user_prompt,
+            schema=ImageSelection,
         )
 
         index = max(0, min(result.selected_index, len(candidates) - 1))

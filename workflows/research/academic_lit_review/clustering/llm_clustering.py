@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from workflows.research.academic_lit_review.state import LLMTheme, LLMTopicSchema
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.language import get_translated_prompt
 
 from .formatters import format_paper_for_llm
@@ -68,12 +68,12 @@ async def run_llm_clustering_node(state: dict) -> dict[str, Any]:
     )
 
     try:
-        result: LLMTopicSchemaOutput = await get_structured_output(
-            output_schema=LLMTopicSchemaOutput,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        result: LLMTopicSchemaOutput = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=16000,
+            system=system_prompt,
+            user=user_prompt,
+            schema=LLMTopicSchemaOutput,
+            config=InvokeConfig(max_tokens=16000),
         )
 
         # Convert Pydantic model to TypedDict for state compatibility

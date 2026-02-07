@@ -4,6 +4,7 @@ Loads publication-specific editorial stances from .thala/editorial_stances/
 to inject as intellectual priors into writing prompts.
 """
 
+
 def load_editorial_stance(category: str) -> str | None:
     """Load editorial stance file for a category.
 

@@ -119,8 +119,9 @@ Filename format: `{SHA256(key)[:16]}.{pkl|json}`
 
 ## Testing
 
+Cache functionality is tested as part of the integration test suite:
 ```bash
-python3 testing/test_cache.py
+pytest tests/ -m integration
 ```
 
 ## Notes

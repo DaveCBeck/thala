@@ -14,6 +14,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
@@ -46,6 +47,12 @@ logger = logging.getLogger(__name__)
 
 # Beta header for 1M context window
 CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
+# Context variable for batch group isolation across concurrent async contexts
+# This ensures parallel LangGraph nodes don't interfere with each other's batch groups
+_current_batch_group: ContextVar["BatchGroup | None"] = ContextVar(
+    "llm_broker_batch_group", default=None
+)
 
 # Allowed hostnames for batch results URLs (SSRF protection)
 ALLOWED_RESULTS_HOSTS = frozenset({"api.anthropic.com", "batches.anthropic.com"})
@@ -134,9 +141,6 @@ class LLMBroker:
         # Background task
         self._batch_monitor_task: asyncio.Task | None = None
         self._started = False
-
-        # Current batch group context
-        self._current_group: BatchGroup | None = None
 
         # Track fire-and-forget sync tasks to ensure graceful shutdown
         self._sync_tasks: set[asyncio.Task[None]] = set()
@@ -260,6 +264,10 @@ class LLMBroker:
         Requests made within this context are queued together and
         submitted as a batch when the context exits.
 
+        Uses contextvars for isolation, ensuring parallel LangGraph nodes
+        or concurrent async contexts don't interfere with each other's
+        batch groups.
+
         Args:
             mode: Override mode for this batch group
 
@@ -267,12 +275,12 @@ class LLMBroker:
             BatchGroup context for tracking requests
         """
         group = BatchGroup(broker=self, mode=mode or self._mode)
-        self._current_group = group
+        token = _current_batch_group.set(group)
 
         try:
             yield group
         finally:
-            self._current_group = None
+            _current_batch_group.reset(token)
 
             # Flush queued requests from this group
             if group.request_ids:
@@ -418,9 +426,10 @@ class LLMBroker:
         # Add to persistent queue
         await self._persistence.add_request(request)
 
-        # Track in current batch group if active
-        if self._current_group:
-            self._current_group.add_request(request.request_id)
+        # Track in current batch group if active (uses contextvars for isolation)
+        current_group = _current_batch_group.get()
+        if current_group:
+            current_group.add_request(request.request_id)
 
         # Check if threshold reached
         await self._check_batch_triggers()

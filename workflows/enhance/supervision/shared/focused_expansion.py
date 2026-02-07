@@ -71,9 +71,7 @@ async def run_focused_expansion(
     keyword_dois = keyword_result.get("keyword_dois", [])
 
     # Build paper corpus from discovered papers
-    paper_corpus = {
-        paper.get("doi"): paper for paper in discovered_papers if paper.get("doi")
-    }
+    paper_corpus = {paper.get("doi"): paper for paper in discovered_papers if paper.get("doi")}
 
     logger.info(f"Discovery found {len(keyword_dois)} papers")
 
@@ -101,18 +99,11 @@ async def run_focused_expansion(
 
     # Get filtered corpus from diffusion (respects max_papers limit)
     expanded_corpus = diffusion_result.get("paper_corpus", paper_corpus)
-    final_corpus_dois = diffusion_result.get(
-        "final_corpus_dois", list(expanded_corpus.keys())
-    )
+    final_corpus_dois = diffusion_result.get("final_corpus_dois", list(expanded_corpus.keys()))
 
-    final_corpus = {
-        doi: expanded_corpus[doi] for doi in final_corpus_dois if doi in expanded_corpus
-    }
+    final_corpus = {doi: expanded_corpus[doi] for doi in final_corpus_dois if doi in expanded_corpus}
 
-    logger.info(
-        f"Diffusion expanded to {len(expanded_corpus)} papers, "
-        f"filtered to {len(final_corpus)} for processing"
-    )
+    logger.info(f"Diffusion expanded to {len(expanded_corpus)} papers, filtered to {len(final_corpus)} for processing")
 
     if not final_corpus:
         logger.warning("No papers to process after diffusion")
@@ -139,10 +130,7 @@ async def run_focused_expansion(
     processed_dois = processing_result.get("processed_dois", [])
     failed_dois = processing_result.get("failed_dois", [])
 
-    logger.info(
-        f"Focused expansion complete: {len(processed_dois)} papers processed, "
-        f"{len(failed_dois)} failed"
-    )
+    logger.info(f"Focused expansion complete: {len(processed_dois)} papers processed, {len(failed_dois)} failed")
 
     return {
         "paper_corpus": final_corpus,

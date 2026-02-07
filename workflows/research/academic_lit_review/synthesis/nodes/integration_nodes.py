@@ -7,7 +7,7 @@ This avoids token limit issues from having the LLM re-output the entire document
 import logging
 from typing import Any
 
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import (
@@ -105,13 +105,11 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
         conclusions=conclusions,
     )
 
-    llm = get_llm(tier=ModelTier.SONNET, max_tokens=1000)
-
-    response = await invoke_with_cache(
-        llm,
-        system_prompt=abstract_system,
-        user_prompt=abstract_prompt,
-        cache_ttl="1h",
+    response = await invoke(
+        tier=ModelTier.SONNET,
+        system=abstract_system,
+        user=abstract_prompt,
+        config=InvokeConfig(cache_ttl="1h", max_tokens=1000),
     )
 
     abstract = response.content if isinstance(response.content, str) else response.content[0].get("text", "")

@@ -121,7 +121,7 @@ async def select_and_improve(
     analysis: DiagramAnalysis,
     config: DiagramConfig,
 ) -> tuple[str, int, str] | None:
-    """Use Sonnet with vision to select best candidate and make improvements.
+    """Use Opus with vision to select best candidate and make improvements.
 
     Two-phase approach:
     1. Show all candidate images + overlap analysis, ask for selection
@@ -135,7 +135,7 @@ async def select_and_improve(
     Returns:
         Tuple of (improved_svg, selected_id, rationale) or None on failure
     """
-    from workflows.shared.llm_utils import ModelTier, get_llm
+    from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
     if not candidates:
         logger.error("No candidates to select from")
@@ -147,7 +147,6 @@ async def select_and_improve(
         return (candidates[0].svg_content, candidates[0].candidate_id, "Only one candidate available")
 
     try:
-        llm = get_llm(tier=ModelTier.SONNET, max_tokens=8000)
 
         # Build candidate details for the prompt
         content_parts = []
@@ -186,6 +185,11 @@ async def select_and_improve(
         })
 
         # Phase 1: Selection with images
+        # Note: This uses multimodal content, which invoke() doesn't support yet.
+        # For now, we use the low-level langchain call for this special case.
+        from workflows.shared.llm_utils import get_llm
+        llm = get_llm(tier=ModelTier.OPUS, max_tokens=8000)
+
         selection_response = await llm.ainvoke([
             {"role": "system", "content": SVG_SELECTION_SYSTEM},
             {"role": "user", "content": content_parts},
@@ -210,13 +214,12 @@ async def select_and_improve(
         rationale = selection_text
 
         # Phase 2: Improvement with SVG code
-        improvement_response = await llm.ainvoke([
-            {"role": "system", "content": SVG_IMPROVEMENT_SYSTEM},
-            {
-                "role": "user",
-                "content": f"Here is the SVG for candidate {selected_id}. Make minor improvements to spacing and alignment:\n\n{selected_candidate.svg_content}",
-            },
-        ])
+        improvement_response = await invoke(
+            tier=ModelTier.OPUS,
+            system=SVG_IMPROVEMENT_SYSTEM,
+            user=f"Here is the SVG for candidate {selected_id}. Make minor improvements to spacing and alignment:\n\n{selected_candidate.svg_content}",
+            config=InvokeConfig(max_tokens=8000),
+        )
 
         improved_svg = (
             improvement_response.content

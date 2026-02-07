@@ -337,7 +337,7 @@ async def run_tool_agent(
 ### Step 5: Add Trace Flush to Test Scripts
 
 ```python
-# testing/test_academic_lit_review.py
+# tests/integration/workflows/test_academic_lit_review.py
 
 import asyncio
 
@@ -467,7 +467,7 @@ metadata.topic CONTAINS "machine learning"
 - 40+ node functions across workflows
 - `workflows/shared/tracing/tool_wrappers.py` - Tool wrapper implementations
 - `workflows/shared/llm_utils/structured/executors/agent_runner.py` - Agent tool tracing
-- All 15 test scripts in `testing/` directory with `wait_for_all_tracers()`
+- Test scripts in `tests/integration/workflows/` with `wait_for_all_tracers()`
 
 ## References
 

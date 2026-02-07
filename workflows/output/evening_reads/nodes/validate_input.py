@@ -15,9 +15,7 @@ CITATION_PATTERN = r"\[@([^\]]+)\]"
 MIN_WORD_COUNT = 500
 
 
-async def _lookup_es_record_for_key(
-    store, zotero_key: str
-) -> tuple[str | None, str | None]:
+async def _lookup_es_record_for_key(store, zotero_key: str) -> tuple[str | None, str | None]:
     """Look up ES record ID and title for a Zotero key.
 
     Returns (es_record_id, title) or (None, None) if not found.
@@ -59,8 +57,7 @@ async def validate_input_node(state: dict) -> dict[str, Any]:
         return {
             "is_valid": False,
             "validation_error": (
-                f"Literature review too short ({word_count} words). "
-                f"Minimum {MIN_WORD_COUNT} words required."
+                f"Literature review too short ({word_count} words). Minimum {MIN_WORD_COUNT} words required."
             ),
             "extracted_citation_keys": [],
             "citation_mappings": {},
@@ -112,8 +109,7 @@ async def validate_input_node(state: dict) -> dict[str, Any]:
             found_count += 1
 
     logger.info(
-        f"Validated input: {word_count} words, {len(citation_keys)} unique citations, "
-        f"{found_count} found in store"
+        f"Validated input: {word_count} words, {len(citation_keys)} unique citations, {found_count} found in store"
     )
 
     return {

@@ -7,7 +7,7 @@ import httpx
 
 from core.images import NoResultsError, get_image
 from workflows.shared.image_utils import generate_article_header
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..config import IllustrateConfig
 from ..prompts import HEADER_APPOSITES_SYSTEM, HEADER_APPOSITES_USER
@@ -30,11 +30,11 @@ async def _evaluate_pd_appositeness(
     document_context: str,
     query: str,
     criteria: str,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str | None]:
     """Use vision to evaluate if public domain image is 'apposite'.
 
     Returns:
-        Tuple of (is_apposite, reasoning)
+        Tuple of (is_apposite, reasoning, suggested_search_query)
     """
     try:
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
@@ -63,25 +63,24 @@ async def _evaluate_pd_appositeness(
             },
         ]
 
-        result = await get_structured_output(
-            output_schema=HeaderAppositenessResult,
-            user_prompt=content,
-            system_prompt=HEADER_APPOSITES_SYSTEM,
+        result = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=500,
+            system=HEADER_APPOSITES_SYSTEM,
+            user=content,
+            schema=HeaderAppositenessResult,
+            config=InvokeConfig(max_tokens=500),
         )
 
         # Score 3+ means apposite
         is_apposite = result.is_apposite and result.quality_score >= 3
         logger.info(
-            f"Header PD appositeness: {is_apposite} "
-            f"(score={result.quality_score}, reason={result.reasoning[:100]})"
+            f"Header PD appositeness: {is_apposite} (score={result.quality_score}, reason={result.reasoning[:100]})"
         )
-        return is_apposite, result.reasoning
+        return is_apposite, result.reasoning, result.suggested_search_query
 
     except Exception as e:
         logger.warning(f"Appositeness evaluation failed, falling back to Imagen: {e}")
-        return False, str(e)
+        return False, str(e), None
 
 
 async def generate_header_node(state: dict) -> dict:
@@ -112,60 +111,75 @@ async def generate_header_node(state: dict) -> dict:
     errors: list[WorkflowError] = []
 
     # Step 1: Try public domain (unless this is a retry or PD not preferred)
+    # We'll try up to 2 PD searches before falling back to Imagen
+    max_pd_attempts = 2
+    pd_attempt = 0
+    current_search_query = plan.search_query or brief[:100]
+
     if config.header_prefer_public_domain and not is_retry:
-        try:
-            search_query = plan.search_query or brief[:100]
-
-            pd_result = await get_image(
-                query=search_query,
-                use_llm_selection=True,
-                context=document_context,
-                custom_selection_criteria=brief,
-                orientation="landscape",
-            )
-
-            # Download and evaluate
-            image_bytes = await _download_image(pd_result.url)
-            is_apposite, reasoning = await _evaluate_pd_appositeness(
-                image_bytes=image_bytes,
-                document_context=document_context,
-                query=search_query,
-                criteria=brief,
-            )
-
-            if is_apposite:
-                logger.info("Using apposite public domain image for header")
-                return {
-                    "generation_results": [
-                        ImageGenResult(
-                            location_id=location_id,
-                            success=True,
-                            image_bytes=image_bytes,
-                            image_type="public_domain",
-                            prompt_or_query_used=search_query,
-                            alt_text=pd_result.metadata.alt_text
-                            or pd_result.metadata.description,
-                            attribution=pd_result.attribution.model_dump()
-                            if pd_result.attribution
-                            else None,
-                        )
-                    ]
-                }
-            else:
-                logger.info(f"PD image not apposite ({reasoning}), falling back to Imagen")
-
-        except NoResultsError:
-            logger.info("No public domain results, falling back to Imagen")
-        except Exception as e:
-            logger.warning(f"Public domain search failed: {e}, falling back to Imagen")
-            errors.append(
-                WorkflowError(
-                    location_id=location_id,
-                    severity="warning",
-                    message=f"PD search failed, using Imagen: {e}",
-                    stage="generation",
+        while pd_attempt < max_pd_attempts:
+            pd_attempt += 1
+            try:
+                pd_result = await get_image(
+                    query=current_search_query,
+                    use_llm_selection=True,
+                    context=document_context,
+                    custom_selection_criteria=brief,
+                    orientation="landscape",
                 )
-            )
+
+                # Download and evaluate
+                image_bytes = await _download_image(pd_result.url)
+                is_apposite, reasoning, suggested_query = await _evaluate_pd_appositeness(
+                    image_bytes=image_bytes,
+                    document_context=document_context,
+                    query=current_search_query,
+                    criteria=brief,
+                )
+
+                if is_apposite:
+                    logger.info("Using apposite public domain image for header")
+                    return {
+                        "generation_results": [
+                            ImageGenResult(
+                                location_id=location_id,
+                                success=True,
+                                image_bytes=image_bytes,
+                                image_type="public_domain",
+                                prompt_or_query_used=current_search_query,
+                                alt_text=pd_result.metadata.alt_text or pd_result.metadata.description,
+                                attribution=pd_result.attribution.model_dump() if pd_result.attribution else None,
+                            )
+                        ]
+                    }
+                else:
+                    # If we have a suggested query and more attempts, retry with it
+                    if suggested_query and pd_attempt < max_pd_attempts:
+                        logger.info(
+                            f"PD image not apposite, retrying with suggested query: {suggested_query}"
+                        )
+                        current_search_query = suggested_query
+                    else:
+                        logger.info(f"PD image not apposite ({reasoning}), falling back to Imagen")
+                        break
+
+            except NoResultsError:
+                if pd_attempt < max_pd_attempts:
+                    logger.info(f"No PD results for '{current_search_query}', will try Imagen")
+                else:
+                    logger.info("No public domain results, falling back to Imagen")
+                break
+            except Exception as e:
+                logger.warning(f"Public domain search failed: {e}, falling back to Imagen")
+                errors.append(
+                    WorkflowError(
+                        location_id=location_id,
+                        severity="warning",
+                        message=f"PD search failed, using Imagen: {e}",
+                        stage="generation",
+                    )
+                )
+                break
 
     # Step 2: Generate with Imagen
     try:

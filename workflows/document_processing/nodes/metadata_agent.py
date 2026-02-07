@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.metadata_utils import extract_year
 from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
 
 logger = logging.getLogger(__name__)
@@ -95,12 +95,12 @@ Extract:
 - is_multi_author: true if multi-author edited volume (look for "edited by" or chapter authors)
 - chapter_authors: dict mapping chapter titles to author names (only for multi-author books)"""
 
-        result = await get_structured_output(
-            output_schema=DocumentMetadata,
-            user_prompt=user_prompt,
-            system_prompt=DOCUMENT_ANALYSIS_SYSTEM,
-            tier=ModelTier.DEEPSEEK_V3,  # V3 for cost efficiency (R1 also works but costs 2x more)
-            enable_prompt_cache=True,
+        result = await invoke(
+            tier=ModelTier.DEEPSEEK_V3,
+            system=DOCUMENT_ANALYSIS_SYSTEM,
+            user=user_prompt,
+            schema=DocumentMetadata,
+            config=InvokeConfig(cache=True),
         )
 
         metadata = result.model_dump()

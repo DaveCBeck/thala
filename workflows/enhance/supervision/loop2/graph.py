@@ -21,7 +21,7 @@ from workflows.research.academic_lit_review.state import (
     LitReviewInput,
     QualitySettings,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output, extract_response_content
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig, extract_response_content
 
 from workflows.enhance.supervision.shared.mini_review import (
     run_mini_review,
@@ -78,36 +78,27 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
     """Analyze review to identify missing literature base."""
     iteration = state["iteration"]
     max_iterations = state["max_iterations"]
-    logger.info(
-        f"Loop 2 iteration {iteration + 1}/{max_iterations}: Analyzing for missing literature bases"
-    )
+    logger.info(f"Loop 2 iteration {iteration + 1}/{max_iterations}: Analyzing for missing literature bases")
 
     input_data = state["input"]
-    explored_bases_text = (
-        "\n".join(f"- {base}" for base in state.get("explored_bases", []))
-        or "None yet"
-    )
+    explored_bases_text = "\n".join(f"- {base}" for base in state.get("explored_bases", [])) or "None yet"
 
     user_prompt = LOOP2_ANALYZER_USER.format(
         review=state["current_review"],
         topic=input_data["topic"],
-        research_questions="\n".join(
-            f"- {q}" for q in input_data["research_questions"]
-        ),
+        research_questions="\n".join(f"- {q}" for q in input_data["research_questions"]),
         explored_bases=explored_bases_text,
         iteration=iteration + 1,
         max_iterations=max_iterations,
     )
 
     try:
-        response = await get_structured_output(
-            output_schema=LiteratureBaseDecision,
-            user_prompt=user_prompt,
-            system_prompt=LOOP2_ANALYZER_SYSTEM,
+        response = await invoke(
             tier=ModelTier.OPUS,
-            max_tokens=2048,
-            use_json_schema_method=True,
-            max_retries=2,
+            system=LOOP2_ANALYZER_SYSTEM,
+            user=user_prompt,
+            schema=LiteratureBaseDecision,
+            config=InvokeConfig(max_tokens=2048),
         )
 
         logger.debug(f"Analyzer decision: {response.action}")
@@ -160,9 +151,7 @@ async def run_mini_review_node(state: Loop2State) -> dict:
         }
 
     if decision["action"] != "expand_base":
-        logger.warning(
-            f"Mini-review node called with invalid action: {decision['action']}"
-        )
+        logger.warning(f"Mini-review node called with invalid action: {decision['action']}")
         # Return single-element list - the add reducer will append to existing errors
         return {
             "mini_review_failed": True,
@@ -215,7 +204,6 @@ async def run_mini_review_node(state: Loop2State) -> dict:
 
 async def integrate_findings_node(state: Loop2State) -> dict:
     """Integrate mini-review findings into main review."""
-    from workflows.shared.llm_utils import get_llm
 
     iteration = state.get("iteration", 0)
     iterations_failed = state.get("iterations_failed", 0)
@@ -286,12 +274,11 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         )
 
         # Use large max_tokens for full output capacity on large reviews
-        llm = get_llm(ModelTier.OPUS, thinking_budget=8000, max_tokens=32000)
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": LOOP2_INTEGRATOR_SYSTEM},
-                {"role": "user", "content": user_prompt},
-            ]
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=LOOP2_INTEGRATOR_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(thinking_budget=8000, max_tokens=32000, cache=False),
         )
 
         updated_review = extract_response_content(response)

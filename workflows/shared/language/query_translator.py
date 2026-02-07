@@ -2,8 +2,8 @@
 Haiku-powered query translation for multilingual search.
 
 Translates search queries to target languages using Claude Haiku for
-fast, cost-effective translation. Routes through central LLM broker
-for unified cost/speed management.
+fast, cost-effective translation. Routes through unified invoke() for
+automatic broker routing and cost optimization.
 
 Usage:
     translated = await translate_query(
@@ -20,8 +20,8 @@ from typing import Optional
 
 from cachetools import TTLCache
 
-from core.llm_broker import BatchPolicy, get_broker
-from workflows.shared.llm_utils import ModelTier
+from core.llm_broker import BatchPolicy
+from workflows.shared.llm_utils import ModelTier, invoke, invoke_batch, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,25 +70,20 @@ async def translate_query(
 
 
 async def _do_query_translation(query: str, target_language: str) -> str:
-    """Perform the actual query translation using Haiku via broker."""
+    """Perform the actual query translation using Haiku via invoke()."""
     user_prompt = f"Translate to {target_language}: {query}"
 
     try:
-        broker = get_broker()
-        future = await broker.request(
-            prompt=user_prompt,
-            model=ModelTier.HAIKU,
-            policy=BatchPolicy.PREFER_BALANCE,
-            max_tokens=256,
+        response = await invoke(
+            tier=ModelTier.HAIKU,
             system=QUERY_TRANSLATION_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+                max_tokens=256,
+            ),
         )
-        response = await future
-
-        if response.success:
-            return response.content.strip()
-        else:
-            logger.warning(f"Query translation failed: {response.error}, using original query")
-            return query
+        return response.content.strip()
 
     except Exception as e:
         logger.warning(f"Query translation failed: {e}, using original query")
@@ -102,7 +97,7 @@ async def translate_queries(
 ) -> list[str]:
     """Translate multiple search queries.
 
-    Routes through central LLM broker for unified cost/speed management.
+    Routes through unified invoke() with batching for cost optimization.
     """
     if target_language_code == "en":
         return queries
@@ -126,36 +121,28 @@ async def translate_queries(
     if not uncached_queries:
         return results
 
-    # Route all translations through broker
-    broker = get_broker()
-    pending_futures = []
+    logger.debug(f"Submitting {len(uncached_queries)} queries for translation to {target_language_name}")
 
-    logger.debug(f"Submitting {len(uncached_queries)} queries for translation to {target_language_name} via broker")
-
-    async with broker.batch_group():
+    # Use invoke_batch for efficient batching
+    async with invoke_batch() as batch:
         for query in uncached_queries:
             user_prompt = f"Translate to {target_language_name}: {query}"
-            future = await broker.request(
-                prompt=user_prompt,
-                model=ModelTier.HAIKU,
-                policy=BatchPolicy.PREFER_BALANCE,
-                max_tokens=256,
+            batch.add(
+                tier=ModelTier.HAIKU,
                 system=QUERY_TRANSLATION_SYSTEM,
+                user=user_prompt,
+                config=InvokeConfig(
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                    max_tokens=256,
+                ),
             )
-            pending_futures.append(future)
 
-    # Collect results
+    # Collect results from batch
+    batch_results = await batch.results()
     translated = []
-    for i, future in enumerate(pending_futures):
+    for i, response in enumerate(batch_results):
         try:
-            response = await future
-            if response.success:
-                translated.append(response.content.strip())
-            else:
-                logger.warning(
-                    f"Translation failed for query '{uncached_queries[i][:30]}...': {response.error}, using original"
-                )
-                translated.append(uncached_queries[i])
+            translated.append(response.content.strip())
         except Exception as e:
             logger.warning(f"Translation failed for query '{uncached_queries[i][:30]}...': {e}, using original")
             translated.append(uncached_queries[i])

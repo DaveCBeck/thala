@@ -59,9 +59,7 @@ async def fetch_book_summaries(state: dict) -> dict[str, Any]:
                     summary_text = record.text if hasattr(record, "text") else ""
                     if summary_text:
                         book_summaries_cache[zotkey] = summary_text
-                        logger.debug(
-                            f"Fetched 10x summary for [@{zotkey}]: {len(summary_text)} chars"
-                        )
+                        logger.debug(f"Fetched 10x summary for [@{zotkey}]: {len(summary_text)} chars")
                     else:
                         logger.debug(f"No summary text in record for [@{zotkey}]")
                 else:
@@ -70,9 +68,7 @@ async def fetch_book_summaries(state: dict) -> dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Failed to fetch summary for [@{zotkey}]: {e}")
 
-        logger.info(
-            f"Fetched {len(book_summaries_cache)}/{len(selected_books)} book summaries"
-        )
+        logger.info(f"Fetched {len(book_summaries_cache)}/{len(selected_books)} book summaries")
 
         return {
             "book_summaries_cache": book_summaries_cache,

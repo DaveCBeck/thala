@@ -30,9 +30,7 @@ async def finalize(state: dict) -> dict[str, Any]:
 
     # Compile statistics
     web_sources = sum(r.get("source_count", 0) for r in web_research_results)
-    books_processed = sum(
-        len(r.get("processed_books", [])) for r in book_finding_results
-    )
+    books_processed = sum(len(r.get("processed_books", [])) for r in book_finding_results)
 
     logger.info(
         f"Synthesis finalized: status={status}, "

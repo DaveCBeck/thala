@@ -1,13 +1,18 @@
 """Finalize workflow: save images and insert into document."""
 
+import base64
 import logging
 import os
 import re
 import tempfile
+from collections import defaultdict
 from typing import Literal
 
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
+
 from ..config import IllustrateConfig
-from ..schemas import ImageLocationPlan
+from ..prompts import VISION_COMPARE_SYSTEM, VISION_COMPARE_USER
+from ..schemas import ImageCompareResult, ImageLocationPlan
 from ..state import (
     FinalImage,
     ImageGenResult,
@@ -19,29 +24,107 @@ from ..state import (
 logger = logging.getLogger(__name__)
 
 
-def _get_approved_results(
+async def _compare_candidates(
+    candidates: list[ImageGenResult],
+    document_context: str,
+    purpose: str,
+    brief: str,
+) -> ImageGenResult:
+    """Compare multiple image candidates and select the best one.
+
+    Uses vision to evaluate all candidates side-by-side and pick the best.
+    Falls back to the last candidate if comparison fails.
+    """
+    if len(candidates) == 1:
+        return candidates[0]
+
+    try:
+        # Build vision content with all candidate images
+        content = [
+            {
+                "type": "text",
+                "text": VISION_COMPARE_USER.format(
+                    num_candidates=len(candidates),
+                    context=document_context[:3000],
+                    purpose=purpose,
+                    brief=brief[:1500],
+                ),
+            }
+        ]
+
+        # Add each candidate image
+        for i, candidate in enumerate(candidates):
+            if not candidate["image_bytes"]:
+                continue
+
+            image_bytes = candidate["image_bytes"]
+            b64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+            # Determine media type
+            media_type = "image/png"
+            if image_bytes[:2] == b"\xff\xd8":
+                media_type = "image/jpeg"
+
+            content.append({
+                "type": "text",
+                "text": f"\n**Candidate {i + 1}:**",
+            })
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64_image,
+                },
+            })
+
+        result = await invoke(
+            tier=ModelTier.SONNET,
+            system=VISION_COMPARE_SYSTEM,
+            user=content,
+            schema=ImageCompareResult,
+            config=InvokeConfig(max_tokens=500),
+        )
+
+        # Get the selected candidate (1-indexed)
+        selected_idx = result.selected_candidate - 1
+        if 0 <= selected_idx < len(candidates):
+            logger.info(
+                f"Comparison selected candidate {result.selected_candidate}: {result.reasoning[:100]}"
+            )
+            if result.issues_with_selected:
+                logger.warning(f"Selected image has issues: {result.issues_with_selected}")
+            return candidates[selected_idx]
+        else:
+            logger.warning(f"Invalid candidate index {result.selected_candidate}, using last")
+            return candidates[-1]
+
+    except Exception as e:
+        logger.warning(f"Comparison failed, using last candidate: {e}")
+        return candidates[-1]
+
+
+def _group_candidates_by_location(
     generation_results: list[ImageGenResult],
     review_results: list[ImageReviewResult],
-) -> list[ImageGenResult]:
-    """Get generation results that passed review."""
+) -> tuple[dict[str, list[ImageGenResult]], set[str]]:
+    """Group successful generation results by location_id.
+
+    Returns:
+        - Dict mapping location_id to list of ALL successful candidates
+        - Set of location_ids that have at least one passed review
+    """
     # Build set of passed location_ids
-    passed_ids = {
-        r["location_id"] for r in review_results if r.get("passed", False)
-    }
+    passed_ids = {r["location_id"] for r in review_results if r.get("passed", False)}
 
-    # Also include successful generations that weren't reviewed
-    # (e.g., if vision review was disabled)
-    reviewed_ids = {r["location_id"] for r in review_results}
-
-    approved = []
+    # Group ALL successful generations by location_id
+    candidates_by_id: dict[str, list[ImageGenResult]] = defaultdict(list)
     for gen in generation_results:
-        if not gen["success"]:
+        if not gen["success"] or not gen.get("image_bytes"):
             continue
-        loc_id = gen["location_id"]
-        if loc_id in passed_ids or loc_id not in reviewed_ids:
-            approved.append(gen)
+        candidates_by_id[gen["location_id"]].append(gen)
 
-    return approved
+    return dict(candidates_by_id), passed_ids
 
 
 def _insert_images_into_markdown(
@@ -85,9 +168,7 @@ def _insert_images_into_markdown(
                 break
 
         if header_line_idx is None:
-            logger.warning(
-                f"Could not find header '{header_text}' for image {plan.location_id}"
-            )
+            logger.warning(f"Could not find header '{header_text}' for image {plan.location_id}")
             continue
 
         # Build image markdown
@@ -168,16 +249,47 @@ async def finalize_node(state: IllustrateState) -> dict:
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Get approved results
-    approved = _get_approved_results(generation_results, review_results)
+    # Build lookup for plans (needed for comparison and saving)
+    plans_by_id = {p.location_id: p for p in image_plan}
+
+    # Group ALL candidates by location
+    candidates_by_id, passed_ids = _group_candidates_by_location(generation_results, review_results)
+
+    # For each location, either use the passed candidate or compare all candidates
+    approved: list[ImageGenResult] = []
+    for loc_id, candidates in candidates_by_id.items():
+        if loc_id in passed_ids:
+            # At least one passed - use the last one that passed
+            # (most recent successful attempt)
+            approved.append(candidates[-1])
+        elif len(candidates) == 1:
+            # Only one candidate, nothing passed - use it anyway with warning
+            logger.warning(f"Using only candidate for {loc_id} despite review issues")
+            approved.append(candidates[0])
+        else:
+            # Multiple candidates, none passed - compare and select best
+            plan = plans_by_id.get(loc_id)
+            if plan:
+                logger.warning(
+                    f"No candidate passed review for {loc_id}, comparing {len(candidates)} candidates to select best"
+                )
+                best = await _compare_candidates(
+                    candidates=candidates,
+                    document_context=document[:3000],
+                    purpose=plan.purpose,
+                    brief=plan.brief,
+                )
+                approved.append(best)
+            else:
+                # No plan, just use last candidate
+                logger.warning(f"No plan for {loc_id}, using last candidate")
+                approved.append(candidates[-1])
+
     logger.info(f"Finalizing {len(approved)} approved images")
 
     # Save images and build final_images list
     final_images: list[FinalImage] = []
     errors: list[WorkflowError] = []
-
-    # Build lookup for plans
-    plans_by_id = {p.location_id: p for p in image_plan}
 
     for gen_result in approved:
         location_id = gen_result["location_id"]
@@ -248,9 +360,7 @@ async def finalize_node(state: IllustrateState) -> dict:
     for loc_id in dropped_ids:
         logger.warning(f"Image dropped (failed review after retries): {loc_id}")
 
-    logger.info(
-        f"Finalize complete: {len(final_images)}/{len(image_plan)} images, status={status}"
-    )
+    logger.info(f"Finalize complete: {len(final_images)}/{len(image_plan)} images, status={status}")
 
     return {
         "final_images": final_images,

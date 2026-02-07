@@ -18,17 +18,11 @@ result = await editing(
 edited_document = result["final_report"]
 ```
 
-### Examples
+### Testing
 
 ```bash
-# Quick edit for fast iteration
-python testing/test_editing_workflow.py my_doc.md --quality quick
-
-# Standard quality (recommended)
-python testing/test_editing_workflow.py my_doc.md --quality standard
-
-# High quality for final output
-python testing/test_editing_workflow.py my_doc.md --quality high_quality
+# Run editing tests with pytest
+pytest tests/integration/workflows/ -k editing -m integration --quality quick
 ```
 
 ## Input/Output

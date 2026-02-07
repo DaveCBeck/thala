@@ -65,9 +65,7 @@ async def process_book_document(
         extra_metadata = {
             "md5": md5,
             "creators": [
-                {"creatorType": "author", "name": name.strip()}
-                for name in authors.split(",")
-                if name.strip()
+                {"creatorType": "author", "name": name.strip()} for name in authors.split(",") if name.strip()
             ],
         }
 
@@ -80,14 +78,10 @@ async def process_book_document(
 
         status = result.get("current_status", "unknown")
         errors = result.get("errors", [])
-        logger.info(
-            f"Book '{title}' processed with status: {status}, errors: {len(errors)}"
-        )
+        logger.info(f"Book '{title}' processed with status: {status}, errors: {len(errors)}")
         if errors:
             for err in errors:
-                logger.warning(
-                    f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}"
-                )
+                logger.warning(f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}")
 
         # Extract store records
         store_records = result.get("store_records", [])
@@ -104,8 +98,7 @@ async def process_book_document(
             "tenth_summary_english": tenth_summary_english,
             "original_language": result.get("original_language", "en"),
             "store_records": [
-                {"id": rec.get("id"), "compression_level": rec.get("compression_level")}
-                for rec in store_records
+                {"id": rec.get("id"), "compression_level": rec.get("compression_level")} for rec in store_records
             ],
             "errors": errors,
         }
@@ -132,7 +125,5 @@ async def process_book_document(
             "tenth_summary_english": None,
             "original_language": None,
             "store_records": [],
-            "errors": [
-                {"node": "process_book_document", "error": f"{type(e).__name__}: {e}"}
-            ],
+            "errors": [{"node": "process_book_document", "error": f"{type(e).__name__}: {e}"}],
         }

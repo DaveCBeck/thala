@@ -30,23 +30,11 @@ print(f"Status: {result['status']}")
 print(f"Sources: {result['source_count']}")
 ```
 
-### Examples
+### Testing
 
 ```bash
-# Test quality for development
-python testing/test_research_workflow.py "climate change impacts" test
-
-# Quick research (2 iterations, ~5 min)
-python testing/test_research_workflow.py "renewable energy trends" quick
-
-# Standard research (4 iterations, ~15 min) - recommended
-python testing/test_research_workflow.py "AI in healthcare" standard
-
-# Comprehensive research (8 iterations, 30+ min)
-python testing/test_research_workflow.py "blockchain scalability" comprehensive
-
-# Research in Japanese
-python testing/test_research_workflow.py "人工知能の未来" standard --language ja
+# Run workflow integration tests
+pytest tests/integration/workflows/ -m integration --quality test
 ```
 
 ## Input/Output

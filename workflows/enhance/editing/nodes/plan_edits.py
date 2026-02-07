@@ -119,16 +119,18 @@ def create_edits_from_issues(
 
             elif issue.recommended_action == "generate_conclusion":
                 # Context from last few content sections (excluding References)
-                content_sections = [s for s in all_sections
-                                   if not any(kw in s.heading.lower()
-                                             for kw in ["reference", "bibliography"])]
+                content_sections = [
+                    s for s in all_sections if not any(kw in s.heading.lower() for kw in ["reference", "bibliography"])
+                ]
                 context_ids = [s.section_id for s in content_sections[-3:]]
 
                 is_document_scope = "document" in issue.description.lower()
                 edit = GenerateConclusionEdit(
                     scope="document" if is_document_scope else "section",
                     # For section scope, add to the specified section
-                    target_section_id=issue.affected_section_ids[0] if issue.affected_section_ids and not is_document_scope else None,
+                    target_section_id=issue.affected_section_ids[0]
+                    if issue.affected_section_ids and not is_document_scope
+                    else None,
                     # For document scope, create new section after last content section
                     insert_after_section_id=last_content_section_id if is_document_scope else None,
                     context_section_ids=context_ids,
@@ -216,9 +218,7 @@ async def plan_edits_node(state: dict) -> dict[str, Any]:
     """
     analysis = StructuralAnalysis.model_validate(state["structural_analysis"])
     # Use updated document model if available (from previous iterations)
-    document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
-    )
+    document_model = DocumentModel.from_dict(state.get("updated_document_model", state["document_model"]))
 
     # If no structural work needed, skip
     if not analysis.needs_structural_work and not analysis.issues:

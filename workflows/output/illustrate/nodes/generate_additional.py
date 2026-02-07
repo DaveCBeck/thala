@@ -152,9 +152,7 @@ async def _generate_public_domain(
                     image_type="public_domain",
                     prompt_or_query_used=search_query,
                     alt_text=result.metadata.alt_text or result.metadata.description,
-                    attribution=result.attribution.model_dump()
-                    if result.attribution
-                    else None,
+                    attribution=result.attribution.model_dump() if result.attribution else None,
                 )
             ]
         }

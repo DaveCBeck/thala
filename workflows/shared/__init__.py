@@ -10,7 +10,8 @@ from .text_utils import (
 from .llm_utils import (
     ModelTier,
     get_llm,
-    get_structured_output,
+    invoke,
+    InvokeConfig,
 )
 from .batch_processor import (
     BatchProcessor,
@@ -73,7 +74,8 @@ __all__ = [
     # LLM utilities
     "ModelTier",
     "get_llm",
-    "get_structured_output",
+    "invoke",
+    "InvokeConfig",
     # Batch processing
     "BatchProcessor",
     "BatchRequest",

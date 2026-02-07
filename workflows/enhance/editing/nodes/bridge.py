@@ -53,9 +53,7 @@ async def v2_to_v1_bridge_node(state: dict) -> dict[str, Any]:
     has_citations = len(citation_keys) > 0
 
     if has_citations:
-        logger.info(
-            f"Bridge: Detected {len(citation_keys)} citations - Enhancement phase will run"
-        )
+        logger.info(f"Bridge: Detected {len(citation_keys)} citations - Enhancement phase will run")
     else:
         logger.info("Bridge: No citations detected - skipping to Polish phase")
 

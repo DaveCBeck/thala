@@ -5,7 +5,7 @@ from typing import Any
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.enhance.supervision.shared.types import (
     SupervisorDecision,
 )
@@ -64,11 +64,7 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    rq_formatted = (
-        "\n".join(f"- {q}" for q in research_questions)
-        if research_questions
-        else "None specified"
-    )
+    rq_formatted = "\n".join(f"- {q}" for q in research_questions) if research_questions else "None specified"
 
     if issues_explored:
         explored_formatted = "\n".join(f"- {issue}" for issue in issues_explored)
@@ -86,21 +82,15 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        decision = await get_structured_output(
-            output_schema=SupervisorDecision,
-            user_prompt=user_prompt,
-            system_prompt=SUPERVISOR_SYSTEM,
+        decision = await invoke(
             tier=ModelTier.OPUS,
-            thinking_budget=8000,
-            max_tokens=12096,
-            use_json_schema_method=True,
-            max_retries=2,
+            system=SUPERVISOR_SYSTEM,
+            user=user_prompt,
+            schema=SupervisorDecision,
+            config=InvokeConfig(thinking_budget=8000, max_tokens=12096, cache=False),
         )
 
-        logger.info(
-            f"Supervisor decision: action={decision.action}, "
-            f"reasoning={decision.reasoning[:100]}..."
-        )
+        logger.info(f"Supervisor decision: action={decision.action}, reasoning={decision.reasoning[:100]}...")
 
         updates: dict[str, Any] = {
             "decision": decision.model_dump(),

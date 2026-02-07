@@ -1,6 +1,6 @@
 """LangGraph node functions for paper processing.
 
-Uses unified structured output interface that auto-selects batch API for 5+ papers.
+Uses unified invoke() function for LLM calls.
 """
 
 import logging
@@ -15,11 +15,7 @@ from workflows.research.academic_lit_review.state import (
     PaperMetadata,
     PaperSummary,
 )
-from workflows.shared.llm_utils import ModelTier
-from workflows.shared.llm_utils.structured import (
-    get_structured_output,
-    StructuredRequest,
-)
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .fallback import FallbackManager
 
@@ -346,14 +342,10 @@ async def _extract_metadata_summaries_batched(
     else:
         system_prompt = METADATA_SUMMARY_EXTRACTION_SYSTEM
 
-    requests = []
-    paper_index = {}
+    prompts: list[str] = []
+    paper_list: list[PaperMetadata] = []
 
-    for i, paper in enumerate(papers):
-        doi = paper.get("doi", f"unknown-{i}")
-        custom_id = f"meta-{i}"
-        paper_index[custom_id] = paper
-
+    for paper in papers:
         title = paper.get("title", "Unknown Title")
         abstract = paper.get("abstract", "")
         authors = [a.get("name", "") for a in paper.get("authors", [])]
@@ -371,35 +363,33 @@ Abstract:
 
 Extract structured information based on this metadata."""
 
-        requests.append(
-            StructuredRequest(
-                id=custom_id,
-                user_prompt=user_prompt,
-            )
-        )
+        prompts.append(user_prompt)
+        paper_list.append(paper)
 
     logger.debug(f"Submitting batch of {len(papers)} papers for metadata extraction")
 
-    batch_results = await get_structured_output(
-        output_schema=MetadataSummarySchema,
-        requests=requests,
-        system_prompt=system_prompt,
-        tier=ModelTier.HAIKU,
-        max_tokens=1024,
-    )
+    try:
+        results = await invoke(
+            tier=ModelTier.HAIKU,
+            system=system_prompt,
+            user=prompts,
+            schema=MetadataSummarySchema,
+            config=InvokeConfig(max_tokens=1024),
+        )
+    except Exception as e:
+        logger.error(f"Metadata extraction batch failed: {e}")
+        results = [None] * len(prompts)
 
     summaries = {}
-    for custom_id, paper in paper_index.items():
-        result = batch_results.results.get(custom_id)
+    for i, paper in enumerate(paper_list):
+        extracted = results[i] if results else None
         doi = paper.get("doi", "unknown")
         title = paper.get("title", "Unknown Title")
         abstract = paper.get("abstract", "")
         authors = [a.get("name", "") for a in paper.get("authors", [])]
 
-        if result and result.success:
+        if extracted is not None:
             try:
-                extracted = result.value
-
                 short_summary = existing_short_summaries.get(doi) or (
                     abstract[:500] if abstract else f"Study on {title}"
                 )
@@ -427,8 +417,7 @@ Extract structured information based on this metadata."""
             except Exception as e:
                 logger.warning(f"Failed to parse metadata extraction for {doi}: {e}")
         else:
-            error_msg = result.error if result else "No result returned"
-            logger.warning(f"Metadata extraction failed for {doi}: {error_msg}")
+            logger.warning(f"Metadata extraction failed for {doi}: No result returned")
 
     logger.debug(f"Extracted {len(summaries)} metadata summaries")
     return summaries

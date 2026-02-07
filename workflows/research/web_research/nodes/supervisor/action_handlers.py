@@ -27,9 +27,7 @@ async def handle_conduct_research(
 ) -> dict:
     """Handle conduct_research action."""
     questions = []
-    for i, q in enumerate(
-        action_data.get("questions", [])[:MAX_CONCURRENT_RESEARCHERS]
-    ):
+    for i, q in enumerate(action_data.get("questions", [])[:MAX_CONCURRENT_RESEARCHERS]):
         if isinstance(q, dict):
             question_text = q.get("question", q.get("research_topic", str(q)))
             context = q.get("context", "")
@@ -74,8 +72,7 @@ async def handle_conduct_research(
         "diffusion": {
             **diffusion,
             "iteration": iteration + 1,
-            "areas_explored": diffusion["areas_explored"]
-            + [q["question"][:50] for q in questions],
+            "areas_explored": diffusion["areas_explored"] + [q["question"][:50] for q in questions],
             "completeness_score": new_completeness,
             "last_decision": "conduct_research",
         },

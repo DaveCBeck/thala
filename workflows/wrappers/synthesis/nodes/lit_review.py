@@ -84,10 +84,7 @@ async def run_lit_review(state: dict) -> dict[str, Any]:
             else:
                 logger.debug(f"No persisted state found for {workflow_name}/{run_id}")
 
-        logger.info(
-            f"Phase 1 complete: {result.get('source_count', 0)} papers analyzed, "
-            f"status={result.get('status')}"
-        )
+        logger.info(f"Phase 1 complete: {result.get('source_count', 0)} papers analyzed, status={result.get('status')}")
 
         return {
             "lit_review_result": result,

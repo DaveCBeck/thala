@@ -6,7 +6,7 @@ from typing import Any
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +24,14 @@ class ThemeGeneration(BaseModel):
 
     theme: str = Field(description="Theme for book exploration")
     rationale: str = Field(description="Why this theme is valuable")
-    book_angle: str = Field(
-        description="Type of book to find: 'analogous', 'inspiring', or 'expressive'"
-    )
+    book_angle: str = Field(description="Type of book to find: 'analogous', 'inspiring', or 'expressive'")
 
 
 class ResearchTargets(BaseModel):
     """Generated research targets."""
 
-    queries: list[QueryGeneration] = Field(
-        description="Queries for web research"
-    )
-    themes: list[ThemeGeneration] = Field(
-        description="Themes for book finding"
-    )
+    queries: list[QueryGeneration] = Field(description="Queries for web research")
+    themes: list[ThemeGeneration] = Field(description="Themes for book finding")
 
 
 RESEARCH_TARGETS_PROMPT = """You are analyzing academic literature to identify gaps that need filling through web research and book exploration.
@@ -100,15 +94,9 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
     num_queries = quality_settings.get("web_research_runs", 3)
     num_themes = quality_settings.get("book_finding_runs", 3)
 
-    logger.info(
-        f"Phase 3: Generating {num_queries} queries and {num_themes} themes"
-    )
+    logger.info(f"Phase 3: Generating {num_queries} queries and {num_themes} themes")
 
     try:
-        # Use Sonnet to generate research targets
-        llm = get_llm(ModelTier.HAIKU, max_tokens=2000)
-        llm_structured = llm.with_structured_output(ResearchTargets)
-
         prompt = RESEARCH_TARGETS_PROMPT.format(
             topic=topic,
             research_questions="\n".join(f"- {q}" for q in research_questions),
@@ -118,7 +106,13 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
             num_themes=num_themes,
         )
 
-        result = await llm_structured.ainvoke([{"role": "user", "content": prompt}])
+        result = await invoke(
+            tier=ModelTier.HAIKU,
+            system="You are a research target generator.",
+            user=prompt,
+            schema=ResearchTargets,
+            config=InvokeConfig(max_tokens=2000),
+        )
 
         # Convert to state format
         generated_queries = [
@@ -139,10 +133,7 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
             for t in result.themes[:num_themes]
         ]
 
-        logger.info(
-            f"Phase 3 complete: generated {len(generated_queries)} queries, "
-            f"{len(generated_themes)} themes"
-        )
+        logger.info(f"Phase 3 complete: generated {len(generated_queries)} queries, {len(generated_themes)} themes")
 
         return {
             "generated_queries": generated_queries,
@@ -154,12 +145,8 @@ async def generate_research_targets(state: dict) -> dict[str, Any]:
         logger.error(f"Research target generation failed: {e}")
         # Return minimal defaults to continue workflow
         return {
-            "generated_queries": [
-                {"query": topic, "rationale": "Fallback query", "target_area": "general"}
-            ],
-            "generated_themes": [
-                {"theme": topic, "rationale": "Fallback theme", "book_angle": "analogous"}
-            ],
+            "generated_queries": [{"query": topic, "rationale": "Fallback query", "target_area": "general"}],
+            "generated_themes": [{"theme": topic, "rationale": "Fallback theme", "book_angle": "analogous"}],
             "current_phase": "parallel_research",
             "errors": [{"phase": "research_targets", "error": str(e)}],
         }

@@ -3,7 +3,7 @@
 Uses LangChain's .with_structured_output() method for obtaining structured responses.
 """
 
-from typing import Optional, Type, TypeVar
+from typing import Any, Optional, Type, TypeVar, Union
 
 from langsmith import traceable
 from pydantic import BaseModel
@@ -19,6 +19,9 @@ from .base import StrategyExecutor
 
 T = TypeVar("T", bound=BaseModel)
 
+# Type alias for user content - either string or multimodal content blocks
+UserContent = Union[str, list[dict[str, Any]]]
+
 
 class LangChainStructuredExecutor(StrategyExecutor[T]):
     """Uses LangChain's .with_structured_output() method."""
@@ -27,7 +30,7 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
     async def execute(
         self,
         output_schema: Type[T],
-        user_prompt: str,
+        user_prompt: UserContent,
         system_prompt: Optional[str],
         output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
@@ -51,8 +54,11 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
             structured_llm = llm.with_structured_output(output_schema)
 
         # Build messages
+        # Multimodal content (list of content blocks) requires special handling
+        is_multimodal = isinstance(user_prompt, list)
+
         if system_prompt:
-            if output_config.enable_prompt_cache:
+            if output_config.enable_prompt_cache and not is_multimodal:
                 if is_deepseek_tier(output_config.tier):
                     # DeepSeek: standard messages with prefix-based caching
                     messages = [
@@ -69,6 +75,7 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
                         cache_ttl=output_config.cache_ttl,
                     )
             else:
+                # No caching or multimodal content - use direct message format
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

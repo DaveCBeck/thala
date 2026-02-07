@@ -55,27 +55,17 @@ __all__ = [
 class IdentifiedIssue(BaseModel):
     """Issue identified by supervisor - focused on theoretical depth."""
 
-    topic: str = Field(
-        description="Specific theory, concept, or foundational element that needs exploration"
-    )
+    topic: str = Field(description="Specific theory, concept, or foundational element that needs exploration")
     issue_type: Literal[
         "underlying_theory",  # Core theoretical framework missing
         "methodological_foundation",  # Research methodology not grounded
         "unifying_thread",  # Key argument connecting themes
         "foundational_concept",  # Background concept assumed but unexplained
     ] = Field(description="Category of the identified gap")
-    rationale: str = Field(
-        description="Why addressing this strengthens the paper academically"
-    )
-    research_query: str = Field(
-        description="Search query to use for discovering relevant literature"
-    )
-    related_section: str = Field(
-        description="Which section of the review this issue relates to"
-    )
-    integration_guidance: str = Field(
-        description="How the findings should be integrated into the review"
-    )
+    rationale: str = Field(description="Why addressing this strengthens the paper academically")
+    research_query: str = Field(description="Search query to use for discovering relevant literature")
+    related_section: str = Field(description="Which section of the review this issue relates to")
+    integration_guidance: str = Field(description="How the findings should be integrated into the review")
     confidence: float = Field(
         ge=0.0,
         le=1.0,
@@ -104,19 +94,13 @@ class SupervisorDecision(BaseModel):
 class LiteratureBase(BaseModel):
     """A missing literature base identified by Opus."""
 
-    name: str = Field(
-        description="Name of the literature base (e.g., 'health economics')"
-    )
-    rationale: str = Field(
-        description="Why this literature is important for the review"
-    )
+    name: str = Field(description="Name of the literature base (e.g., 'health economics')")
+    rationale: str = Field(description="Why this literature is important for the review")
     perspective_type: Literal["supportive", "challenging", "analogous"] = Field(
         description="Whether this literature supports, challenges, or provides analogy to the argument"
     )
     search_queries: list[str] = Field(description="Queries to discover this literature")
-    integration_strategy: str = Field(
-        description="How to integrate findings into the review"
-    )
+    integration_strategy: str = Field(description="How to integrate findings into the review")
 
 
 class LiteratureBaseDecision(BaseModel):
@@ -155,15 +139,9 @@ class StructuralIssue(BaseModel):
         "redundant_paragraphs",  # Two paragraphs with >60% content overlap
         "missing_structure",  # Missing introduction, conclusion, or discussion section
     ] = Field(description="Category of structural issue")
-    affected_paragraphs: list[int] = Field(
-        min_length=1, description="Paragraph numbers affected by this issue"
-    )
-    severity: Literal["minor", "moderate", "major"] = Field(
-        description="How much this hurts document coherence"
-    )
-    description: str = Field(
-        min_length=10, description="Specific description of the issue"
-    )
+    affected_paragraphs: list[int] = Field(min_length=1, description="Paragraph numbers affected by this issue")
+    severity: Literal["minor", "moderate", "major"] = Field(description="How much this hurts document coherence")
+    description: str = Field(min_length=10, description="Specific description of the issue")
     suggested_resolution: Literal[
         "delete",
         "trim",
@@ -187,12 +165,8 @@ class StructuralIssueAnalysis(BaseModel):
     architecture_assessment: Optional["ArchitecturalAssessment"] = Field(
         default=None, description="Overall architecture assessment"
     )
-    issues: list[StructuralIssue] = Field(
-        default_factory=list, description="Structural issues identified"
-    )
-    overall_assessment: str = Field(
-        min_length=10, description="Summary of document structure quality"
-    )
+    issues: list[StructuralIssue] = Field(default_factory=list, description="Structural issues identified")
+    overall_assessment: str = Field(min_length=10, description="Summary of document structure quality")
     needs_restructuring: bool = Field(description="Whether any issues require fixes")
 
     @model_validator(mode="after")
@@ -216,9 +190,7 @@ class ArchitecturalAssessment(BaseModel):
         default_factory=list,
         description="Content in wrong sections (e.g., 'methodology in introduction')",
     )
-    logical_flow_issues: list[str] = Field(
-        default_factory=list, description="Breaks in argument flow or logical jumps"
-    )
+    logical_flow_issues: list[str] = Field(default_factory=list, description="Breaks in argument flow or logical jumps")
     anti_patterns_detected: list[str] = Field(
         default_factory=list,
         description="Structural anti-patterns (sprawl, premature detail, orphaned content, redundant framing)",
@@ -238,9 +210,7 @@ class StructuralEdit(BaseModel):
         "split_section",  # Split one section into multiple
         "add_structural_content",  # Add introduction, conclusion, discussion, or framing paragraph
     ] = Field(description="Type of structural edit")
-    source_paragraph: int = Field(
-        ge=1, description="Paragraph number to act on (must be >= 1)"
-    )
+    source_paragraph: int = Field(ge=1, description="Paragraph number to act on (must be >= 1)")
     target_paragraph: Optional[int] = Field(
         default=None,
         ge=1,
@@ -255,9 +225,7 @@ class StructuralEdit(BaseModel):
         description="For trim_redundancy: replacement text. For split_section: text with ---SPLIT--- delimiter. "
         "For add_structural_content: the new structural content to insert.",
     )
-    notes: str = Field(
-        min_length=1, description="Explanation of why this edit improves the document"
-    )
+    notes: str = Field(min_length=1, description="Explanation of why this edit improves the document")
 
     @model_validator(mode="after")
     def validate_edit_requirements(self) -> "StructuralEdit":
@@ -270,13 +238,9 @@ class StructuralEdit(BaseModel):
             "move_content",
         ):
             if self.target_paragraph is None:
-                raise ValueError(
-                    f"{self.edit_type} requires target_paragraph to be specified"
-                )
+                raise ValueError(f"{self.edit_type} requires target_paragraph to be specified")
             if self.source_paragraph == self.target_paragraph:
-                raise ValueError(
-                    f"source_paragraph and target_paragraph cannot be the same ({self.source_paragraph})"
-                )
+                raise ValueError(f"source_paragraph and target_paragraph cannot be the same ({self.source_paragraph})")
 
         # Edit types that require replacement_text
         if self.edit_type in (
@@ -300,18 +264,10 @@ class EditManifest(BaseModel):
         default=None,
         description="Document architecture analysis (section organization, content placement, flow)",
     )
-    edits: list[StructuralEdit] = Field(
-        default_factory=list, description="List of structural edits"
-    )
-    todo_markers: list[str] = Field(
-        default_factory=list, description="<!-- TODO: ... --> markers to insert"
-    )
-    overall_assessment: str = Field(
-        min_length=10, description="Summary of structural issues found"
-    )
-    needs_restructuring: bool = Field(
-        description="Whether document needs restructuring"
-    )
+    edits: list[StructuralEdit] = Field(default_factory=list, description="List of structural edits")
+    todo_markers: list[str] = Field(default_factory=list, description="<!-- TODO: ... --> markers to insert")
+    overall_assessment: str = Field(min_length=10, description="Summary of structural issues found")
+    needs_restructuring: bool = Field(description="Whether document needs restructuring")
 
     @field_validator("edits", mode="before")
     @classmethod
@@ -334,11 +290,7 @@ class EditManifest(BaseModel):
         Raises ValueError to trigger LLM retry if the constraint is violated.
         The prompt explicitly states this is INVALID and will be rejected.
         """
-        if (
-            self.needs_restructuring
-            and len(self.edits) == 0
-            and len(self.todo_markers) == 0
-        ):
+        if self.needs_restructuring and len(self.edits) == 0 and len(self.todo_markers) == 0:
             raise ValueError(
                 "CONSTRAINT VIOLATION: needs_restructuring=True requires at least one edit or todo_marker. "
                 "If you identified issues but cannot determine specific fixes, set needs_restructuring=False. "
@@ -363,12 +315,8 @@ class SectionRewriteResult(BaseModel):
     original_paragraphs: list[int] = Field(
         min_length=1, description="Paragraph numbers that were rewritten (1-indexed)"
     )
-    rewritten_content: str = Field(
-        min_length=1, description="The rewritten section content"
-    )
-    changes_summary: str = Field(
-        min_length=10, description="Brief summary of what was changed (for audit trail)"
-    )
+    rewritten_content: str = Field(min_length=1, description="The rewritten section content")
+    changes_summary: str = Field(min_length=10, description="Brief summary of what was changed (for audit trail)")
     confidence: float = Field(
         ge=0.0,
         le=1.0,
@@ -383,12 +331,8 @@ class Loop3RewriteManifest(BaseModel):
     we track which sections were rewritten to fix which issues.
     """
 
-    rewrites: list[SectionRewriteResult] = Field(
-        default_factory=list, description="List of section rewrites performed"
-    )
-    issues_addressed: list[int] = Field(
-        default_factory=list, description="Issue IDs that were successfully addressed"
-    )
+    rewrites: list[SectionRewriteResult] = Field(default_factory=list, description="List of section rewrites performed")
+    issues_addressed: list[int] = Field(default_factory=list, description="Issue IDs that were successfully addressed")
     issues_skipped: list[int] = Field(
         default_factory=list,
         description="Issue IDs that were skipped (e.g., too complex, move operations)",
@@ -397,9 +341,7 @@ class Loop3RewriteManifest(BaseModel):
         default_factory=dict,
         description="Mapping of issue_id -> skip reason for debugging",
     )
-    overall_assessment: str = Field(
-        min_length=10, description="Summary of rewriting performed"
-    )
+    overall_assessment: str = Field(min_length=10, description="Summary of rewriting performed")
 
     @property
     def needs_restructuring(self) -> bool:
@@ -414,20 +356,14 @@ class ArchitectureVerificationResult(BaseModel):
         default_factory=list,
         description="List of original issues that are now resolved",
     )
-    issues_remaining: list[str] = Field(
-        default_factory=list, description="List of issues still present after edits"
-    )
-    regressions_introduced: list[str] = Field(
-        default_factory=list, description="New issues introduced by the edits"
-    )
+    issues_remaining: list[str] = Field(default_factory=list, description="List of issues still present after edits")
+    regressions_introduced: list[str] = Field(default_factory=list, description="New issues introduced by the edits")
     coherence_score: float = Field(
         ge=0.0,
         le=1.0,
         description="Overall coherence of document after edits (1.0 = fully coherent)",
     )
-    needs_another_iteration: bool = Field(
-        description="Whether another editing iteration is needed"
-    )
+    needs_another_iteration: bool = Field(description="Whether another editing iteration is needed")
     reasoning: str = Field(description="Explanation of verification findings")
 
 
@@ -441,9 +377,7 @@ class SectionEditResult(BaseModel):
 
     section_id: str = Field(description="Identifier of the edited section")
     edited_content: str = Field(description="The edited section content")
-    notes: str = Field(
-        description="Cross-references and suggested edits for other sections"
-    )
+    notes: str = Field(description="Cross-references and suggested edits for other sections")
     new_paper_todos: list[str] = Field(
         default_factory=list,
         description="TODOs for potential new papers (as a JSON array of strings)",
@@ -475,27 +409,17 @@ class SectionEditResult(BaseModel):
                 cleaned = re.sub(r"^(\d+[\.\)]\s*|[-*]\s*)", "", line).strip()
                 if cleaned:
                     items.append(cleaned)
-            return (
-                items if items else [v]
-            )  # Return original as single item if no structure found
+            return items if items else [v]  # Return original as single item if no structure found
         return v if v is not None else []
 
 
 class HolisticReviewResult(BaseModel):
     """Output from Phase B holistic reviewer."""
 
-    sections_approved: list[str] = Field(
-        default_factory=list, description="Section IDs that are approved"
-    )
-    sections_flagged: list[str] = Field(
-        default_factory=list, description="Section IDs that need re-editing"
-    )
-    flagged_reasons: dict[str, str] = Field(
-        default_factory=dict, description="Reasons for flagging each section"
-    )
-    overall_coherence_score: float = Field(
-        ge=0.0, le=1.0, description="Overall document coherence score"
-    )
+    sections_approved: list[str] = Field(default_factory=list, description="Section IDs that are approved")
+    sections_flagged: list[str] = Field(default_factory=list, description="Section IDs that need re-editing")
+    flagged_reasons: dict[str, str] = Field(default_factory=dict, description="Reasons for flagging each section")
+    overall_coherence_score: float = Field(ge=0.0, le=1.0, description="Overall document coherence score")
 
     @field_validator("sections_approved", "sections_flagged", mode="before")
     @classmethod
@@ -547,12 +471,8 @@ class HolisticReviewScoreOnly(BaseModel):
     make intelligent decisions based on coherence score alone.
     """
 
-    overall_coherence_score: float = Field(
-        ge=0.0, le=1.0, description="Overall document coherence score"
-    )
-    assessment_notes: str = Field(
-        default="", description="Brief notes on document coherence issues observed"
-    )
+    overall_coherence_score: float = Field(ge=0.0, le=1.0, description="Overall document coherence score")
+    assessment_notes: str = Field(default="", description="Brief notes on document coherence issues observed")
 
 
 # =============================================================================
@@ -563,25 +483,19 @@ class HolisticReviewScoreOnly(BaseModel):
 class CohesionCheckResult(BaseModel):
     """Structured output from Loop 4.5 cohesion check."""
 
-    needs_restructuring: bool = Field(
-        description="Whether document needs to return to Loop 3"
-    )
+    needs_restructuring: bool = Field(description="Whether document needs to return to Loop 3")
     reasoning: str = Field(description="Explanation of the assessment")
 
 
 class TodoResolution(BaseModel):
     """Result from attempting to resolve a TODO marker."""
 
-    resolved: bool = Field(
-        description="Whether the TODO was successfully resolved with concrete content"
-    )
+    resolved: bool = Field(description="Whether the TODO was successfully resolved with concrete content")
     replacement: str = Field(
         default="",
         description="Text to replace the TODO marker with. Empty if not resolved.",
     )
-    reasoning: str = Field(
-        description="Why this resolution was chosen or why it couldn't be resolved"
-    )
+    reasoning: str = Field(description="Why this resolution was chosen or why it couldn't be resolved")
 
 
 # =============================================================================
@@ -600,28 +514,18 @@ class Edit(BaseModel):
         default="",
         description="Position context for disambiguation: 'after section: X' or 'in paragraph starting with: Y'",
     )
-    edit_type: Literal["fact_correction", "citation_fix", "clarity"] = Field(
-        description="Type of edit being made"
-    )
+    edit_type: Literal["fact_correction", "citation_fix", "clarity"] = Field(description="Type of edit being made")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence in this edit")
-    source_doi: Optional[str] = Field(
-        default=None, description="DOI of paper supporting this edit"
-    )
+    source_doi: Optional[str] = Field(default=None, description="DOI of paper supporting this edit")
 
 
 class DocumentEdits(BaseModel):
     """Collection of edits from fact/reference checker."""
 
-    edits: list[Edit] = Field(
-        default_factory=list, description="List of edits to apply"
-    )
+    edits: list[Edit] = Field(default_factory=list, description="List of edits to apply")
     reasoning: str = Field(default="", description="Overall reasoning for the edits")
-    ambiguous_claims: list[str] = Field(
-        default_factory=list, description="Claims needing human review"
-    )
-    unaddressed_todos: list[str] = Field(
-        default_factory=list, description="TODOs that couldn't be resolved"
-    )
+    ambiguous_claims: list[str] = Field(default_factory=list, description="Claims needing human review")
+    unaddressed_todos: list[str] = Field(default_factory=list, description="TODOs that couldn't be resolved")
 
     @field_validator("ambiguous_claims", "unaddressed_todos", mode="before")
     @classmethod

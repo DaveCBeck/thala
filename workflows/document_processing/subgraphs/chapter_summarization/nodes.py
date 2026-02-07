@@ -1,18 +1,17 @@
 """Node implementations for chapter summarization.
 
-Routes through central LLM broker for unified cost/speed management.
+Routes through unified invoke() for automatic broker routing and cost optimization.
 """
 
-import asyncio
 import logging
 from typing import Any
 
 from langsmith import traceable
 
 from core.config import truncate_for_trace
-from core.llm_broker import BatchPolicy, get_broker
+from core.llm_broker import BatchPolicy
 from workflows.document_processing.state import DocumentProcessingState
-from workflows.shared.llm_utils import ModelTier
+from workflows.shared.llm_utils import ModelTier, invoke, invoke_batch, InvokeConfig
 from workflows.shared.retry_utils import with_retry
 from workflows.shared.token_utils import HAIKU_SAFE_LIMIT, estimate_tokens_fast
 
@@ -29,7 +28,7 @@ async def _summarize_content_chunk(
     chunk_num: int | None = None,
     total_chunks: int | None = None,
 ) -> str:
-    """Summarize a single chunk of content via broker."""
+    """Summarize a single chunk of content via invoke()."""
     chunk_info = ""
     if chunk_num is not None and total_chunks is not None:
         chunk_info = f" (Part {chunk_num}/{total_chunks})"
@@ -60,22 +59,22 @@ Content:
         model_tier = ModelTier.HAIKU
 
     # TODO: Upgrade to ModelTier.OPUS before production
-    broker = get_broker()
-    future = await broker.request(
-        prompt=user_prompt,
-        model=model_tier,
-        policy=BatchPolicy.PREFER_BALANCE,
-        max_tokens=8000 + 4096,
-        system=CHAPTER_SUMMARIZATION_SYSTEM,
-        thinking_budget=8000,
-    )
-    response = await future
-
-    if not response.success:
-        logger.warning(f"Chunk summarization failed: {response.error}")
-        return f"[Summarization failed: {response.error}]"
-
-    return response.content
+    try:
+        response = await invoke(
+            tier=model_tier,
+            system=CHAPTER_SUMMARIZATION_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+                max_tokens=8000 + 4096,
+                thinking_budget=8000,
+                cache=False,  # Required when using thinking_budget
+            ),
+        )
+        return response.content
+    except Exception as e:
+        logger.warning(f"Chunk summarization failed: {e}")
+        return f"[Summarization failed: {e}]"
 
 
 async def _summarize_single_chapter(
@@ -157,9 +156,10 @@ async def _summarize_single_chapter(
 )
 async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
     """
-    Summarize all chapters via central LLM broker.
+    Summarize all chapters via invoke_batch().
 
-    Routes through broker for unified cost/speed management.
+    Uses invoke_batch() for efficient batched LLM calls with automatic
+    broker routing and cost optimization.
     Large chapters (>600k chars) are processed with chunking.
 
     Returns chapter_summaries list preserving chapter order.
@@ -175,17 +175,17 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                 "current_status": "no_chapters",
             }
 
-        broker = get_broker()
-        pending_futures: dict[int, tuple[dict, asyncio.Future | None, str | None]] = {}
+        # Track chapter metadata for result collection
+        batch_chapter_info: list[tuple[int, dict]] = []  # (index, chapter)
+        large_chapter_indices: set[int] = set()
+        chapters_metadata: dict[int, dict] = {}  # index -> chapter
 
-        # Separate normal and large chapters
-        # Large chapters need chunking and can't go through simple broker path
-        large_chapter_indices = set()
+        logger.info(f"Submitting {len(chapters)} chapters for summarization")
 
-        logger.info(f"Submitting {len(chapters)} chapters for summarization via broker")
-
-        async with broker.batch_group():
+        # Use invoke_batch for efficient batching
+        async with invoke_batch() as batch:
             for i, chapter in enumerate(chapters):
+                chapters_metadata[i] = chapter
                 chapter_content = markdown[chapter["start_position"] : chapter["end_position"]]
                 target_words = max(50, chapter["word_count"] // 10)
 
@@ -200,7 +200,6 @@ async def summarize_chapters(state: DocumentProcessingState) -> dict[str, Any]:
                         f"Chapter '{chapter['title']}' is large ({len(chapter_content)} chars), "
                         "will process with chunking"
                     )
-                    pending_futures[i] = (chapter, None, None)
                     continue
 
                 # Short summaries should be prose-only without headings
@@ -227,25 +226,40 @@ Chapter content:
                         f"({estimated_tokens:,} > {HAIKU_SAFE_LIMIT:,} tokens), "
                         "will process individually with SONNET_1M"
                     )
-                    pending_futures[i] = (chapter, None, None)
                     continue
 
-                # Normal chapter - submit to broker
+                # Normal chapter - add to batch
                 # TODO: Upgrade to ModelTier.OPUS before production
-                future = await broker.request(
-                    prompt=user_prompt,
-                    model=ModelTier.HAIKU,
-                    policy=BatchPolicy.PREFER_BALANCE,
-                    max_tokens=8000 + 4096,
+                batch.add(
+                    tier=ModelTier.HAIKU,
                     system=CHAPTER_SUMMARIZATION_SYSTEM,
-                    thinking_budget=8000,
+                    user=user_prompt,
+                    config=InvokeConfig(
+                        batch_policy=BatchPolicy.PREFER_BALANCE,
+                        max_tokens=8000 + 4096,
+                        thinking_budget=8000,
+                        cache=False,  # Required when using thinking_budget
+                    ),
                 )
-                pending_futures[i] = (chapter, future, chapter_content)
+                batch_chapter_info.append((i, chapter))
+
+        # Collect batch results
+        batch_results = await batch.results()
+
+        # Build index -> result mapping from batch
+        batch_result_map: dict[int, str] = {}
+        for batch_idx, (chapter_idx, chapter) in enumerate(batch_chapter_info):
+            try:
+                response = batch_results[batch_idx]
+                batch_result_map[chapter_idx] = response.content
+            except Exception as e:
+                logger.error(f"Failed to summarize chapter '{chapter['title']}': {e}")
+                batch_result_map[chapter_idx] = f"[Error: {e}]"
 
         # Process large chapters with chunking (these can't be batched)
-        large_results = {}
+        large_results: dict[int, dict] = {}
         for idx in large_chapter_indices:
-            chapter, _, _ = pending_futures[idx]
+            chapter = chapters_metadata[idx]
             chapter_content = markdown[chapter["start_position"] : chapter["end_position"]]
             target_words = max(50, chapter["word_count"] // 10)
             result = await _summarize_single_chapter(
@@ -258,39 +272,27 @@ Chapter content:
         # Collect results in order
         chapter_summaries = []
         for i in range(len(chapters)):
+            chapter = chapters_metadata[i]
             if i in large_results:
                 chapter_summaries.append(large_results[i])
+            elif i in batch_result_map:
+                chapter_summaries.append(
+                    {
+                        "title": chapter["title"],
+                        "author": chapter.get("author"),
+                        "summary": batch_result_map[i],
+                    }
+                )
             else:
-                chapter, future, chapter_content = pending_futures[i]
-                try:
-                    response = await future
-                    if response.success:
-                        summary = response.content
-                        chapter_summaries.append(
-                            {
-                                "title": chapter["title"],
-                                "author": chapter.get("author"),
-                                "summary": summary,
-                            }
-                        )
-                    else:
-                        logger.error(f"Failed to summarize chapter '{chapter['title']}': {response.error}")
-                        chapter_summaries.append(
-                            {
-                                "title": chapter["title"],
-                                "author": chapter.get("author"),
-                                "summary": f"[Error: {response.error}]",
-                            }
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to summarize chapter '{chapter['title']}': {e}")
-                    chapter_summaries.append(
-                        {
-                            "title": chapter["title"],
-                            "author": chapter.get("author"),
-                            "summary": f"[Error: {e}]",
-                        }
-                    )
+                # Should not happen, but handle gracefully
+                logger.error(f"No result for chapter '{chapter['title']}'")
+                chapter_summaries.append(
+                    {
+                        "title": chapter["title"],
+                        "author": chapter.get("author"),
+                        "summary": "[Error: No result available]",
+                    }
+                )
 
         logger.info(f"Completed summarization of {len(chapter_summaries)} chapters")
 
@@ -376,20 +378,18 @@ async def aggregate_summaries(state: DocumentProcessingState) -> dict[str, Any]:
 
 
 async def _translate_to_english(text: str) -> str:
-    """Translate text to English using Sonnet via broker."""
+    """Translate text to English using Sonnet via invoke()."""
 
-    async def _invoke():
-        broker = get_broker()
-        future = await broker.request(
-            prompt=f"Translate this text to English:\n\n{text}",
-            model=ModelTier.SONNET,
-            policy=BatchPolicy.PREFER_BALANCE,
-            max_tokens=len(text) // 2 + 1000,  # Translation similar length
+    async def _invoke_translation():
+        response = await invoke(
+            tier=ModelTier.SONNET,
             system=TRANSLATION_SYSTEM,
+            user=f"Translate this text to English:\n\n{text}",
+            config=InvokeConfig(
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+                max_tokens=len(text) // 2 + 1000,  # Translation similar length
+            ),
         )
-        response = await future
-        if response.success:
-            return response.content
-        raise RuntimeError(f"Translation failed: {response.error}")
+        return response.content
 
-    return await with_retry(_invoke)
+    return await with_retry(_invoke_translation)

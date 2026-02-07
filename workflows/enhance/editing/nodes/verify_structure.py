@@ -16,7 +16,7 @@ from workflows.enhance.editing.prompts import (
     COHERENCE_COMPARISON_SYSTEM,
     COHERENCE_COMPARISON_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,12 @@ async def _check_coherence_regression(
     logger.info("Calling Sonnet to compare document versions for coherence regression")
 
     try:
-        result = await get_structured_output(
-            output_schema=CoherenceComparisonResult,
-            user_prompt=user_prompt,
-            system_prompt=COHERENCE_COMPARISON_SYSTEM,
+        result = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=2000,
+            system=COHERENCE_COMPARISON_SYSTEM,
+            user=user_prompt,
+            schema=CoherenceComparisonResult,
+            config=InvokeConfig(max_tokens=2000, cache=False),
         )
         logger.info(
             f"Coherence comparison: preferred={result.preferred_version}, "
@@ -103,10 +103,12 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
 
     # Build edit summary
     successful_edits = [e for e in completed_edits if e.get("success")]
-    edits_summary = "\n".join([
-        f"- {e.get('edit_type')}: {e.get('operation', 'applied')}"
-        for e in successful_edits[:10]  # Limit for prompt
-    ])
+    edits_summary = "\n".join(
+        [
+            f"- {e.get('edit_type')}: {e.get('operation', 'applied')}"
+            for e in successful_edits[:10]  # Limit for prompt
+        ]
+    )
 
     if not edits_summary:
         edits_summary = "No edits were applied."
@@ -123,12 +125,12 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
     logger.debug(f"  Edits summary:\n{edits_summary}")
 
     try:
-        verification = await get_structured_output(
-            output_schema=StructureVerification,
-            user_prompt=user_prompt,
-            system_prompt=STRUCTURE_VERIFICATION_SYSTEM,
+        verification = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            max_tokens=2000,
+            system=STRUCTURE_VERIFICATION_SYSTEM,
+            user=user_prompt,
+            schema=StructureVerification,
+            config=InvokeConfig(max_tokens=2000, cache=False),
         )
 
         logger.info(
@@ -168,7 +170,11 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
 
                 if comparison and comparison.preferred_version == "original" and comparison.confidence >= 0.6:
                     # Confirmed regression - need to rollback
-                    regressions_desc = ", ".join(comparison.key_regressions[:3]) if comparison.key_regressions else "general coherence loss"
+                    regressions_desc = (
+                        ", ".join(comparison.key_regressions[:3])
+                        if comparison.key_regressions
+                        else "general coherence loss"
+                    )
 
                     if not retry_used:
                         # First regression: retry without incrementing iteration
@@ -206,20 +212,11 @@ async def verify_structure_node(state: dict) -> dict[str, Any]:
         # - Coherence is below threshold, OR regressions were detected
         # - AND verification indicates more work is needed
         # - AND we haven't hit max iterations
-        has_issues = (
-            verification.coherence_score < min_coherence
-            or len(verification.regressions) > 0
-        )
-        needs_more = (
-            has_issues
-            and verification.needs_another_iteration
-            and iteration < max_iterations - 1
-        )
+        has_issues = verification.coherence_score < min_coherence or len(verification.regressions) > 0
+        needs_more = has_issues and verification.needs_another_iteration and iteration < max_iterations - 1
 
         if verification.regressions and not needs_more:
-            logger.warning(
-                f"Regressions detected but not iterating: {verification.regressions[:3]}"
-            )
+            logger.warning(f"Regressions detected but not iterating: {verification.regressions[:3]}")
 
         return {
             "structure_verification": verification.model_dump(),
@@ -281,17 +278,14 @@ def check_structure_complete(state: dict) -> str:
 
     if verification.coherence_score >= min_coherence:
         if not verification.issues_remaining:
-            logger.info(
-                f"Structure complete: coherence={verification.coherence_score:.2f} >= {min_coherence}"
-            )
+            logger.info(f"Structure complete: coherence={verification.coherence_score:.2f} >= {min_coherence}")
             return "proceed_to_polish"
 
     # Check if we can iterate more
     if iteration < max_iterations:
         if verification.needs_another_iteration:
             logger.info(
-                f"Structure iteration {iteration} → {iteration + 1} "
-                f"(coherence={verification.coherence_score:.2f})"
+                f"Structure iteration {iteration} → {iteration + 1} (coherence={verification.coherence_score:.2f})"
             )
             return "continue_structure"
 

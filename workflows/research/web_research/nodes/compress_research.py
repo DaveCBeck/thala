@@ -37,9 +37,7 @@ async def compress_research(state: DeepResearchState) -> dict[str, Any]:
         logger.debug(f"All {len(findings)} findings have adequate confidence")
         return {"current_status": "supervising"}
 
-    logger.debug(
-        f"Re-compressing {len(low_confidence_findings)} low-confidence findings"
-    )
+    logger.debug(f"Re-compressing {len(low_confidence_findings)} low-confidence findings")
 
     # For now, just pass through - re-compression logic can be added later
     return {"current_status": "supervising"}

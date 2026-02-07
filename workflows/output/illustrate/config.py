@@ -15,10 +15,10 @@ class IllustrateConfig(BaseModel):
         description="Whether to generate a header image",
     )
     additional_image_count: int = Field(
-        default=2,
+        default=3,
         ge=0,
         le=5,
-        description="Number of additional images beyond header (default 2)",
+        description="Number of additional images beyond header (default 3)",
     )
 
     # Header image preference
@@ -33,7 +33,7 @@ class IllustrateConfig(BaseModel):
         description="Aspect ratio for Imagen-generated images",
     )
     diagram_width: int = Field(
-        default=800,
+        default=900,
         description="Width for SVG diagrams in pixels",
     )
     diagram_height: int = Field(

@@ -31,9 +31,7 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
     4. Logs skipped edits at DEBUG level
     5. Returns updated document model and edit summaries
     """
-    document_model = DocumentModel.from_dict(
-        state.get("updated_document_model", state["document_model"])
-    )
+    document_model = DocumentModel.from_dict(state.get("updated_document_model", state["document_model"]))
     pending_edits = state.get("pending_edits", [])
     unresolved_items = state.get("unresolved_items", [])
 
@@ -64,13 +62,13 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
 
         # Skip empty or invalid edits
         if not find_string or len(find_string) < 10:
-            logger.debug(
-                f"Skipping edit: find string too short ({len(find_string)} chars) - {justification}"
+            logger.debug(f"Skipping edit: find string too short ({len(find_string)} chars) - {justification}")
+            skipped_edits.append(
+                {
+                    **edit,
+                    "skip_reason": "find_string_too_short",
+                }
             )
-            skipped_edits.append({
-                **edit,
-                "skip_reason": "find_string_too_short",
-            })
             continue
 
         # Validate uniqueness
@@ -79,51 +77,51 @@ async def apply_verified_edits_node(state: dict) -> dict[str, Any]:
         if not is_unique:
             if count == 0:
                 logger.debug(
-                    f"Skipping edit: find string not found in document - "
-                    f"type={edit_type}, confidence={confidence:.2f}"
+                    f"Skipping edit: find string not found in document - type={edit_type}, confidence={confidence:.2f}"
                 )
-                skipped_edits.append({
-                    **edit,
-                    "skip_reason": "find_string_not_found",
-                })
+                skipped_edits.append(
+                    {
+                        **edit,
+                        "skip_reason": "find_string_not_found",
+                    }
+                )
             else:
                 logger.debug(
                     f"Skipping edit: find string appears {count} times (must be unique) - "
                     f"type={edit_type}, confidence={confidence:.2f}"
                 )
-                skipped_edits.append({
-                    **edit,
-                    "skip_reason": f"find_string_not_unique_count_{count}",
-                })
+                skipped_edits.append(
+                    {
+                        **edit,
+                        "skip_reason": f"find_string_not_unique_count_{count}",
+                    }
+                )
             continue
 
         # Apply the edit
         document_text = document_text.replace(find_string, replace_string, 1)
         applied_edits.append(edit)
-        logger.debug(
-            f"Applied {edit_type} edit: confidence={confidence:.2f}, {justification[:50]}..."
-        )
+        logger.debug(f"Applied {edit_type} edit: confidence={confidence:.2f}, {justification[:50]}...")
 
     # Log summary
-    logger.info(
-        f"Applied {len(applied_edits)} edits, skipped {len(skipped_edits)} edits"
-    )
+    logger.info(f"Applied {len(applied_edits)} edits, skipped {len(skipped_edits)} edits")
 
     # Add skipped edits to unresolved items
     for edit in skipped_edits:
-        unresolved_items.append({
-            "source": "apply_verified_edits",
-            "section_id": edit.get("position_hint", "unknown"),
-            "issue": f"Edit skipped ({edit.get('skip_reason', 'unknown')}): {edit.get('justification', '')}",
-        })
+        unresolved_items.append(
+            {
+                "source": "apply_verified_edits",
+                "section_id": edit.get("position_hint", "unknown"),
+                "issue": f"Edit skipped ({edit.get('skip_reason', 'unknown')}): {edit.get('justification', '')}",
+            }
+        )
 
     # Log all unresolved items at INFO level
     if unresolved_items:
         logger.info(f"=== Verification Phase: {len(unresolved_items)} unresolved items ===")
         for item in unresolved_items:
             logger.info(
-                f"  [{item.get('source', 'unknown')}] {item.get('section_id', 'unknown')}: "
-                f"{item.get('issue', '')}"
+                f"  [{item.get('source', 'unknown')}] {item.get('section_id', 'unknown')}: {item.get('issue', '')}"
             )
 
     # Rebuild document model from edited text

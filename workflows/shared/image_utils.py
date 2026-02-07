@@ -3,7 +3,7 @@
 import logging
 import os
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -75,21 +75,14 @@ async def generate_image_prompt(
         Generated image prompt string, or None if generation fails
     """
     try:
-        llm = get_llm(tier=ModelTier.SONNET, max_tokens=500)
-
         # Truncate content if too long (keep first ~8000 chars)
         truncated_content = content[:8000] if len(content) > 8000 else content
 
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": IMAGE_PROMPT_SYSTEM},
-                {
-                    "role": "user",
-                    "content": IMAGE_PROMPT_USER.format(
-                        title=title, content=truncated_content
-                    ),
-                },
-            ]
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system=IMAGE_PROMPT_SYSTEM,
+            user=IMAGE_PROMPT_USER.format(title=title, content=truncated_content),
+            config=InvokeConfig(max_tokens=500),
         )
 
         prompt = (

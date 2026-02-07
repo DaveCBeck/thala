@@ -538,7 +538,7 @@ For multi-workflow orchestration:
 ## Known Uses
 
 - `workflows/wrapped/` - Full implementation orchestrating three research sources
-- Test script with checkpoint support: `testing/test_wrapped_research.py`
+- Test scripts in `tests/integration/workflows/`
 
 ## Consequences
 

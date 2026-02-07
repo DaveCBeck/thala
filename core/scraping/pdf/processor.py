@@ -50,6 +50,32 @@ class MarkerProcessingError(Exception):
     pass
 
 
+# Health check timeout - fail fast if Marker isn't available
+MARKER_HEALTH_TIMEOUT = 5.0
+
+
+async def check_marker_available() -> bool:
+    """Check if Marker service is available.
+
+    Uses a short timeout to fail fast if the service isn't running.
+
+    Returns:
+        True if Marker is reachable, False otherwise
+    """
+    try:
+        async with httpx.AsyncClient(
+            base_url=MARKER_BASE_URL, timeout=MARKER_HEALTH_TIMEOUT
+        ) as client:
+            response = await client.get("/health")
+            return response.status_code == 200
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+        logger.warning(f"Marker service unavailable: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"Marker health check failed: {e}")
+        return False
+
+
 async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
     """Download PDF from URL using httpx (simple/fast method).
 
@@ -84,24 +110,41 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
             raise MarkerProcessingError(f"Failed to download PDF: {e}") from e
 
 
+BROWSER_LAUNCH_TIMEOUT = 30.0  # Max time to wait for browser to start
+
+
 async def _get_browser() -> "Browser":
-    """Get or create browser instance (lazy initialization)."""
+    """Get or create browser instance (lazy initialization).
+
+    Uses a timeout to prevent indefinite hangs if browser fails to start.
+    """
     global _playwright, _browser
 
     if _browser is None:
         from playwright.async_api import async_playwright
 
         logger.debug("Initializing Playwright browser for PDF download")
-        _playwright = await async_playwright().start()
-        _browser = await _playwright.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
-        )
-        logger.info("Playwright browser started for PDF downloads")
+        try:
+            async with asyncio.timeout(BROWSER_LAUNCH_TIMEOUT):
+                _playwright = await async_playwright().start()
+                _browser = await _playwright.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-dev-shm-usage",
+                        "--no-sandbox",
+                    ],
+                )
+            logger.info("Playwright browser started for PDF downloads")
+        except asyncio.TimeoutError:
+            logger.error(f"Browser launch timed out after {BROWSER_LAUNCH_TIMEOUT}s")
+            raise MarkerProcessingError(
+                f"Playwright browser failed to start within {BROWSER_LAUNCH_TIMEOUT}s"
+            )
+        except Exception as e:
+            logger.error(f"Browser launch failed: {e}")
+            raise MarkerProcessingError(f"Playwright browser failed to start: {e}") from e
+
     return _browser
 
 
@@ -364,14 +407,14 @@ async def _poll_marker_job(
 
     Args:
         job_id: Job ID to poll
-        max_wait: Maximum wait time in seconds (None = no limit)
+        max_wait: Maximum wait time in seconds (None = no limit, waits until job completes or service unavailable)
         max_retries: Max retries for transient network errors per poll attempt
 
     Returns:
         Markdown content
 
     Raises:
-        MarkerProcessingError: If job fails or times out
+        MarkerProcessingError: If job fails, times out, or service becomes unavailable
     """
     start_time = asyncio.get_event_loop().time()
 
@@ -382,23 +425,30 @@ async def _poll_marker_job(
             if max_wait is not None and elapsed > max_wait:
                 raise MarkerProcessingError(f"Marker job {job_id} did not complete within {max_wait}s")
 
-            # Retry transient network errors with longer backoffs for busy service
-            backoff_multipliers = (2, 5, 10)  # 30s, 75s, 150s
+            # Retry transient network errors with backoffs
+            # Short backoffs to detect service unavailability quickly (~90s total)
+            backoff_multipliers = (1, 2, 3)  # 15s, 30s, 45s
             for attempt in range(max_retries):
                 try:
                     response = await client.get(f"/jobs/{job_id}")
                     response.raise_for_status()
                     break
-                except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
                     if attempt < max_retries - 1:
                         wait_time = MARKER_POLL_INTERVAL * backoff_multipliers[attempt]
                         logger.warning(
-                            f"Marker poll timeout for job {job_id} (attempt {attempt + 1}/{max_retries}), "
-                            f"retrying in {wait_time}s"
+                            f"Marker poll error for job {job_id} (attempt {attempt + 1}/{max_retries}): "
+                            f"{type(e).__name__}, retrying in {wait_time}s"
                         )
                         await asyncio.sleep(wait_time)
                     else:
-                        raise MarkerProcessingError(f"Marker poll failed after {max_retries} retries: {e}") from e
+                        logger.warning(
+                            f"Marker service unavailable during polling for job {job_id}: "
+                            f"{type(e).__name__}: {e}"
+                        )
+                        raise MarkerProcessingError(
+                            f"Marker service unavailable: {type(e).__name__}"
+                        ) from e
 
             data = response.json()
             status = data["status"]
@@ -477,6 +527,10 @@ async def process_pdf_bytes(
     """
     if not validate_pdf_bytes(content):
         raise MarkerProcessingError("Content is not a valid PDF")
+
+    # Check Marker availability (fail fast)
+    if not await check_marker_available():
+        raise MarkerProcessingError("Marker service unavailable")
 
     # Check file size limit
     if len(content) > MARKER_MAX_FILE_SIZE:

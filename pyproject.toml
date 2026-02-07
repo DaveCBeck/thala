@@ -7,11 +7,12 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
-testpaths = ["testing"]
+testpaths = ["tests"]
 markers = [
     "unit: marks tests as unit tests (no external services)",
     "integration: marks tests as integration tests (uses testcontainers)",
     "slow: marks tests as slow (>30s)",
+    "llm: marks tests that make real LLM API calls (requires API keys, costs money)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:langchain.*:",
@@ -38,7 +39,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["core", "langchain_tools", "mcp_server", "workflows", "testing"]
+known-first-party = ["core", "langchain_tools", "mcp_server", "workflows", "tests"]
 
 [tool.mypy]
 python_version = "3.12"

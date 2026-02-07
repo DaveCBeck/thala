@@ -56,10 +56,7 @@ def route_to_parallel_research(state: dict) -> list[Send]:
             )
         )
 
-    logger.info(
-        f"Dispatching {len(generated_queries)} web_research + "
-        f"{len(generated_themes)} book_finding workers"
-    )
+    logger.info(f"Dispatching {len(generated_queries)} web_research + {len(generated_themes)} book_finding workers")
 
     return sends
 
@@ -124,9 +121,7 @@ async def web_research_worker(state: dict) -> dict[str, Any]:
                     "status": "failed",
                 }
             ],
-            "errors": [
-                {"phase": f"web_research_{iteration}", "error": str(e)}
-            ],
+            "errors": [{"phase": f"web_research_{iteration}", "error": str(e)}],
         }
 
 
@@ -175,12 +170,9 @@ async def book_finding_worker(state: dict) -> dict[str, Any]:
             full_state = load_workflow_state(workflow_name, run_id)
             if full_state:
                 processed_books = full_state.get("processed_books", [])
-                zotero_keys = [
-                    b["zotero_key"] for b in processed_books if b.get("zotero_key")
-                ]
+                zotero_keys = [b["zotero_key"] for b in processed_books if b.get("zotero_key")]
                 logger.info(
-                    f"Book worker {iteration}: loaded {len(processed_books)} books, "
-                    f"{len(zotero_keys)} zotero keys"
+                    f"Book worker {iteration}: loaded {len(processed_books)} books, {len(zotero_keys)} zotero keys"
                 )
             else:
                 logger.debug(f"No persisted state found for {workflow_name}/{run_id}")
@@ -211,9 +203,7 @@ async def book_finding_worker(state: dict) -> dict[str, Any]:
                     "status": "failed",
                 }
             ],
-            "errors": [
-                {"phase": f"book_finding_{iteration}", "error": str(e)}
-            ],
+            "errors": [{"phase": f"book_finding_{iteration}", "error": str(e)}],
         }
 
 

@@ -164,14 +164,8 @@ async def synthesis(
         status = result.get("status", "failed")
 
         # Calculate source count
-        web_sources = sum(
-            r.get("source_count", 0)
-            for r in result.get("web_research_results", [])
-        )
-        books_processed = sum(
-            len(r.get("processed_books", []))
-            for r in result.get("book_finding_results", [])
-        )
+        web_sources = sum(r.get("source_count", 0) for r in result.get("web_research_results", []))
+        books_processed = sum(len(r.get("processed_books", [])) for r in result.get("book_finding_results", []))
         papers_analyzed = len(result.get("paper_corpus", {}))
         source_count = web_sources + books_processed + papers_analyzed
 
@@ -196,9 +190,7 @@ async def synthesis(
         )
 
         logger.info(
-            f"Synthesis workflow completed: status={status}, "
-            f"report_length={len(final_report)}, "
-            f"sources={source_count}"
+            f"Synthesis workflow completed: status={status}, report_length={len(final_report)}, sources={source_count}"
         )
 
         return {

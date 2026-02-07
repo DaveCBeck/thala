@@ -135,10 +135,7 @@ async def fact_check(
         elif errors and status == "success":
             status = "partial"
 
-        logger.info(
-            f"Fact-check workflow completed: status={status}, "
-            f"errors={len(errors)}"
-        )
+        logger.info(f"Fact-check workflow completed: status={status}, errors={len(errors)}")
 
         return {
             "final_report": final_document,

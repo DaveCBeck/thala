@@ -106,9 +106,7 @@ async def book_finding(
     )
 
     run_id = uuid.uuid4()
-    logger.info(
-        f"Starting book finding workflow for theme '{theme[:100]}' (quality: {quality}, language: {language})"
-    )
+    logger.info(f"Starting book finding workflow for theme '{theme[:100]}' (quality: {quality}, language: {language})")
     logger.debug(f"LangSmith run ID: {run_id}")
 
     try:
@@ -146,19 +144,11 @@ async def book_finding(
             workflow_name="book_finding",
             run_id=str(run_id),
             state={
-                "input": dict(input_data)
-                if hasattr(input_data, "_asdict")
-                else input_data,
+                "input": dict(input_data) if hasattr(input_data, "_asdict") else input_data,
                 "processed_books": result.get("processed_books", []),
-                "analogous_recommendations": result.get(
-                    "analogous_recommendations", []
-                ),
-                "inspiring_recommendations": result.get(
-                    "inspiring_recommendations", []
-                ),
-                "expressive_recommendations": result.get(
-                    "expressive_recommendations", []
-                ),
+                "analogous_recommendations": result.get("analogous_recommendations", []),
+                "inspiring_recommendations": result.get("inspiring_recommendations", []),
+                "expressive_recommendations": result.get("expressive_recommendations", []),
                 "search_results": result.get("search_results", []),
                 "processing_failed": result.get("processing_failed", []),
                 "final_markdown": final_markdown,

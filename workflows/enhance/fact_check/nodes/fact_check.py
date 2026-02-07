@@ -14,7 +14,7 @@ from workflows.enhance.fact_check.prompts import (
     FACT_CHECK_SYSTEM,
     FACT_CHECK_USER,
 )
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +47,9 @@ def route_to_fact_check_sections(state: dict) -> list[Send] | str:
 
     # If screening was performed, use its results
     if screened_sections or screening_skipped:
-        sections_to_check = [
-            s for s in leaf_sections
-            if s.section_id in screened_sections
-        ]
+        sections_to_check = [s for s in leaf_sections if s.section_id in screened_sections]
         logger.info(
-            f"Using screening results: {len(sections_to_check)} sections to check, "
-            f"{len(screening_skipped)} skipped"
+            f"Using screening results: {len(sections_to_check)} sections to check, {len(screening_skipped)} skipped"
         )
     else:
         # Fallback: check all sections (screening was skipped or failed)
@@ -105,16 +101,16 @@ async def fact_check_section_worker(state: dict) -> dict[str, Any]:
     confidence_threshold = state.get("confidence_threshold", 0.75)
     max_tool_calls = state.get("max_tool_calls", 15)
 
-    logger.debug(
-        f"Fact-checking section '{section_heading}' (perplexity={use_perplexity}, max_tools={max_tool_calls})"
-    )
+    logger.debug(f"Fact-checking section '{section_heading}' (perplexity={use_perplexity}, max_tools={max_tool_calls})")
 
     # Get tools based on settings
     from langchain_tools import search_papers, get_paper_content
+
     tools = [search_papers, get_paper_content]
 
     if use_perplexity:
         from langchain_tools import check_fact
+
         tools.append(check_fact)
 
     user_prompt = FACT_CHECK_USER.format(
@@ -126,15 +122,17 @@ async def fact_check_section_worker(state: dict) -> dict[str, Any]:
     )
 
     try:
-        result = await get_structured_output(
-            output_schema=FactCheckResult,
-            user_prompt=user_prompt,
-            system_prompt=FACT_CHECK_SYSTEM,
+        result = await invoke(
             tier=ModelTier.HAIKU,
+            system=FACT_CHECK_SYSTEM,
+            user=user_prompt,
+            schema=FactCheckResult,
             tools=tools,
-            max_tokens=4000,
-            max_tool_calls=max_tool_calls,
-            use_json_schema_method=True,
+            config=InvokeConfig(
+                max_tokens=4000,
+                max_tool_calls=max_tool_calls,
+                use_json_schema_method=True,
+            ),
         )
 
         # Override section_id from result to match input
@@ -146,19 +144,11 @@ async def fact_check_section_worker(state: dict) -> dict[str, Any]:
                 logger.info(f"Unresolved fact-check issue in '{section_heading}': {issue}")
 
         # Filter suggested edits by confidence threshold
-        valid_edits = [
-            e for e in result.suggested_edits
-            if e.confidence >= confidence_threshold
-        ]
-        low_confidence_edits = [
-            e for e in result.suggested_edits
-            if e.confidence < confidence_threshold
-        ]
+        valid_edits = [e for e in result.suggested_edits if e.confidence >= confidence_threshold]
+        low_confidence_edits = [e for e in result.suggested_edits if e.confidence < confidence_threshold]
 
         if low_confidence_edits:
-            logger.info(
-                f"Skipping {len(low_confidence_edits)} low-confidence edits in '{section_heading}'"
-            )
+            logger.info(f"Skipping {len(low_confidence_edits)} low-confidence edits in '{section_heading}'")
             # Add to unresolved issues
             for edit in low_confidence_edits:
                 result.unresolved_issues.append(
@@ -214,11 +204,13 @@ async def assemble_fact_checks_node(state: dict) -> dict[str, Any]:
     unresolved_items = []
     for result in fact_check_results:
         for issue in result.get("unresolved_issues", []):
-            unresolved_items.append({
-                "source": "fact_check",
-                "section_id": result.get("section_id"),
-                "issue": issue,
-            })
+            unresolved_items.append(
+                {
+                    "source": "fact_check",
+                    "section_id": result.get("section_id"),
+                    "issue": issue,
+                }
+            )
 
     return {
         "unresolved_items": unresolved_items,

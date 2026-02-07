@@ -74,14 +74,10 @@ async def select_languages(state: MultiLangState) -> dict:
                 invalid_languages.append(code)
 
         if invalid_languages:
-            logger.warning(
-                f"Invalid language codes filtered out: {', '.join(invalid_languages)}"
-            )
+            logger.warning(f"Invalid language codes filtered out: {', '.join(invalid_languages)}")
 
         if not valid_languages:
-            logger.error(
-                f"All provided language codes are invalid: {requested_languages}"
-            )
+            logger.error(f"All provided language codes are invalid: {requested_languages}")
             return {
                 "current_phase": "language_selection",
                 "current_status": "Error: No valid language codes provided",

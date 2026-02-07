@@ -33,16 +33,13 @@ def detect_duplicate_headers(document: str) -> list[tuple[int, int, str]]:
             for i in range(len(positions) - 1):
                 duplicates.append((positions[i], positions[i + 1], header_text))
                 logger.warning(
-                    f"Duplicate header found: '{header_text}' at lines "
-                    f"{positions[i] + 1} and {positions[i + 1] + 1}"
+                    f"Duplicate header found: '{header_text}' at lines {positions[i] + 1} and {positions[i + 1] + 1}"
                 )
 
     return duplicates
 
 
-def remove_duplicate_headers(
-    document: str, duplicates: list[tuple[int, int, str]]
-) -> str:
+def remove_duplicate_headers(document: str, duplicates: list[tuple[int, int, str]]) -> str:
     """Remove duplicate section headers from document.
 
     For each duplicate, removes the second occurrence and merges content
@@ -84,17 +81,11 @@ def remove_duplicate_headers(
 
         if similarity > 0.5:
             # High similarity - remove duplicate section entirely
-            logger.info(
-                f"Removing duplicate section '{header_text}' "
-                f"(similarity: {similarity:.2f})"
-            )
+            logger.info(f"Removing duplicate section '{header_text}' (similarity: {similarity:.2f})")
             del lines[line2 : end_line + 1]
         else:
             # Low similarity - just remove the header, keep content
-            logger.info(
-                f"Removing duplicate header '{header_text}' but keeping content "
-                f"(similarity: {similarity:.2f})"
-            )
+            logger.info(f"Removing duplicate header '{header_text}' but keeping content (similarity: {similarity:.2f})")
             del lines[line2]
 
     return "\n".join(lines)

@@ -351,7 +351,7 @@ async def run(self, task: dict, checkpoint_callback, resume_from=None):
 **New files:**
 - `core/task_queue/incremental_state.py`: IncrementalStateManager (330 lines)
 - `core/task_queue/shutdown.py`: ShutdownCoordinator (147 lines)
-- `testing/test_task_queue_interruption.py`: Test suite (262 lines)
+- `tests/unit/core/task_queue/test_task_queue_interruption.py`: Test suite
 
 **Modified files:**
 - `core/task_queue/runner.py`: Integrated shutdown coordinator and checkpoint callbacks

@@ -9,7 +9,7 @@ from typing import Any
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..prompts import V2_GLOBAL_ANALYSIS_SYSTEM, V2_GLOBAL_ANALYSIS_USER
 from ..schemas import GlobalAnalysisResult, TopLevelSection, parse_sections
@@ -29,9 +29,7 @@ def build_sections_summary(sections: list[TopLevelSection]) -> str:
     lines = []
     for section in sections:
         citations_str = f" (citations: {len(section.citations)})" if section.citations else ""
-        lines.append(
-            f"[{section.index}] # {section.heading} ({section.word_count} words){citations_str}"
-        )
+        lines.append(f"[{section.index}] # {section.heading} ({section.word_count} words){citations_str}")
     return "\n".join(lines)
 
 
@@ -84,15 +82,16 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
 
     # Call LLM for analysis
     try:
-        analysis = await get_structured_output(
-            output_schema=GlobalAnalysisResult,
-            user_prompt=user_prompt,
-            system_prompt=V2_GLOBAL_ANALYSIS_SYSTEM,
+        analysis = await invoke(
             tier=ModelTier.OPUS if use_opus else ModelTier.SONNET,
-            thinking_budget=thinking_budget if use_opus else None,
-            max_tokens=8000,
-            use_json_schema_method=True,
-            max_retries=2,
+            system=V2_GLOBAL_ANALYSIS_SYSTEM,
+            user=user_prompt,
+            schema=GlobalAnalysisResult,
+            config=InvokeConfig(
+                max_tokens=8000,
+                thinking_budget=thinking_budget if use_opus else None,
+                cache=False if thinking_budget else True,
+            ),
         )
     except Exception as e:
         logger.error(f"Analysis LLM call failed: {e}")
@@ -111,9 +110,7 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
 
     for instruction in analysis.instructions:
         if instruction.section_index not in section_indices:
-            logger.warning(
-                f"Instruction references invalid section index: {instruction.section_index}"
-            )
+            logger.warning(f"Instruction references invalid section index: {instruction.section_index}")
             continue
 
         # Prevent duplicate instructions for same section
@@ -125,13 +122,8 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
             continue
 
         if instruction.instruction_type == "merge_into":
-            if (
-                instruction.merge_source_index is None
-                or instruction.merge_source_index not in section_indices
-            ):
-                logger.warning(
-                    f"Merge instruction has invalid merge_source_index: {instruction.merge_source_index}"
-                )
+            if instruction.merge_source_index is None or instruction.merge_source_index not in section_indices:
+                logger.warning(f"Merge instruction has invalid merge_source_index: {instruction.merge_source_index}")
                 continue
             # Also mark the source section as having an instruction (it will be removed)
             seen_sections.add(instruction.merge_source_index)
@@ -139,10 +131,7 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
         valid_instructions.append(instruction)
         seen_sections.add(instruction.section_index)
 
-    logger.info(
-        f"Analysis complete: {analysis.overall_assessment[:100]}... "
-        f"({len(valid_instructions)} instructions)"
-    )
+    logger.info(f"Analysis complete: {analysis.overall_assessment[:100]}... ({len(valid_instructions)} instructions)")
 
     # Log instruction summary
     for instr in valid_instructions:

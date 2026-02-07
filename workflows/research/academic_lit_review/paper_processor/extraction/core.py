@@ -7,16 +7,11 @@ import logging
 
 from langchain_tools.base import get_store_manager
 
-from core.llm_broker import BatchPolicy
 from workflows.research.academic_lit_review.state import (
     PaperMetadata,
     PaperSummary,
 )
-from workflows.shared.llm_utils import ModelTier
-from workflows.shared.llm_utils.structured import (
-    StructuredRequest,
-    get_structured_output,
-)
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .parsers import _fetch_content_for_extraction
 from .prompts import (
@@ -77,12 +72,11 @@ Extract structured information from this paper."""
     tier = ModelTier.SONNET_1M if len(content) > 400_000 else ModelTier.DEEPSEEK_V3
 
     try:
-        extracted = await get_structured_output(
-            output_schema=PaperSummarySchema,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
+        extracted = await invoke(
             tier=tier,
-            enable_prompt_cache=True,
+            system=system_prompt,
+            user=user_prompt,
+            schema=PaperSummarySchema,
         )
 
         return PaperSummary(
@@ -166,12 +160,11 @@ Extract structured information based on this metadata."""
     generated_zotero_key = doi.replace("/", "_").replace(".", "")[:20].upper()
 
     try:
-        extracted = await get_structured_output(
-            output_schema=PaperSummarySchema,
-            user_prompt=user_prompt,
-            system_prompt=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+        extracted = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            enable_prompt_cache=True,
+            system=METADATA_SUMMARY_EXTRACTION_SYSTEM,
+            user=user_prompt,
+            schema=PaperSummarySchema,
         )
 
         # Use existing short_summary from document processing if available,
@@ -292,9 +285,11 @@ async def extract_all_summaries(
     if not paper_data:
         return {}, {}, {}, failed_dois
 
-    # Build batch requests, separated by tier
-    deepseek_requests = []
-    sonnet_1m_requests = []
+    # Build batch prompts, separated by tier
+    deepseek_prompts: list[str] = []
+    deepseek_dois: list[str] = []
+    sonnet_1m_prompts: list[str] = []
+    sonnet_1m_dois: list[str] = []
     doi_to_data = {}
 
     for doi, data in paper_data.items():
@@ -314,45 +309,52 @@ Content:
 
 Extract structured information from this paper."""
 
-        request = StructuredRequest(
-            id=doi,
-            user_prompt=user_prompt,
-        )
-
         # Use SONNET_1M for large content (>400k chars ≈ >100k tokens)
         if len(content) > 400_000:
-            sonnet_1m_requests.append(request)
+            sonnet_1m_prompts.append(user_prompt)
+            sonnet_1m_dois.append(doi)
             doi_to_data[doi] = (data, ModelTier.SONNET_1M)
         else:
-            deepseek_requests.append(request)
+            deepseek_prompts.append(user_prompt)
+            deepseek_dois.append(doi)
             doi_to_data[doi] = (data, ModelTier.DEEPSEEK_V3)
 
-    # Run batches for each tier via broker
-    all_results = {}
+    # Run batches for each tier via invoke()
+    all_results: dict[str, PaperSummarySchema | None] = {}
 
-    if deepseek_requests:
-        logger.debug(f"Submitting {len(deepseek_requests)} papers (DEEPSEEK_V3) via broker")
-        deepseek_results = await get_structured_output(
-            output_schema=PaperSummarySchema,
-            requests=deepseek_requests,
-            system_prompt=system_prompt,
-            tier=ModelTier.DEEPSEEK_V3,
-            max_tokens=2048,
-            batch_policy=BatchPolicy.PREFER_BALANCE,
-        )
-        all_results.update(deepseek_results.results)
+    if deepseek_prompts:
+        logger.debug(f"Submitting {len(deepseek_prompts)} papers (DEEPSEEK_V3)")
+        try:
+            deepseek_results = await invoke(
+                tier=ModelTier.DEEPSEEK_V3,
+                system=system_prompt,
+                user=deepseek_prompts,
+                schema=PaperSummarySchema,
+                config=InvokeConfig(max_tokens=2048),
+            )
+            for doi, result in zip(deepseek_dois, deepseek_results, strict=True):
+                all_results[doi] = result
+        except Exception as e:
+            logger.error(f"DeepSeek batch extraction failed: {e}")
+            for doi in deepseek_dois:
+                all_results[doi] = None
 
-    if sonnet_1m_requests:
-        logger.debug(f"Submitting {len(sonnet_1m_requests)} papers (SONNET_1M) via broker")
-        sonnet_results = await get_structured_output(
-            output_schema=PaperSummarySchema,
-            requests=sonnet_1m_requests,
-            system_prompt=system_prompt,
-            tier=ModelTier.SONNET_1M,
-            max_tokens=2048,
-            batch_policy=BatchPolicy.PREFER_BALANCE,
-        )
-        all_results.update(sonnet_results.results)
+    if sonnet_1m_prompts:
+        logger.debug(f"Submitting {len(sonnet_1m_prompts)} papers (SONNET_1M)")
+        try:
+            sonnet_results = await invoke(
+                tier=ModelTier.SONNET_1M,
+                system=system_prompt,
+                user=sonnet_1m_prompts,
+                schema=PaperSummarySchema,
+                config=InvokeConfig(max_tokens=2048),
+            )
+            for doi, result in zip(sonnet_1m_dois, sonnet_results, strict=True):
+                all_results[doi] = result
+        except Exception as e:
+            logger.error(f"Sonnet 1M batch extraction failed: {e}")
+            for doi in sonnet_1m_dois:
+                all_results[doi] = None
 
     summaries = {}
     es_ids = {}
@@ -361,12 +363,10 @@ Extract structured information from this paper."""
     for doi in paper_data.keys():
         data, tier = doi_to_data[doi]
         paper = data["paper"]
-        result = all_results.get(doi)
+        extracted = all_results.get(doi)
 
-        if result and result.success:
+        if extracted is not None:
             try:
-                extracted = result.value
-
                 summaries[doi] = PaperSummary(
                     doi=paper.get("doi"),
                     title=paper.get("title", "Unknown"),
@@ -392,8 +392,7 @@ Extract structured information from this paper."""
                 logger.warning(f"Failed to parse extraction result for {doi}: {e}")
                 failed_dois.add(doi)
         else:
-            error_msg = result.error if result else "No result returned"
-            logger.warning(f"Summary extraction failed for {doi}: {error_msg}")
+            logger.warning(f"Summary extraction failed for {doi}: No result returned")
             failed_dois.add(doi)
 
     logger.info(f"Extracted {len(summaries)} summaries, {len(failed_dois)} failed")

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from workflows.document_processing.prompts import DOCUMENT_ANALYSIS_SYSTEM
 from workflows.document_processing.state import DocumentProcessingState
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.text_utils import get_first_n_pages, get_last_n_pages
 
 logger = logging.getLogger(__name__)
@@ -192,13 +192,12 @@ Consider:
 
 Be LENIENT - we're checking if we acquired the correct paper. Only mark as NOT matching if there's clear evidence of mismatch (e.g., completely different topic, wrong language, obviously different authors than listed)."""
 
-        result = await get_structured_output(
-            output_schema=ContentMetadataMatch,
-            user_prompt=user_prompt,
-            system_prompt=DOCUMENT_ANALYSIS_SYSTEM,
+        result = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            enable_prompt_cache=True,
-            max_tokens=500,
+            system=DOCUMENT_ANALYSIS_SYSTEM,
+            user=user_prompt,
+            schema=ContentMetadataMatch,
+            config=InvokeConfig(max_tokens=500, cache=True),
         )
 
         if result.matches:

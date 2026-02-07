@@ -7,7 +7,7 @@ structured feedback for iterative refinement.
 import base64
 import logging
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from .overlap import check_bounds_violations, check_text_overlaps, check_text_shape_overlaps
 from .prompts import DIAGRAM_QUALITY_SYSTEM, DIAGRAM_QUALITY_USER
@@ -107,12 +107,12 @@ async def assess_diagram_quality(
         ]
 
         # Get structured quality assessment
-        assessment = await get_structured_output(
-            output_schema=DiagramQualityAssessment,
-            user_prompt=content,
-            system_prompt=DIAGRAM_QUALITY_SYSTEM,
+        assessment = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=2000,
+            system=DIAGRAM_QUALITY_SYSTEM,
+            user=content,
+            schema=DiagramQualityAssessment,
+            config=InvokeConfig(max_tokens=2000),
         )
 
         # Calculate overall score if not provided correctly

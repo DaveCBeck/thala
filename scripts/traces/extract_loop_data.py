@@ -97,7 +97,7 @@ def extract_loop_data(trace_file: str, output_dir: str):
 
 if __name__ == "__main__":
     trace_file = (
-        sys.argv[1] if len(sys.argv) > 1 else "testing/traces/supervision_trace.json"
+        sys.argv[1] if len(sys.argv) > 1 else "traces/supervision_trace.json"
     )
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else "testing/traces/loops"
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else "traces/loops"
     extract_loop_data(trace_file, output_dir)

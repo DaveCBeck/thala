@@ -82,9 +82,7 @@ def _format_book_entry(
     if recommendation:
         lines.append(f"**Why this book:** {recommendation['explanation']}")
     else:
-        lines.append(
-            f"**Matched recommendation:** {book.get('matched_recommendation', 'Unknown')}"
-        )
+        lines.append(f"**Matched recommendation:** {book.get('matched_recommendation', 'Unknown')}")
 
     lines.append("")
 
@@ -231,9 +229,7 @@ async def synthesize_output(state: dict) -> dict[str, Any]:
 
     final_markdown = "\n".join(sections)
 
-    logger.info(
-        f"Synthesis complete: {total_recs} recommendations, {total_processed} processed"
-    )
+    logger.info(f"Synthesis complete: {total_recs} recommendations, {total_processed} processed")
 
     return {
         "final_markdown": final_markdown,

@@ -256,9 +256,9 @@ def extract_loop4_edits(trace_path: Path) -> dict:
 
 def main():
     trace_path = Path(
-        "/home/dave/thala/testing/traces/019ba18e-7124-7923-9dca-4565ead80738.json"
+        "/home/dave/thala/tests/traces/019ba18e-7124-7923-9dca-4565ead80738.json"
     )
-    output_path = Path("/home/dave/thala/testing/traces/loop4_edits.json")
+    output_path = Path("/home/dave/thala/tests/traces/loop4_edits.json")
 
     print(f"Extracting Loop 4 edits from {trace_path}")
 

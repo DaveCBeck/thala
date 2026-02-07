@@ -13,7 +13,7 @@ from ..types import (
     StructuredOutputResult,
     StructuredOutputStrategy,
 )
-from .base import StrategyExecutor
+from .base import StrategyExecutor, UserContent
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -24,7 +24,7 @@ class ToolAgentExecutor(StrategyExecutor[T]):
     async def execute(
         self,
         output_schema: Type[T],
-        user_prompt: str,
+        user_prompt: UserContent,
         system_prompt: Optional[str],
         output_config: StructuredOutputConfig,
     ) -> StructuredOutputResult[T]:
@@ -41,6 +41,7 @@ class ToolAgentExecutor(StrategyExecutor[T]):
         messages = []
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
+        # HumanMessage accepts both string and list of content blocks
         messages.append(HumanMessage(content=user_prompt))
 
         result = await run_tool_agent(

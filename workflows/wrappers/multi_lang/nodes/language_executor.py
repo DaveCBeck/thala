@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from workflows.wrappers.multi_lang.state import MultiLangState, LanguageResult
 from workflows.wrappers.multi_lang.workflow_registry import WORKFLOW_REGISTRY
-from workflows.shared.llm_utils.models import get_llm, ModelTier
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.research.web_research.utils import extract_json_from_llm_response
 
 logger = logging.getLogger(__name__)
@@ -28,13 +28,9 @@ async def _compress_language_findings(
 
     Returns: (summary, key_insights, unique_perspectives)
     """
-    llm = get_llm(ModelTier.SONNET, max_tokens=4096)
-
     # Combine all reports
     combined_reports = "\n\n---\n\n".join(
-        f"## {result['workflow_type']}\n\n{result['report']}"
-        for result in workflow_results
-        if result.get("report")
+        f"## {result['workflow_type']}\n\n{result['report']}" for result in workflow_results if result.get("report")
     )
 
     if not combined_reports:
@@ -59,7 +55,12 @@ Format your response as JSON:
 }}"""
 
     try:
-        response = await llm.ainvoke(prompt)
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system="You are a research analyst that consolidates findings.",
+            user=prompt,
+            config=InvokeConfig(max_tokens=4096),
+        )
         content = response.content
 
         # Parse JSON response using robust extraction
@@ -104,14 +105,10 @@ async def execute_next_language(state: MultiLangState) -> dict:
     idx = state["current_language_index"]
 
     # Determine which language list to use
-    languages_to_process = (
-        state.get("languages_with_content") or state["target_languages"]
-    )
+    languages_to_process = state.get("languages_with_content") or state["target_languages"]
 
     if idx >= len(languages_to_process):
-        logger.error(
-            f"Language index {idx} exceeds list length {len(languages_to_process)}"
-        )
+        logger.error(f"Language index {idx} exceeds list length {len(languages_to_process)}")
         return {
             "current_status": "Error: Language index out of bounds",
             "errors": [
@@ -189,9 +186,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
     all_errors.extend(result.get("errors", []))
 
     # Check if any workflow succeeded
-    has_results = any(
-        r["status"] in ("success", "partial", "completed") for r in workflow_results
-    )
+    has_results = any(r["status"] in ("success", "partial", "completed") for r in workflow_results)
 
     if not has_results:
         logger.error(f"All workflows failed for {language_name}")
@@ -212,9 +207,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
 
     # Check for zero results
     if total_sources == 0:
-        logger.info(
-            f"No sources found for {language_name} - workflows ran but returned no results"
-        )
+        logger.info(f"No sources found for {language_name} - workflows ran but returned no results")
         return {
             "languages_completed": [language_code],
             "current_language_index": idx + 1,
@@ -224,9 +217,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
 
     # Compress findings
     logger.debug(f"Compressing findings for {language_name}")
-    summary, key_insights, unique_perspectives = await _compress_language_findings(
-        workflow_results, language_config
-    )
+    summary, key_insights, unique_perspectives = await _compress_language_findings(workflow_results, language_config)
 
     # Get full report (combine all successful reports)
     full_report = "\n\n".join(r["report"] for r in workflow_results if r["report"])
@@ -248,9 +239,7 @@ async def execute_next_language(state: MultiLangState) -> dict:
         errors=all_errors,
     )
 
-    logger.info(
-        f"Completed {language_name}: {total_sources} sources from {len(workflows_run)} workflows"
-    )
+    logger.info(f"Completed {language_name}: {total_sources} sources from {len(workflows_run)} workflows")
 
     return {
         "language_results": [language_result],
@@ -272,9 +261,7 @@ async def check_languages_complete(state: MultiLangState) -> dict:
         current_status: "Processed X/Y languages" or "All languages complete"
     """
     idx = state["current_language_index"]
-    languages_to_process = (
-        state.get("languages_with_content") or state["target_languages"]
-    )
+    languages_to_process = state.get("languages_with_content") or state["target_languages"]
     total = len(languages_to_process)
 
     if idx >= total:

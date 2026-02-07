@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.wrappers.multi_lang.prompts.analysis import (
     CROSS_ANALYSIS_SYSTEM,
     CROSS_ANALYSIS_USER,
@@ -22,9 +22,7 @@ class CrossAnalysisOutput(BaseModel):
     """Structured output from Sonnet cross-language analysis."""
 
     # Commonalities
-    universal_themes: list[str] = Field(
-        description="Themes appearing across most languages"
-    )
+    universal_themes: list[str] = Field(description="Themes appearing across most languages")
     consensus_findings: list[str] = Field(description="Findings with broad agreement")
 
     # Differences
@@ -34,30 +32,18 @@ class CrossAnalysisOutput(BaseModel):
     conflicting_findings: list[dict] = Field(
         description="List of {topic: str, conflicts: [{language: str, claim: str}]}"
     )
-    unique_contributions: dict[str, list[str]] = Field(
-        description="Map of language_code to list of unique insights"
-    )
+    unique_contributions: dict[str, list[str]] = Field(description="Map of language_code to list of unique insights")
 
     # Coverage
-    coverage_gaps_in_english: list[str] = Field(
-        description="Topics better covered in non-English sources"
-    )
-    enhanced_areas: list[str] = Field(
-        description="Areas where non-English sources added depth"
-    )
+    coverage_gaps_in_english: list[str] = Field(description="Topics better covered in non-English sources")
+    enhanced_areas: list[str] = Field(description="Areas where non-English sources added depth")
 
     # Integration guidance
-    integration_priority: list[str] = Field(
-        description="Language codes ordered by value-add (most valuable first)"
-    )
-    synthesis_strategy: str = Field(
-        description="Guidance for how Opus should integrate findings"
-    )
+    integration_priority: list[str] = Field(description="Language codes ordered by value-add (most valuable first)")
+    synthesis_strategy: str = Field(description="Guidance for how Opus should integrate findings")
 
     # The document itself
-    comparative_document: str = Field(
-        description="Full markdown comparative analysis document"
-    )
+    comparative_document: str = Field(description="Full markdown comparative analysis document")
 
 
 def _format_language_findings(language_results: list[LanguageResult]) -> str:
@@ -87,12 +73,8 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
         language_results = state["language_results"]
 
         # Handle case where only English exists or no results
-        if not language_results or (
-            len(language_results) == 1 and language_results[0]["language_code"] == "en"
-        ):
-            logger.info(
-                "Only English sources available, skipping cross-language analysis"
-            )
+        if not language_results or (len(language_results) == 1 and language_results[0]["language_code"] == "en"):
+            logger.info("Only English sources available, skipping cross-language analysis")
             minimal_analysis: SonnetCrossAnalysis = {
                 "universal_themes": [],
                 "consensus_findings": [],
@@ -118,9 +100,7 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
 
         language_findings = _format_language_findings(language_results)
 
-        logger.debug(
-            f"Running cross-language analysis for {len(language_results)} languages"
-        )
+        logger.debug(f"Running cross-language analysis for {len(language_results)} languages")
 
         user_prompt = CROSS_ANALYSIS_USER.format(
             topic=topic,
@@ -128,18 +108,16 @@ async def run_sonnet_analysis(state: MultiLangState) -> dict:
             language_findings=language_findings,
         )
 
-        result: CrossAnalysisOutput = await get_structured_output(
-            output_schema=CrossAnalysisOutput,
-            user_prompt=user_prompt,
-            system_prompt=CROSS_ANALYSIS_SYSTEM,
+        result: CrossAnalysisOutput = await invoke(
             tier=ModelTier.SONNET,
-            max_tokens=16384,
+            system=CROSS_ANALYSIS_SYSTEM,
+            user=user_prompt,
+            schema=CrossAnalysisOutput,
+            config=InvokeConfig(max_tokens=16384),
         )
 
         # Remove English from integration priority if present
-        integration_priority = [
-            code for code in result.integration_priority if code != "en"
-        ]
+        integration_priority = [code for code in result.integration_priority if code != "en"]
 
         # Convert to SonnetCrossAnalysis dict
         analysis: SonnetCrossAnalysis = {

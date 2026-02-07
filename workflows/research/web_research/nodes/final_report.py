@@ -18,7 +18,7 @@ from workflows.research.web_research.utils import (
     load_prompts_with_translation,
     extract_text_from_response,
 )
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -119,14 +119,13 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         memory_context=memory_context or "No prior knowledge available.",
     )
 
-    llm = get_llm(ModelTier.OPUS, max_tokens=8192)
-
     try:
         # Use cached invocation - system prompt is cached, user content is dynamic
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=system_prompt,
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=8192),
         )
 
         report = extract_text_from_response(response)
@@ -134,9 +133,7 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         # Extract citations from report
         citations = _extract_citations(report, findings)
 
-        logger.info(
-            f"Generated final report: {len(report)} chars, {len(citations)} citations"
-        )
+        logger.info(f"Generated final report: {len(report)} chars, {len(citations)} citations")
 
         return {
             "final_report": report,

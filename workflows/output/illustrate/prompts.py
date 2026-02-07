@@ -14,7 +14,7 @@ A well-illustrated article uses visual variety. Diagrams explain; photographs ev
 
 2. **Header Image**: The header sets emotional tone and draws readers in. It should feel like a magazine cover—evocative, not explanatory. Strongly prefer `public_domain` or `generated` for headers. Diagrams rarely make good headers because they demand cognitive work before the reader is invested.
 
-3. **Additional Images**: Choose 1-2 strategic locations. Consider:
+3. **Additional Images**: Choose 2-3 strategic locations. Consider:
    - Does this section need *explanation* (→ diagram) or *atmosphere* (→ photo/generated)?
    - Has the reader seen a diagram recently? Variety matters.
    - Would a striking photograph re-engage a reader who's deep in dense text?
@@ -56,7 +56,9 @@ An apposite image:
 - Would work well as a header/hero image
 
 Be somewhat selective - we want genuinely good matches, not just acceptable ones.
-A score of 3+ means "use this", below 3 means "generate instead"."""
+A score of 3+ means "use this", below 3 means "try a different search".
+
+IMPORTANT: If the image is NOT apposite (score < 3), you MUST provide a `suggested_search_query` - a better search term that would find a more fitting public domain image. Think about what specific imagery would better match the document's theme, mood, and content."""
 
 HEADER_APPOSITES_USER = """Evaluate this image for use as the header of the following document.
 
@@ -70,20 +72,49 @@ HEADER_APPOSITES_USER = """Evaluate this image for use as the header of the foll
 
 Look at the image and assess whether it's a particularly good fit for this document's header."""
 
-VISION_REVIEW_SYSTEM = """You are reviewing generated images for quality and fit.
+VISION_REVIEW_SYSTEM = """You are reviewing generated images for quality and fit. Be critical - we have retry capacity.
 
 Evaluate whether the image:
 1. Fits the document context appropriately
 2. Has any factual/substantive errors (for diagrams: incorrect relationships, missing key elements)
-3. Has minor issues (formatting, slight misalignments, not-quite-right style)
+3. Has quality issues that could be improved with regeneration
 
 Recommendations:
-- `accept`: Image is good, no issues
-- `accept_with_warning`: Minor issues but acceptable, log a warning
-- `retry`: Substantive problems that might be fixed with a better prompt
-- `fail`: Fundamental problems, skip this image
+- `accept`: Image is genuinely good - no meaningful issues
+- `accept_with_warning`: Only for truly minor cosmetic issues that regeneration unlikely to fix
+- `retry`: ANY of these warrant retry:
+  - Image significantly deviates from the brief's intent
+  - Composition or framing could be substantially better
+  - Diagram has unclear labels or confusing layout
+  - Style doesn't match the document's tone
+  - Missing key elements mentioned in the brief
+  - Quality is "okay" but not "good"
+- `fail`: Fundamental problems that no prompt could fix
 
-If recommending retry, provide an improved brief that addresses the issues."""
+NOTE: Use accept_with_warning for issues that are inconsequential for reader understading and experience OR unlikely to improve with regeneration.
+
+If recommending retry, provide an improved brief that specifically addresses the issues found."""
+
+VISION_COMPARE_SYSTEM = """You are selecting the best image from multiple candidates generated for the same location.
+
+Compare all candidates and select the one that:
+1. Best fits the document context and brief
+2. Has the fewest substantive issues or errors
+3. Has the best overall quality and composition
+
+You MUST select one - there is no retry option. Even if all candidates have flaws, pick the best available.
+Provide brief reasoning for your selection."""
+
+VISION_COMPARE_USER = """Select the best image from these {num_candidates} candidates for the same location.
+
+**Document excerpt:**
+{context}
+
+**Image purpose:** {purpose}
+**Original brief:**
+{brief}
+
+The {num_candidates} candidate images are attached. Evaluate each and select the best one (1, 2, or 3 etc.)."""
 
 VISION_REVIEW_USER = """Review this image for the following context.
 

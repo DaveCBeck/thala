@@ -17,9 +17,9 @@ def _normalize_heading(text: str) -> str:
     """Normalize heading for comparison (matches document_model version)."""
     text = text.lower()
     # Strip leading section/chapter numbers: "1.", "1.2.", "Chapter 1:", "Section 2.3"
-    text = re.sub(r'^(?:chapter|section)?\s*[\d.]+[.:)]*\s*', '', text)
+    text = re.sub(r"^(?:chapter|section)?\s*[\d.]+[.:)]*\s*", "", text)
     # Remove remaining non-alphabetic characters
-    return re.sub(r'[^a-z]', '', text)
+    return re.sub(r"[^a-z]", "", text)
 
 
 def _merge_duplicate_sections(model: DocumentModel) -> int:
@@ -74,9 +74,7 @@ def _merge_duplicate_sections(model: DocumentModel) -> int:
                 existing.subsections.extend(section.subsections)
                 existing.subsections = merge_in_list(existing.subsections)
 
-                logger.debug(
-                    f"Merged duplicate section '{section.heading}' into '{existing.heading}'"
-                )
+                logger.debug(f"Merged duplicate section '{section.heading}' into '{existing.heading}'")
                 merge_count += 1
             else:
                 # New heading - add to result
@@ -91,11 +89,7 @@ def _merge_duplicate_sections(model: DocumentModel) -> int:
     # Second pass: remove empty numbered sections that have a matching content section
     # This handles the case where ## 1. Introduction (empty) is followed by # Introduction (with content)
     all_sections = flatten_all_sections(model.sections)
-    headings_with_content = {
-        _normalize_heading(s.heading)
-        for s in all_sections
-        if s.blocks or s.subsections
-    }
+    headings_with_content = {_normalize_heading(s.heading) for s in all_sections if s.blocks or s.subsections}
 
     def remove_empty_duplicates(sections: list[Section]) -> list[Section]:
         """Remove empty sections whose heading matches a section with content."""
@@ -112,9 +106,7 @@ def _merge_duplicate_sections(model: DocumentModel) -> int:
 
             if is_empty and has_content_elsewhere:
                 # This empty section has a content-bearing duplicate elsewhere
-                logger.debug(
-                    f"Removing empty duplicate section '{section.heading}'"
-                )
+                logger.debug(f"Removing empty duplicate section '{section.heading}'")
                 merge_count += 1
             else:
                 result.append(section)
@@ -307,8 +299,7 @@ def parse_markdown_to_model(text: str) -> DocumentModel:
         model._build_indexes()  # Rebuild after modifications
 
     logger.info(
-        f"Parsed document: {model.total_words} words, "
-        f"{model.section_count} sections, {model.block_count} blocks"
+        f"Parsed document: {model.total_words} words, {model.section_count} sections, {model.block_count} blocks"
     )
 
     return model

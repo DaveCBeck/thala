@@ -5,7 +5,7 @@ from typing import Any
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils.models import ModelTier, get_llm
+from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.enhance.supervision.shared.prompts import (
     INTEGRATOR_SYSTEM,
     INTEGRATOR_USER,
@@ -95,19 +95,13 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Use Opus for complex integration with large output capacity
-    llm = get_llm(
-        tier=ModelTier.OPUS,
-        thinking_budget=8000,
-        max_tokens=32000,
-    )
-
     try:
-        messages = [
-            {"role": "system", "content": INTEGRATOR_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        response = await llm.ainvoke(messages)
+        response = await invoke(
+            tier=ModelTier.OPUS,
+            system=INTEGRATOR_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(thinking_budget=8000, max_tokens=32000, cache=False),
+        )
 
         # Extract the integrated review from response
         integrated_review = _extract_review_content(response)
@@ -115,15 +109,10 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         # Clean up any duplicate headers introduced during integration
         duplicates = detect_duplicate_headers(integrated_review)
         if duplicates:
-            logger.info(
-                f"Removing {len(duplicates)} duplicate headers after Loop 1 integration"
-            )
+            logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
             integrated_review = remove_duplicate_headers(integrated_review, duplicates)
 
-        logger.info(
-            f"Integration complete for '{topic}': "
-            f"{len(processed_dois)} papers integrated"
-        )
+        logger.info(f"Integration complete for '{topic}': {len(processed_dois)} papers integrated")
 
         # Call checkpoint callback if provided (N=1 for supervision loops)
         checkpoint_callback = state.get("checkpoint_callback")
@@ -133,7 +122,8 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
                 {
                     "current_review": integrated_review,
                     "iteration": iteration + 1,
-                    "supervision_expansions": state.get("supervision_expansions", []) + [
+                    "supervision_expansions": state.get("supervision_expansions", [])
+                    + [
                         {
                             "iteration": iteration,
                             "topic": topic,

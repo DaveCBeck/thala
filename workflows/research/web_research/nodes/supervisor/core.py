@@ -27,7 +27,7 @@ from workflows.research.web_research.prompts import (
     get_today_str,
 )
 from workflows.research.web_research.utils import load_prompts_with_translation
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke
 
 from .llm_integration import _get_supervisor_decision_structured
 from .action_handlers import (
@@ -96,9 +96,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     # Check if completeness threshold reached
     if diffusion["completeness_score"] >= COMPLETENESS_THRESHOLD:
-        logger.info(
-            f"Completeness threshold ({COMPLETENESS_THRESHOLD:.0%}) reached, completing"
-        )
+        logger.info(f"Completeness threshold ({COMPLETENESS_THRESHOLD:.0%}) reached, completing")
         return {
             "current_status": "research_complete",
             "diffusion": {
@@ -117,9 +115,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     findings_summary = _format_findings_summary(findings)
     draft_content = draft["content"] if draft else "No draft yet."
-    gaps_remaining = (
-        draft.get("gaps_remaining", []) if draft else ["All areas need research"]
-    )
+    gaps_remaining = draft.get("gaps_remaining", []) if draft else ["All areas need research"]
 
     system_prompt_cached, user_prompt_template = await load_prompts_with_translation(
         SUPERVISOR_SYSTEM_CACHED,
@@ -145,8 +141,6 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
         max_concurrent_research_units=MAX_CONCURRENT_RESEARCHERS,
     )
 
-    llm = get_llm(ModelTier.OPUS)
-
     # Try structured output first (more reliable), fall back to text parsing
     action = None
     action_data = {}
@@ -155,45 +149,39 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
 
     try:
         action, action_data, decision = await _get_supervisor_decision_structured(
-            llm, system_prompt_cached, user_prompt, brief
+            None,
+            system_prompt_cached,
+            user_prompt,
+            brief,  # llm unused by function
         )
         logger.debug(f"Supervisor decision: {action}")
     except Exception as structured_error:
-        logger.warning(
-            f"Structured output failed, falling back to text parsing: {structured_error}"
-        )
+        logger.warning(f"Structured output failed, falling back to text parsing: {structured_error}")
         use_structured = False
 
     # Fallback: text parsing with improved extraction
     if not use_structured:
         try:
             # Use cached system prompt for 90% cost reduction on repeated calls
-            response = await invoke_with_cache(
-                llm,
-                system_prompt=system_prompt_cached,
-                user_prompt=user_prompt,
+            response = await invoke(
+                tier=ModelTier.OPUS,
+                system=system_prompt_cached,
+                user=user_prompt,
             )
             content = response.content
 
             # Extract thinking (for logging)
-            thinking_match = re.search(
-                r"<thinking>(.*?)</thinking>", content, re.DOTALL
-            )
+            thinking_match = re.search(r"<thinking>(.*?)</thinking>", content, re.DOTALL)
             if thinking_match:
                 logger.debug(f"Supervisor thinking: {thinking_match.group(1)[:200]}...")
 
             # Determine action based on tool calls or text analysis
             content_lower = content.lower()
 
-            if (
-                "conductresearch" in content_lower
-                or "conduct_research" in content_lower
-            ):
+            if "conductresearch" in content_lower or "conduct_research" in content_lower:
                 action = "conduct_research"
                 # Try to extract questions
-                questions_match = re.search(
-                    r'"questions"\s*:\s*\[(.*?)\]', content, re.DOTALL
-                )
+                questions_match = re.search(r'"questions"\s*:\s*\[(.*?)\]', content, re.DOTALL)
                 if questions_match:
                     try:
                         # This is a rough extraction; real implementation would use tool binding
@@ -202,22 +190,14 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                         action_data["questions"] = questions_raw
                     except (json.JSONDecodeError, ValueError):
                         # Fallback: extract questions from text
-                        action_data["questions"] = _extract_questions_from_text(
-                            content, brief
-                        )
+                        action_data["questions"] = _extract_questions_from_text(content, brief)
                 else:
-                    action_data["questions"] = _extract_questions_from_text(
-                        content, brief
-                    )
+                    action_data["questions"] = _extract_questions_from_text(content, brief)
 
-            elif (
-                "refinedraftreport" in content_lower or "refine_draft" in content_lower
-            ):
+            elif "refinedraftreport" in content_lower or "refine_draft" in content_lower:
                 action = "refine_draft"
                 # Extract update content
-                updates_match = re.search(
-                    r'"updates"\s*:\s*"([^"]*)"', content, re.DOTALL
-                )
+                updates_match = re.search(r'"updates"\s*:\s*"([^"]*)"', content, re.DOTALL)
                 if updates_match:
                     action_data["updates"] = updates_match.group(1)
                 else:
@@ -227,23 +207,14 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 gaps_match = re.search(r'"gaps"\s*:\s*\[(.*?)\]', content, re.DOTALL)
                 if gaps_match:
                     try:
-                        action_data["gaps"] = json.loads(
-                            "[" + gaps_match.group(1) + "]"
-                        )
+                        action_data["gaps"] = json.loads("[" + gaps_match.group(1) + "]")
                     except (json.JSONDecodeError, ValueError):
                         action_data["gaps"] = []
 
-            elif (
-                "researchcomplete" in content_lower
-                or "research_complete" in content_lower
-            ):
+            elif "researchcomplete" in content_lower or "research_complete" in content_lower:
                 action = "research_complete"
 
-            elif (
-                "checkfact" in content_lower
-                or "check_fact" in content_lower
-                or "verify_claim" in content_lower
-            ):
+            elif "checkfact" in content_lower or "check_fact" in content_lower or "verify_claim" in content_lower:
                 action = "check_fact"
                 # Extract the claim to verify
                 claim_match = re.search(r'"claim"\s*:\s*"([^"]*)"', content, re.DOTALL)
@@ -263,9 +234,7 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
                 # Default: if we have few findings, conduct research; else complete
                 if len(findings) < 2:
                     action = "conduct_research"
-                    action_data["questions"] = _extract_questions_from_text(
-                        content, brief
-                    )
+                    action_data["questions"] = _extract_questions_from_text(content, brief)
                 else:
                     action = "refine_draft"
                     action_data["updates"] = content

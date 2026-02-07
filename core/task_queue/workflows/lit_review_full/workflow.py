@@ -14,6 +14,8 @@ This is the complete academic research workflow that:
 import logging
 from typing import Any, Awaitable, Callable, Optional
 
+from langsmith import traceable
+
 from core.task_queue.incremental_state import IncrementalStateManager
 
 from ..base import BaseWorkflow
@@ -50,6 +52,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
         except ValueError:
             return set()
 
+    @traceable(run_type="chain", name="Task_LitReview")
     async def run(
         self,
         task: dict[str, Any],

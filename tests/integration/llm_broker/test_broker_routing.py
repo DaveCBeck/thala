@@ -1,7 +1,7 @@
-"""Integration tests for LLM broker routing through structured output and caching interfaces.
+"""Integration tests for LLM broker routing through invoke() and caching interfaces.
 
 These tests verify that:
-1. get_structured_output() routes through broker when enabled + batch_policy set
+1. invoke() routes through broker when enabled + batch_policy set
 2. invoke_with_cache() routes through broker when enabled + batch_policy set
 3. Feature flag correctly enables/disables routing
 4. Backward compatibility when broker is disabled
@@ -165,13 +165,13 @@ class TestFeatureFlag:
         reset_broker_config()
 
 
-class TestGetStructuredOutputRouting:
-    """Tests for get_structured_output() broker routing."""
+class TestInvokeRouting:
+    """Tests for invoke() broker routing."""
 
     @pytest.mark.asyncio
     async def test_routes_through_broker_when_enabled(self, mock_broker, cleanup_broker):
         """Test requests route through broker when enabled and batch_policy set."""
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import InvokeConfig, invoke
 
         # Verify broker is enabled
         assert is_broker_enabled()
@@ -181,12 +181,12 @@ class TestGetStructuredOutputRouting:
             # Note: This will call the broker's request method
             # The actual execution depends on the broker being properly mocked
             try:
-                result = await get_structured_output(
-                    output_schema=SimpleOutput,
-                    user_prompt="What is 2+2?",
-                    system_prompt="You are a math assistant",
+                result = await invoke(
                     tier=ModelTier.HAIKU,
-                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                    system="You are a math assistant",
+                    user="What is 2+2?",
+                    schema=SimpleOutput,
+                    config=InvokeConfig(batch_policy=BatchPolicy.PREFER_BALANCE),
                 )
                 # If we got here, the broker was used
                 assert isinstance(result, SimpleOutput)
@@ -198,7 +198,7 @@ class TestGetStructuredOutputRouting:
     @pytest.mark.asyncio
     async def test_skips_broker_without_batch_policy(self, mock_broker, cleanup_broker):
         """Test requests skip broker when batch_policy is not set."""
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import invoke
 
         assert is_broker_enabled()
 
@@ -211,9 +211,11 @@ class TestGetStructuredOutputRouting:
                 value=SimpleOutput(answer="Direct response"),
             )
 
-            await get_structured_output(
-                output_schema=SimpleOutput,
-                user_prompt="What is 2+2?",
+            await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a math assistant",
+                user="What is 2+2?",
+                schema=SimpleOutput,
                 # No batch_policy - should skip broker
             )
 
@@ -228,7 +230,7 @@ class TestGetStructuredOutputRouting:
 
         assert not is_broker_enabled()
 
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import InvokeConfig, invoke
 
         # Mock the LangChain path
         with patch(
@@ -239,179 +241,30 @@ class TestGetStructuredOutputRouting:
                 value=SimpleOutput(answer="Direct response"),
             )
 
-            await get_structured_output(
-                output_schema=SimpleOutput,
-                user_prompt="What is 2+2?",
-                batch_policy=BatchPolicy.PREFER_BALANCE,  # Even with policy
+            await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a math assistant",
+                user="What is 2+2?",
+                schema=SimpleOutput,
+                config=InvokeConfig(batch_policy=BatchPolicy.PREFER_BALANCE),  # Even with policy
             )
 
             # Should have used LangChain path since broker is disabled
             mock_execute.assert_called_once()
 
 
-class TestInvokeWithCacheRouting:
-    """Tests for invoke_with_cache() broker routing."""
-
-    @pytest.mark.asyncio
-    async def test_routes_through_broker_when_enabled(self, mock_broker, cleanup_broker):
-        """Test invoke_with_cache routes through broker when enabled."""
-        from langchain_anthropic import ChatAnthropic
-
-        from workflows.shared.llm_utils import invoke_with_cache
-        from workflows.shared.llm_utils.caching import BrokerResponseWrapper
-
-        assert is_broker_enabled()
-
-        # Create mock LLM
-        mock_llm = MagicMock(spec=ChatAnthropic)
-        mock_llm.model_name = "claude-sonnet-4-20250514"
-        mock_llm.max_tokens = 4096
-
-        # The request should go through broker
-        try:
-            result = await invoke_with_cache(
-                llm=mock_llm,
-                system_prompt="You are a helpful assistant",
-                user_prompt="Hello",
-                batch_policy=BatchPolicy.PREFER_BALANCE,
-            )
-            # If successful, result should be BrokerResponseWrapper
-            assert isinstance(result, BrokerResponseWrapper)
-        except Exception:
-            # Expected if broker mock isn't complete
-            pass
-
-    @pytest.mark.asyncio
-    async def test_skips_broker_without_batch_policy(self, mock_broker, cleanup_broker):
-        """Test invoke_with_cache uses LangChain when batch_policy not set."""
-        from langchain_anthropic import ChatAnthropic
-
-        from workflows.shared.llm_utils import invoke_with_cache
-
-        assert is_broker_enabled()
-
-        # Create mock LLM with proper response structure
-        mock_response = MagicMock()
-        mock_response.content = "Direct response"
-        mock_response.usage_metadata = None
-
-        mock_llm = MagicMock(spec=ChatAnthropic)
-        mock_llm.model_name = "claude-sonnet-4-20250514"
-        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-
-        await invoke_with_cache(
-            llm=mock_llm,
-            system_prompt="You are a helpful assistant",
-            user_prompt="Hello",
-            # No batch_policy
-        )
-
-        # Should have called LangChain directly
-        mock_llm.ainvoke.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_skips_broker_for_deepseek(self, mock_broker, cleanup_broker):
-        """Test invoke_with_cache skips broker for DeepSeek models."""
-        from langchain_deepseek import ChatDeepSeek
-
-        from workflows.shared.llm_utils import invoke_with_cache
-
-        assert is_broker_enabled()
-
-        # Create mock DeepSeek LLM
-        mock_llm = MagicMock(spec=ChatDeepSeek)
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="DeepSeek response"))
-
-        await invoke_with_cache(
-            llm=mock_llm,
-            system_prompt="You are a helpful assistant",
-            user_prompt="Hello",
-            batch_policy=BatchPolicy.PREFER_BALANCE,  # Even with policy
-        )
-
-        # DeepSeek should bypass broker
-        mock_llm.ainvoke.assert_called_once()
-
-
-class TestBatchInvokeWithCacheRouting:
-    """Tests for batch_invoke_with_cache() broker routing."""
-
-    @pytest.mark.asyncio
-    async def test_routes_batch_through_broker_when_enabled(self, mock_broker, cleanup_broker):
-        """Test batch_invoke_with_cache routes through broker when enabled."""
-        from langchain_anthropic import ChatAnthropic
-
-        from workflows.shared.llm_utils import batch_invoke_with_cache
-        from workflows.shared.llm_utils.caching import BrokerResponseWrapper
-
-        assert is_broker_enabled()
-
-        # Create mock LLM
-        mock_llm = MagicMock(spec=ChatAnthropic)
-        mock_llm.model_name = "claude-sonnet-4-20250514"
-        mock_llm.max_tokens = 4096
-
-        try:
-            results = await batch_invoke_with_cache(
-                llm=mock_llm,
-                system_prompt="You are a helpful assistant",
-                user_prompts=[
-                    ("req1", "Hello"),
-                    ("req2", "World"),
-                ],
-                batch_policy=BatchPolicy.PREFER_BALANCE,
-            )
-            # Results should be BrokerResponseWrapper instances
-            for req_id, result in results.items():
-                assert isinstance(result, BrokerResponseWrapper)
-        except Exception:
-            # Expected if broker mock isn't complete
-            pass
-
-    @pytest.mark.asyncio
-    async def test_skips_broker_without_batch_policy(self, mock_broker, cleanup_broker):
-        """Test batch_invoke_with_cache uses concurrent calls without batch_policy."""
-        from langchain_anthropic import ChatAnthropic
-
-        from workflows.shared.llm_utils import batch_invoke_with_cache
-
-        assert is_broker_enabled()
-
-        # Create mock LLM with proper response structure
-        mock_response = MagicMock()
-        mock_response.content = "Direct response"
-        mock_response.usage_metadata = None
-
-        mock_llm = MagicMock(spec=ChatAnthropic)
-        mock_llm.model_name = "claude-sonnet-4-20250514"
-        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-
-        await batch_invoke_with_cache(
-            llm=mock_llm,
-            system_prompt="You are a helpful assistant",
-            user_prompts=[
-                ("req1", "Hello"),
-                ("req2", "World"),
-            ],
-            # No batch_policy
-        )
-
-        # Should have called LangChain directly for each request
-        assert mock_llm.ainvoke.call_count == 2
-
-
 class TestBackwardCompatibility:
     """Tests for backward compatibility when broker is disabled."""
 
     @pytest.mark.asyncio
-    async def test_structured_output_works_without_broker(self, disabled_broker_config, cleanup_broker):
-        """Test get_structured_output works normally when broker is disabled."""
+    async def test_invoke_works_without_broker(self, disabled_broker_config, cleanup_broker):
+        """Test invoke() works normally when broker is disabled."""
         reset_broker_config()
         set_broker_config(disabled_broker_config)
 
         assert not is_broker_enabled()
 
-        from workflows.shared.llm_utils import get_structured_output
+        from workflows.shared.llm_utils import invoke
 
         # Mock the LangChain execution path
         with patch(
@@ -422,43 +275,15 @@ class TestBackwardCompatibility:
                 value=SimpleOutput(answer="Test", confidence=0.9),
             )
 
-            result = await get_structured_output(
-                output_schema=SimpleOutput,
-                user_prompt="Test prompt",
+            result = await invoke(
+                tier=ModelTier.HAIKU,
+                system="You are a test assistant",
+                user="Test prompt",
+                schema=SimpleOutput,
             )
 
             assert isinstance(result, SimpleOutput)
             assert result.answer == "Test"
-
-    @pytest.mark.asyncio
-    async def test_caching_works_without_broker(self, disabled_broker_config, cleanup_broker):
-        """Test invoke_with_cache works normally when broker is disabled."""
-        reset_broker_config()
-        set_broker_config(disabled_broker_config)
-
-        assert not is_broker_enabled()
-
-        from langchain_anthropic import ChatAnthropic
-
-        from workflows.shared.llm_utils import invoke_with_cache
-
-        # Create mock LLM with proper response structure
-        mock_response = MagicMock()
-        mock_response.content = "Response"
-        mock_response.usage_metadata = None  # No usage metadata
-
-        mock_llm = MagicMock(spec=ChatAnthropic)
-        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-
-        await invoke_with_cache(
-            llm=mock_llm,
-            system_prompt="System",
-            user_prompt="User",
-        )
-
-        # Should have called LangChain directly
-        mock_llm.ainvoke.assert_called_once()
-
 
 class TestModeFlowsThrough:
     """Tests that verify mode flows through the system correctly."""

@@ -123,5 +123,5 @@ class EveningReadsState(TypedDict):
     image_outputs: Annotated[list[ImageOutput], add]
 
     # Workflow metadata
-    status: Optional[Literal["success", "partial", "failed"]]
+    status: Optional[Literal["completed", "partial", "failed"]]
     errors: Annotated[list[dict], add]

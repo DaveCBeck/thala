@@ -37,7 +37,7 @@ from workflows.research.web_research.subgraphs.researcher_base import (
     create_generate_queries,
     scrape_pages as base_scrape_pages,
 )
-from workflows.shared.llm_utils import ModelTier, get_llm, invoke_with_cache
+from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,7 @@ async def _search_firecrawl(query: str) -> list[WebSearchResult]:
     """Search using Firecrawl."""
     results = []
     try:
-        result = await web_search.ainvoke(
-            {"query": query, "limit": MAX_RESULTS_PER_SOURCE}
-        )
+        result = await web_search.ainvoke({"query": query, "limit": MAX_RESULTS_PER_SOURCE})
         for r in result.get("results", []):
             results.append(
                 WebSearchResult(
@@ -73,9 +71,7 @@ async def _search_perplexity(query: str) -> list[WebSearchResult]:
     """Search using Perplexity."""
     results = []
     try:
-        result = await perplexity_search.ainvoke(
-            {"query": query, "limit": MAX_RESULTS_PER_SOURCE}
-        )
+        result = await perplexity_search.ainvoke({"query": query, "limit": MAX_RESULTS_PER_SOURCE})
         for r in result.get("results", []):
             results.append(
                 WebSearchResult(
@@ -157,10 +153,7 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
         raw_research = "\n\n---\n\n".join(scraped)
     else:
         raw_research = "\n".join(
-            [
-                f"- [{r['title']}]({r['url']}): {r.get('description', 'No description')}"
-                for r in search_results
-            ]
+            [f"- [{r['title']}]({r['url']}): {r.get('description', 'No description')}" for r in search_results]
         )
 
     system_prompt, user_template = await load_prompts_with_translation(
@@ -178,20 +171,14 @@ async def compress_findings(state: ResearcherState) -> dict[str, Any]:
         raw_research=raw_research[:15000],
     )
 
-    llm = get_llm(ModelTier.HAIKU)
-
     try:
         # Use cached system prompt for 90% cost reduction on repeated calls
-        response = await invoke_with_cache(
-            llm,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+        response = await invoke(
+            tier=ModelTier.HAIKU,
+            system=system_prompt,
+            user=user_prompt,
         )
-        content = (
-            response.content
-            if isinstance(response.content, str)
-            else response.content[0].get("text", "")
-        )
+        content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
         finding_data = extract_json_from_llm_response(content)
 
         # Build URL -> original result map to preserve source_metadata

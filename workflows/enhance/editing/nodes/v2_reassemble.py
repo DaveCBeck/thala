@@ -10,7 +10,7 @@ from typing import Any
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_structured_output
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..prompts import V2_VERIFICATION_SYSTEM, V2_VERIFICATION_USER
 from ..schemas import V2FinalVerification, RewrittenSection, TopLevelSection
@@ -48,15 +48,9 @@ def build_changes_summary(
                 f"- **Merged** section [{rw.merge_source_index}] '{source.heading}' "
                 f"into [{rw.section_index}] '{section.heading}'"
             )
-            lines.append(
-                f"  - Word count: {validation.original_word_count} -> "
-                f"{validation.rewritten_word_count}"
-            )
+            lines.append(f"  - Word count: {validation.original_word_count} -> {validation.rewritten_word_count}")
         else:
-            lines.append(
-                f"- **{rw.instruction_type.capitalize()}** section [{rw.section_index}]: "
-                f"'{section.heading}'"
-            )
+            lines.append(f"- **{rw.instruction_type.capitalize()}** section [{rw.section_index}]: '{section.heading}'")
             lines.append(
                 f"  - Word count: {validation.original_word_count} -> "
                 f"{validation.rewritten_word_count} "
@@ -163,18 +157,16 @@ async def v2_reassemble_node(state: dict) -> dict[str, Any]:
     # Verify coherence if there were changes
     if rewritten:
         try:
-            verification = await get_structured_output(
-                output_schema=V2FinalVerification,
-                user_prompt=V2_VERIFICATION_USER.format(
+            verification = await invoke(
+                tier=ModelTier.SONNET,
+                system=V2_VERIFICATION_SYSTEM,
+                user=V2_VERIFICATION_USER.format(
                     topic=topic,
                     document=final_document,
                     changes_summary=changes_summary,
                 ),
-                system_prompt=V2_VERIFICATION_SYSTEM,
-                tier=ModelTier.SONNET,  # Use Sonnet for verification (faster)
-                max_tokens=2000,
-                use_json_schema_method=True,
-                max_retries=2,
+                schema=V2FinalVerification,
+                config=InvokeConfig(max_tokens=2000, cache=False),
             )
         except Exception as e:
             logger.error(f"Verification LLM call failed: {e}")
