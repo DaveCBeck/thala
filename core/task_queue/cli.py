@@ -35,42 +35,38 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 from core.config import configure_logging  # noqa: E402
 
-from .commands import cmd_add, cmd_config, cmd_list, cmd_reorder, cmd_run, cmd_status  # noqa: E402
+from .commands import cmd_add, cmd_config, cmd_list, cmd_parallel, cmd_reorder, cmd_run, cmd_status  # noqa: E402
 from .daemon import cmd_daemon, cmd_start, cmd_stop  # noqa: E402
 from .workflows import DEFAULT_WORKFLOW_TYPE, get_available_types  # noqa: E402
 
 
 def main():
     configure_logging()
-    parser = argparse.ArgumentParser(
-        description="Task queue management for literature review workflows"
-    )
+    parser = argparse.ArgumentParser(description="Task queue management for literature review workflows")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # add command
     add_parser = subparsers.add_parser("add", help="Add task to queue")
     add_parser.add_argument("topic", help="Topic text (or query for web_research)")
     add_parser.add_argument(
-        "--type", "-t",
+        "--type",
+        "-t",
         choices=get_available_types(),
         default=DEFAULT_WORKFLOW_TYPE,
-        help=f"Workflow type (default: {DEFAULT_WORKFLOW_TYPE})"
+        help=f"Workflow type (default: {DEFAULT_WORKFLOW_TYPE})",
     )
     add_parser.add_argument(
-        "--category", "-c", required=True,
-        help="Task category (philosophy, science, technology, society, culture, or custom)"
+        "--category",
+        "-c",
+        required=True,
+        help="Task category (philosophy, science, technology, society, culture, or custom)",
+    )
+    add_parser.add_argument("--priority", "-p", default="normal", help="Priority (low, normal, high, urgent)")
+    add_parser.add_argument(
+        "--questions", "-q", help="Research questions for lit_review_full (pipe-separated, e.g., 'Q1|Q2|Q3')"
     )
     add_parser.add_argument(
-        "--priority", "-p", default="normal",
-        help="Priority (low, normal, high, urgent)"
-    )
-    add_parser.add_argument(
-        "--questions", "-q",
-        help="Research questions for lit_review_full (pipe-separated, e.g., 'Q1|Q2|Q3')"
-    )
-    add_parser.add_argument(
-        "--quality", default="standard",
-        help="Quality tier (test, quick, standard, comprehensive, high_quality)"
+        "--quality", default="standard", help="Quality tier (test, quick, standard, comprehensive, high_quality)"
     )
     add_parser.add_argument("--language", "-l", default="en", help="Language code")
     add_parser.add_argument("--from-year", type=int, help="Start year for papers (lit_review_full only)")
@@ -88,10 +84,7 @@ def main():
     # run command
     run_parser = subparsers.add_parser("run", help="Run next eligible task")
     run_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
-    run_parser.add_argument(
-        "--skip-resume", action="store_true",
-        help="Skip incomplete work and start fresh"
-    )
+    run_parser.add_argument("--skip-resume", action="store_true", help="Skip incomplete work and start fresh")
     run_parser.set_defaults(func=cmd_run)
 
     # status command
@@ -100,31 +93,15 @@ def main():
 
     # reorder command
     reorder_parser = subparsers.add_parser("reorder", help="Reorder queue")
-    reorder_parser.add_argument(
-        "--export", "-e", action="store_true",
-        help="Export current order as JSON"
-    )
-    reorder_parser.add_argument(
-        "--input", "-i",
-        help="Import new order from JSON file"
-    )
+    reorder_parser.add_argument("--export", "-e", action="store_true", help="Export current order as JSON")
+    reorder_parser.add_argument("--input", "-i", help="Import new order from JSON file")
     reorder_parser.set_defaults(func=cmd_reorder)
 
     # config command
     config_parser = subparsers.add_parser("config", help="Configure concurrency")
-    config_parser.add_argument(
-        "--mode", "-m",
-        choices=["max_concurrent", "stagger_hours"],
-        help="Concurrency mode"
-    )
-    config_parser.add_argument(
-        "--max-concurrent", type=int,
-        help="Max concurrent tasks (for max_concurrent mode)"
-    )
-    config_parser.add_argument(
-        "--stagger-hours", type=float,
-        help="Hours between task starts (for stagger_hours mode)"
-    )
+    config_parser.add_argument("--mode", "-m", choices=["max_concurrent", "stagger_hours"], help="Concurrency mode")
+    config_parser.add_argument("--max-concurrent", type=int, help="Max concurrent tasks (for max_concurrent mode)")
+    config_parser.add_argument("--stagger-hours", type=float, help="Hours between task starts (for stagger_hours mode)")
     config_parser.set_defaults(func=cmd_config)
 
     # start command
@@ -137,15 +114,21 @@ def main():
 
     # daemon command (internal)
     daemon_parser = subparsers.add_parser("daemon", help="Run as daemon (internal)")
+    daemon_parser.add_argument("--max-tasks", type=int, help="Max tasks to process before stopping")
     daemon_parser.add_argument(
-        "--max-tasks", type=int,
-        help="Max tasks to process before stopping"
-    )
-    daemon_parser.add_argument(
-        "--check-interval", type=float, default=300.0,
-        help="Seconds between queue checks (default: 300)"
+        "--check-interval", type=float, default=300.0, help="Seconds between queue checks (default: 300)"
     )
     daemon_parser.set_defaults(func=cmd_daemon)
+
+    # parallel command
+    parallel_parser = subparsers.add_parser("parallel", help="Run tasks in parallel")
+    parallel_parser.add_argument(
+        "--count", "-n", type=int, default=5, help="Number of tasks to run concurrently (default: 5)"
+    )
+    parallel_parser.add_argument(
+        "--stagger", type=float, default=3.0, help="Minutes between workflow starts (default: 3.0)"
+    )
+    parallel_parser.set_defaults(func=cmd_parallel)
 
     args = parser.parse_args()
     args.func(args)

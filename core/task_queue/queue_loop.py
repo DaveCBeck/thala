@@ -246,6 +246,18 @@ async def run_queue_loop(
     finally:
         # Cleanup on exit
         logger.info("Cleaning up resources...")
+
+        # Stop broker if it was started during this loop
+        from core.llm_broker import get_broker, is_broker_enabled
+
+        if is_broker_enabled():
+            try:
+                broker = get_broker()
+                if broker._started:
+                    await broker.stop()
+            except Exception:
+                logger.exception("Error stopping broker")
+
         if install_signal_handlers:
             coordinator.remove_signal_handlers()
         await cleanup_all_clients()

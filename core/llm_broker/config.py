@@ -69,8 +69,9 @@ class BrokerConfig:
             THALA_LLM_BROKER_ENABLED: Enable broker routing (0/1, true/false)
             THALA_LLM_BROKER_MODE: Default mode (fast/balanced/economical)
             THALA_LLM_BROKER_BATCH_THRESHOLD: Batch submission threshold
-            THALA_LLM_BROKER_MAX_QUEUE: Maximum queue size
+            THALA_LLM_BROKER_MAX_QUEUE_SIZE: Maximum queue size (also accepts THALA_LLM_BROKER_MAX_QUEUE)
             THALA_LLM_BROKER_OVERFLOW: Overflow behavior (sync/reject)
+            THALA_LLM_BROKER_MAX_CONCURRENT_SYNC: Max concurrent synchronous API calls (default: 5)
             THALA_LLM_BROKER_QUEUE_DIR: Queue persistence directory
         """
         enabled_str = os.getenv("THALA_LLM_BROKER_ENABLED", "").lower()
@@ -88,8 +89,11 @@ class BrokerConfig:
             enabled=enabled,
             default_mode=default_mode,
             batch_threshold=int(os.getenv("THALA_LLM_BROKER_BATCH_THRESHOLD", "50")),
-            max_queue_size=int(os.getenv("THALA_LLM_BROKER_MAX_QUEUE", "100")),
+            max_queue_size=int(
+                os.getenv("THALA_LLM_BROKER_MAX_QUEUE_SIZE", os.getenv("THALA_LLM_BROKER_MAX_QUEUE", "100"))
+            ),
             overflow_behavior=("reject" if os.getenv("THALA_LLM_BROKER_OVERFLOW", "sync") == "reject" else "sync"),
+            max_concurrent_sync=int(os.getenv("THALA_LLM_BROKER_MAX_CONCURRENT_SYNC", "5")),
             queue_dir=os.getenv("THALA_LLM_BROKER_QUEUE_DIR", ".thala/llm_broker"),
         )
 

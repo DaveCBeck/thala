@@ -101,6 +101,7 @@ async def run_task_workflow(
             This is a sync function that schedules async work, matching the
             Callable[[str], None] interface expected by workflows.
             """
+
             async def _update():
                 await checkpoint_mgr.update_checkpoint(task_id, phase, phase_outputs=phase_outputs, **kwargs)
 
@@ -134,9 +135,7 @@ async def run_task_workflow(
                 pending_checkpoint_tasks.clear()
 
         # Run the workflow (pass shutdown_coordinator if workflow supports it)
-        result = await workflow.run(
-            task, checkpoint_callback, resume_from, flush_checkpoints=flush_pending_checkpoints
-        )
+        result = await workflow.run(task, checkpoint_callback, resume_from, flush_checkpoints=flush_pending_checkpoints)
 
         # Save outputs
         checkpoint_callback("saving")
@@ -183,13 +182,7 @@ async def run_task_workflow(
         raise
 
     finally:
-        # Stop broker if it was auto-started during this workflow
-        from core.llm_broker import get_broker, is_broker_enabled
-
-        if is_broker_enabled():
-            broker = get_broker()
-            if broker._started:
-                await broker.stop()
-
-        # End logging run (best-effort cleanup)
+        # Broker lifecycle is managed by the caller (queue_loop or parallel supervisor),
+        # not per-workflow. Stopping here would kill the shared singleton for all
+        # in-flight workflows during parallel execution.
         end_run()

@@ -230,7 +230,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         self,
         jobs: list[tuple[str, str, str]],  # (doi, job_id, local_path)
         poll_interval: float = 2.0,
-        timeout: float = 300.0,
+        timeout: float = 600.0,
     ) -> AsyncGenerator[tuple[str, str, "RetrieveResult | Exception"], None]:
         """
         Poll multiple jobs, yielding results as each completes.
@@ -242,7 +242,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         Args:
             jobs: List of (doi, job_id, local_path) tuples to poll
             poll_interval: Seconds between status checks (default: 2.0)
-            timeout: Max time to wait for any single job (default: 300.0)
+            timeout: Max time to wait for any single job (default: 600.0)
 
         Yields:
             Tuple of (doi, local_path, RetrieveResult or Exception)

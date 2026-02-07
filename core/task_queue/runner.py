@@ -5,6 +5,7 @@ This module maintains the original API by re-exporting functions from
 their new modular locations.
 """
 
+from .parallel import run_parallel_tasks
 from .queue_loop import run_queue_loop, run_single_task
 from .status_display import print_status, print_status_async
 from .task_selector import _find_bypass_task
@@ -14,6 +15,7 @@ __all__ = [
     "run_task_workflow",
     "run_queue_loop",
     "run_single_task",
+    "run_parallel_tasks",
     "print_status",
     "print_status_async",
     "QUEUE_PROJECT",
