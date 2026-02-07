@@ -12,7 +12,7 @@ Example:
         markdown_document="# My Article\\n\\nContent here...",
         title="My Article",
         output_dir="/path/to/images",
-        config=IllustrateConfig(
+        options=IllustrateConfig(
             additional_image_count=2,
             enable_vision_review=True,
         ),
@@ -43,7 +43,7 @@ async def illustrate_document(
     markdown_document: str,
     title: str | None = None,
     output_dir: str | None = None,
-    config: IllustrateConfig | None = None,
+    options: IllustrateConfig | None = None,
 ) -> dict[str, Any]:
     """Illustrate a markdown document with images.
 
@@ -51,7 +51,7 @@ async def illustrate_document(
         markdown_document: Raw markdown content to illustrate
         title: Document title (extracted from content if not provided)
         output_dir: Directory to save image files (temp dir if not provided)
-        config: Illustration configuration options
+        options: Illustration configuration options
 
     Returns:
         Dict containing:
@@ -66,7 +66,7 @@ async def illustrate_document(
             "title": title,
             "output_dir": output_dir,
         },
-        "config": config or IllustrateConfig(),
+        "config": options or IllustrateConfig(),
     })
     return result
 

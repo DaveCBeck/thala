@@ -25,7 +25,7 @@ class ModelTier(Enum):
     HAIKU = "claude-haiku-4-5-20251001"
     SONNET = "claude-sonnet-4-5-20250929"
     SONNET_1M = "claude-sonnet-4-5-20250929"  # Same model as SONNET, requires 1M context beta header
-    OPUS = "claude-opus-4-5-20251101"
+    OPUS = "claude-opus-4-6"
 
     # DeepSeek tiers (OpenAI-compatible API)
     DEEPSEEK_V3 = "deepseek-chat"  # V3.2, 128K context, $0.27/$1.10 per MTok

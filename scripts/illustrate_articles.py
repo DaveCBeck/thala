@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run illustrate workflow on deep_dive_3.md."""
+"""Run illustrate workflow on multiple markdown files."""
 
 import asyncio
 import logging
@@ -17,11 +17,25 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
+# Files to process
+INPUT_FILES = [
+    "deep_dive_1.md",
+    "deep_dive_2.md",
+    "overview.md",
+]
 
-async def main():
-    input_path = Path(__file__).parent.parent / ".context" / "deep_dive_3.md"
-    output_path = Path(__file__).parent.parent / ".context" / "artefacts" / "deep_dive_3.md"
-    images_dir = output_path.parent / "deep_dive_3_images"
+
+async def process_file(filename: str) -> None:
+    """Process a single markdown file through the illustrate workflow."""
+    project_root = Path(__file__).parent.parent
+    input_path = project_root / ".context" / filename
+    stem = input_path.stem
+    output_path = project_root / ".context" / "artefacts" / filename
+    images_dir = output_path.parent / f"{stem}_images"
+
+    print(f"\n{'='*60}")
+    print(f"Processing: {filename}")
+    print(f"{'='*60}")
 
     # Read input
     markdown = input_path.read_text()
@@ -42,7 +56,7 @@ async def main():
         markdown_document=markdown,
         title=title,
         output_dir=str(images_dir),
-        config=IllustrateConfig(
+        options=IllustrateConfig(
             additional_image_count=2,
             enable_vision_review=True,
         ),
@@ -57,7 +71,12 @@ async def main():
     final_images = result.get("final_images", [])
     print(f"Images generated: {len(final_images)}")
     for img in final_images:
-        print(f"  - {img.get('location_id')}: {img.get('path')}")
+        print(f"  - {img.get('location_id')}: {img.get('file_path')}")
+
+
+async def main():
+    for filename in INPUT_FILES:
+        await process_file(filename)
 
 
 if __name__ == "__main__":
