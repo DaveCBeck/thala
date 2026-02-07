@@ -194,6 +194,7 @@ def _get_my_client():
 
 ## Related Patterns
 
+- [Parallel Workflow Supervisor](../../patterns/data-pipeline/parallel-workflow-supervisor.md) - Uses cleanup registry via `lifecycle.py` for centralized broker + HTTP client shutdown
 - [Streaming Producer-Consumer Pipeline](../../patterns/async-python/streaming-producer-consumer-pipeline.md) - Async task cleanup
 - [Concurrent Scraping with TTL Cache](../../patterns/async-python/concurrent-scraping-with-ttl-cache.md) - Rate limiting and caching
 

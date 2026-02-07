@@ -11,6 +11,8 @@ components: [async_task, workflow_graph, configuration]
 complexity: complex
 verified_in_production: true
 related_solutions: []
+related_patterns:
+  - "data-pipeline/parallel-workflow-supervisor"
 tags: [task-queue, workflow, registry, polymorphism, checkpoint, spawn, zero-cost, abstract-base, multi-stage]
 ---
 
@@ -572,6 +574,7 @@ Task = Union[TopicTask, WebResearchTask, PublishSeriesTask, MyCustomTask]
 ## Related Patterns
 
 - [Task Queue with Budget Tracking](./task-queue-budget-tracking.md) - Budget and checkpoint foundation
+- [Parallel Workflow Supervisor](./parallel-workflow-supervisor.md) - Concurrent execution of multiple workflows with rate limiting
 - [LangGraph Workflow Architecture](../langgraph/langgraph-workflow-architecture.md) - Workflow graph patterns
 - [Phased Pipeline Architecture](./phased-pipeline-architecture-gpu-queue.md) - Multi-phase processing
 

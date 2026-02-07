@@ -268,6 +268,7 @@ results = await asyncio.gather(*[process(item) for item in items])
 
 ## Related Patterns
 
+- [Parallel Workflow Supervisor](../../patterns/data-pipeline/parallel-workflow-supervisor.md) - Applies gather + semaphore at workflow level with staggered starts and shared resource lifecycle
 - **Concurrent Scraping with TTL Cache** (`docs/patterns/async-python/concurrent-scraping-with-ttl-cache.md`) - Semaphore + caching
 - **Streaming Producer-Consumer Pipeline** (`docs/patterns/async-python/streaming-producer-consumer-pipeline.md`) - AsyncIterator patterns
 
