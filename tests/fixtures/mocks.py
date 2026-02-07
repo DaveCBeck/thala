@@ -139,8 +139,13 @@ def mock_zotero() -> AsyncMock:
 def mock_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mock Marker PDF processing.
 
-    Patches core.scraping.pdf.processor.process_pdf_bytes to return
-    mock markdown without requiring the actual Marker service.
+    Patches:
+    - core.scraping.pdf.processor.process_pdf_bytes: Returns mock markdown
+    - core.scraping.pdf.processor.check_marker_available: Returns True
+    - core.scraping.pdf.router._marker_available: Set to True (cached state)
+
+    This ensures tests don't make real HTTP calls to Marker and don't
+    fall into CPU-only degraded mode.
 
     The mock returns realistic markdown structure based on input parameters.
     """
@@ -198,7 +203,22 @@ def mock_marker(monkeypatch: pytest.MonkeyPatch) -> None:
             3. Mock reference [3]
         """)
 
+    async def mock_check_marker_available() -> bool:
+        """Mock health check - always returns True in tests."""
+        return True
+
+    # Patch the processor functions
     monkeypatch.setattr(
         "core.scraping.pdf.processor.process_pdf_bytes",
         mock_process_pdf_bytes,
     )
+    monkeypatch.setattr(
+        "core.scraping.pdf.processor.check_marker_available",
+        mock_check_marker_available,
+    )
+
+    # Set the cached router state to True (Marker available)
+    # This prevents the session check from making HTTP calls
+    import core.scraping.pdf.router as router_module
+
+    monkeypatch.setattr(router_module, "_marker_available", True)

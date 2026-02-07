@@ -19,13 +19,74 @@ from .metrics import (
     record_processing_time,
     record_route_decision,
 )
-from .processor import process_pdf_bytes
+from .processor import check_marker_available, process_pdf_bytes
 from .routing import RouteDecision, determine_route
 
 logger = logging.getLogger(__name__)
 
 # Thread pool for parallel document analysis (CPU-bound PyMuPDF operations)
 _analysis_executor: ThreadPoolExecutor | None = None
+
+# Cached Marker availability status (None = not checked, True/False = checked)
+_marker_available: bool | None = None
+_marker_check_lock: asyncio.Lock | None = None
+
+
+def _get_marker_check_lock() -> asyncio.Lock:
+    """Get or create the Marker check lock."""
+    global _marker_check_lock
+    if _marker_check_lock is None:
+        _marker_check_lock = asyncio.Lock()
+    return _marker_check_lock
+
+
+async def check_marker_for_session(force_recheck: bool = False) -> bool:
+    """Check Marker availability once per session, caching the result.
+
+    This avoids per-document network calls when Marker is down. The check
+    is done once and cached for the session. Use force_recheck=True to
+    re-check (e.g., after Marker is restarted).
+
+    Args:
+        force_recheck: If True, re-check even if already cached
+
+    Returns:
+        True if Marker is available, False otherwise
+    """
+    global _marker_available
+
+    # Fast path: already checked
+    if _marker_available is not None and not force_recheck:
+        return _marker_available
+
+    # Serialize checks to avoid multiple concurrent health checks
+    async with _get_marker_check_lock():
+        # Double-check after acquiring lock
+        if _marker_available is not None and not force_recheck:
+            return _marker_available
+
+        _marker_available = await check_marker_available()
+
+        if not _marker_available:
+            logger.warning(
+                "Marker service unavailable - using CPU-only mode. "
+                "Complex/scanned PDFs will have degraded quality. "
+                "Restart Marker and call reset_marker_session_cache() to re-enable GPU processing."
+            )
+        else:
+            logger.info("Marker service available - GPU processing enabled")
+
+        return _marker_available
+
+
+def reset_marker_session_cache() -> None:
+    """Reset the cached Marker availability status.
+
+    Call this after Marker is restarted to re-enable GPU processing.
+    """
+    global _marker_available
+    _marker_available = None
+    logger.info("Marker session cache reset - will re-check on next document")
 
 
 def _get_analysis_executor() -> ThreadPoolExecutor:
@@ -66,6 +127,9 @@ async def process_document_smart(
 ) -> ProcessingResult:
     """Route document to optimal processing path.
 
+    Uses cached Marker availability check to avoid per-document network calls.
+    When Marker is unavailable, forces CPU-only mode for graceful degradation.
+
     Args:
         pdf_content: Raw PDF bytes
         force_gpu: Always use Marker (for quality-critical documents)
@@ -74,7 +138,10 @@ async def process_document_smart(
     Returns:
         ProcessingResult with markdown and metadata
     """
-    # Step 1: Analyze document in thread pool (CPU-bound PyMuPDF operation)
+    # Step 1: Check Marker availability (cached, no network call after first check)
+    marker_ok = await check_marker_for_session()
+
+    # Step 2: Analyze document in thread pool (CPU-bound PyMuPDF operation)
     loop = asyncio.get_running_loop()
     analysis_start = time.perf_counter()
     analysis = await loop.run_in_executor(
@@ -85,12 +152,48 @@ async def process_document_smart(
     analysis_duration = time.perf_counter() - analysis_start
     record_analysis_time(analysis_duration)
 
-    # Step 2: Make routing decision (separate from analysis)
+    # Step 3: Make routing decision (separate from analysis)
     route = determine_route(analysis)
 
     # Auto-select quality preset based on complexity if not specified
     effective_quality = quality or _quality_for_complexity(analysis)
 
+    # Step 4: Handle Marker unavailable - force CPU-only mode
+    if not marker_ok:
+        logger.info(
+            f"Document analysis: {analysis.complexity.value}, "
+            f"pages={analysis.page_count}, scanned={analysis.is_scanned}, "
+            f"route=cpu_degraded (Marker unavailable)"
+        )
+
+        processing_start = time.perf_counter()
+        result = await extract_text_cpu(pdf_content)
+        processing_duration = time.perf_counter() - processing_start
+
+        record_route_decision("cpu_degraded", analysis.complexity.value, analysis.page_count)
+        record_processing_time("cpu_degraded", processing_duration)
+
+        # Log warning for documents that really needed GPU
+        if analysis.is_scanned:
+            logger.warning(
+                f"Scanned PDF processed via CPU (Marker unavailable) - "
+                f"quality may be poor. {analysis.page_count} pages."
+            )
+        elif route.queue == "gpu":
+            logger.info(
+                f"Complex PDF processed via CPU (Marker unavailable) - "
+                f"quality may be degraded. Complexity: {analysis.complexity.value}"
+            )
+
+        return ProcessingResult(
+            markdown=result.markdown,
+            page_count=result.page_count,
+            processing_path="cpu_degraded",
+            analysis=analysis,
+            route_decision=route,
+        )
+
+    # Normal routing with Marker available
     logger.info(
         f"Document analysis: {analysis.complexity.value}, "
         f"pages={analysis.page_count}, images={analysis.has_images}, "

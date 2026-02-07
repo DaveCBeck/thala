@@ -57,9 +57,9 @@ async def _regenerate_svg_with_feedback(
             svg_content=svg_content,
         )
 
-        # Use Sonnet for refinement
+        # Use Opus for refinement
         response = await invoke(
-            tier=ModelTier.SONNET,
+            tier=ModelTier.OPUS,
             system=SVG_REFINEMENT_SYSTEM,
             user=prompt,
             config=InvokeConfig(max_tokens=8000),

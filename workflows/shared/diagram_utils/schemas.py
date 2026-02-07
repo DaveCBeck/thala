@@ -34,7 +34,7 @@ class DiagramAnalysis(BaseModel):
     )
     title: str = Field(description="Concise title for the diagram (3-8 words)")
     key_elements: list[str] = Field(
-        description="3-8 key concepts/entities to include in the diagram",
+        description="Key concepts/entities to include in the diagram (maximum 15, typically 5-10)",
         min_length=1,
         max_length=15,
     )

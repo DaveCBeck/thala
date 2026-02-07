@@ -82,6 +82,23 @@ class VisionReviewResult(BaseModel):
     )
 
 
+class ImageCompareResult(BaseModel):
+    """Result of comparing multiple image candidates."""
+
+    selected_candidate: int = Field(
+        ge=1,
+        le=5,
+        description="Which candidate is best (1-indexed)",
+    )
+    reasoning: str = Field(
+        description="Brief explanation of why this candidate was selected",
+    )
+    issues_with_selected: list[str] = Field(
+        default_factory=list,
+        description="Any remaining issues with the selected image (for logging)",
+    )
+
+
 class HeaderAppositenessResult(BaseModel):
     """Result of evaluating whether a public domain image is 'apposite' for header."""
 
@@ -95,4 +112,8 @@ class HeaderAppositenessResult(BaseModel):
         ge=1,
         le=5,
         description="Quality score 1-5: 1=poor fit, 5=excellent fit",
+    )
+    suggested_search_query: str | None = Field(
+        default=None,
+        description="If not apposite, suggest a better search query that would find a more fitting image",
     )

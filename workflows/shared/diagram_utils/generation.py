@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def analyze_content_for_diagram(
     title: str,
     content: str,
-    tier: ModelTier = ModelTier.HAIKU,
+    tier: ModelTier = ModelTier.OPUS,
 ) -> DiagramAnalysis | None:
     """Analyze content to determine if/how to create a diagram.
 
@@ -31,7 +31,7 @@ async def analyze_content_for_diagram(
     Args:
         title: Content title
         content: Full content text (will be truncated to ~8000 chars)
-        tier: Model tier for analysis (default HAIKU for speed/cost)
+        tier: Model tier for analysis (default OPUS for speed/cost)
 
     Returns:
         DiagramAnalysis if successful, None on failure
@@ -62,14 +62,14 @@ async def analyze_content_for_diagram(
 async def generate_svg_diagram(
     analysis: DiagramAnalysis,
     config: DiagramConfig,
-    tier: ModelTier = ModelTier.SONNET,
+    tier: ModelTier = ModelTier.OPUS,
 ) -> str | None:
     """Generate SVG code from diagram analysis.
 
     Args:
         analysis: DiagramAnalysis from analyze_content_for_diagram
         config: Diagram configuration
-        tier: Model tier (default SONNET for quality SVG generation)
+        tier: Model tier (default OPUS for quality SVG generation)
 
     Returns:
         SVG code string if successful, None on failure
@@ -137,7 +137,7 @@ async def regenerate_svg_with_feedback(
     analysis: DiagramAnalysis,
     config: DiagramConfig,
     overlap_check: OverlapCheckResult,
-    tier: ModelTier = ModelTier.SONNET,
+    tier: ModelTier = ModelTier.OPUS,
 ) -> str | None:
     """Regenerate SVG with feedback about overlap issues."""
     try:
@@ -204,7 +204,8 @@ Given detailed instructions for a diagram, extract the structured components nee
 
 Determine the most appropriate diagram type from: flowchart, concept_map, process_diagram, hierarchy, comparison, timeline, cycle.
 
-Extract all key elements (concepts, entities, steps) that should appear in the diagram.
+Extract the key elements (concepts, entities, steps) that should appear in the diagram.
+IMPORTANT: Select at most 15 key elements (typically 5-10). Prioritize the most important concepts.
 Extract all relationships or flows between elements."""
 
 

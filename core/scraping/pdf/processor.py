@@ -110,24 +110,41 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
             raise MarkerProcessingError(f"Failed to download PDF: {e}") from e
 
 
+BROWSER_LAUNCH_TIMEOUT = 30.0  # Max time to wait for browser to start
+
+
 async def _get_browser() -> "Browser":
-    """Get or create browser instance (lazy initialization)."""
+    """Get or create browser instance (lazy initialization).
+
+    Uses a timeout to prevent indefinite hangs if browser fails to start.
+    """
     global _playwright, _browser
 
     if _browser is None:
         from playwright.async_api import async_playwright
 
         logger.debug("Initializing Playwright browser for PDF download")
-        _playwright = await async_playwright().start()
-        _browser = await _playwright.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
-        )
-        logger.info("Playwright browser started for PDF downloads")
+        try:
+            async with asyncio.timeout(BROWSER_LAUNCH_TIMEOUT):
+                _playwright = await async_playwright().start()
+                _browser = await _playwright.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-dev-shm-usage",
+                        "--no-sandbox",
+                    ],
+                )
+            logger.info("Playwright browser started for PDF downloads")
+        except asyncio.TimeoutError:
+            logger.error(f"Browser launch timed out after {BROWSER_LAUNCH_TIMEOUT}s")
+            raise MarkerProcessingError(
+                f"Playwright browser failed to start within {BROWSER_LAUNCH_TIMEOUT}s"
+            )
+        except Exception as e:
+            logger.error(f"Browser launch failed: {e}")
+            raise MarkerProcessingError(f"Playwright browser failed to start: {e}") from e
+
     return _browser
 
 

@@ -121,7 +121,7 @@ async def select_and_improve(
     analysis: DiagramAnalysis,
     config: DiagramConfig,
 ) -> tuple[str, int, str] | None:
-    """Use Sonnet with vision to select best candidate and make improvements.
+    """Use Opus with vision to select best candidate and make improvements.
 
     Two-phase approach:
     1. Show all candidate images + overlap analysis, ask for selection
@@ -188,7 +188,7 @@ async def select_and_improve(
         # Note: This uses multimodal content, which invoke() doesn't support yet.
         # For now, we use the low-level langchain call for this special case.
         from workflows.shared.llm_utils import get_llm
-        llm = get_llm(tier=ModelTier.SONNET, max_tokens=8000)
+        llm = get_llm(tier=ModelTier.OPUS, max_tokens=8000)
 
         selection_response = await llm.ainvoke([
             {"role": "system", "content": SVG_SELECTION_SYSTEM},
@@ -215,7 +215,7 @@ async def select_and_improve(
 
         # Phase 2: Improvement with SVG code
         improvement_response = await invoke(
-            tier=ModelTier.SONNET,
+            tier=ModelTier.OPUS,
             system=SVG_IMPROVEMENT_SYSTEM,
             user=f"Here is the SVG for candidate {selected_id}. Make minor improvements to spacing and alignment:\n\n{selected_candidate.svg_content}",
             config=InvokeConfig(max_tokens=8000),
