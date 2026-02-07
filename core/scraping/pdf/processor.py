@@ -54,10 +54,8 @@ class MarkerProcessingError(Exception):
 MARKER_HEALTH_TIMEOUT = 5.0
 
 
-async def check_marker_available() -> bool:
-    """Check if Marker service is available.
-
-    Uses a short timeout to fail fast if the service isn't running.
+async def _check_marker_health() -> bool:
+    """Single Marker health check attempt.
 
     Returns:
         True if Marker is reachable, False otherwise
@@ -74,6 +72,32 @@ async def check_marker_available() -> bool:
     except Exception as e:
         logger.warning(f"Marker health check failed: {e}")
         return False
+
+
+MARKER_HEALTH_RETRY_DELAYS = (15, 30, 90)
+
+
+async def check_marker_available() -> bool:
+    """Check if Marker service is available, retrying on failure.
+
+    On the first failure, retries up to 3 times with delays of 15s, 30s, 90s
+    to handle transient unavailability (e.g. worker busy with a large job).
+
+    Returns:
+        True if Marker is reachable, False otherwise
+    """
+    if await _check_marker_health():
+        return True
+
+    for delay in MARKER_HEALTH_RETRY_DELAYS:
+        logger.info(f"Marker health check failed, retrying in {delay}s...")
+        await asyncio.sleep(delay)
+        if await _check_marker_health():
+            logger.info("Marker service recovered after retry")
+            return True
+
+    logger.warning("Marker service unavailable after all retries")
+    return False
 
 
 async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
