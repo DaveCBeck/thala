@@ -444,6 +444,8 @@ async def run_queue_loop():
 
 ## Related Patterns
 
+- [Parallel Workflow Supervisor](./parallel-workflow-supervisor.md) - Concurrent execution with staggered starts and rate limiting
+- [Multi-Workflow Task Queue](./multi-workflow-task-queue.md) - Registry-based polymorphic workflow dispatch
 - [LangSmith Workflow Tracing](../../patterns/llm-interaction/langsmith-workflow-tracing.md) - Tracing infrastructure
 - [Batch API Cost Optimization](../../patterns/llm-interaction/batch-api-cost-optimization.md) - 50% savings for Claude
 - [Model Tier Optimization](../../solutions/llm-issues/model-tier-optimization.md) - Tier selection

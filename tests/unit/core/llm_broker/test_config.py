@@ -58,11 +58,14 @@ class TestBrokerConfig:
         env = {
             "THALA_LLM_BROKER_MODE": "fast",
             "THALA_LLM_BROKER_BATCH_THRESHOLD": "25",
-            "THALA_LLM_BROKER_MAX_QUEUE": "200",
+            "THALA_LLM_BROKER_MAX_QUEUE_SIZE": "200",
             "THALA_LLM_BROKER_OVERFLOW": "reject",
             "THALA_LLM_BROKER_QUEUE_DIR": "/custom/path",
+            "THALA_LLM_BROKER_MAX_CONCURRENT_SYNC": "15",
         }
         with patch.dict(os.environ, env, clear=False):
+            # Clear legacy var if set to avoid interference
+            os.environ.pop("THALA_LLM_BROKER_MAX_QUEUE", None)
             config = BrokerConfig.from_env()
 
             assert config.default_mode == UserMode.FAST
@@ -70,6 +73,7 @@ class TestBrokerConfig:
             assert config.max_queue_size == 200
             assert config.overflow_behavior == "reject"
             assert config.queue_dir == "/custom/path"
+            assert config.max_concurrent_sync == 15
 
     def test_from_env_economical_mode(self):
         """Test from_env with economical mode."""
@@ -131,9 +135,10 @@ class TestGlobalConfig:
 
     def test_get_broker_config_creates_default(self):
         """Test get_broker_config creates default if not set."""
-        config = get_broker_config()
-        assert config is not None
-        assert config.default_mode == UserMode.BALANCED
+        with patch.dict(os.environ, {}, clear=True):
+            config = get_broker_config()
+            assert config is not None
+            assert config.default_mode == UserMode.BALANCED
 
     def test_get_broker_config_returns_same_instance(self):
         """Test get_broker_config returns same instance."""

@@ -11,6 +11,30 @@ logger = logging.getLogger(__name__)
 # Image generation model
 IMAGEN_MODEL = "imagen-4.0-ultra-generate-001"
 
+# Lazy-initialized genai client (reused across calls)
+_genai_client = None
+
+
+def _get_genai_client():
+    """Get or create the global genai client (lazy init)."""
+    global _genai_client
+    if _genai_client is None:
+        from google import genai
+        from core.utils.async_http_client import register_cleanup
+
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable not set")
+        _genai_client = genai.Client(api_key=api_key)
+
+        async def _close_genai():
+            global _genai_client
+            _genai_client = None
+
+        register_cleanup("genai", _close_genai)
+    return _genai_client
+
+
 # System prompt for generating image prompts
 IMAGE_PROMPT_SYSTEM = """You are an expert at writing prompts for AI image generation, specifically for Google's Imagen model.
 
@@ -89,11 +113,7 @@ async def generate_image_prompt(
             ),
         )
 
-        prompt = (
-            response.content
-            if isinstance(response.content, str)
-            else str(response.content)
-        ).strip()
+        prompt = (response.content if isinstance(response.content, str) else str(response.content)).strip()
 
         logger.info(f"Generated image prompt for '{title}': {prompt[:100]}...")
         return prompt
@@ -123,14 +143,14 @@ async def generate_article_header(
         Tuple of (PNG image bytes, prompt used) or (None, None) if generation fails
     """
     try:
-        from google import genai
         from google.genai import types
     except ImportError:
         logger.error("google-genai package not installed. Run: pip install google-genai")
         return None, None
 
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
+    try:
+        client = _get_genai_client()
+    except ValueError:
         logger.error("GEMINI_API_KEY environment variable not set")
         return None, None
 
@@ -144,25 +164,23 @@ async def generate_article_header(
             logger.error(f"Failed to generate image prompt for '{title}'")
             return None, None
 
-    # Step 2: Generate the image using Imagen
+    # Step 2: Generate the image using Imagen (semaphore limits concurrent API calls)
     try:
-        client = genai.Client(api_key=api_key)
+        from core.task_queue.rate_limits import get_imagen_semaphore
 
-        response = await client.aio.models.generate_images(
-            model=IMAGEN_MODEL,
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio=aspect_ratio,
-            ),
-        )
+        async with get_imagen_semaphore():
+            response = await client.aio.models.generate_images(
+                model=IMAGEN_MODEL,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio=aspect_ratio,
+                ),
+            )
 
         if response.generated_images:
             image_bytes = response.generated_images[0].image.image_bytes
-            logger.info(
-                f"Generated header image for '{title}' "
-                f"({len(image_bytes)} bytes)"
-            )
+            logger.info(f"Generated header image for '{title}' ({len(image_bytes)} bytes)")
             return image_bytes, prompt
 
         logger.warning(f"No image generated for '{title}' - response was empty")

@@ -14,7 +14,7 @@ from workflows.research.academic_lit_review.state import (
 from workflows.shared.language import LanguageConfig
 
 MAX_PAPER_PIPELINE_CONCURRENT = 2
-ACQUISITION_TIMEOUT = 300.0
+ACQUISITION_TIMEOUT = 600.0
 RETRY_DELAY = 5.0
 ACQUISITION_DELAY = 2.0
 

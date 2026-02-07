@@ -13,7 +13,7 @@ from core.llm_broker import BatchPolicy
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.llm_utils import ModelTier, invoke, invoke_batch, InvokeConfig
 from workflows.shared.retry_utils import with_retry
-from workflows.shared.token_utils import HAIKU_SAFE_LIMIT, estimate_tokens_fast
+from workflows.shared.token_utils import HAIKU_SAFE_LIMIT, count_tokens_accurate
 
 from .chunking import MAX_CHAPTER_CHARS, chunk_large_content
 from .prompts import CHAPTER_SUMMARIZATION_SYSTEM, TRANSLATION_SYSTEM
@@ -48,7 +48,7 @@ Content:
 
     # Estimate tokens to select appropriate model
     # Use SONNET_1M for large content to avoid token limit errors
-    estimated_tokens = estimate_tokens_fast(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
+    estimated_tokens = count_tokens_accurate(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
 
     if estimated_tokens > HAIKU_SAFE_LIMIT:
         logger.info(
@@ -216,7 +216,7 @@ Chapter content:
 {chapter_content}"""
 
                 # Check token count
-                estimated_tokens = estimate_tokens_fast(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
+                estimated_tokens = count_tokens_accurate(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
 
                 if estimated_tokens > HAIKU_SAFE_LIMIT:
                     # Too many tokens for Haiku - process individually with SONNET_1M
