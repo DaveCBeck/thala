@@ -9,6 +9,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from ..prompts import V2_SECTION_REWRITE_SYSTEM, V2_SECTION_REWRITE_USER, V2_SECTION_MERGE_USER
@@ -276,7 +277,10 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
             tier=tier,
             system=V2_SECTION_REWRITE_SYSTEM,
             user=user_prompt,
-            config=InvokeConfig(max_tokens=8000),
+            config=InvokeConfig(
+                max_tokens=8000,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
         rewritten_content = response.content.strip()
     except Exception as e:

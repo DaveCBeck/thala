@@ -27,6 +27,7 @@ class BrokerConfig:
         economical_retry_hours: Wait timeout for economical mode retry
 
         poll_interval_seconds: Seconds between batch status checks
+        flush_interval_seconds: Seconds between periodic queue flushes
         max_concurrent_sync: Maximum concurrent synchronous API calls
 
         queue_dir: Directory for queue persistence files
@@ -51,6 +52,7 @@ class BrokerConfig:
 
     # Polling and concurrency
     poll_interval_seconds: int = 60
+    flush_interval_seconds: int = 600
     max_concurrent_sync: int = 5
 
     # Persistence
@@ -129,7 +131,7 @@ class BrokerConfig:
         if mode == UserMode.FAST:
             return 0
         if mode == UserMode.BALANCED:
-            return 2  # Initial + 1 retry = 2 attempts
+            return 1  # Initial + 1 retry = 2 attempts, 4hr max
         if mode == UserMode.ECONOMICAL:
             return 3  # Initial + 2 retries = 3 attempts
         return 1

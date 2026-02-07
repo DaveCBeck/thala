@@ -9,32 +9,36 @@ This module provides the main LLMBroker class that:
 """
 
 import asyncio
-import json
 import logging
 import os
-import re
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
-from urllib.parse import urlparse
 
-import httpx
 from anthropic import AsyncAnthropic, RateLimitError
 from langsmith import traceable
 from langsmith.wrappers import wrap_anthropic
 
 from core.task_queue.shutdown import get_shutdown_coordinator
-from core.types import ModelTier, is_deepseek_tier
+from core.types import ModelTier
 
 from .config import BrokerConfig, get_broker_config
 from .exceptions import (
     BatchSubmissionError,
     QueueOverflowError,
 )
+from .message_params import (
+    CONTEXT_1M_BETA,
+    build_message_params,
+    parse_response_content,
+    sanitize_custom_id,
+)
 from .metrics import BrokerMetrics
 from .persistence import BrokerPersistence
+from .result_fetcher import fetch_batch_results
+from .routing import should_batch
 from .schemas import (
     BatchPolicy,
     LLMRequest,
@@ -45,29 +49,14 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Beta header for 1M context window
-CONTEXT_1M_BETA = "context-1m-2025-08-07"
-
 # Context variable for batch group isolation across concurrent async contexts
 # This ensures parallel LangGraph nodes don't interfere with each other's batch groups
 _current_batch_group: ContextVar["BatchGroup | None"] = ContextVar(
     "llm_broker_batch_group", default=None
 )
 
-# Allowed hostnames for batch results URLs (SSRF protection)
-ALLOWED_RESULTS_HOSTS = frozenset({"api.anthropic.com", "batches.anthropic.com"})
-
-# Buffer tokens for output when thinking_budget is set
-DEFAULT_OUTPUT_BUFFER_TOKENS = 4096
-
-
-def _sanitize_custom_id(identifier: str) -> str:
-    """Convert identifier to valid Anthropic batch custom_id.
-
-    The API requires custom_id to match pattern ^[a-zA-Z0-9_-]{1,64}$.
-    """
-    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", identifier)
-    return sanitized[:64]
+# Backward-compatible alias for test imports
+_sanitize_custom_id = sanitize_custom_id
 
 
 @dataclass
@@ -160,6 +149,8 @@ class LLMBroker:
         """Broker metrics (None if disabled)."""
         return self._metrics
 
+    # Lifecycle
+
     async def start(self) -> None:
         """Start the broker and background tasks.
 
@@ -223,6 +214,8 @@ class LLMBroker:
     ) -> None:
         """Async context manager exit - stops the broker."""
         await self.stop()
+
+    # Request submission
 
     def _spawn_sync_task(self, request: LLMRequest) -> asyncio.Task[None]:
         """Spawn a tracked sync execution task.
@@ -342,9 +335,7 @@ class LLMBroker:
         self._pending_futures[request.request_id] = future
 
         # Determine routing
-        should_batch = self._should_batch(policy, model, thinking_budget)
-
-        if should_batch:
+        if should_batch(self._mode, policy, model, thinking_budget):
             await self._queue_for_batch(request)
             if self._metrics:
                 self._metrics.record_request(batched=True)
@@ -364,38 +355,12 @@ class LLMBroker:
     ) -> bool:
         """Determine if a request should be batched.
 
-        Args:
-            policy: Call-site batch policy
-            model: Model tier
-            thinking_budget: Extended thinking budget
-
-        Returns:
-            True if request should be queued for batching
+        Delegates to routing.should_batch() but preserves the instance method
+        interface for test compatibility.
         """
-        # DeepSeek doesn't support batch API
-        if is_deepseek_tier(model):
-            return False
+        return should_batch(self._mode, policy, model, thinking_budget)
 
-        # Extended thinking incompatible with batch
-        if thinking_budget:
-            return False
-
-        # Policy + Mode matrix
-        if policy == BatchPolicy.REQUIRE_SYNC:
-            return False
-        if policy == BatchPolicy.FORCE_BATCH:
-            return True
-        if self._mode == UserMode.FAST:
-            return False
-        if policy == BatchPolicy.PREFER_BALANCE and self._mode in (
-            UserMode.BALANCED,
-            UserMode.ECONOMICAL,
-        ):
-            return True
-        if policy == BatchPolicy.PREFER_SPEED and self._mode == UserMode.ECONOMICAL:
-            return True
-
-        return False
+    # Queue management
 
     async def _queue_for_batch(self, request: LLMRequest) -> None:
         """Queue a request for batch processing.
@@ -458,6 +423,13 @@ class LLMBroker:
             if group_requests:
                 await self._submit_batch(group_requests)
 
+    async def flush(self) -> None:
+        """Manually flush all queued requests as a batch."""
+        async with self._submission_lock:
+            await self._submit_batch()
+
+    # Batch submission
+
     async def _submit_batch(
         self,
         requests: list[LLMRequest] | None = None,
@@ -484,10 +456,10 @@ class LLMBroker:
         needs_1m_context = False
 
         for req in requests:
-            sanitized_id = _sanitize_custom_id(req.request_id)
+            sanitized_id = sanitize_custom_id(req.request_id)
             self._id_mapping[sanitized_id] = req.request_id
 
-            params = self._build_message_params(req)
+            params = build_message_params(req)
 
             batch_requests.append(
                 {
@@ -539,6 +511,8 @@ class LLMBroker:
                 )
             raise BatchSubmissionError(len(requests), str(e))
 
+    # Synchronous execution
+
     @traceable(name="llm_broker_sync", run_type="llm")
     async def _execute_sync(self, request: LLMRequest) -> None:
         """Execute a request via synchronous (non-batch) API.
@@ -560,8 +534,7 @@ class LLMBroker:
 
         async with self._sync_semaphore:
             try:
-                # Build message params
-                kwargs = self._build_message_params(request)
+                kwargs = build_message_params(request)
 
                 # Check if 1M context needed
                 if request.model == ModelTier.SONNET_1M.value:
@@ -572,8 +545,7 @@ class LLMBroker:
                 else:
                     response = await self._async_client.messages.create(**kwargs)
 
-                # Parse response
-                content, thinking = self._parse_response_content(response)
+                content, thinking = parse_response_content(response)
 
                 self._resolve_future(
                     request.request_id,
@@ -611,63 +583,6 @@ class LLMBroker:
                     ),
                 )
 
-    def _build_message_params(self, request: LLMRequest) -> dict[str, Any]:
-        """Build Anthropic API message parameters from request.
-
-        Args:
-            request: The LLM request to build parameters for
-
-        Returns:
-            Dictionary of parameters for Anthropic messages API
-        """
-        params: dict[str, Any] = {
-            "model": request.model,
-            "max_tokens": request.max_tokens,
-            "messages": [{"role": "user", "content": request.prompt}],
-        }
-
-        if request.system:
-            params["system"] = request.system
-
-        if request.thinking_budget:
-            params["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": request.thinking_budget,
-            }
-            if request.max_tokens <= request.thinking_budget:
-                params["max_tokens"] = request.thinking_budget + DEFAULT_OUTPUT_BUFFER_TOKENS
-
-        if request.tools:
-            params["tools"] = request.tools
-        if request.tool_choice:
-            params["tool_choice"] = request.tool_choice
-
-        return params
-
-    def _parse_response_content(self, response: Any) -> tuple[Any, str | None]:
-        """Parse content and thinking from Anthropic message response.
-
-        Args:
-            response: Anthropic message response
-
-        Returns:
-            Tuple of (content, thinking) where content is text or tool input
-        """
-        content = None
-        thinking = None
-        for block in response.content:
-            if block.type == "thinking":
-                thinking = block.thinking
-            elif block.type == "text":
-                content = block.text
-            elif block.type == "tool_use":
-                tool_input = block.input
-                # Unwrap $output wrapper if present
-                if isinstance(tool_input, dict) and "$output" in tool_input and len(tool_input) == 1:
-                    tool_input = tool_input["$output"]
-                content = json.dumps(tool_input)
-        return content, thinking
-
     def _resolve_future(self, request_id: str, response: LLMResponse) -> None:
         """Resolve the future for a request.
 
@@ -682,13 +597,28 @@ class LLMBroker:
     # Batch monitoring
 
     async def _batch_monitor_loop(self) -> None:
-        """Background loop to monitor submitted batches."""
+        """Background loop to monitor submitted batches and periodically flush queued requests."""
         coordinator = get_shutdown_coordinator()
+        last_flush_time = datetime.now(timezone.utc)
+
         while not coordinator.shutdown_requested:
             try:
                 await self._check_submitted_batches()
             except Exception as e:
                 logger.exception(f"Error in batch monitor loop: {e}")
+
+            # Periodic flush: submit any queued requests that haven't been
+            # picked up by a batch_group exit or threshold trigger
+            elapsed = (datetime.now(timezone.utc) - last_flush_time).total_seconds()
+            if elapsed >= self._config.flush_interval_seconds:
+                try:
+                    queue_size = await self._persistence.get_queue_size()
+                    if queue_size > 0:
+                        logger.info(f"Periodic flush: submitting {queue_size} queued requests")
+                        await self.flush()
+                    last_flush_time = datetime.now(timezone.utc)
+                except Exception as e:
+                    logger.exception(f"Error in periodic flush: {e}")
 
             # Wait or respond to shutdown
             if await coordinator.wait_or_shutdown(self._config.poll_interval_seconds):
@@ -744,8 +674,8 @@ class LLMBroker:
             if self._metrics:
                 self._metrics.record_batch_completed(wait_seconds)
 
-        # Fetch results
-        results = await self._fetch_batch_results(batch.results_url)
+        # Fetch results (mutates self._id_mapping to clean up processed entries)
+        results = await fetch_batch_results(batch.results_url, self._id_mapping)
 
         # Update persistence and resolve futures
         completed_requests = await self._persistence.mark_batch_completed(batch_id, results)
@@ -769,20 +699,11 @@ class LLMBroker:
     def _validate_results_url(self, url: str) -> bool:
         """Validate that a results URL points to an allowed Anthropic domain.
 
-        Prevents SSRF attacks by ensuring we only send API credentials to
-        trusted Anthropic hostnames over HTTPS.
-
-        Args:
-            url: The URL to validate
-
-        Returns:
-            True if the URL is valid and safe to use with credentials
+        Delegates to result_fetcher.validate_results_url(). Preserved as
+        instance method for test compatibility.
         """
-        try:
-            parsed = urlparse(url)
-            return parsed.scheme == "https" and parsed.hostname in ALLOWED_RESULTS_HOSTS
-        except Exception:
-            return False
+        from .result_fetcher import validate_results_url
+        return validate_results_url(url)
 
     async def _fetch_batch_results(
         self,
@@ -790,96 +711,12 @@ class LLMBroker:
     ) -> dict[str, dict[str, Any]]:
         """Fetch and parse batch results from Anthropic.
 
-        Args:
-            results_url: URL to fetch results from
-
-        Returns:
-            Dictionary of request_id -> result data
-
-        Raises:
-            ValueError: If results_url does not point to an allowed Anthropic domain
+        Delegates to result_fetcher.fetch_batch_results(). Preserved as
+        instance method for test compatibility.
         """
-        # Validate URL to prevent SSRF - only send API key to trusted Anthropic domains
-        if not self._validate_results_url(results_url):
-            raise ValueError(
-                f"Invalid batch results URL: must be HTTPS to an allowed Anthropic domain "
-                f"({', '.join(sorted(ALLOWED_RESULTS_HOSTS))}), got: {results_url}"
-            )
+        return await fetch_batch_results(results_url, self._id_mapping)
 
-        results: dict[str, dict[str, Any]] = {}
-        processed_sanitized_ids: list[str] = []
-
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                results_url,
-                headers={
-                    "x-api-key": os.getenv("ANTHROPIC_API_KEY"),
-                    "anthropic-version": "2023-06-01",
-                },
-            )
-            response.raise_for_status()
-
-            # Results are JSONL format
-            for line in response.text.strip().split("\n"):
-                if not line:
-                    continue
-
-                result_data = json.loads(line)
-                sanitized_id = result_data["custom_id"]
-                original_id = self._id_mapping.get(sanitized_id, sanitized_id)
-                processed_sanitized_ids.append(sanitized_id)
-                result = result_data["result"]
-
-                if result["type"] == "succeeded":
-                    message = result["message"]
-                    content = None
-                    thinking = None
-
-                    for block in message.get("content", []):
-                        if block.get("type") == "text":
-                            content = block.get("text", "")
-                        elif block.get("type") == "thinking":
-                            thinking = block.get("thinking", "")
-                        elif block.get("type") == "tool_use":
-                            tool_input = block.get("input", {})
-                            if isinstance(tool_input, dict) and "$output" in tool_input and len(tool_input) == 1:
-                                tool_input = tool_input["$output"]
-                            content = json.dumps(tool_input)
-
-                    results[original_id] = {
-                        "success": True,
-                        "content": content,
-                        "thinking": thinking,
-                        "usage": message.get("usage"),
-                        "model": message.get("model"),
-                        "stop_reason": message.get("stop_reason"),
-                    }
-
-                elif result["type"] == "errored":
-                    error = result.get("error", {})
-                    if error.get("type") == "error" and "error" in error:
-                        inner_error = error["error"]
-                        error_msg = (
-                            f"{inner_error.get('type', 'unknown')}: {inner_error.get('message', 'Unknown error')}"
-                        )
-                    else:
-                        error_msg = f"{error.get('type', 'unknown')}: {error.get('message', 'Unknown error')}"
-                    results[original_id] = {
-                        "success": False,
-                        "error": error_msg,
-                    }
-
-                elif result["type"] in ("canceled", "expired"):
-                    results[original_id] = {
-                        "success": False,
-                        "error": f"Request {result['type']}",
-                    }
-
-        # Cleanup processed ID mappings to prevent unbounded memory growth
-        for sanitized_id in processed_sanitized_ids:
-            self._id_mapping.pop(sanitized_id, None)
-
-        return results
+    # Batch retry and timeout
 
     async def _handle_batch_timeout(
         self,
@@ -952,11 +789,6 @@ class LLMBroker:
                 queue["batches"][batch_id]["retry_count"] = retry_count + 1
 
                 await self._persistence.write_queue(queue)
-
-    async def flush(self) -> None:
-        """Manually flush all queued requests as a batch."""
-        async with self._submission_lock:
-            await self._submit_batch()
 
 
 # Global broker instance

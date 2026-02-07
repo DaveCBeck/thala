@@ -11,6 +11,7 @@ from workflows.enhance.editing.prompts import (
     STRUCTURE_ANALYSIS_SYSTEM,
     STRUCTURE_ANALYSIS_USER,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
                 max_tokens=8000,
                 thinking_budget=thinking_budget if use_opus else None,
                 cache=False if thinking_budget else True,
+                batch_policy=BatchPolicy.PREFER_SPEED,
             ),
         )
 

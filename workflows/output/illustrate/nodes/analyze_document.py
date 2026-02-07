@@ -3,6 +3,7 @@
 import logging
 import re
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..config import IllustrateConfig
@@ -59,7 +60,10 @@ async def analyze_document_node(state: IllustrateState) -> dict:
                 prefer_pd_header=config.header_prefer_public_domain,
             ),
             schema=DocumentAnalysis,
-            config=InvokeConfig(max_tokens=4000),
+            config=InvokeConfig(
+                max_tokens=4000,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         # Build image plan list

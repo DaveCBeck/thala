@@ -22,6 +22,7 @@ from workflows.enhance.editing.prompts import (
     CONSOLIDATE_CONTENT_SYSTEM,
     CONSOLIDATE_CONTENT_USER,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
@@ -156,7 +157,10 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 tier=tier,
                 system=GENERATE_INTRODUCTION_SYSTEM,
                 user=user_prompt,
-                config=InvokeConfig(max_tokens=2000),
+                config=InvokeConfig(
+                    max_tokens=2000,
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                ),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -179,7 +183,10 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 tier=tier,
                 system=GENERATE_CONCLUSION_SYSTEM,
                 user=user_prompt,
-                config=InvokeConfig(max_tokens=2000),
+                config=InvokeConfig(
+                    max_tokens=2000,
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                ),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -198,7 +205,10 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 tier=tier,
                 system=GENERATE_SYNTHESIS_SYSTEM,
                 user=user_prompt,
-                config=InvokeConfig(max_tokens=2000),
+                config=InvokeConfig(
+                    max_tokens=2000,
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                ),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 
@@ -229,7 +239,10 @@ async def execute_generation_edit_worker(state: dict) -> dict[str, Any]:
                 tier=tier,
                 system=GENERATE_TRANSITION_SYSTEM,
                 user=user_prompt,
-                config=InvokeConfig(max_tokens=500),
+                config=InvokeConfig(
+                    max_tokens=500,
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                ),
             )
             generated = _strip_generated_header(response.content.strip(), edit_type)
 

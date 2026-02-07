@@ -8,6 +8,7 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .prompts import CLUSTER_ANALYSIS_SYSTEM_PROMPT, CLUSTER_ANALYSIS_USER_TEMPLATE
@@ -82,7 +83,10 @@ Limitations: {"; ".join(summary.get("limitations", [])[:2])}"""
             system=CLUSTER_ANALYSIS_SYSTEM_PROMPT,
             user=prompts,
             schema=ClusterAnalysisOutput,
-            config=InvokeConfig(max_tokens=4096),
+            config=InvokeConfig(
+                max_tokens=4096,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
     except Exception as e:
         logger.error(f"Cluster analysis batch failed: {e}")

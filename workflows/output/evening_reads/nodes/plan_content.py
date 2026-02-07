@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..schemas import PlanningOutput
@@ -46,7 +47,10 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
             system=system_prompt,
             user=user_prompt,
             schema=PlanningOutput,
-            config=InvokeConfig(max_tokens=4096),
+            config=InvokeConfig(
+                max_tokens=4096,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         # Convert to state format

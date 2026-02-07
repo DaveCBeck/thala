@@ -5,6 +5,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 from workflows.enhance.supervision.shared.prompts import (
     INTEGRATOR_SYSTEM,
@@ -100,7 +101,12 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
             tier=ModelTier.OPUS,
             system=INTEGRATOR_SYSTEM,
             user=user_prompt,
-            config=InvokeConfig(thinking_budget=8000, max_tokens=32000, cache=False),
+            config=InvokeConfig(
+                thinking_budget=8000,
+                max_tokens=32000,
+                cache=False,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         # Extract the integrated review from response

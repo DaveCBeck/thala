@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any, Literal
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from ..prompts import (
@@ -180,7 +181,10 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
             tier=ModelTier.OPUS,
             system=system_prompt,
             user=user_prompt,
-            config=InvokeConfig(max_tokens=MAX_TOKENS),
+            config=InvokeConfig(
+                max_tokens=MAX_TOKENS,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+            ),
         )
 
         content = response.content if isinstance(response.content, str) else str(response.content)

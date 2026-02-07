@@ -39,7 +39,7 @@ print(result.confidence)
 
 ### Batch Request
 
-For multiple items, pass a list of `StructuredRequest`. Set `prefer_batch_api=True` to use the Anthropic Batch API for 50% cost savings:
+For multiple items, pass a list of `StructuredRequest`:
 
 ```python
 requests = [
@@ -111,7 +111,6 @@ result = await get_structured_output(
 
     # Strategy hints
     use_json_schema_method=True,  # Stricter schema validation
-    prefer_batch_api=True,  # Route requests through batch API (50% savings)
 
     # Reliability
     max_retries=2,
@@ -133,7 +132,6 @@ config = StructuredOutputConfig(
     max_tokens=8192,
     thinking_budget=8000,
     use_json_schema_method=True,
-    prefer_batch_api=False,  # Set True for cost savings (or use THALA_PREFER_BATCH_API env var)
     max_retries=3,
     enable_prompt_cache=True,
     cache_ttl="5m",  # or "1h"
@@ -156,10 +154,7 @@ The function auto-selects the best strategy:
 | Condition | Strategy | Cost |
 |-----------|----------|------|
 | Tools provided | `TOOL_AGENT` | Standard |
-| `prefer_batch_api=True` | `BATCH_TOOL_CALL` | 50% savings |
 | Default | `LANGCHAIN_STRUCTURED` | Standard |
-
-**Environment Variable:** Set `THALA_PREFER_BATCH_API=true` to route all requests through the batch API by default. This is useful for development/testing or batch processing pipelines where latency isn't critical.
 
 You can force a strategy:
 
@@ -357,7 +352,7 @@ results = await get_structured_output(
 
 ## Cost Optimization Tips
 
-1. **Use `prefer_batch_api=True` when latency isn't critical**: 50% cost reduction on requests
+1. **Use the LLM Broker in Balanced/Economical mode**: 50% cost reduction on batch-eligible requests
 2. **Enable prompt caching**: 90% savings on repeated system prompts
 3. **Use HAIKU for simple tasks**: Classification, simple extraction
 4. **Reserve OPUS for complex reasoning**: Deep analysis, multi-step logic
@@ -396,27 +391,3 @@ result = await get_structured_output(
 | `economical` | Aggressive batching - 50% savings |
 
 See [Central LLM Batch Broker](../solutions/llm-issues/central-llm-batch-broker.md) for full documentation.
-
-### Legacy Batch API Configuration
-
-When broker is disabled, use `prefer_batch_api` directly:
-
-```python
-# Option 1: Per-call
-result = await get_structured_output(
-    output_schema=MySchema,
-    user_prompt="...",
-    prefer_batch_api=True,  # 50% savings, higher latency
-)
-
-# Option 2: Environment variable (affects all calls)
-# export THALA_PREFER_BATCH_API=true
-
-# Option 3: Config object
-config = StructuredOutputConfig(prefer_batch_api=True)
-result = await get_structured_output(
-    output_schema=MySchema,
-    user_prompt="...",
-    config=config,
-)
-```

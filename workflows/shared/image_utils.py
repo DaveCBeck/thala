@@ -3,6 +3,7 @@
 import logging
 import os
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,10 @@ async def generate_image_prompt(
             tier=ModelTier.SONNET,
             system=IMAGE_PROMPT_SYSTEM,
             user=IMAGE_PROMPT_USER.format(title=title, content=truncated_content),
-            config=InvokeConfig(max_tokens=500),
+            config=InvokeConfig(
+                max_tokens=500,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+            ),
         )
 
         prompt = (

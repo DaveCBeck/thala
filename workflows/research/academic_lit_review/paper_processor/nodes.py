@@ -15,6 +15,7 @@ from workflows.research.academic_lit_review.state import (
     PaperMetadata,
     PaperSummary,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .fallback import FallbackManager
@@ -374,7 +375,10 @@ Extract structured information based on this metadata."""
             system=system_prompt,
             user=prompts,
             schema=MetadataSummarySchema,
-            config=InvokeConfig(max_tokens=1024),
+            config=InvokeConfig(
+                max_tokens=1024,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+            ),
         )
     except Exception as e:
         logger.error(f"Metadata extraction batch failed: {e}")

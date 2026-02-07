@@ -21,6 +21,7 @@ from workflows.research.academic_lit_review.state import (
     LitReviewInput,
     QualitySettings,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig, extract_response_content
 
 from workflows.enhance.supervision.shared.mini_review import (
@@ -98,7 +99,10 @@ async def analyze_for_bases_node(state: Loop2State) -> dict:
             system=LOOP2_ANALYZER_SYSTEM,
             user=user_prompt,
             schema=LiteratureBaseDecision,
-            config=InvokeConfig(max_tokens=2048),
+            config=InvokeConfig(
+                max_tokens=2048,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         logger.debug(f"Analyzer decision: {response.action}")
@@ -278,7 +282,12 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             tier=ModelTier.OPUS,
             system=LOOP2_INTEGRATOR_SYSTEM,
             user=user_prompt,
-            config=InvokeConfig(thinking_budget=8000, max_tokens=32000, cache=False),
+            config=InvokeConfig(
+                thinking_budget=8000,
+                max_tokens=32000,
+                cache=False,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         updated_review = extract_response_content(response)

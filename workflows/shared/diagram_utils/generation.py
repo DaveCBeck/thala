@@ -6,6 +6,7 @@ and generating SVG diagrams using Claude.
 
 import logging
 
+from core.llm_broker import BatchPolicy
 from ..llm_utils import invoke, InvokeConfig, ModelTier
 from .prompts import (
     DIAGRAM_ANALYSIS_SYSTEM,
@@ -98,7 +99,10 @@ async def generate_svg_diagram(
             tier=tier,
             system=system_prompt,
             user=user_prompt,
-            config=InvokeConfig(max_tokens=4000),
+            config=InvokeConfig(
+                max_tokens=4000,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         svg_content = (

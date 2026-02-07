@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.language import get_translated_prompt
 from ...types import SynthesisState
@@ -87,7 +88,10 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         tier=ModelTier.SONNET,
         system=intro_system,
         user=intro_prompt,
-        config=InvokeConfig(max_tokens=4096),
+        config=InvokeConfig(
+            max_tokens=4096,
+            batch_policy=BatchPolicy.PREFER_SPEED,
+        ),
     )
 
     introduction = (
@@ -114,7 +118,10 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         tier=ModelTier.SONNET,
         system=method_system,
         user=method_prompt,
-        config=InvokeConfig(max_tokens=4096),
+        config=InvokeConfig(
+            max_tokens=4096,
+            batch_policy=BatchPolicy.PREFER_SPEED,
+        ),
     )
 
     methodology = (
@@ -195,7 +202,10 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         tier=ModelTier.SONNET,
         system=discussion_system,
         user=discussion_prompt,
-        config=InvokeConfig(max_tokens=4096),
+        config=InvokeConfig(
+            max_tokens=4096,
+            batch_policy=BatchPolicy.PREFER_SPEED,
+        ),
     )
 
     discussion = (
@@ -219,7 +229,10 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         tier=ModelTier.SONNET,
         system=conclusions_system,
         user=conclusions_prompt,
-        config=InvokeConfig(max_tokens=4096),
+        config=InvokeConfig(
+            max_tokens=4096,
+            batch_policy=BatchPolicy.PREFER_SPEED,
+        ),
     )
 
     conclusions = (

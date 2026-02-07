@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from ..prompts import EDITORIAL_STANCE_SECTION, OVERVIEW_SYSTEM_PROMPT_FULL, OVERVIEW_USER_TEMPLATE
@@ -103,7 +104,10 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
             tier=ModelTier.OPUS,
             system=system_prompt,
             user=user_prompt,
-            config=InvokeConfig(max_tokens=MAX_TOKENS),
+            config=InvokeConfig(
+                max_tokens=MAX_TOKENS,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         content = response.content if isinstance(response.content, str) else str(response.content)

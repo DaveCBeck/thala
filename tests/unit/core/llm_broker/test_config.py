@@ -114,7 +114,7 @@ class TestBrokerConfig:
         config = BrokerConfig()
 
         assert config.max_retries_for_mode(UserMode.FAST) == 0
-        assert config.max_retries_for_mode(UserMode.BALANCED) == 2
+        assert config.max_retries_for_mode(UserMode.BALANCED) == 1
         assert config.max_retries_for_mode(UserMode.ECONOMICAL) == 3
 
 

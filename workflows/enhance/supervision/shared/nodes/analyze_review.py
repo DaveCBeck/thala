@@ -5,6 +5,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.enhance.supervision.shared.types import (
     SupervisorDecision,
@@ -87,7 +88,12 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
             system=SUPERVISOR_SYSTEM,
             user=user_prompt,
             schema=SupervisorDecision,
-            config=InvokeConfig(thinking_budget=8000, max_tokens=12096, cache=False),
+            config=InvokeConfig(
+                thinking_budget=8000,
+                max_tokens=12096,
+                cache=False,
+                batch_policy=BatchPolicy.PREFER_SPEED,
+            ),
         )
 
         logger.info(f"Supervisor decision: action={decision.action}, reasoning={decision.reasoning[:100]}...")
