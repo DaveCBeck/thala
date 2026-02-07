@@ -536,14 +536,16 @@ class LLMBroker:
             try:
                 kwargs = build_message_params(request)
 
-                # Check if 1M context needed
+                # Use streaming to avoid 10-minute timeout on long requests
                 if request.model == ModelTier.SONNET_1M.value:
-                    response = await self._async_client.beta.messages.create(
+                    async with self._async_client.beta.messages.stream(
                         **kwargs,
                         betas=[CONTEXT_1M_BETA],
-                    )
+                    ) as stream:
+                        response = await stream.get_final_message()
                 else:
-                    response = await self._async_client.messages.create(**kwargs)
+                    async with self._async_client.messages.stream(**kwargs) as stream:
+                        response = await stream.get_final_message()
 
                 content, thinking = parse_response_content(response)
 

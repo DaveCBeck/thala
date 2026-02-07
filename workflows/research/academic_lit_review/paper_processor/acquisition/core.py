@@ -244,11 +244,25 @@ async def run_paper_pipeline(
         marker_queue: asyncio.Queue = asyncio.Queue()
         llm_queue: asyncio.Queue = asyncio.Queue()
 
+        # Coordination: acquisition_producer must wait for marker tasks to complete
+        # before checking retry_queue, otherwise fallbacks injected by marker_consumer
+        # can be missed (race condition).
+        _marker_pending = 0
+        _marker_idle = asyncio.Event()
+        _marker_idle.set()  # Starts idle (no items yet)
+
         # Counters for progress logging
         acquired_count = 0
         processed_count = 0
         total_to_acquire = len(papers_to_acquire)
         last_checkpoint_count = 0  # Track last checkpoint for interval-based saving
+
+        async def _send_to_marker(item: tuple) -> None:
+            """Put item into marker_queue and track for idle coordination."""
+            nonlocal _marker_pending
+            _marker_pending += 1
+            _marker_idle.clear()
+            await marker_queue.put(item)
 
         async def acquisition_producer():
             """Submit jobs with rate limiting, poll completions, push to queue."""
@@ -294,7 +308,7 @@ async def run_paper_pipeline(
                             acquired_count += 1
                             acquired_paths[doi] = source
                             logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired via OA (streaming): {doi}")
-                            await marker_queue.put((doi, source, papers_by_doi[doi], is_markdown))
+                            await _send_to_marker((doi, source, papers_by_doi[doi], is_markdown))
                             return doi, None, None  # Signal OA handled
 
                     # Fall back to retrieve-academic
@@ -383,12 +397,23 @@ async def run_paper_pipeline(
                             acquired_paths[doi] = local_path
                             acquired_count += 1
                             logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}")
-                            await marker_queue.put((doi, local_path, papers_by_doi[doi], False))
+                            await _send_to_marker((doi, local_path, papers_by_doi[doi], False))
 
-                # Process retry queue items (fallback papers from failures)
-                while not retry_queue.empty():
-                    try:
-                        fallback_paper = retry_queue.get_nowait()
+                # Process retry queue items (fallback papers from marker failures).
+                # Wait for marker to finish processing before checking, to avoid
+                # a race where marker_consumer injects fallbacks after we've
+                # already checked the queue and sent the shutdown sentinel.
+                while True:
+                    await _marker_idle.wait()
+                    if retry_queue.empty():
+                        break
+
+                    while not retry_queue.empty():
+                        try:
+                            fallback_paper = retry_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+
                         fallback_doi = fallback_paper.get("doi")
                         oa_url = fallback_paper.get("oa_url")
                         safe_doi = fallback_doi.replace("/", "_").replace(":", "_")
@@ -399,7 +424,7 @@ async def run_paper_pipeline(
                             source, is_markdown = await try_oa_download(oa_url, local_path, fallback_doi)
                             if source:
                                 acquired_paths[fallback_doi] = source
-                                await marker_queue.put((fallback_doi, source, fallback_paper, is_markdown))
+                                await _send_to_marker((fallback_doi, source, fallback_paper, is_markdown))
                                 logger.debug(f"Fallback acquired via OA: {fallback_doi}")
                                 continue
 
@@ -414,14 +439,11 @@ async def run_paper_pipeline(
                                 timeout=ACQUISITION_TIMEOUT,
                             )
                             acquired_paths[fallback_doi] = path
-                            await marker_queue.put((fallback_doi, path, fallback_paper, False))
+                            await _send_to_marker((fallback_doi, path, fallback_paper, False))
                             logger.debug(f"Fallback acquired via retrieve-academic: {fallback_doi}")
                         except Exception as e:
                             logger.warning(f"Fallback acquisition failed for {fallback_doi}: {e}")
                             acquisition_failed.append(fallback_doi)
-
-                    except asyncio.QueueEmpty:
-                        break
 
             finally:
                 # Always signal end of acquisitions to marker stage
@@ -491,6 +513,14 @@ async def run_paper_pipeline(
                         exc_info=True,
                     )
 
+            def _on_marker_task_done(task: asyncio.Task) -> None:
+                """Track marker task completion for idle coordination."""
+                nonlocal _marker_pending
+                active_tasks.discard(task)
+                _marker_pending -= 1
+                if _marker_pending == 0:
+                    _marker_idle.set()
+
             while True:
                 item = await marker_queue.get()
 
@@ -507,7 +537,7 @@ async def run_paper_pipeline(
                 # Create marker task
                 task = asyncio.create_task(process_marker_item(doi, source, paper, is_markdown))
                 active_tasks.add(task)
-                task.add_done_callback(active_tasks.discard)
+                task.add_done_callback(_on_marker_task_done)
 
         async def llm_consumer():
             """Stage 2: Process documents through document processing workflow.

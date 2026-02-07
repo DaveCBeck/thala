@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,6 +18,28 @@ from core.llm_broker.schemas import (
     UserMode,
 )
 from workflows.shared.llm_utils import ModelTier
+
+
+def _mock_stream(response=None, *, error=None, delay=0, callback=None):
+    """Create a mock for messages.stream() returning an async context manager."""
+
+    @asynccontextmanager
+    async def stream_fn(**kwargs):
+        if error:
+            raise error
+        mock_stream = MagicMock()
+
+        async def get_final():
+            if delay:
+                await asyncio.sleep(delay)
+            if callback:
+                callback()
+            return response
+
+        mock_stream.get_final_message = get_final
+        yield mock_stream
+
+    return stream_fn
 
 
 @pytest.fixture
@@ -337,9 +360,9 @@ class TestFutureResolution:
         mock_response.model = "claude-sonnet-4-5-20250929"
         mock_response.stop_reason = "end_turn"
 
-        # Mock both regular and beta paths (SONNET and SONNET_1M have same model value)
-        broker._async_client.messages.create = AsyncMock(return_value=mock_response)
-        broker._async_client.beta.messages.create = AsyncMock(return_value=mock_response)
+        # Mock both regular and beta streaming paths
+        broker._async_client.messages.stream = _mock_stream(mock_response)
+        broker._async_client.beta.messages.stream = _mock_stream(mock_response)
 
         future = await broker.request(
             prompt="Test",
@@ -357,8 +380,8 @@ class TestFutureResolution:
     async def test_future_resolved_on_sync_failure(self, broker):
         """Test Future is resolved with error on sync failure."""
         # Mock both paths
-        broker._async_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
-        broker._async_client.beta.messages.create = AsyncMock(side_effect=Exception("API Error"))
+        broker._async_client.messages.stream = _mock_stream(error=Exception("API Error"))
+        broker._async_client.beta.messages.stream = _mock_stream(error=Exception("API Error"))
 
         future = await broker.request(
             prompt="Test",
@@ -384,8 +407,8 @@ class TestMetrics:
         mock_response.model = "test"
         mock_response.stop_reason = "end_turn"
 
-        broker._async_client.messages.create = AsyncMock(return_value=mock_response)
-        broker._async_client.beta.messages.create = AsyncMock(return_value=mock_response)
+        broker._async_client.messages.stream = _mock_stream(mock_response)
+        broker._async_client.beta.messages.stream = _mock_stream(mock_response)
 
         await broker.request(
             prompt="Test",
@@ -435,18 +458,14 @@ class TestSyncTaskTracking:
     @pytest.mark.asyncio
     async def test_sync_tasks_tracked_in_set(self, broker):
         """Test that sync execution tasks are tracked in _sync_tasks set."""
-        # Create a slow mock response to keep the task running
-        async def slow_create(**kwargs):
-            await asyncio.sleep(0.5)
-            mock_response = MagicMock()
-            mock_response.content = [MagicMock(type="text", text="Response")]
-            mock_response.usage = MagicMock(input_tokens=10, output_tokens=20)
-            mock_response.model = "test"
-            mock_response.stop_reason = "end_turn"
-            return mock_response
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(type="text", text="Response")]
+        mock_response.usage = MagicMock(input_tokens=10, output_tokens=20)
+        mock_response.model = "test"
+        mock_response.stop_reason = "end_turn"
 
-        broker._async_client.messages.create = slow_create
-        broker._async_client.beta.messages.create = slow_create
+        broker._async_client.messages.stream = _mock_stream(mock_response, delay=0.5)
+        broker._async_client.beta.messages.stream = _mock_stream(mock_response, delay=0.5)
 
         # Make a sync request
         await broker.request(
@@ -476,19 +495,18 @@ class TestSyncTaskTracking:
         # Track whether task completed before stop returned
         task_completed = False
 
-        async def slow_create(**kwargs):
+        def mark_completed():
             nonlocal task_completed
-            await asyncio.sleep(0.3)
             task_completed = True
-            mock_response = MagicMock()
-            mock_response.content = [MagicMock(type="text", text="Response")]
-            mock_response.usage = MagicMock(input_tokens=10, output_tokens=20)
-            mock_response.model = "test"
-            mock_response.stop_reason = "end_turn"
-            return mock_response
 
-        broker._async_client.messages.create = slow_create
-        broker._async_client.beta.messages.create = slow_create
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(type="text", text="Response")]
+        mock_response.usage = MagicMock(input_tokens=10, output_tokens=20)
+        mock_response.model = "test"
+        mock_response.stop_reason = "end_turn"
+
+        broker._async_client.messages.stream = _mock_stream(mock_response, delay=0.3, callback=mark_completed)
+        broker._async_client.beta.messages.stream = _mock_stream(mock_response, delay=0.3, callback=mark_completed)
 
         # Initialize without background task to avoid shutdown coordinator issues
         await broker._persistence.initialize()
@@ -522,12 +540,8 @@ class TestSyncTaskTracking:
         import logging
 
         # Make the API call raise an exception
-        broker._async_client.messages.create = AsyncMock(
-            side_effect=Exception("Simulated API failure")
-        )
-        broker._async_client.beta.messages.create = AsyncMock(
-            side_effect=Exception("Simulated API failure")
-        )
+        broker._async_client.messages.stream = _mock_stream(error=Exception("Simulated API failure"))
+        broker._async_client.beta.messages.stream = _mock_stream(error=Exception("Simulated API failure"))
 
         with caplog.at_level(logging.ERROR):
             await broker.request(
@@ -556,9 +570,7 @@ class TestSyncTaskTracking:
         )
 
         # Mock to avoid actual API call
-        broker._async_client.messages.create = AsyncMock(
-            side_effect=Exception("Expected")
-        )
+        broker._async_client.messages.stream = _mock_stream(error=Exception("Expected"))
 
         task = broker._spawn_sync_task(request)
 

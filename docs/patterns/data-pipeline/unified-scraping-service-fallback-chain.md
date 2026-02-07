@@ -579,7 +579,7 @@ FIRECRAWL_SKIP_LOCAL=false                    # Set true to skip local tier
 
 - **Rate limiting uses `time.monotonic()`**: Immune to system clock changes
 - **Lazy init race condition**: Low risk with singleton pattern, add lock if concurrent init needed
-- **No overall timeout wrapper**: Individual operations have timeouts, but no guaranteed upper bound
+- **Scrape timeout wrapper**: `asyncio.wait_for` wraps each Firecrawl scrape call (90s) to prevent indefinite hangs
 
 ## Related Patterns
 

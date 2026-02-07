@@ -8,6 +8,7 @@ These tests verify that:
 """
 
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -95,9 +96,15 @@ async def mock_broker(enabled_broker_config):
     )
     mock_response.stop_reason = "tool_use"
 
-    # Set up async mock for messages.create
+    # Set up async mock for messages.stream
+    @asynccontextmanager
+    async def mock_stream(**kwargs):
+        stream = MagicMock()
+        stream.get_final_message = AsyncMock(return_value=mock_response)
+        yield stream
+
     broker._async_client.messages = MagicMock()
-    broker._async_client.messages.create = AsyncMock(return_value=mock_response)
+    broker._async_client.messages.stream = mock_stream
 
     # Initialize persistence without starting background task
     await broker._persistence.initialize()

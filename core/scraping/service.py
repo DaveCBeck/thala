@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRY_ATTEMPTS = 2
 RETRY_INITIAL_DELAY = 2.0
+# Timeout for Firecrawl SDK scrape calls. The SDK has no built-in timeout,
+# so a stuck request can hang the event loop indefinitely.
+FIRECRAWL_SCRAPE_TIMEOUT = 90.0
 
 
 class ScrapeResult(BaseModel):
@@ -197,7 +200,10 @@ class ScraperService:
             formats.append("links")
 
         try:
-            result = await client.scrape(url, formats=formats)
+            result = await asyncio.wait_for(
+                client.scrape(url, formats=formats),
+                timeout=FIRECRAWL_SCRAPE_TIMEOUT,
+            )
 
             # Check for blocked response
             if self._is_blocked_response(result):
@@ -247,7 +253,10 @@ class ScraperService:
             formats.append("links")
 
         try:
-            result = await client.scrape(url, formats=formats, proxy="stealth")
+            result = await asyncio.wait_for(
+                client.scrape(url, formats=formats, proxy="stealth"),
+                timeout=FIRECRAWL_SCRAPE_TIMEOUT,
+            )
 
             # Check for blocked response
             if self._is_blocked_response(result):

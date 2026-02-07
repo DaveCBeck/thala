@@ -163,15 +163,20 @@ class MarkerProcessor:
         markdown_only: bool = False,
     ) -> dict[str, Any]:
         """Run the actual Marker conversion and return all formats."""
+        has_llm_key = bool(self.settings.google_api_key)
+        use_llm = preset["use_llm"] and has_llm_key
+
+        if preset["use_llm"] and not has_llm_key:
+            logger.warning("LLM mode requested but no google_api_key configured - falling back to non-LLM mode")
+
         config = {
             "force_ocr": preset["force_ocr"],
-            "use_llm": preset["use_llm"],
+            "use_llm": use_llm,
             "batch_multiplier": preset["batch_multiplier"],
             "languages": langs,
         }
 
-        # Pass Gemini API key for LLM mode
-        if preset["use_llm"] and self.settings.google_api_key:
+        if use_llm:
             config["gemini_api_key"] = self.settings.google_api_key
 
         # Create converter without specifying renderer (we'll render manually)
