@@ -76,8 +76,8 @@ async def run_task_workflow(
             langsmith_run_id = str(uuid.uuid4())
             logger.info(f"Starting task {task_id[:8]} ({task_type}): {task_identifier}")
 
-        # Mark as started
-        queue_manager.mark_started(task_id, langsmith_run_id)
+        # Mark as started (sync flock I/O — run in thread pool)
+        await asyncio.to_thread(queue_manager.mark_started, task_id, langsmith_run_id)
         if not resume_from:
             await checkpoint_mgr.start_work(task_id, task_type, langsmith_run_id)
 
@@ -104,14 +104,13 @@ async def run_task_workflow(
 
             async def _update():
                 await checkpoint_mgr.update_checkpoint(task_id, phase, phase_outputs=phase_outputs, **kwargs)
+                # update_phase uses fcntl.flock — run in thread pool to avoid blocking event loop
+                await asyncio.to_thread(queue_manager.update_phase, task_id, phase)
 
             # Schedule the async checkpoint update and track it
             # Note: Use different variable name to avoid shadowing outer 'task' parameter
             checkpoint_task = asyncio.create_task(_update())
             pending_checkpoint_tasks.append(checkpoint_task)
-
-            # Sync operations
-            queue_manager.update_phase(task_id, phase)
 
             # Check budget between phases
             should_proceed, reason = budget_tracker.should_proceed()
@@ -150,17 +149,17 @@ async def run_task_workflow(
 
         # Mark complete or failed
         if result.get("status") == "success":
-            queue_manager.mark_completed(task_id)
+            await asyncio.to_thread(queue_manager.mark_completed, task_id)
             await checkpoint_mgr.complete_work(task_id)
             logger.info(f"Task {task_id[:8]} completed successfully")
         elif result.get("status") == "partial":
             # Partial success - mark complete but log warnings
-            queue_manager.mark_completed(task_id)
+            await asyncio.to_thread(queue_manager.mark_completed, task_id)
             await checkpoint_mgr.complete_work(task_id)
             logger.warning(f"Task {task_id[:8]} completed with errors: {result.get('errors')}")
         else:
             error = str(result.get("errors", "Unknown error"))
-            queue_manager.mark_failed(task_id, error)
+            await asyncio.to_thread(queue_manager.mark_failed, task_id, error)
             await checkpoint_mgr.fail_work(task_id)
             logger.error(f"Task {task_id[:8]} failed: {error}")
 
@@ -177,7 +176,7 @@ async def run_task_workflow(
         logger.error(f"Task {task_id[:8]} failed with exception: {e}")
         # Ensure pending checkpoints complete before marking failed
         await await_pending_checkpoints()
-        queue_manager.mark_failed(task_id, str(e))
+        await asyncio.to_thread(queue_manager.mark_failed, task_id, str(e))
         await checkpoint_mgr.fail_work(task_id)
         raise
 

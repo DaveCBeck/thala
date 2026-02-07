@@ -6,29 +6,25 @@ first access within the current event loop.
 """
 
 import asyncio
+import os
 
 _imagen_semaphore: asyncio.Semaphore | None = None
 _openalex_semaphore: asyncio.Semaphore | None = None
 
 
 def get_imagen_semaphore() -> asyncio.Semaphore:
-    """Get or create the global Imagen API semaphore (limit: 10)."""
+    """Get or create the global Imagen API semaphore."""
     global _imagen_semaphore
     if _imagen_semaphore is None:
-        _imagen_semaphore = asyncio.Semaphore(10)
+        limit = int(os.environ.get("THALA_IMAGEN_CONCURRENCY", "10"))
+        _imagen_semaphore = asyncio.Semaphore(limit)
     return _imagen_semaphore
 
 
 def get_openalex_semaphore() -> asyncio.Semaphore:
-    """Get or create the global OpenAlex API semaphore (limit: 20)."""
+    """Get or create the global OpenAlex API semaphore."""
     global _openalex_semaphore
     if _openalex_semaphore is None:
-        _openalex_semaphore = asyncio.Semaphore(20)
+        limit = int(os.environ.get("THALA_OPENALEX_CONCURRENCY", "20"))
+        _openalex_semaphore = asyncio.Semaphore(limit)
     return _openalex_semaphore
-
-
-def reset_semaphores() -> None:
-    """Reset semaphores between asyncio.run() invocations (e.g. in tests)."""
-    global _imagen_semaphore, _openalex_semaphore
-    _imagen_semaphore = None
-    _openalex_semaphore = None
