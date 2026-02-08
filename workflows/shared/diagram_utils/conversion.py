@@ -7,8 +7,7 @@ import logging
 
 from .validation import (
     extract_validation_error_type,
-    sanitize_svg_text_entities,
-    validate_svg_xml,
+    validate_and_sanitize_svg,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,6 +19,9 @@ def convert_svg_to_png(
     background_color: str = "#ffffff",
 ) -> bytes | None:
     """Convert SVG to PNG using CairoSVG.
+
+    Uses validate_and_sanitize_svg to clean up malformed SVG before
+    attempting conversion.
 
     Args:
         svg_content: Raw SVG string
@@ -35,19 +37,12 @@ def convert_svg_to_png(
         logger.error("cairosvg not installed. Run: pip install cairosvg")
         return None
 
-    # Validate and sanitize SVG before conversion
-    is_valid, error = validate_svg_xml(svg_content)
-    if not is_valid:
-        error_type = extract_validation_error_type(Exception(error or ""))
-        logger.warning(
-            f"SVG validation failed ({error_type}): {error}, attempting sanitization"
-        )
-        svg_content = sanitize_svg_text_entities(svg_content)
-
-        # Re-validate after sanitization
-        is_valid_after, error_after = validate_svg_xml(svg_content)
-        if not is_valid_after:
-            logger.error(f"SVG still invalid after sanitization: {error_after}")
+    # Unified validation + sanitization
+    sanitized = validate_and_sanitize_svg(svg_content)
+    if sanitized is None:
+        logger.error("SVG validation/sanitization failed completely")
+        return None
+    svg_content = sanitized
 
     try:
         png_bytes = cairosvg.svg2png(

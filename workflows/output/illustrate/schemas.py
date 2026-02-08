@@ -1,8 +1,24 @@
 """Pydantic schemas for LLM structured output in illustrate workflow."""
 
-from typing import Literal
+import json
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _parse_json_string_list(v: Any) -> list:
+    """Handle LLM returning JSON string instead of list."""
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        if v.strip():
+            return [v]
+        return []
+    return v if v is not None else []
 
 
 class ImageLocationPlan(BaseModel):
@@ -35,6 +51,36 @@ class ImageLocationPlan(BaseModel):
     search_query: str | None = Field(
         default=None,
         description="For public domain images, the search query to use",
+    )
+    literal_queries: list[str] = Field(
+        default_factory=list,
+        description="Search terms for literal depictions of the topic.",
+    )
+    conceptual_queries: list[str] = Field(
+        default_factory=list,
+        description="Search terms that EVOKE the feeling/mood, NOT literal depictions.",
+    )
+    query_strategy: Literal["literal", "conceptual", "both"] | None = Field(
+        default=None,
+        description="Which query type best matches the brief's intent.",
+    )
+    diagram_subtype: (
+        Literal[
+            "flowchart",
+            "sequence",
+            "concept_map",
+            "network_graph",
+            "hierarchy",
+            "dependency_tree",
+            "custom_artistic",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description="For diagrams: subtype determines rendering engine. "
+        "flowchart/sequence/concept_map → Mermaid, "
+        "network_graph/hierarchy/dependency_tree → Graphviz, "
+        "custom_artistic → raw SVG.",
     )
 
 
@@ -81,6 +127,11 @@ class VisionReviewResult(BaseModel):
         description="If retry recommended, an improved brief/prompt",
     )
 
+    @field_validator("issues", mode="before")
+    @classmethod
+    def parse_issues_json_string(cls, v: Any) -> list:
+        return _parse_json_string_list(v)
+
 
 class ImageCompareResult(BaseModel):
     """Result of comparing multiple image candidates."""
@@ -97,6 +148,11 @@ class ImageCompareResult(BaseModel):
         default_factory=list,
         description="Any remaining issues with the selected image (for logging)",
     )
+
+    @field_validator("issues_with_selected", mode="before")
+    @classmethod
+    def parse_issues_json_string(cls, v: Any) -> list:
+        return _parse_json_string_list(v)
 
 
 class HeaderAppositenessResult(BaseModel):

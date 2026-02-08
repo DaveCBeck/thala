@@ -118,9 +118,7 @@ class ImageService:
             return ImageResult.model_validate(cached)
 
         # Determine which providers to use
-        providers = (
-            [preferred_provider] if preferred_provider else self._get_priority_order()
-        )
+        providers = [preferred_provider] if preferred_provider else self._get_priority_order()
 
         if not providers:
             raise NoResultsError(
@@ -130,10 +128,7 @@ class ImageService:
 
         # LLM selection: search all providers in parallel, combine results
         if use_llm_selection and context and len(providers) > 1:
-            tasks = [
-                self._search_provider(source, query, limit=3, orientation=orientation)
-                for source in providers
-            ]
+            tasks = [self._search_provider(source, query, limit=3, orientation=orientation) for source in providers]
             results_lists = await asyncio.gather(*tasks)
             all_results = [r for results in results_lists for r in results]
 
@@ -147,17 +142,13 @@ class ImageService:
                 f"LLM selecting from {len(all_results)} candidates across "
                 f"{sum(1 for r in results_lists if r)} providers"
             )
-            result = await select_best_image(
-                all_results, query, context, custom_selection_criteria
-            )
+            result = await select_best_image(all_results, query, context, custom_selection_criteria)
             set_cached("images", cache_key, result.model_dump())
             return result
 
         # Simple mode: sequential fallback, return first result
         for source in providers:
-            results = await self._search_provider(
-                source, query, limit=1, orientation=orientation
-            )
+            results = await self._search_provider(source, query, limit=1, orientation=orientation)
             if results:
                 result = results[0]
                 set_cached("images", cache_key, result.model_dump())
@@ -168,6 +159,57 @@ class ImageService:
             f"No images found for '{query}' across all providers",
             provider="all",
         )
+
+    async def search_pool(
+        self,
+        queries: list[str],
+        limit_per_query: int = 3,
+        orientation: str | None = None,
+    ) -> list[ImageResult]:
+        """Search multiple queries, aggregate and deduplicate results.
+
+        Returns a pool of candidates for LLM selection.
+
+        Args:
+            queries: List of search queries to run
+            limit_per_query: Max results per query
+            orientation: Image orientation filter
+
+        Returns:
+            Deduplicated list of ImageResult candidates
+        """
+        providers = self._get_priority_order()
+        if not providers:
+            return []
+
+        capped_queries = queries[:4]  # Cap at 4 queries
+
+        # Flatten all query-provider combinations into a single gather
+        tasks = [
+            self._search_provider(source, query, limit=limit_per_query, orientation=orientation)
+            for query in capped_queries
+            for source in providers
+        ]
+
+        results_or_errors = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Collect results, skipping any that raised exceptions
+        all_results: list[ImageResult] = []
+        seen_urls: set[str] = set()
+
+        for i, result in enumerate(results_or_errors):
+            if isinstance(result, BaseException):
+                query_idx = i // len(providers)
+                query = capped_queries[query_idx]
+                logger.warning(f"Query '{query[:50]}' task failed: {result}")
+                continue
+            for r in result:
+                if r.url not in seen_urls:
+                    seen_urls.add(r.url)
+                    all_results.append(r)
+
+        logger.info(f"search_pool: {len(all_results)} unique results from {len(capped_queries)} queries")
+        return all_results
 
     async def close(self) -> None:
         """Close all provider connections."""

@@ -2,7 +2,7 @@
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from workflows.shared.llm_utils import ModelTier, invoke
 
@@ -14,39 +14,77 @@ logger = logging.getLogger(__name__)
 class ImageSelection(BaseModel):
     """LLM output for image selection."""
 
+    model_config = ConfigDict(extra="forbid")
+
     selected_index: int = Field(description="0-based index of best image")
+    brief_compliance_score: int = Field(
+        ge=1, le=5, description="How well the image matches the brief's explicit requests"
+    )
+    mood_score: int = Field(ge=1, le=5, description="How well the image's mood matches the brief's tone")
+    quality_score: int = Field(ge=1, le=5, description="Resolution, composition, professional quality")
+    relevance_score: int = Field(ge=1, le=5, description="Thematic connection to the article")
     reasoning: str = Field(description="Brief explanation of selection")
 
 
-SELECTION_SYSTEM = """You are an image selector for article headers.
-Select the image that best complements the article context without being too literal.
-Consider composition, mood, and thematic relevance."""
+SELECTION_SYSTEM = """You are a magazine photo editor selecting images for a long-form article.
+
+Score each image on these criteria (1-5 each):
+
+1. **Brief Compliance** (MOST IMPORTANT — 40% weight):
+   - Does the image match what the brief EXPLICITLY requests?
+   - If the brief says "metaphorical" or "evocative," reject literal depictions.
+   - If the brief says to AVOID certain imagery, any match is an automatic 1.
+
+2. **Mood/Tone Match** (25% weight):
+   - Does the image's mood match the brief's tone requirements?
+
+3. **Visual Quality** (20% weight):
+   - Resolution, composition, professional quality.
+
+4. **Article Relevance** (15% weight — LOWEST):
+   - Thematic connection to the article.
+   - A beautiful, mood-appropriate image loosely connected to the topic
+     is BETTER than an ugly, literal depiction.
+
+Select the image with the highest weighted total."""
 
 SELECTION_USER = """Select the best image for the given context.
 
-Context: {context}
+<context>
+{context}
+</context>
 
-Search query: {query}
+<query>
+{query}
+</query>
 
-Image candidates:
+<candidates>
 {candidates}
+</candidates>
 
-Choose the image index (0-based) that best matches the context."""
+Choose the image index (0-based) that best matches the context.
+Score the WINNING image on all four criteria."""
 
 SELECTION_USER_WITH_CRITERIA = """Select the best image based on the following criteria.
 
-**Selection Criteria:**
+<criteria>
 {criteria}
+</criteria>
 
-**Document Context:**
+<context>
 {context}
+</context>
 
-**Search query:** {query}
+<query>
+{query}
+</query>
 
-**Image candidates:**
+<candidates>
 {candidates}
+</candidates>
 
-Choose the image index (0-based) that best matches the criteria."""
+Choose the image index (0-based) that best matches the criteria.
+Score the WINNING image on all four criteria."""
 
 
 async def select_best_image(
@@ -68,8 +106,10 @@ async def select_best_image(
     Returns:
         Best matching ImageResult
     """
-    if len(candidates) <= 1:
-        return candidates[0] if candidates else candidates[0]
+    if not candidates:
+        raise ValueError("No candidates provided for image selection")
+    if len(candidates) == 1:
+        return candidates[0]
 
     # Format candidates for LLM
     candidate_text = "\n".join(
@@ -103,7 +143,12 @@ async def select_best_image(
         )
 
         index = max(0, min(result.selected_index, len(candidates) - 1))
-        logger.debug(f"LLM selected image {index}: {result.reasoning}")
+        logger.info(
+            f"LLM selected image {index}: "
+            f"brief={result.brief_compliance_score} mood={result.mood_score} "
+            f"quality={result.quality_score} relevance={result.relevance_score} "
+            f"| {result.reasoning}"
+        )
         return candidates[index]
 
     except Exception as e:

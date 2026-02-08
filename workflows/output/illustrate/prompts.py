@@ -26,8 +26,24 @@ A well-illustrated article uses visual variety. Diagrams explain; photographs ev
 
 5. **Writing Briefs**:
    - For `public_domain`: Write detailed selection criteria and a good search query. Describe mood, composition, subjects. Think editorially—what photograph would a magazine art director choose?
+     **IMPORTANT — Multi-query search**: For public_domain images, generate BOTH types of search queries:
+     - `literal_queries`: Direct subject matter (what to physically show). 1-2 queries.
+     - `conceptual_queries`: Mood, feeling, metaphor (what the image should EVOKE). 1-2 queries.
+     - Set `query_strategy` to "literal", "conceptual", or "both" based on the brief's intent.
+
+     ANTI-PATTERN: Never search for scientific/technical terms when metaphorical imagery is requested.
+     BAD: Article about autophagy, brief says "renewal" → "autophagy cells"
+     GOOD: Article about autophagy, brief says "renewal" → "spring rebirth morning light"
    - For `generated`: Write a full Imagen prompt. Include photography style, lighting, composition, mood. Be specific about the feeling you want to evoke.
    - For `diagram`: Describe the diagram type, key elements, and relationships to visualize. Only use when the structure itself is the point.
+     **IMPORTANT — Diagram subtype**: For diagram images, set `diagram_subtype` to classify the rendering engine:
+     - `flowchart`: Decision flows, processes with branches → Mermaid
+     - `sequence`: Sequential interactions between components → Mermaid
+     - `concept_map`: Interconnected ideas and relationships → Mermaid
+     - `network_graph`: Complex networks, many-to-many connections → Graphviz
+     - `hierarchy`: Tree structures, classifications → Graphviz
+     - `dependency_tree`: Dependency chains, package trees → Graphviz
+     - `custom_artistic`: Artistic/stylized diagrams that need custom SVG
 
 6. **Required Fields**: For EVERY image plan, include `type_rationale` explaining your choice. For non-diagram choices, it's fine to say "breaks up dense text" or "adds emotional warmth"—these are valid editorial reasons.
 
@@ -91,7 +107,7 @@ Recommendations:
   - Quality is "okay" but not "good"
 - `fail`: Fundamental problems that no prompt could fix
 
-NOTE: Use accept_with_warning for issues that are inconsequential for reader understading and experience OR unlikely to improve with regeneration.
+NOTE: Use accept_with_warning for issues that are inconsequential for reader understanding and experience OR unlikely to improve with regeneration.
 
 If recommending retry, provide an improved brief that specifically addresses the issues found."""
 
