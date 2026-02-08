@@ -11,6 +11,9 @@ components: [llm_call, structured_output, langgraph_node]
 complexity: moderate
 verified_in_production: true
 tags: [two-pass, planning, visual-identity, structured-output, prompt-engineering, creative-direction, brief-generation, image-generation, pydantic, separation-of-concerns]
+shared: true
+gist_url: https://gist.github.com/DaveCBeck/789d37fb99439ade5ea2fe285e2297da
+article_path: .context/libs/thala-dev/content/orchestration/2026-02-08-two-pass-llm-planning-visual-identity.md
 ---
 
 # Two-Pass LLM Planning with Visual Identity
