@@ -1,5 +1,6 @@
 """Initial draft writing nodes for introduction, methodology, discussion, and conclusions."""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -84,20 +85,6 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         date_range=actual_range,
     )
 
-    intro_response = await invoke(
-        tier=ModelTier.SONNET,
-        system=intro_system,
-        user=intro_prompt,
-        config=InvokeConfig(
-            max_tokens=4096,
-            batch_policy=BatchPolicy.PREFER_SPEED,
-        ),
-    )
-
-    introduction = (
-        intro_response.content if isinstance(intro_response.content, str) else intro_response.content[0].get("text", "")
-    )
-
     total_papers = len(paper_summaries)
 
     method_prompt = method_user_template.format(
@@ -114,7 +101,17 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         cluster_count=len(clusters),
     )
 
-    method_response = await invoke(
+    intro_coro = invoke(
+        tier=ModelTier.SONNET,
+        system=intro_system,
+        user=intro_prompt,
+        config=InvokeConfig(
+            max_tokens=4096,
+            batch_policy=BatchPolicy.PREFER_SPEED,
+        ),
+    )
+
+    method_coro = invoke(
         tier=ModelTier.SONNET,
         system=method_system,
         user=method_prompt,
@@ -122,6 +119,12 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
             max_tokens=4096,
             batch_policy=BatchPolicy.PREFER_SPEED,
         ),
+    )
+
+    intro_response, method_response = await asyncio.gather(intro_coro, method_coro)
+
+    introduction = (
+        intro_response.content if isinstance(intro_response.content, str) else intro_response.content[0].get("text", "")
     )
 
     methodology = (
@@ -198,22 +201,6 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
     )
 
-    discussion_response = await invoke(
-        tier=ModelTier.SONNET,
-        system=discussion_system,
-        user=discussion_prompt,
-        config=InvokeConfig(
-            max_tokens=4096,
-            batch_policy=BatchPolicy.PREFER_SPEED,
-        ),
-    )
-
-    discussion = (
-        discussion_response.content
-        if isinstance(discussion_response.content, str)
-        else discussion_response.content[0].get("text", "")
-    )
-
     findings_summary = "\n".join(
         f"Q{i + 1}: {q}\n   Finding: Based on {len(clusters)} themes covering {sum(len(c['paper_dois']) for c in clusters)} papers"
         for i, q in enumerate(research_questions)
@@ -225,7 +212,17 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         main_contributions=f"Systematic review of {sum(len(c['paper_dois']) for c in clusters)} papers organized into {len(clusters)} themes",
     )
 
-    conclusions_response = await invoke(
+    discussion_coro = invoke(
+        tier=ModelTier.SONNET,
+        system=discussion_system,
+        user=discussion_prompt,
+        config=InvokeConfig(
+            max_tokens=4096,
+            batch_policy=BatchPolicy.PREFER_SPEED,
+        ),
+    )
+
+    conclusions_coro = invoke(
         tier=ModelTier.SONNET,
         system=conclusions_system,
         user=conclusions_prompt,
@@ -233,6 +230,14 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
             max_tokens=4096,
             batch_policy=BatchPolicy.PREFER_SPEED,
         ),
+    )
+
+    discussion_response, conclusions_response = await asyncio.gather(discussion_coro, conclusions_coro)
+
+    discussion = (
+        discussion_response.content
+        if isinstance(discussion_response.content, str)
+        else discussion_response.content[0].get("text", "")
     )
 
     conclusions = (

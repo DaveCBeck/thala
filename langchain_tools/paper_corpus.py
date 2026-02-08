@@ -348,7 +348,7 @@ async def get_paper_content(zotero_key: str, max_chars: int = 10000) -> dict:
         es_query = {
             "bool": {
                 "must": [
-                    {"term": {"zotero_key.keyword": zotero_key}},
+                    {"term": {"zotero_key": zotero_key}},
                 ],
                 "filter": [
                     {"term": {"compression_level": 2}},

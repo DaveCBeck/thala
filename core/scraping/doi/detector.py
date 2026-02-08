@@ -89,9 +89,15 @@ PUBLISHER_PATTERNS: list[tuple[re.Pattern, Callable[[re.Match], Optional[str]]]]
 
 
 def _normalize_doi(doi: str) -> str:
-    """Clean up DOI by removing trailing punctuation."""
+    """Clean up DOI by removing trailing punctuation and file extensions."""
     # Remove trailing periods, commas, semicolons
-    return doi.rstrip(".,;:")
+    doi = doi.rstrip(".,;:")
+    # Strip file extensions that get captured from PDF/HTML URLs
+    for ext in (".pdf", ".html", ".xml", ".epub"):
+        if doi.lower().endswith(ext):
+            doi = doi[: -len(ext)]
+            break
+    return doi
 
 
 def detect_doi(input_str: str) -> Optional[DoiInfo]:

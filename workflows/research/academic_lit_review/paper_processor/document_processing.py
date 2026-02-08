@@ -30,7 +30,7 @@ async def process_single_document(
     try:
         if is_markdown:
             # Source is markdown content from OA HTML scrape
-            logger.info(f"Processing {doi}: markdown content ({len(source)} chars)")
+            logger.debug(f"Processing {doi}: markdown content ({len(source)} chars)")
         else:
             # Source is a file path
             source_path = Path(source)
@@ -49,7 +49,7 @@ async def process_single_document(
                 }
 
             file_size_mb = source_path.stat().st_size / (1024 * 1024)
-            logger.info(f"Processing {doi}: {source} ({file_size_mb:.1f} MB)")
+            logger.debug(f"Processing {doi}: {source} ({file_size_mb:.1f} MB)")
 
         extra_metadata = {
             "DOI": doi,
@@ -68,10 +68,10 @@ async def process_single_document(
 
         status = result.get("current_status", "unknown")
         errors = result.get("errors", [])
-        logger.info(f"Document {doi} processed with status: {status}, errors: {len(errors)}")
+        logger.debug(f"Document {doi} processed with status: {status}, errors: {len(errors)}")
         if errors:
             for err in errors:
-                logger.warning(f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}")
+                logger.debug(f"  {err.get('node', 'unknown')}: {err.get('error', 'no details')}")
 
         # Extract ES record ID from store_records list (first record at compression level 0)
         store_records = result.get("store_records", [])

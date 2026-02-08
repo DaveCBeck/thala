@@ -42,7 +42,7 @@ async def fetch_book_summaries(state: dict) -> dict[str, Any]:
                 # Query store_l2 (compression_level=2) by zotero_key
                 query = {
                     "bool": {
-                        "must": [{"term": {"zotero_key.keyword": zotkey}}],
+                        "must": [{"term": {"zotero_key": zotkey}}],
                         "filter": [{"term": {"compression_level": 2}}],
                     }
                 }

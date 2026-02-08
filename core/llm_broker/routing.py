@@ -30,10 +30,6 @@ def should_batch(
     if is_deepseek_tier(model):
         return False
 
-    # Extended thinking incompatible with batch
-    if thinking_budget:
-        return False
-
     # Policy + Mode matrix
     if policy == BatchPolicy.REQUIRE_SYNC:
         return False

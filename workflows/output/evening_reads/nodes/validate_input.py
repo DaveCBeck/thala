@@ -22,7 +22,7 @@ async def _lookup_es_record_for_key(store, zotero_key: str) -> tuple[str | None,
     """
     query = {
         "bool": {
-            "must": [{"term": {"zotero_key.keyword": zotero_key}}],
+            "must": [{"term": {"zotero_key": zotero_key}}],
             "filter": [{"term": {"compression_level": 0}}],
         }
     }

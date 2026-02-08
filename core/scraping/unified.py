@@ -95,11 +95,16 @@ async def get_url(
             resolved_url = oa_url
             logger.debug(f"Resolved DOI to OA URL: {oa_url}")
             fallback_chain.append("openalex_oa_url")
-        else:
-            # No OA URL, use DOI URL as fallback
+        elif doi_info.source == "input":
+            # Bare DOI input — use doi.org URL as fallback
             resolved_url = doi_info.doi_url
             logger.debug("No OA URL found, using DOI URL")
             fallback_chain.append("doi_url_fallback")
+        else:
+            # DOI extracted from a publisher URL — keep the original URL
+            # since it's already a real publisher link
+            logger.debug("No OA URL found, keeping original URL")
+            fallback_chain.append("original_url_kept")
 
     # Step 2: PDF Detection
     is_pdf = is_pdf_url(resolved_url)

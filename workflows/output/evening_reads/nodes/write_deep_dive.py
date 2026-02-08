@@ -47,17 +47,13 @@ def _extract_citations(text: str) -> list[str]:
     return sorted(keys)
 
 
-def _extract_relevant_sections(lit_review: str, section_names: list[str], max_chars: int = 20000) -> str:
+def _extract_relevant_sections(lit_review: str, section_names: list[str]) -> str:
     """Extract sections from the literature review that match the given names.
 
-    Falls back to returning a truncated version if no sections match.
+    Falls back to returning the full review if no sections match.
     """
     if not section_names:
-        # No sections specified, return truncated review
-        result = lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
-        if len(lit_review) > max_chars:
-            logger.warning(f"No sections specified; truncated lit review from {len(lit_review)} to {max_chars} chars")
-        return result
+        return lit_review
 
     # Try to find markdown headers matching the section names
     lines = lit_review.split("\n")
@@ -91,20 +87,12 @@ def _extract_relevant_sections(lit_review: str, section_names: list[str], max_ch
 
     if relevant_lines:
         excerpt = "\n".join(relevant_lines)
-        original_len = len(excerpt)
-        if original_len > max_chars:
-            logger.warning(f"Truncating lit review excerpt from {original_len} to {max_chars} chars")
-            excerpt = excerpt[:max_chars] + "\n\n[... truncated ...]"
         logger.info(f"Extracted {len(excerpt)} chars from {len(matched_headers)} sections: {matched_headers}")
         return excerpt
 
-    # Fallback: return truncated full review
-    result = lit_review[:max_chars] if len(lit_review) > max_chars else lit_review
-    if len(lit_review) > max_chars:
-        logger.warning(f"No matching sections found; truncated full review from {len(lit_review)} to {max_chars} chars")
-    else:
-        logger.info(f"No matching sections found; returning full review ({len(lit_review)} chars)")
-    return result
+    # Fallback: return full review
+    logger.info(f"No matching sections found; returning full review ({len(lit_review)} chars)")
+    return lit_review
 
 
 async def write_deep_dive_node(state: dict) -> dict[str, Any]:

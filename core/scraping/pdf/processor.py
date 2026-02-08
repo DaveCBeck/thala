@@ -100,6 +100,16 @@ async def check_marker_available() -> bool:
     return False
 
 
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/pdf,application/octet-stream,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
     """Download PDF from URL using httpx (simple/fast method).
 
@@ -113,7 +123,7 @@ async def _download_pdf_httpx(url: str, timeout: float = 60.0) -> bytes:
     Raises:
         MarkerProcessingError: If download fails or content is not a valid PDF
     """
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, headers=_BROWSER_HEADERS) as client:
         try:
             response = await client.get(url, follow_redirects=True)
             response.raise_for_status()
@@ -330,24 +340,9 @@ async def _download_pdf(url: str, timeout: float = 60.0) -> bytes:
     try:
         return await _download_pdf_httpx(url, timeout)
     except MarkerProcessingError as e:
-        error_str = str(e)
-        # Try Playwright for:
-        # - Non-PDF responses (HTML login pages)
-        # - HTTP 4xx errors (anti-bot blocking: 403, 418, 429, etc.)
-        # - Timeout errors (slow sites may work with browser)
-        if any(
-            pattern in error_str
-            for pattern in [
-                "not a valid PDF",
-                "HTTP error",
-                "Timeout",
-            ]
-        ):
-            logger.debug(f"httpx failed ({e}), trying Playwright fallback")
-        else:
-            raise
+        logger.debug(f"httpx failed ({e}), trying Playwright fallback")
 
-    # Fallback to Playwright (handles anti-bot redirects and blocks)
+    # Fallback to Playwright (handles anti-bot redirects, cookie popups, etc.)
     return await _download_pdf_playwright(url, timeout)
 
 

@@ -430,6 +430,7 @@ class LLMBroker:
 
     # Batch submission
 
+    @traceable(name="llm_broker_batch_submit", run_type="chain")
     async def _submit_batch(
         self,
         requests: list[LLMRequest] | None = None,
@@ -444,9 +445,10 @@ class LLMBroker:
             return
 
         # Get requests to submit
+        # Note: get_queued_requests() handles its own locking internally,
+        # so no outer lock needed here (nesting would deadlock on fcntl flock)
         if requests is None:
-            async with self._persistence.lock():
-                requests = await self._persistence.get_queued_requests()
+            requests = await self._persistence.get_queued_requests()
 
         if not requests:
             return
@@ -776,6 +778,13 @@ class LLMBroker:
             # Requeue for retry
             logger.info(f"Batch {batch_id} timed out, requeueing (retry {retry_count + 1}/{max_retries})")
 
+            # Cancel the old batch on Anthropic's side to avoid duplicate processing
+            try:
+                await self._async_client.messages.batches.cancel(batch_id)
+                logger.info(f"Cancelled batch {batch_id} on Anthropic")
+            except Exception as e:
+                logger.warning(f"Failed to cancel batch {batch_id} on Anthropic: {e}")
+
             async with self._persistence.lock():
                 queue = await self._persistence.read_queue()
 
@@ -787,8 +796,8 @@ class LLMBroker:
                         request["batch_id"] = None
                         request["submitted_at"] = None
 
-                # Update batch info for tracking
-                queue["batches"][batch_id]["retry_count"] = retry_count + 1
+                # Remove old batch entry - requests will be resubmitted in a new batch
+                queue["batches"].pop(batch_id, None)
 
                 await self._persistence.write_queue(queue)
 

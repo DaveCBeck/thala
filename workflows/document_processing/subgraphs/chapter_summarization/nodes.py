@@ -3,6 +3,7 @@
 Routes through unified invoke() for automatic broker routing and cost optimization.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -116,17 +117,17 @@ async def _summarize_single_chapter(
                 f"splitting into {len(chunks)} chunks"
             )
             chunk_target_words = max(50, target_words // len(chunks))
-            chunk_summaries = []
 
-            for i, chunk in enumerate(chunks, 1):
-                chunk_summary = await _summarize_content_chunk(
+            chunk_summaries = await asyncio.gather(*(
+                _summarize_content_chunk(
                     content=chunk,
                     target_words=chunk_target_words,
                     chapter_context=chapter_context,
                     chunk_num=i,
                     total_chunks=len(chunks),
                 )
-                chunk_summaries.append(chunk_summary)
+                for i, chunk in enumerate(chunks, 1)
+            ))
 
             # Combine chunk summaries
             summary = "\n\n".join(chunk_summaries)
@@ -256,18 +257,23 @@ Chapter content:
                 logger.error(f"Failed to summarize chapter '{chapter['title']}': {e}")
                 batch_result_map[chapter_idx] = f"[Error: {e}]"
 
-        # Process large chapters with chunking (these can't be batched)
+        # Process large chapters with chunking concurrently (these can't be batched)
         large_results: dict[int, dict] = {}
-        for idx in large_chapter_indices:
-            chapter = chapters_metadata[idx]
-            chapter_content = markdown[chapter["start_position"] : chapter["end_position"]]
-            target_words = max(50, chapter["word_count"] // 10)
-            result = await _summarize_single_chapter(
-                chapter=chapter,
-                chapter_content=chapter_content,
-                target_words=target_words,
-            )
-            large_results[idx] = result
+        if large_chapter_indices:
+            large_items = sorted(large_chapter_indices)
+            large_coros = []
+            for idx in large_items:
+                chapter = chapters_metadata[idx]
+                chapter_content = markdown[chapter["start_position"] : chapter["end_position"]]
+                target_words = max(50, chapter["word_count"] // 10)
+                large_coros.append(_summarize_single_chapter(
+                    chapter=chapter,
+                    chapter_content=chapter_content,
+                    target_words=target_words,
+                ))
+            results = await asyncio.gather(*large_coros)
+            for idx, result in zip(large_items, results):
+                large_results[idx] = result
 
         # Collect results in order
         chapter_summaries = []

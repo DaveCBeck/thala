@@ -37,7 +37,7 @@ async def _fetch_content_for_key(
     if es_record_id is None:
         query = {
             "bool": {
-                "must": [{"term": {"zotero_key.keyword": zotero_key}}],
+                "must": [{"term": {"zotero_key": zotero_key}}],
                 "filter": [{"term": {"compression_level": 0}}],
             }
         }
