@@ -178,7 +178,7 @@ class TestCreativeDirectionNode:
         assert result["status"] == "failed"
         assert result["image_plan"] == []
         assert len(result["errors"]) == 1
-        assert "Creative direction failed" in result["errors"][0]["message"]
+        assert "Creative direction analysis failed" in result["errors"][0]["message"]
 
 
 @pytest.mark.asyncio
@@ -239,7 +239,7 @@ class TestPlanBriefsNode:
         assert result["status"] == "failed"
         assert result["image_plan"] == []
         assert len(result["errors"]) == 1
-        assert "Plan briefs failed" in result["errors"][0]["message"]
+        assert "Brief planning failed" in result["errors"][0]["message"]
 
     async def test_header_pd_override_in_plan(self):
         """When header_prefer_public_domain=True, image_plan header gets public_domain type."""

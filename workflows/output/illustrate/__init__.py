@@ -28,7 +28,7 @@ from langsmith import traceable
 
 from .config import IllustrateConfig
 from .graph import illustrate_graph
-from .schemas import DocumentAnalysis, ImageLocationPlan, VisionReviewResult
+from .schemas import ImageLocationPlan, VisionReviewResult
 from .state import (
     FinalImage,
     IllustrateInput,
@@ -87,7 +87,6 @@ __all__ = [
     "ImageReviewResult",
     "FinalImage",
     # Schemas
-    "DocumentAnalysis",
     "ImageLocationPlan",
     "VisionReviewResult",
 ]

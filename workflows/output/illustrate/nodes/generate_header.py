@@ -13,16 +13,30 @@ from ..config import IllustrateConfig
 from ..prompts import HEADER_APPOSITES_SYSTEM, HEADER_APPOSITES_USER, build_visual_identity_context
 from ..schemas import HeaderAppositenessResult, ImageLocationPlan, VisualIdentity
 from ..state import ImageGenResult, WorkflowError
+from .generate_additional import _validate_image_url
 
 logger = logging.getLogger(__name__)
 
+MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20 MB
+
 
 async def _download_image(url: str) -> bytes:
-    """Download image from URL."""
+    """Download image from URL with size limit to prevent memory exhaustion."""
+    _validate_image_url(url)
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.content
+        chunks: list[bytes] = []
+        total = 0
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > MAX_IMAGE_SIZE:
+                    raise ValueError(
+                        f"Image exceeds size limit: >{MAX_IMAGE_SIZE} bytes "
+                        f"({MAX_IMAGE_SIZE // (1024 * 1024)} MB)"
+                    )
+                chunks.append(chunk)
+        return b"".join(chunks)
 
 
 async def _evaluate_pd_appositeness(

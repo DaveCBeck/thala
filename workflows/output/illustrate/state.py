@@ -88,6 +88,7 @@ class IllustrateState(TypedDict, total=False):
     editorial_notes: str
 
     # Candidate briefs (Pass 2)
+    # Retained for LangSmith tracing/observability; not consumed by downstream nodes.
     candidate_briefs: list[CandidateBrief]
 
     # Generation phase (parallel aggregation via add reducer)

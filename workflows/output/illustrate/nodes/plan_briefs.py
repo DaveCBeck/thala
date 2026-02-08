@@ -8,7 +8,7 @@ from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from ..config import IllustrateConfig
 from ..prompts import PLAN_BRIEFS_SYSTEM, PLAN_BRIEFS_USER, build_visual_identity_context
-from ..schemas import CandidateBrief, ImageLocationPlan, ImageOpportunity, PlanBriefsResult, VisualIdentity
+from ..schemas import CandidateBrief, ImageLocationPlan, ImageOpportunity, PlanBriefsResult
 from ..state import IllustrateState
 
 logger = logging.getLogger(__name__)
@@ -104,8 +104,17 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
     """
     config = state.get("config") or IllustrateConfig()
     document = state["input"]["markdown_document"]
-    visual_identity: VisualIdentity = state["visual_identity"]
-    opportunities: list[ImageOpportunity] = state["image_opportunities"]
+    visual_identity = state.get("visual_identity")
+    image_opportunities = state.get("image_opportunities", [])
+
+    if not visual_identity or not image_opportunities:
+        logger.warning(
+            "Skipping plan_briefs: no visual identity or opportunities "
+            "(creative_direction may have failed)"
+        )
+        return {"image_plan": [], "status": "failed"}
+
+    opportunities: list[ImageOpportunity] = image_opportunities
     editorial_notes = state.get("editorial_notes", "")
 
     target_count = (1 if config.generate_header_image else 0) + config.additional_image_count
@@ -127,6 +136,12 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
 
         image_plan = _briefs_to_image_plan(result.candidate_briefs, selected, config)
 
+        planned_ids = {p.location_id for p in image_plan}
+        selected_ids = {o.location_id for o in selected}
+        missing = selected_ids - planned_ids
+        if missing:
+            logger.warning(f"LLM produced no briefs for locations: {missing}")
+
         logger.info(f"Plan briefs complete: {len(result.candidate_briefs)} briefs across {len(image_plan)} locations")
 
         return {
@@ -142,7 +157,7 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
                 {
                     "location_id": None,
                     "severity": "error",
-                    "message": f"Plan briefs failed: {e}",
+                    "message": "Brief planning failed",
                     "stage": "analysis",
                 }
             ],

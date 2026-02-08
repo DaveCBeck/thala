@@ -1,6 +1,7 @@
 """Pydantic schemas for LLM structured output in illustrate workflow."""
 
 import json
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -97,6 +98,16 @@ class ImageOpportunity(BaseModel):
         description="For diagrams: subtype determines rendering engine.",
     )
 
+    @field_validator("location_id")
+    @classmethod
+    def validate_location_id(cls, v: str) -> str:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
+            raise ValueError(
+                f"location_id must contain only alphanumeric characters, "
+                f"hyphens, and underscores, got: {v!r}"
+            )
+        return v
+
 
 class CreativeDirectionResult(BaseModel):
     """Full output of Pass 1: creative_direction node."""
@@ -159,6 +170,16 @@ class CandidateBrief(BaseModel):
         default=None,
         description="For diagrams: subtype determines rendering engine.",
     )
+
+    @field_validator("location_id")
+    @classmethod
+    def validate_location_id(cls, v: str) -> str:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
+            raise ValueError(
+                f"location_id must contain only alphanumeric characters, "
+                f"hyphens, and underscores, got: {v!r}"
+            )
+        return v
 
     @field_validator("literal_queries", "conceptual_queries", mode="before")
     @classmethod
@@ -231,25 +252,6 @@ class ImageLocationPlan(BaseModel):
         "flowchart/sequence/concept_map → Mermaid, "
         "network_graph/hierarchy/dependency_tree → Graphviz, "
         "custom_artistic → raw SVG.",
-    )
-
-
-class DocumentAnalysis(BaseModel):
-    """Full analysis of where images should go in document."""
-
-    document_title: str = Field(
-        description="Extracted or confirmed document title",
-    )
-    header_image: ImageLocationPlan = Field(
-        description="Plan for the header/lead image",
-    )
-    additional_images: list[ImageLocationPlan] = Field(
-        description="Additional image locations (1-2 typically)",
-        min_length=0,
-        max_length=5,
-    )
-    analysis_notes: str = Field(
-        description="Brief notes on the visual strategy for this document",
     )
 
 

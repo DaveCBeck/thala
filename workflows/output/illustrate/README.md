@@ -14,7 +14,7 @@ result = await illustrate_graph.ainvoke({
         "output_dir": "/path/to/images",
     },
     "config": IllustrateConfig(
-        additional_image_count=2,
+        additional_image_count=3,
         enable_vision_review=True,
     ),
 })
@@ -41,8 +41,9 @@ Additional outputs:
 
 ```mermaid
 flowchart TD
-    START([Input Document]) --> A[Analyze Document]
-    A --> B{Images Planned?}
+    START([Input Document]) --> P1[Creative Direction]
+    P1 --> P2[Plan Briefs]
+    P2 --> B{Images Planned?}
     B -->|no| F[Finalize]
     B -->|yes| C[Generate Images]
 
@@ -50,6 +51,7 @@ flowchart TD
         C1[Generate Header]
         C2[Generate Additional 1]
         C3[Generate Additional 2]
+        C4[Generate Additional 3]
     end
 
     C --> generation
@@ -63,6 +65,7 @@ flowchart TD
         G1[Review Image 1]
         G2[Review Image 2]
         G3[Review Image 3]
+        G4[Review Image 4]
     end
 
     G --> review
@@ -78,6 +81,13 @@ flowchart TD
     style review fill:#e8e8f4
 ```
 
+### Two-Pass Planning
+
+The workflow uses a two-pass planning architecture:
+
+1. **Creative Direction** (Pass 1): Sonnet reads the full document and produces a visual identity (palette, mood, style, avoid-list), an image opportunity map with more locations than needed, and editorial notes on tone and pacing.
+2. **Plan Briefs** (Pass 2): Sonnet reads the document again along with the visual identity and selected opportunities from Pass 1. It generates up to 2 candidate briefs per location with concrete image descriptions, search queries, and diagram subtypes.
+
 ### Image Generation
 
 Each image location is processed in parallel:
@@ -85,7 +95,7 @@ Each image location is processed in parallel:
 1. **Header Image**: Searches public domain first, evaluates "appositeness" with vision, falls back to Imagen if not particularly fitting
 2. **Additional Images**: Uses planned type (public_domain, diagram, or generated)
 3. **Vision Review**: Sonnet evaluates each image for context fit and errors
-4. **Retry Logic**: Images with substantive errors are regenerated once with improved briefs
+4. **Retry Logic**: Images with substantive errors are regenerated with improved briefs (up to 2 retries)
 
 ### Image Types
 
@@ -98,10 +108,10 @@ Each image location is processed in parallel:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `generate_header_image` | `True` | Whether to create a header image |
-| `additional_image_count` | `2` | Number of additional images (0-5) |
+| `additional_image_count` | `3` | Number of additional images (0-5) |
 | `header_prefer_public_domain` | `True` | Try public domain for header first |
 | `imagen_aspect_ratio` | `"16:9"` | Aspect ratio for generated images |
-| `diagram_width` | `800` | SVG diagram width in pixels |
+| `diagram_width` | `900` | SVG diagram width in pixels |
 | `diagram_height` | `600` | SVG diagram height in pixels |
 
 ### Vision Review Settings
@@ -109,7 +119,7 @@ Each image location is processed in parallel:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `enable_vision_review` | `True` | Enable Sonnet vision review |
-| `max_retries` | `1` | Max retry attempts for failed images |
+| `max_retries` | `2` | Max retry attempts for failed images |
 
 ### Diagram Refinement Settings
 
@@ -144,7 +154,7 @@ config = IllustrateConfig(
 ## Environment Variables
 
 Requires the following services:
-- **Anthropic API**: For Sonnet (analysis, review) and Claude (diagrams)
+- **Anthropic API**: For Sonnet (creative direction, brief planning, review) and Claude (diagrams)
 - **Google Vertex AI**: For Imagen image generation
 - **Pexels/Unsplash**: For public domain image search
 
@@ -159,7 +169,8 @@ Images are automatically attributed in the markdown output:
 
 | Node | Model | Purpose |
 |------|-------|---------|
-| analyze_document | Sonnet | Plan image locations and types |
+| creative_direction | Sonnet | Pass 1: visual identity, opportunity map, editorial notes |
+| plan_briefs | Sonnet | Pass 2: candidate briefs per image location |
 | evaluate_appositeness | Sonnet (vision) | Evaluate public domain header fit |
 | review_image | Sonnet (vision) | Check generated images for errors |
 | generate_diagram | Sonnet | Create SVG diagrams |

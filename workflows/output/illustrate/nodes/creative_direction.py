@@ -93,7 +93,7 @@ async def creative_direction_node(state: IllustrateState) -> dict:
                 {
                     "location_id": None,
                     "severity": "error",
-                    "message": f"Creative direction failed: {e}",
+                    "message": "Creative direction analysis failed",
                     "stage": "analysis",
                 }
             ],
