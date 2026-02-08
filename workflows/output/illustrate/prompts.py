@@ -36,6 +36,14 @@ A well-illustrated article uses visual variety. Diagrams explain; photographs ev
      GOOD: Article about autophagy, brief says "renewal" → "spring rebirth morning light"
    - For `generated`: Write a full Imagen prompt. Include photography style, lighting, composition, mood. Be specific about the feeling you want to evoke.
    - For `diagram`: Describe the diagram type, key elements, and relationships to visualize. Only use when the structure itself is the point.
+     **IMPORTANT — Diagram subtype**: For diagram images, set `diagram_subtype` to classify the rendering engine:
+     - `flowchart`: Decision flows, processes with branches → Mermaid
+     - `sequence`: Sequential interactions between components → Mermaid
+     - `concept_map`: Interconnected ideas and relationships → Mermaid
+     - `network_graph`: Complex networks, many-to-many connections → Graphviz
+     - `hierarchy`: Tree structures, classifications → Graphviz
+     - `dependency_tree`: Dependency chains, package trees → Graphviz
+     - `custom_artistic`: Artistic/stylized diagrams that need custom SVG
 
 6. **Required Fields**: For EVERY image plan, include `type_rationale` explaining your choice. For non-diagram choices, it's fine to say "breaks up dense text" or "adds emotional warmth"—these are valid editorial reasons.
 

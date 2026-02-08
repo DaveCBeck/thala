@@ -1,6 +1,10 @@
-"""Tests for generate_additional multi-query logic (A5)."""
+"""Tests for generate_additional multi-query logic (A5) and diagram routing (B3)."""
 
-from workflows.output.illustrate.nodes.generate_additional import _build_search_queries
+from workflows.output.illustrate.nodes.generate_additional import (
+    _build_search_queries,
+    _MERMAID_SUBTYPES,
+    _GRAPHVIZ_SUBTYPES,
+)
 from workflows.output.illustrate.schemas import ImageLocationPlan
 
 
@@ -104,3 +108,41 @@ class TestImageLocationPlanMultiQuery:
         assert plan.literal_queries == ["autophagy cell biology"]
         assert plan.conceptual_queries == ["renewal spring rebirth"]
         assert plan.query_strategy == "conceptual"
+
+
+class TestDiagramSubtype:
+    """Test diagram_subtype field and routing constants (B3)."""
+
+    def test_diagram_subtype_default_none(self):
+        plan = _make_plan(image_type="diagram")
+        assert plan.diagram_subtype is None
+
+    def test_diagram_subtype_flowchart(self):
+        plan = _make_plan(image_type="diagram", diagram_subtype="flowchart")
+        assert plan.diagram_subtype == "flowchart"
+
+    def test_diagram_subtype_hierarchy(self):
+        plan = _make_plan(image_type="diagram", diagram_subtype="hierarchy")
+        assert plan.diagram_subtype == "hierarchy"
+
+    def test_diagram_subtype_custom_artistic(self):
+        plan = _make_plan(image_type="diagram", diagram_subtype="custom_artistic")
+        assert plan.diagram_subtype == "custom_artistic"
+
+    def test_backwards_compatible_no_subtype(self):
+        """Old plans without diagram_subtype should still work."""
+        plan = _make_plan(image_type="diagram")
+        assert plan.diagram_subtype is None
+
+    def test_mermaid_subtypes_constant(self):
+        assert "flowchart" in _MERMAID_SUBTYPES
+        assert "sequence" in _MERMAID_SUBTYPES
+        assert "concept_map" in _MERMAID_SUBTYPES
+
+    def test_graphviz_subtypes_constant(self):
+        assert "network_graph" in _GRAPHVIZ_SUBTYPES
+        assert "hierarchy" in _GRAPHVIZ_SUBTYPES
+        assert "dependency_tree" in _GRAPHVIZ_SUBTYPES
+
+    def test_no_overlap_between_engines(self):
+        assert _MERMAID_SUBTYPES.isdisjoint(_GRAPHVIZ_SUBTYPES)

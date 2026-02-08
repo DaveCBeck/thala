@@ -6,6 +6,7 @@ import httpx
 
 from core.images import NoResultsError, get_image
 from workflows.shared.diagram_utils import DiagramConfig, generate_diagram
+from workflows.shared.diagram_utils.registry import is_engine_available
 from workflows.shared.image_utils import generate_article_header
 
 from ..config import IllustrateConfig
@@ -13,6 +14,10 @@ from ..schemas import ImageLocationPlan
 from ..state import ImageGenResult, WorkflowError
 
 logger = logging.getLogger(__name__)
+
+# Diagram subtypes grouped by preferred rendering engine
+_MERMAID_SUBTYPES = {"flowchart", "sequence", "concept_map"}
+_GRAPHVIZ_SUBTYPES = {"network_graph", "hierarchy", "dependency_tree"}
 
 
 async def _download_image(url: str) -> bytes:
@@ -246,7 +251,15 @@ async def _generate_diagram(
     brief: str,
     config: IllustrateConfig,
 ) -> dict:
-    """Generate diagram using diagram_utils."""
+    """Generate diagram, routing to the best engine based on subtype.
+
+    Routing:
+    - flowchart/sequence/concept_map → Mermaid (with vision selection)
+    - network_graph/hierarchy/dependency_tree → Graphviz (with vision selection)
+    - custom_artistic/None → raw SVG (existing pipeline)
+
+    Falls back to SVG if the preferred engine is unavailable or fails.
+    """
     diagram_config = DiagramConfig(
         width=config.diagram_width,
         height=config.diagram_height,
@@ -255,12 +268,42 @@ async def _generate_diagram(
         max_refinement_iterations=config.diagram_max_refinement_iterations,
     )
 
-    result = await generate_diagram(
-        title="",
-        content="",
-        config=diagram_config,
-        custom_instructions=brief,
-    )
+    subtype = plan.diagram_subtype
+    result = None
+
+    # Try preferred engine based on subtype
+    if subtype in _MERMAID_SUBTYPES and is_engine_available("mermaid"):
+        from workflows.shared.diagram_utils.mermaid import generate_mermaid_with_selection
+
+        logger.info(f"Routing diagram {location_id} to Mermaid engine (subtype={subtype})")
+        result = await generate_mermaid_with_selection(
+            analysis=brief,
+            config=diagram_config,
+            custom_instructions=brief,
+        )
+
+    elif subtype in _GRAPHVIZ_SUBTYPES and is_engine_available("graphviz"):
+        from workflows.shared.diagram_utils.graphviz_engine import generate_graphviz_with_selection
+
+        logger.info(f"Routing diagram {location_id} to Graphviz engine (subtype={subtype})")
+        result = await generate_graphviz_with_selection(
+            analysis=brief,
+            config=diagram_config,
+            custom_instructions=brief,
+        )
+
+    # Fallback to SVG if preferred engine failed or wasn't available
+    if result is None or not result.success:
+        if result and not result.success:
+            logger.warning(
+                f"Preferred engine failed for {location_id} (subtype={subtype}): {result.error}, falling back to SVG"
+            )
+        result = await generate_diagram(
+            title="",
+            content="",
+            config=diagram_config,
+            custom_instructions=brief,
+        )
 
     if result.success and result.png_bytes:
         logger.info(f"Generated diagram for {location_id}")

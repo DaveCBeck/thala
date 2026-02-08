@@ -38,12 +38,17 @@ from .core import generate_diagram
 from .validation import (
     extract_validation_error_type,
     sanitize_svg_text_entities,
+    strip_code_fences,
+    validate_and_sanitize_svg,
     validate_svg_xml,
 )
 from .generation import analyze_content_for_diagram, generate_svg_diagram
 from .overlap import check_bounds_violations, check_text_overlaps, check_text_shape_overlaps
 from .quality_assessment import assess_diagram_quality, generate_refinement_feedback
 from .refinement import refine_diagram_quality
+from .graphviz_engine import generate_graphviz_diagram, generate_graphviz_with_selection
+from .mermaid import generate_mermaid_diagram, generate_mermaid_with_selection
+from .registry import get_available_engines, is_engine_available
 from .schemas import (
     BoundsCheckResult,
     DiagramAnalysis,
@@ -57,8 +62,15 @@ from .schemas import (
 )
 
 __all__ = [
-    # Main entry point
+    # Main entry points
     "generate_diagram",
+    "generate_mermaid_diagram",
+    "generate_mermaid_with_selection",
+    "generate_graphviz_diagram",
+    "generate_graphviz_with_selection",
+    # Engine registry
+    "get_available_engines",
+    "is_engine_available",
     # Result types
     "DiagramResult",
     "DiagramCandidate",
@@ -82,7 +94,9 @@ __all__ = [
     "check_text_shape_overlaps",
     "convert_svg_to_png",
     # Validation utilities
+    "validate_and_sanitize_svg",
     "validate_svg_xml",
     "sanitize_svg_text_entities",
+    "strip_code_fences",
     "extract_validation_error_type",
 ]

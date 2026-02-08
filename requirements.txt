@@ -19,5 +19,7 @@ voyageai>=0.3.0
 google-genai>=1.0.0
 cairosvg>=2.7.0
 lxml>=4.9.0
+mmdc>=0.4.1
+graphviz>=0.20
 python-substack>=1.0.0
 prometheus-client>=0.20.0

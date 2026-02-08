@@ -49,6 +49,24 @@ class ImageLocationPlan(BaseModel):
         default=None,
         description="Which query type best matches the brief's intent.",
     )
+    diagram_subtype: (
+        Literal[
+            "flowchart",
+            "sequence",
+            "concept_map",
+            "network_graph",
+            "hierarchy",
+            "dependency_tree",
+            "custom_artistic",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description="For diagrams: subtype determines rendering engine. "
+        "flowchart/sequence/concept_map → Mermaid, "
+        "network_graph/hierarchy/dependency_tree → Graphviz, "
+        "custom_artistic → raw SVG.",
+    )
 
 
 class DocumentAnalysis(BaseModel):
