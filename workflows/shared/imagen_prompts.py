@@ -6,7 +6,7 @@ with must-have elements front-loaded (per Google's Imagen prompt guide).
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class ImagenPromptStructure(BaseModel):
     """LLM converts brief into Imagen-optimized prompt structure."""
 
+    model_config = ConfigDict(extra="forbid")
+
     primary_subject: str = Field(
         description="The single most important element. Be very specific.",
     )
@@ -24,6 +26,7 @@ class ImagenPromptStructure(BaseModel):
         description="Camera angle, framing. E.g., 'close-up', 'aerial view'",
     )
     key_elements: list[str] = Field(
+        max_length=4,
         description="2-3 additional required elements, in priority order.",
     )
     style_and_mood: str = Field(

@@ -126,7 +126,6 @@ async def generate_image_prompt(
 async def generate_article_header(
     title: str,
     content: str,
-    theme: str | None = None,
     custom_prompt: str | None = None,
     aspect_ratio: str = "16:9",
     sample_count: int = 4,
@@ -139,7 +138,6 @@ async def generate_article_header(
     Args:
         title: Article title
         content: Full article content (used by Sonnet to generate image prompt)
-        theme: Optional theme description (unused in new flow, kept for compatibility)
         custom_prompt: If provided, skip LLM prompt generation and use this directly
         aspect_ratio: Imagen aspect ratio (default "16:9", also supports "1:1", "9:16", etc.)
         sample_count: Number of image candidates to generate (default 4)

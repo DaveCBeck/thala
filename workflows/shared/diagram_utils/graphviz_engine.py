@@ -7,15 +7,26 @@ repairs errors (up to 2 attempts).
 
 import asyncio
 import logging
-
-import graphviz
+import re
 
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .schemas import DiagramConfig, DiagramResult
+from .validation import strip_code_fences
 
 logger = logging.getLogger(__name__)
+
+_FORBIDDEN_DOT_ATTRS = re.compile(
+    r'\b(image|shapefile|fontpath|imagepath)\s*=', re.IGNORECASE
+)
+
+
+def _sanitize_dot_code(code: str) -> str:
+    """Reject DOT code containing file-access attributes."""
+    if _FORBIDDEN_DOT_ATTRS.search(code):
+        raise ValueError("DOT code contains forbidden file-access attributes")
+    return code
 
 GRAPHVIZ_GENERATION_SYSTEM = """You are an expert at creating Graphviz DOT diagrams. Generate clean, readable DOT code.
 
@@ -35,7 +46,9 @@ Output ONLY the DOT code, no markdown fences, no explanation."""
 
 GRAPHVIZ_GENERATION_USER = """Generate a Graphviz DOT diagram for the following concept.
 
+<instructions>
 {instructions}
+</instructions>
 
 Output ONLY the DOT code."""
 
@@ -71,7 +84,7 @@ async def generate_graphviz_diagram(
 
     dot_code = await _llm_generate_dot(instructions)
     if not dot_code:
-        return _failure("LLM failed to generate DOT code")
+        return DiagramResult.failure("LLM failed to generate DOT code")
 
     # Validate-repair loop (initial + 2 repair attempts)
     for attempt in range(3):
@@ -79,12 +92,13 @@ async def generate_graphviz_diagram(
         if png_bytes:
             logger.info(f"Graphviz diagram generated ({len(png_bytes)} bytes PNG)")
             return DiagramResult(
-                svg_bytes=dot_code.encode("utf-8"),
+                svg_bytes=None,
                 png_bytes=png_bytes,
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code=dot_code,
             )
         if attempt < 2:
             logger.info(f"Graphviz rendering failed (attempt {attempt + 1}), repairing: {error}")
@@ -92,7 +106,7 @@ async def generate_graphviz_diagram(
             if repaired:
                 dot_code = repaired
 
-    return _failure(f"Graphviz rendering failed after repairs: {error}")
+    return DiagramResult.failure(f"Graphviz rendering failed after repairs: {error}")
 
 
 async def _llm_generate_dot(instructions: str) -> str | None:
@@ -108,16 +122,7 @@ async def _llm_generate_dot(instructions: str) -> str | None:
             ),
         )
         content = (response.content if isinstance(response.content, str) else str(response.content)).strip()
-
-        # Strip markdown fences
-        if content.startswith("```"):
-            lines = content.split("\n")
-            if lines[-1].strip() == "```":
-                content = "\n".join(lines[1:-1])
-            else:
-                content = "\n".join(lines[1:])
-
-        return content.strip()
+        return strip_code_fences(content)
     except Exception as e:
         logger.error(f"DOT generation failed: {e}")
         return None
@@ -133,15 +138,7 @@ async def _llm_repair_dot(code: str, errors: str) -> str | None:
             config=InvokeConfig(max_tokens=2000),
         )
         content = (response.content if isinstance(response.content, str) else str(response.content)).strip()
-
-        if content.startswith("```"):
-            lines = content.split("\n")
-            if lines[-1].strip() == "```":
-                content = "\n".join(lines[1:-1])
-            else:
-                content = "\n".join(lines[1:])
-
-        return content.strip()
+        return strip_code_fences(content)
     except Exception as e:
         logger.error(f"DOT repair failed: {e}")
         return None
@@ -149,8 +146,15 @@ async def _llm_repair_dot(code: str, errors: str) -> str | None:
 
 async def _render_dot_to_png(dot_code: str, config: DiagramConfig) -> tuple[bytes | None, str | None]:
     """Render DOT code to PNG. Runs in thread to avoid blocking."""
+    # Sanitize before DOT code reaches graphviz.Source()
+    try:
+        _sanitize_dot_code(dot_code)
+    except ValueError as e:
+        return None, str(e)
 
     def _render() -> tuple[bytes | None, str | None]:
+        import graphviz  # lazy: only needed when actually rendering
+
         try:
             source = graphviz.Source(dot_code)
             png_bytes = source.pipe(format="png")
@@ -180,43 +184,15 @@ async def generate_graphviz_with_selection(
     Returns:
         Best DiagramResult from candidates
     """
-    from workflows.shared.vision_comparison import vision_pair_select
+    from .schemas import generate_with_selection
 
-    instructions = custom_instructions or analysis
-
-    tasks = [generate_graphviz_diagram(instructions, config, custom_instructions) for _ in range(num_candidates)]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    successful = [r for r in results if isinstance(r, DiagramResult) and r.success and r.png_bytes]
-
-    if not successful:
-        return _failure("All Graphviz candidates failed")
-    if len(successful) == 1:
-        return successful[0]
-
-    png_list = [r.png_bytes for r in successful]
-    try:
-        best_idx = await vision_pair_select(png_list, instructions)
-    except Exception as e:
-        logger.warning(f"Vision selection failed, using first candidate: {e}")
-        best_idx = 0
-
-    selected = successful[best_idx]
-    selected.selected_candidate = best_idx + 1
-    selected.generation_attempts = len(successful)
-    return selected
-
-
-def _failure(error: str) -> DiagramResult:
-    """Create a failed DiagramResult."""
-    return DiagramResult(
-        svg_bytes=None,
-        png_bytes=None,
-        analysis=None,
-        overlap_check=None,
-        generation_attempts=1,
-        success=False,
-        error=error,
+    return await generate_with_selection(
+        generator_fn=generate_graphviz_diagram,
+        analysis=analysis,
+        config=config,
+        custom_instructions=custom_instructions,
+        num_candidates=num_candidates,
+        engine_name="Graphviz",
     )
 
 

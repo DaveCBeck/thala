@@ -16,6 +16,8 @@ from workflows.shared.llm_utils import ModelTier, get_llm
 
 logger = logging.getLogger(__name__)
 
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+
 
 PAIR_COMPARISON_SYSTEM = """You are comparing two images to select the better one.
 
@@ -29,8 +31,9 @@ Respond with ONLY "A" or "B" — nothing else."""
 
 PAIR_COMPARISON_USER = """Which image better matches these criteria?
 
-**Selection Criteria:**
+<criteria>
 {criteria}
+</criteria>
 
 Image A and Image B are attached. Respond with ONLY "A" or "B"."""
 
@@ -59,7 +62,12 @@ async def vision_pair_select(
         return 0
 
     try:
-        # Tournament: compare sequentially, winner advances
+        # Tournament: compare sequentially, winner advances.
+        # Known limitation: positional bias toward Image A.
+        # Image A is always the defending champion, and MLLMs show bias toward
+        # the first image presented. On ambiguous responses, we default to "A"
+        # (see _compare_pair fallback). Future options: random position
+        # assignment or swap-and-confirm strategy.
         current_best_idx = 0
 
         for challenger_idx in range(1, len(candidates)):
@@ -87,7 +95,19 @@ async def _compare_pair(
     model_tier: ModelTier,
 ) -> str:
     """Compare two images, return 'A' or 'B'."""
+    # NOTE: Using get_llm() directly instead of invoke() because vision comparison
+    # requires raw multimodal message construction with base64-encoded images.
+    # This bypasses broker routing and rate limiting. Consider migrating to invoke()
+    # if its multimodal support is confirmed to handle raw image bytes.
+    # See also: selection.py which uses the same pattern for similar reasons.
     llm = get_llm(tier=model_tier, max_tokens=16)
+
+    for label, img_bytes in [("A", image_a), ("B", image_b)]:
+        if len(img_bytes) > MAX_IMAGE_SIZE:
+            raise ValueError(
+                f"Image {label} too large for vision comparison: "
+                f"{len(img_bytes)} bytes (max {MAX_IMAGE_SIZE})"
+            )
 
     b64_a = base64.b64encode(image_a).decode("utf-8")
     b64_b = base64.b64encode(image_b).decode("utf-8")
@@ -128,6 +148,6 @@ async def _compare_pair(
     if answer.startswith("B"):
         return "B"
 
-    # Default to A if response is ambiguous
+    # Default to A (defending champion) on ambiguous response — note positional bias above.
     logger.warning(f"Ambiguous pair comparison response: {answer!r}, defaulting to A")
     return "A"

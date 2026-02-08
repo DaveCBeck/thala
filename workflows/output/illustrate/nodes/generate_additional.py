@@ -1,6 +1,8 @@
 """Generate additional images (public domain, diagrams, or generated)."""
 
+import ipaddress
 import logging
+from urllib.parse import urlparse
 
 import httpx
 
@@ -20,8 +22,30 @@ _MERMAID_SUBTYPES = {"flowchart", "sequence", "concept_map"}
 _GRAPHVIZ_SUBTYPES = {"network_graph", "hierarchy", "dependency_tree"}
 
 
+def _validate_image_url(url: str) -> None:
+    """Validate URL is external HTTPS to prevent SSRF."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Only HTTPS URLs allowed, got: {parsed.scheme}")
+    hostname = parsed.hostname or ""
+    # Block internal/loopback addresses
+    if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        raise ValueError(f"Internal addresses not allowed: {hostname}")
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_reserved:
+            raise ValueError(f"Private/reserved IP not allowed: {hostname}")
+    except ValueError as exc:
+        # Re-raise our own validation errors; ignore errors from
+        # ip_address() when hostname is a regular domain name.
+        if "not allowed" in str(exc):
+            raise
+        # hostname is not an IP literal — that's fine (it's a domain name)
+
+
 async def _download_image(url: str) -> bytes:
     """Download image from URL."""
+    _validate_image_url(url)
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(url)
         response.raise_for_status()

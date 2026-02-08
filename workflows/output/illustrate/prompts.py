@@ -107,7 +107,7 @@ Recommendations:
   - Quality is "okay" but not "good"
 - `fail`: Fundamental problems that no prompt could fix
 
-NOTE: Use accept_with_warning for issues that are inconsequential for reader understading and experience OR unlikely to improve with regeneration.
+NOTE: Use accept_with_warning for issues that are inconsequential for reader understanding and experience OR unlikely to improve with regeneration.
 
 If recommending retry, provide an improved brief that specifically addresses the issues found."""
 

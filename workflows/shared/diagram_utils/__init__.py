@@ -40,7 +40,6 @@ from .validation import (
     sanitize_svg_text_entities,
     strip_code_fences,
     validate_and_sanitize_svg,
-    validate_svg_xml,
 )
 from .generation import analyze_content_for_diagram, generate_svg_diagram
 from .overlap import check_bounds_violations, check_text_overlaps, check_text_shape_overlaps
@@ -95,7 +94,6 @@ __all__ = [
     "convert_svg_to_png",
     # Validation utilities
     "validate_and_sanitize_svg",
-    "validate_svg_xml",
     "sanitize_svg_text_entities",
     "strip_code_fences",
     "extract_validation_error_type",

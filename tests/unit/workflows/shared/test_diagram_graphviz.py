@@ -90,12 +90,13 @@ class TestGenerateGraphvizWithSelection:
     @patch("workflows.shared.diagram_utils.graphviz_engine.generate_graphviz_diagram")
     async def test_single_success_skips_vision(self, mock_gen, config):
         success = DiagramResult(
-            svg_bytes=b"dot",
+            svg_bytes=None,
             png_bytes=b"png",
             analysis=None,
             overlap_check=None,
             generation_attempts=1,
             success=True,
+            source_code="dot",
         )
         failure = DiagramResult(
             svg_bytes=None,
@@ -118,28 +119,31 @@ class TestGenerateGraphvizWithSelection:
     async def test_vision_selects_best(self, mock_gen, mock_vision, config):
         results = [
             DiagramResult(
-                svg_bytes=b"d1",
+                svg_bytes=None,
                 png_bytes=b"p1",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="d1",
             ),
             DiagramResult(
-                svg_bytes=b"d2",
+                svg_bytes=None,
                 png_bytes=b"p2",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="d2",
             ),
             DiagramResult(
-                svg_bytes=b"d3",
+                svg_bytes=None,
                 png_bytes=b"p3",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="d3",
             ),
         ]
         mock_gen.side_effect = results

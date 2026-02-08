@@ -137,12 +137,13 @@ class TestGenerateMermaidWithSelection:
     @patch("workflows.shared.diagram_utils.mermaid.generate_mermaid_diagram")
     async def test_single_success_skips_vision(self, mock_gen, config):
         success = DiagramResult(
-            svg_bytes=b"code",
+            svg_bytes=None,
             png_bytes=b"png",
             analysis=None,
             overlap_check=None,
             generation_attempts=1,
             success=True,
+            source_code="code",
         )
         failure = DiagramResult(
             svg_bytes=None,
@@ -165,20 +166,22 @@ class TestGenerateMermaidWithSelection:
     async def test_multiple_success_uses_vision(self, mock_gen, mock_vision, config):
         results = [
             DiagramResult(
-                svg_bytes=b"code1",
+                svg_bytes=None,
                 png_bytes=b"png1",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="code1",
             ),
             DiagramResult(
-                svg_bytes=b"code2",
+                svg_bytes=None,
                 png_bytes=b"png2",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="code2",
             ),
         ]
         mock_gen.side_effect = results + [
@@ -204,20 +207,22 @@ class TestGenerateMermaidWithSelection:
     async def test_vision_failure_falls_back_to_first(self, mock_gen, mock_vision, config):
         results = [
             DiagramResult(
-                svg_bytes=b"code1",
+                svg_bytes=None,
                 png_bytes=b"png1",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="code1",
             ),
             DiagramResult(
-                svg_bytes=b"code2",
+                svg_bytes=None,
                 png_bytes=b"png2",
                 analysis=None,
                 overlap_check=None,
                 generation_attempts=1,
                 success=True,
+                source_code="code2",
             ),
         ]
         mock_gen.side_effect = results + [

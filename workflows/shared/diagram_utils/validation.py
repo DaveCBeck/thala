@@ -73,21 +73,6 @@ def validate_and_sanitize_svg(svg_string: str, width: int = 800, height: int = 6
     return etree.tostring(tree, encoding="unicode", pretty_print=True)
 
 
-def validate_svg_xml(svg_content: str) -> tuple[bool, str | None]:
-    """Check if SVG content is well-formed XML.
-
-    Args:
-        svg_content: Raw SVG string
-
-    Returns:
-        Tuple of (is_valid, error_message). error_message is None if valid.
-    """
-    try:
-        etree.fromstring(svg_content.encode())
-        return True, None
-    except etree.XMLSyntaxError as e:
-        return False, str(e)
-
 
 def sanitize_svg_text_entities(svg_content: str) -> str:
     """Sanitize unescaped XML entities in SVG text content.
@@ -138,7 +123,6 @@ def extract_validation_error_type(error: Exception) -> str:
 
 __all__ = [
     "validate_and_sanitize_svg",
-    "validate_svg_xml",
     "sanitize_svg_text_entities",
     "strip_code_fences",
     "extract_validation_error_type",

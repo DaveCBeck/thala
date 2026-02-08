@@ -6,13 +6,42 @@ errors (up to 2 attempts), and renders to PNG using the mmdc package.
 
 import asyncio
 import logging
+import re
 
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .schemas import DiagramConfig, DiagramResult
+from .validation import strip_code_fences
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Mermaid code sanitization — PhantomJS XSS mitigation
+# ---------------------------------------------------------------------------
+# mmdc uses PhantomJS 2.1.1 (abandoned since 2016, known CVEs including
+# CVE-2019-17221).  Mermaid supports HTML in node labels, so LLM-generated
+# code could inject <script>, event handlers, etc. that execute inside the
+# PhantomJS context.  We reject any code containing dangerous patterns
+# *before* it reaches the renderer.
+
+# Patterns that could trigger XSS in PhantomJS renderer
+_DANGEROUS_HTML_PATTERN = re.compile(
+    r'<\s*(?:script|iframe|object|embed|link|style|img\b[^>]*\bonerror)[^>]*>',
+    re.IGNORECASE,
+)
+_DANGEROUS_ATTR_PATTERN = re.compile(
+    r'\bon\w+\s*=',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_mermaid_code(code: str) -> str:
+    """Strip dangerous HTML that could exploit PhantomJS renderer (CVE-2019-17221 et al.)."""
+    if _DANGEROUS_HTML_PATTERN.search(code) or _DANGEROUS_ATTR_PATTERN.search(code):
+        raise ValueError("Mermaid code contains potentially dangerous HTML content")
+    return code
+
 
 MERMAID_GENERATION_SYSTEM = """You are an expert at creating Mermaid diagrams. Generate clean, readable Mermaid code.
 
@@ -30,7 +59,9 @@ Output ONLY the Mermaid code, no markdown fences, no explanation."""
 
 MERMAID_GENERATION_USER = """Generate a Mermaid diagram for the following concept.
 
+<instructions>
 {instructions}
+</instructions>
 
 Output ONLY the Mermaid code."""
 
@@ -67,37 +98,47 @@ async def generate_mermaid_diagram(
     # Step 1: LLM generates Mermaid code
     mermaid_code = await _llm_generate_mermaid(instructions)
     if not mermaid_code:
-        return _failure("LLM failed to generate Mermaid code")
+        return DiagramResult.failure("LLM failed to generate Mermaid code")
+
+    # Step 1.5: Sanitize LLM output before it reaches PhantomJS
+    try:
+        mermaid_code = _sanitize_mermaid_code(mermaid_code)
+    except ValueError as exc:
+        return DiagramResult.failure(str(exc))
 
     # Step 2: Validate + repair loop (initial + 2 repair attempts)
     is_valid = False
     errors = ""
     for attempt in range(3):
-        is_valid, errors = _validate_mermaid(mermaid_code)
+        is_valid, errors = await asyncio.to_thread(_validate_mermaid, mermaid_code)
         if is_valid:
             break
         if attempt < 2:
             logger.info(f"Mermaid validation failed (attempt {attempt + 1}), repairing: {errors}")
             repaired = await _llm_repair_mermaid(mermaid_code, errors)
             if repaired:
-                mermaid_code = repaired
+                try:
+                    mermaid_code = _sanitize_mermaid_code(repaired)
+                except ValueError as exc:
+                    return DiagramResult.failure(str(exc))
 
     if not is_valid:
-        return _failure(f"Mermaid validation failed after repairs: {errors}")
+        return DiagramResult.failure(f"Mermaid validation failed after repairs: {errors}")
 
     # Step 3: Render to PNG
     png_bytes = await _render_mermaid_to_png(mermaid_code, width=config.width, background=config.background_color)
     if not png_bytes:
-        return _failure("Mermaid rendering failed")
+        return DiagramResult.failure("Mermaid rendering failed")
 
     logger.info(f"Mermaid diagram generated ({len(png_bytes)} bytes PNG)")
     return DiagramResult(
-        svg_bytes=mermaid_code.encode("utf-8"),  # Store source code as "svg_bytes"
+        svg_bytes=None,
         png_bytes=png_bytes,
         analysis=None,
         overlap_check=None,
         generation_attempts=1,
         success=True,
+        source_code=mermaid_code,
     )
 
 
@@ -114,16 +155,7 @@ async def _llm_generate_mermaid(instructions: str) -> str | None:
             ),
         )
         content = (response.content if isinstance(response.content, str) else str(response.content)).strip()
-
-        # Strip markdown fences if present
-        if content.startswith("```"):
-            lines = content.split("\n")
-            if lines[-1].strip() == "```":
-                content = "\n".join(lines[1:-1])
-            else:
-                content = "\n".join(lines[1:])
-
-        return content.strip()
+        return strip_code_fences(content)
     except Exception as e:
         logger.error(f"Mermaid generation failed: {e}")
         return None
@@ -136,6 +168,8 @@ def _validate_mermaid(code: str) -> tuple[bool, str]:
     is returned for the repair loop.
     """
     try:
+        # NOTE: mmdc uses PhantomJS (abandoned, known CVEs). Input is sanitized above.
+        # Consider migrating to @mermaid-js/mermaid-cli (Playwright-based) in future.
         from mmdc import MermaidConverter
 
         converter = MermaidConverter(timeout=15)
@@ -158,16 +192,7 @@ async def _llm_repair_mermaid(code: str, errors: str) -> str | None:
             config=InvokeConfig(max_tokens=2000),
         )
         content = (response.content if isinstance(response.content, str) else str(response.content)).strip()
-
-        # Strip markdown fences
-        if content.startswith("```"):
-            lines = content.split("\n")
-            if lines[-1].strip() == "```":
-                content = "\n".join(lines[1:-1])
-            else:
-                content = "\n".join(lines[1:])
-
-        return content.strip()
+        return strip_code_fences(content)
     except Exception as e:
         logger.error(f"Mermaid repair failed: {e}")
         return None
@@ -178,6 +203,8 @@ async def _render_mermaid_to_png(code: str, width: int = 800, background: str = 
 
     def _render() -> bytes | None:
         try:
+            # NOTE: mmdc uses PhantomJS (abandoned, known CVEs). Input is sanitized above.
+            # Consider migrating to @mermaid-js/mermaid-cli (Playwright-based) in future.
             from mmdc import MermaidConverter
 
             converter = MermaidConverter(timeout=30)
@@ -211,44 +238,15 @@ async def generate_mermaid_with_selection(
     Returns:
         Best DiagramResult from candidates
     """
-    from workflows.shared.vision_comparison import vision_pair_select
+    from .schemas import generate_with_selection
 
-    instructions = custom_instructions or analysis
-
-    tasks = [generate_mermaid_diagram(instructions, config, custom_instructions) for _ in range(num_candidates)]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    successful = [r for r in results if isinstance(r, DiagramResult) and r.success and r.png_bytes]
-
-    if not successful:
-        return _failure("All Mermaid candidates failed")
-    if len(successful) == 1:
-        return successful[0]
-
-    # Vision pair comparison to select best
-    png_list = [r.png_bytes for r in successful]
-    try:
-        best_idx = await vision_pair_select(png_list, instructions)
-    except Exception as e:
-        logger.warning(f"Vision selection failed, using first candidate: {e}")
-        best_idx = 0
-
-    selected = successful[best_idx]
-    selected.selected_candidate = best_idx + 1
-    selected.generation_attempts = len(successful)
-    return selected
-
-
-def _failure(error: str) -> DiagramResult:
-    """Create a failed DiagramResult."""
-    return DiagramResult(
-        svg_bytes=None,
-        png_bytes=None,
-        analysis=None,
-        overlap_check=None,
-        generation_attempts=1,
-        success=False,
-        error=error,
+    return await generate_with_selection(
+        generator_fn=generate_mermaid_diagram,
+        analysis=analysis,
+        config=config,
+        custom_instructions=custom_instructions,
+        num_candidates=num_candidates,
+        engine_name="Mermaid",
     )
 
 

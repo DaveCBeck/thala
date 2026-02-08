@@ -4,9 +4,14 @@ Contains all type definitions, enums, Pydantic models, and dataclasses
 used throughout the diagram generation pipeline.
 """
 
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -56,7 +61,7 @@ class DiagramConfig(BaseModel):
     font_family: str = Field(default="Arial, sans-serif", description="Font family")
     primary_color: str = Field(default="#2563eb", description="Primary accent color")
     num_candidates: int = Field(
-        default=3, description="Number of SVG candidates to generate in parallel"
+        default=3, ge=1, le=10, description="Number of SVG candidates to generate in parallel"
     )
 
     # Refinement loop settings
@@ -198,11 +203,86 @@ class DiagramResult:
     improvements_made: list[str] | None = None  # What was improved
     success: bool = False
     error: str | None = None
+    source_code: str | None = None  # Raw source code (Mermaid/DOT) when engine is not SVG-native
 
     # Refinement metrics (if refinement loop was enabled)
     refinement_iterations: int | None = None
     final_quality_score: float | None = None
     quality_history: list[float] | None = None  # Score at each iteration
+
+    @classmethod
+    def failure(cls, error: str) -> DiagramResult:
+        """Create a failed DiagramResult."""
+        return cls(
+            svg_bytes=None,
+            png_bytes=None,
+            analysis=None,
+            overlap_check=None,
+            generation_attempts=1,
+            success=False,
+            error=error,
+        )
+
+
+logger = logging.getLogger(__name__)
+
+# Type alias for diagram generator functions (e.g. generate_mermaid_diagram,
+# generate_graphviz_diagram).
+GeneratorFn = Callable[
+    [str, DiagramConfig, str],
+    Coroutine[Any, Any, DiagramResult],
+]
+
+
+async def generate_with_selection(
+    generator_fn: GeneratorFn,
+    analysis: str,
+    config: DiagramConfig,
+    custom_instructions: str = "",
+    num_candidates: int = 3,
+    engine_name: str = "diagram",
+) -> DiagramResult:
+    """Generate multiple diagram candidates, select best via vision.
+
+    Shared logic for mermaid and graphviz selection flows.
+
+    Args:
+        generator_fn: Async function that generates a single DiagramResult.
+        analysis: Content analysis or description.
+        config: Diagram configuration.
+        custom_instructions: Additional instructions for generation.
+        num_candidates: Number of parallel candidates to generate.
+        engine_name: Human-readable engine name for error messages.
+
+    Returns:
+        Best DiagramResult from candidates.
+    """
+    from workflows.shared.vision_comparison import vision_pair_select
+
+    instructions = custom_instructions or analysis
+
+    tasks = [generator_fn(instructions, config, custom_instructions) for _ in range(num_candidates)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    successful = [r for r in results if isinstance(r, DiagramResult) and r.success and r.png_bytes]
+
+    if not successful:
+        return DiagramResult.failure(f"All {engine_name} candidates failed")
+    if len(successful) == 1:
+        return successful[0]
+
+    # Vision pair comparison to select best
+    png_list = [r.png_bytes for r in successful]
+    try:
+        best_idx = await vision_pair_select(png_list, instructions)
+    except Exception as e:
+        logger.warning(f"Vision selection failed, using first candidate: {e}")
+        best_idx = 0
+
+    selected = successful[best_idx]
+    selected.selected_candidate = best_idx + 1
+    selected.generation_attempts = len(successful)
+    return selected
 
 
 __all__ = [
@@ -215,4 +295,5 @@ __all__ = [
     "DiagramQualityAssessment",
     "DiagramCandidate",
     "DiagramResult",
+    "generate_with_selection",
 ]

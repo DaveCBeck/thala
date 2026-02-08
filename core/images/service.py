@@ -165,8 +165,6 @@ class ImageService:
         queries: list[str],
         limit_per_query: int = 3,
         orientation: str | None = None,
-        context: str | None = None,
-        custom_selection_criteria: str | None = None,
     ) -> list[ImageResult]:
         """Search multiple queries, aggregate and deduplicate results.
 
@@ -176,8 +174,6 @@ class ImageService:
             queries: List of search queries to run
             limit_per_query: Max results per query
             orientation: Image orientation filter
-            context: Article context (unused here, passed to caller)
-            custom_selection_criteria: Selection criteria (unused here)
 
         Returns:
             Deduplicated list of ImageResult candidates
@@ -186,27 +182,33 @@ class ImageService:
         if not providers:
             return []
 
+        capped_queries = queries[:4]  # Cap at 4 queries
+
+        # Flatten all query-provider combinations into a single gather
+        tasks = [
+            self._search_provider(source, query, limit=limit_per_query, orientation=orientation)
+            for query in capped_queries
+            for source in providers
+        ]
+
+        results_or_errors = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Collect results, skipping any that raised exceptions
         all_results: list[ImageResult] = []
         seen_urls: set[str] = set()
 
-        for query in queries[:4]:  # Cap at 4 queries
-            try:
-                # Search all providers for this query
-                tasks = [
-                    self._search_provider(source, query, limit=limit_per_query, orientation=orientation)
-                    for source in providers
-                ]
-                results_lists = await asyncio.gather(*tasks)
+        for i, result in enumerate(results_or_errors):
+            if isinstance(result, BaseException):
+                query_idx = i // len(providers)
+                query = capped_queries[query_idx]
+                logger.warning(f"Query '{query[:50]}' task failed: {result}")
+                continue
+            for r in result:
+                if r.url not in seen_urls:
+                    seen_urls.add(r.url)
+                    all_results.append(r)
 
-                for results in results_lists:
-                    for r in results:
-                        if r.url not in seen_urls:
-                            seen_urls.add(r.url)
-                            all_results.append(r)
-            except Exception as e:
-                logger.warning(f"Query '{query[:50]}' failed: {e}")
-
-        logger.info(f"search_pool: {len(all_results)} unique results from {min(len(queries), 4)} queries")
+        logger.info(f"search_pool: {len(all_results)} unique results from {len(capped_queries)} queries")
         return all_results
 
     async def close(self) -> None:

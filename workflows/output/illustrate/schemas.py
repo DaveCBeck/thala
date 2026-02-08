@@ -6,6 +6,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+def _parse_json_string_list(v: Any) -> list:
+    """Handle LLM returning JSON string instead of list."""
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        if v.strip():
+            return [v]
+        return []
+    return v if v is not None else []
+
+
 class ImageLocationPlan(BaseModel):
     """Plan for a single image location in the document."""
 
@@ -115,18 +130,7 @@ class VisionReviewResult(BaseModel):
     @field_validator("issues", mode="before")
     @classmethod
     def parse_issues_json_string(cls, v: Any) -> list:
-        """Handle LLM returning JSON string instead of list."""
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, list):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-            if v.strip():
-                return [v]
-            return []
-        return v if v is not None else []
+        return _parse_json_string_list(v)
 
 
 class ImageCompareResult(BaseModel):
@@ -148,18 +152,7 @@ class ImageCompareResult(BaseModel):
     @field_validator("issues_with_selected", mode="before")
     @classmethod
     def parse_issues_json_string(cls, v: Any) -> list:
-        """Handle LLM returning JSON string instead of list."""
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, list):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-            if v.strip():
-                return [v]
-            return []
-        return v if v is not None else []
+        return _parse_json_string_list(v)
 
 
 class HeaderAppositenessResult(BaseModel):

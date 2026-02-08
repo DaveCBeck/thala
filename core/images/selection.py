@@ -2,7 +2,7 @@
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from workflows.shared.llm_utils import ModelTier, invoke
 
@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 class ImageSelection(BaseModel):
     """LLM output for image selection."""
+
+    model_config = ConfigDict(extra="forbid")
 
     selected_index: int = Field(description="0-based index of best image")
     brief_compliance_score: int = Field(
@@ -48,28 +50,38 @@ Select the image with the highest weighted total."""
 
 SELECTION_USER = """Select the best image for the given context.
 
-Context: {context}
+<context>
+{context}
+</context>
 
-Search query: {query}
+<query>
+{query}
+</query>
 
-Image candidates:
+<candidates>
 {candidates}
+</candidates>
 
 Choose the image index (0-based) that best matches the context.
 Score the WINNING image on all four criteria."""
 
 SELECTION_USER_WITH_CRITERIA = """Select the best image based on the following criteria.
 
-**Selection Criteria:**
+<criteria>
 {criteria}
+</criteria>
 
-**Document Context:**
+<context>
 {context}
+</context>
 
-**Search query:** {query}
+<query>
+{query}
+</query>
 
-**Image candidates:**
+<candidates>
 {candidates}
+</candidates>
 
 Choose the image index (0-based) that best matches the criteria.
 Score the WINNING image on all four criteria."""
@@ -94,8 +106,10 @@ async def select_best_image(
     Returns:
         Best matching ImageResult
     """
-    if len(candidates) <= 1:
-        return candidates[0] if candidates else candidates[0]
+    if not candidates:
+        raise ValueError("No candidates provided for image selection")
+    if len(candidates) == 1:
+        return candidates[0]
 
     # Format candidates for LLM
     candidate_text = "\n".join(
