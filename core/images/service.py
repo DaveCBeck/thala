@@ -118,9 +118,7 @@ class ImageService:
             return ImageResult.model_validate(cached)
 
         # Determine which providers to use
-        providers = (
-            [preferred_provider] if preferred_provider else self._get_priority_order()
-        )
+        providers = [preferred_provider] if preferred_provider else self._get_priority_order()
 
         if not providers:
             raise NoResultsError(
@@ -130,10 +128,7 @@ class ImageService:
 
         # LLM selection: search all providers in parallel, combine results
         if use_llm_selection and context and len(providers) > 1:
-            tasks = [
-                self._search_provider(source, query, limit=3, orientation=orientation)
-                for source in providers
-            ]
+            tasks = [self._search_provider(source, query, limit=3, orientation=orientation) for source in providers]
             results_lists = await asyncio.gather(*tasks)
             all_results = [r for results in results_lists for r in results]
 
@@ -147,17 +142,13 @@ class ImageService:
                 f"LLM selecting from {len(all_results)} candidates across "
                 f"{sum(1 for r in results_lists if r)} providers"
             )
-            result = await select_best_image(
-                all_results, query, context, custom_selection_criteria
-            )
+            result = await select_best_image(all_results, query, context, custom_selection_criteria)
             set_cached("images", cache_key, result.model_dump())
             return result
 
         # Simple mode: sequential fallback, return first result
         for source in providers:
-            results = await self._search_provider(
-                source, query, limit=1, orientation=orientation
-            )
+            results = await self._search_provider(source, query, limit=1, orientation=orientation)
             if results:
                 result = results[0]
                 set_cached("images", cache_key, result.model_dump())
@@ -168,6 +159,55 @@ class ImageService:
             f"No images found for '{query}' across all providers",
             provider="all",
         )
+
+    async def search_pool(
+        self,
+        queries: list[str],
+        limit_per_query: int = 3,
+        orientation: str | None = None,
+        context: str | None = None,
+        custom_selection_criteria: str | None = None,
+    ) -> list[ImageResult]:
+        """Search multiple queries, aggregate and deduplicate results.
+
+        Returns a pool of candidates for LLM selection.
+
+        Args:
+            queries: List of search queries to run
+            limit_per_query: Max results per query
+            orientation: Image orientation filter
+            context: Article context (unused here, passed to caller)
+            custom_selection_criteria: Selection criteria (unused here)
+
+        Returns:
+            Deduplicated list of ImageResult candidates
+        """
+        providers = self._get_priority_order()
+        if not providers:
+            return []
+
+        all_results: list[ImageResult] = []
+        seen_urls: set[str] = set()
+
+        for query in queries[:4]:  # Cap at 4 queries
+            try:
+                # Search all providers for this query
+                tasks = [
+                    self._search_provider(source, query, limit=limit_per_query, orientation=orientation)
+                    for source in providers
+                ]
+                results_lists = await asyncio.gather(*tasks)
+
+                for results in results_lists:
+                    for r in results:
+                        if r.url not in seen_urls:
+                            seen_urls.add(r.url)
+                            all_results.append(r)
+            except Exception as e:
+                logger.warning(f"Query '{query[:50]}' failed: {e}")
+
+        logger.info(f"search_pool: {len(all_results)} unique results from {min(len(queries), 4)} queries")
+        return all_results
 
     async def close(self) -> None:
         """Close all provider connections."""

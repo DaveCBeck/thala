@@ -129,8 +129,12 @@ async def generate_article_header(
     theme: str | None = None,
     custom_prompt: str | None = None,
     aspect_ratio: str = "16:9",
+    sample_count: int = 4,
 ) -> tuple[bytes | None, str | None]:
     """Generate an article header image using LLM-generated prompt + Imagen.
+
+    Generates multiple candidates and uses vision pair comparison to select
+    the best one.
 
     Args:
         title: Article title
@@ -138,6 +142,7 @@ async def generate_article_header(
         theme: Optional theme description (unused in new flow, kept for compatibility)
         custom_prompt: If provided, skip LLM prompt generation and use this directly
         aspect_ratio: Imagen aspect ratio (default "16:9", also supports "1:1", "9:16", etc.)
+        sample_count: Number of image candidates to generate (default 4)
 
     Returns:
         Tuple of (PNG image bytes, prompt used) or (None, None) if generation fails
@@ -154,17 +159,19 @@ async def generate_article_header(
         logger.error("GEMINI_API_KEY environment variable not set")
         return None, None
 
-    # Step 1: Use custom prompt or generate one using Sonnet
+    # Step 1: Use custom prompt (structured via Imagen optimizer) or generate one
     if custom_prompt:
-        prompt = custom_prompt
-        logger.info(f"Using custom prompt for image generation: {prompt[:100]}...")
+        from workflows.shared.imagen_prompts import structure_brief_for_imagen
+
+        prompt = await structure_brief_for_imagen(custom_prompt)
+        logger.info(f"Structured prompt for image generation: {prompt[:100]}...")
     else:
         prompt = await generate_image_prompt(title, content)
         if not prompt:
             logger.error(f"Failed to generate image prompt for '{title}'")
             return None, None
 
-    # Step 2: Generate the image using Imagen (semaphore limits concurrent API calls)
+    # Step 2: Generate images using Imagen (semaphore limits concurrent API calls)
     try:
         from core.task_queue.rate_limits import get_imagen_semaphore
 
@@ -173,19 +180,49 @@ async def generate_article_header(
                 model=IMAGEN_MODEL,
                 prompt=prompt,
                 config=types.GenerateImagesConfig(
-                    number_of_images=1,
+                    number_of_images=sample_count,
                     aspect_ratio=aspect_ratio,
                 ),
             )
 
-        if response.generated_images:
-            image_bytes = response.generated_images[0].image.image_bytes
-            logger.info(f"Generated header image for '{title}' ({len(image_bytes)} bytes)")
-            return image_bytes, prompt
+        candidates = [
+            img.image.image_bytes for img in (response.generated_images or []) if img.image and img.image.image_bytes
+        ]
 
-        logger.warning(f"No image generated for '{title}' - response was empty")
-        return None, prompt
+        if not candidates:
+            logger.warning(f"No images generated for '{title}' - response was empty")
+            return None, prompt
+
+        if len(candidates) == 1:
+            logger.info(f"Generated 1 header image for '{title}' ({len(candidates[0])} bytes)")
+            return candidates[0], prompt
+
+        # Step 3: Vision pair comparison to select best candidate
+        logger.info(f"Generated {len(candidates)} candidates for '{title}', selecting best...")
+        best = await _select_best_imagen_candidate(candidates, prompt, custom_prompt or "")
+        return best, prompt
 
     except Exception as e:
         logger.error(f"Failed to generate image for '{title}': {e}")
         return None, prompt
+
+
+async def _select_best_imagen_candidate(
+    candidates: list[bytes],
+    prompt: str,
+    brief: str,
+) -> bytes:
+    """Select the best Imagen candidate via vision pair comparison.
+
+    Falls back to first candidate if vision comparison fails.
+    """
+    try:
+        from workflows.shared.vision_comparison import vision_pair_select
+
+        criteria = brief if brief else prompt
+        best_idx = await vision_pair_select(candidates, criteria)
+        logger.info(f"Vision selected Imagen candidate {best_idx + 1} of {len(candidates)}")
+        return candidates[best_idx]
+    except Exception as e:
+        logger.warning(f"Imagen vision selection failed, using first candidate: {e}")
+        return candidates[0]

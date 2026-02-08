@@ -26,6 +26,14 @@ A well-illustrated article uses visual variety. Diagrams explain; photographs ev
 
 5. **Writing Briefs**:
    - For `public_domain`: Write detailed selection criteria and a good search query. Describe mood, composition, subjects. Think editorially—what photograph would a magazine art director choose?
+     **IMPORTANT — Multi-query search**: For public_domain images, generate BOTH types of search queries:
+     - `literal_queries`: Direct subject matter (what to physically show). 1-2 queries.
+     - `conceptual_queries`: Mood, feeling, metaphor (what the image should EVOKE). 1-2 queries.
+     - Set `query_strategy` to "literal", "conceptual", or "both" based on the brief's intent.
+
+     ANTI-PATTERN: Never search for scientific/technical terms when metaphorical imagery is requested.
+     BAD: Article about autophagy, brief says "renewal" → "autophagy cells"
+     GOOD: Article about autophagy, brief says "renewal" → "spring rebirth morning light"
    - For `generated`: Write a full Imagen prompt. Include photography style, lighting, composition, mood. Be specific about the feeling you want to evoke.
    - For `diagram`: Describe the diagram type, key elements, and relationships to visualize. Only use when the structure itself is the point.
 

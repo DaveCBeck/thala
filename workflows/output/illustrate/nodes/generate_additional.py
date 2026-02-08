@@ -128,17 +128,49 @@ async def _generate_public_domain(
     brief: str,
     document_context: str,
 ) -> dict:
-    """Generate using public domain image search."""
-    try:
-        search_query = plan.search_query or brief[:100]
+    """Generate using public domain image search.
 
-        result = await get_image(
-            query=search_query,
-            use_llm_selection=True,
-            context=document_context,
-            custom_selection_criteria=brief,
-            orientation="landscape",
-        )
+    Uses multi-query search_pool() when literal/conceptual queries are
+    available, falling back to single-query get_image() otherwise.
+    """
+    try:
+        # Build query list from multi-query fields if available
+        queries = _build_search_queries(plan)
+
+        if queries:
+            # Multi-query path: search_pool + LLM selection
+            from core.images.service import get_image_service
+            from core.images.selection import select_best_image
+
+            service = get_image_service()
+            pool = await service.search_pool(
+                queries=queries,
+                limit_per_query=3,
+                orientation="landscape",
+            )
+
+            if not pool:
+                raise NoResultsError(
+                    "No images found for multi-query search",
+                    provider="all",
+                )
+
+            result = await select_best_image(
+                pool,
+                query=queries[0],
+                context=document_context,
+                custom_selection_criteria=brief,
+            )
+        else:
+            # Fallback: single-query via get_image()
+            search_query = plan.search_query or brief[:100]
+            result = await get_image(
+                query=search_query,
+                use_llm_selection=True,
+                context=document_context,
+                custom_selection_criteria=brief,
+                orientation="landscape",
+            )
 
         image_bytes = await _download_image(result.url)
         logger.info(f"Downloaded public domain image for {location_id}")
@@ -150,7 +182,7 @@ async def _generate_public_domain(
                     success=True,
                     image_bytes=image_bytes,
                     image_type="public_domain",
-                    prompt_or_query_used=search_query,
+                    prompt_or_query_used=str(queries or plan.search_query or brief[:100]),
                     alt_text=result.metadata.alt_text or result.metadata.description,
                     attribution=result.attribution.model_dump() if result.attribution else None,
                 )
@@ -180,6 +212,32 @@ async def _generate_public_domain(
                 )
             ],
         }
+
+
+def _build_search_queries(plan: ImageLocationPlan) -> list[str]:
+    """Build prioritized query list from plan's multi-query fields.
+
+    Returns empty list if no multi-query fields are populated,
+    signaling the caller to fall back to single-query search.
+    """
+    if not plan.literal_queries and not plan.conceptual_queries:
+        return []
+
+    strategy = plan.query_strategy or "both"
+
+    if strategy == "literal":
+        return plan.literal_queries[:4]
+    elif strategy == "conceptual":
+        return plan.conceptual_queries[:4]
+    else:  # "both"
+        # Interleave conceptual and literal for diversity
+        queries: list[str] = []
+        for conceptual, literal in zip(plan.conceptual_queries, plan.literal_queries):
+            queries.extend([conceptual, literal])
+        # Add any remaining
+        queries.extend(plan.conceptual_queries[len(plan.literal_queries) :])
+        queries.extend(plan.literal_queries[len(plan.conceptual_queries) :])
+        return queries[:4]
 
 
 async def _generate_diagram(
