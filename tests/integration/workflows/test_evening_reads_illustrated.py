@@ -232,7 +232,6 @@ async def run_illustrate(
         generate_header_image=True,
         additional_image_count=1,  # Reduced for faster tests
         header_prefer_public_domain=True,
-        enable_vision_review=False,  # Disable for faster tests
         max_retries=1,
         output_dir=str(images_dir),
         enable_diagram_refinement=False,  # Disable for faster tests

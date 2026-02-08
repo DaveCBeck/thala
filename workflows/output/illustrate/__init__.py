@@ -14,7 +14,6 @@ Example:
         output_dir="/path/to/images",
         options=IllustrateConfig(
             additional_image_count=2,
-            enable_vision_review=True,
         ),
     )
 
@@ -35,6 +34,7 @@ from .state import (
     IllustrateState,
     ImageGenResult,
     ImageReviewResult,
+    LocationSelection,
 )
 
 
@@ -85,6 +85,7 @@ __all__ = [
     "IllustrateInput",
     "ImageGenResult",
     "ImageReviewResult",
+    "LocationSelection",
     "FinalImage",
     # Schemas
     "ImageLocationPlan",

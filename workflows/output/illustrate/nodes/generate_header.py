@@ -32,8 +32,7 @@ async def _download_image(url: str) -> bytes:
                 total += len(chunk)
                 if total > MAX_IMAGE_SIZE:
                     raise ValueError(
-                        f"Image exceeds size limit: >{MAX_IMAGE_SIZE} bytes "
-                        f"({MAX_IMAGE_SIZE // (1024 * 1024)} MB)"
+                        f"Image exceeds size limit: >{MAX_IMAGE_SIZE} bytes ({MAX_IMAGE_SIZE // (1024 * 1024)} MB)"
                     )
                 chunks.append(chunk)
         return b"".join(chunks)

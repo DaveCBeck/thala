@@ -103,8 +103,7 @@ class ImageOpportunity(BaseModel):
     def validate_location_id(cls, v: str) -> str:
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
             raise ValueError(
-                f"location_id must contain only alphanumeric characters, "
-                f"hyphens, and underscores, got: {v!r}"
+                f"location_id must contain only alphanumeric characters, hyphens, and underscores, got: {v!r}"
             )
         return v
 
@@ -176,8 +175,7 @@ class CandidateBrief(BaseModel):
     def validate_location_id(cls, v: str) -> str:
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
             raise ValueError(
-                f"location_id must contain only alphanumeric characters, "
-                f"hyphens, and underscores, got: {v!r}"
+                f"location_id must contain only alphanumeric characters, hyphens, and underscores, got: {v!r}"
             )
         return v
 

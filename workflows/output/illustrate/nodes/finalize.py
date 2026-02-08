@@ -1,6 +1,5 @@
 """Finalize workflow: save images and insert into document."""
 
-import base64
 import logging
 import os
 import re
@@ -8,125 +7,64 @@ import tempfile
 from collections import defaultdict
 from typing import Literal
 
-from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
-
 from ..config import IllustrateConfig
-from ..prompts import VISION_COMPARE_SYSTEM, VISION_COMPARE_USER
-from ..schemas import ImageCompareResult, ImageLocationPlan
+from ..schemas import ImageLocationPlan
 from ..state import (
     FinalImage,
     ImageGenResult,
-    ImageReviewResult,
     IllustrateState,
+    LocationSelection,
     WorkflowError,
 )
 
 logger = logging.getLogger(__name__)
 
 
-async def _compare_candidates(
-    candidates: list[ImageGenResult],
-    document_context: str,
-    purpose: str,
-    brief: str,
-) -> ImageGenResult:
-    """Compare multiple image candidates and select the best one.
-
-    Uses vision to evaluate all candidates side-by-side and pick the best.
-    Falls back to the last candidate if comparison fails.
-    """
-    if len(candidates) == 1:
-        return candidates[0]
-
-    try:
-        # Build vision content with all candidate images
-        content = [
-            {
-                "type": "text",
-                "text": VISION_COMPARE_USER.format(
-                    num_candidates=len(candidates),
-                    context=document_context[:3000],
-                    purpose=purpose,
-                    brief=brief[:1500],
-                ),
-            }
-        ]
-
-        # Add each candidate image
-        for i, candidate in enumerate(candidates):
-            if not candidate["image_bytes"]:
-                continue
-
-            image_bytes = candidate["image_bytes"]
-            b64_image = base64.b64encode(image_bytes).decode("utf-8")
-
-            # Determine media type
-            media_type = "image/png"
-            if image_bytes[:2] == b"\xff\xd8":
-                media_type = "image/jpeg"
-
-            content.append(
-                {
-                    "type": "text",
-                    "text": f"\n**Candidate {i + 1}:**",
-                }
-            )
-            content.append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": b64_image,
-                    },
-                }
-            )
-
-        result = await invoke(
-            tier=ModelTier.SONNET,
-            system=VISION_COMPARE_SYSTEM,
-            user=content,
-            schema=ImageCompareResult,
-            config=InvokeConfig(max_tokens=500),
-        )
-
-        # Get the selected candidate (1-indexed)
-        selected_idx = result.selected_candidate - 1
-        if 0 <= selected_idx < len(candidates):
-            logger.info(f"Comparison selected candidate {result.selected_candidate}: {result.reasoning[:100]}")
-            if result.issues_with_selected:
-                logger.warning(f"Selected image has issues: {result.issues_with_selected}")
-            return candidates[selected_idx]
-        else:
-            logger.warning(f"Invalid candidate index {result.selected_candidate}, using last")
-            return candidates[-1]
-
-    except Exception as e:
-        logger.warning(f"Comparison failed, using last candidate: {e}")
-        return candidates[-1]
-
-
-def _group_candidates_by_location(
+def _select_winning_results(
     generation_results: list[ImageGenResult],
-    review_results: list[ImageReviewResult],
-) -> tuple[dict[str, list[ImageGenResult]], set[str]]:
-    """Group successful generation results by location_id.
+    selection_results: list[LocationSelection],
+) -> list[ImageGenResult]:
+    """Pick the winning ImageGenResult per location based on selection_results.
 
-    Returns:
-        - Dict mapping location_id to list of ALL successful candidates
-        - Set of location_ids that have at least one passed review
+    For each location with a selection, find the generation result matching
+    the selected_brief_id. Falls back to the last successful result if
+    the selected brief_id can't be found.
     """
-    # Build set of passed location_ids
-    passed_ids = {r["location_id"] for r in review_results if r.get("passed", False)}
-
-    # Group ALL successful generations by location_id
-    candidates_by_id: dict[str, list[ImageGenResult]] = defaultdict(list)
+    # Build lookup: brief_id -> ImageGenResult
+    results_by_brief_id: dict[str, ImageGenResult] = {}
+    results_by_location: dict[str, list[ImageGenResult]] = defaultdict(list)
     for gen in generation_results:
-        if not gen["success"] or not gen.get("image_bytes"):
-            continue
-        candidates_by_id[gen["location_id"]].append(gen)
+        if gen["success"] and gen.get("image_bytes"):
+            results_by_brief_id[gen["brief_id"]] = gen
+            results_by_location[gen["location_id"]].append(gen)
 
-    return dict(candidates_by_id), passed_ids
+    winners: list[ImageGenResult] = []
+    selected_locations: set[str] = set()
+
+    for selection in selection_results:
+        loc_id = selection["location_id"]
+        if loc_id in selected_locations:
+            continue  # Skip duplicate selections for same location
+        selected_locations.add(loc_id)
+
+        if selection["quality_tier"] == "failed":
+            continue  # Both candidates failed, no image for this location
+
+        brief_id = selection["selected_brief_id"]
+        if brief_id and brief_id in results_by_brief_id:
+            winners.append(results_by_brief_id[brief_id])
+        elif loc_id in results_by_location:
+            # Fallback: use the last successful result for this location
+            logger.warning(f"Selected brief_id {brief_id} not found for {loc_id}, using fallback")
+            winners.append(results_by_location[loc_id][-1])
+
+    # Also include any successful results for locations without selection
+    # (e.g., from retry rounds that bypass selection)
+    for loc_id, results in results_by_location.items():
+        if loc_id not in selected_locations:
+            winners.append(results[-1])
+
+    return winners
 
 
 def _insert_images_into_markdown(
@@ -134,21 +72,14 @@ def _insert_images_into_markdown(
     final_images: list[FinalImage],
     image_plan: list[ImageLocationPlan],
 ) -> str:
-    """Insert image references into markdown below specified headers.
-
-    Images are inserted as: ![alt](path)
-
-    Attributions are added as small captions below images when required.
-    """
+    """Insert image references into markdown below specified headers."""
     if not final_images:
         return document
 
-    # Build lookup of images by location_id
     images_by_id = {img["location_id"]: img for img in final_images}
 
-    # Process each plan in reverse order (so line numbers stay valid)
     lines = document.split("\n")
-    insertions = []  # List of (line_index, markdown_to_insert)
+    insertions = []
 
     for plan in image_plan:
         if plan.location_id not in images_by_id:
@@ -157,14 +88,11 @@ def _insert_images_into_markdown(
         img = images_by_id[plan.location_id]
         header_text = plan.insertion_after_header
 
-        # Find the header line
         header_line_idx = None
         for i, line in enumerate(lines):
-            # Match header with varying levels (# ## ### etc.)
             if re.match(r"^#+\s*" + re.escape(header_text) + r"\s*$", line.strip()):
                 header_line_idx = i
                 break
-            # Also try partial match for long headers
             if header_text in line and line.strip().startswith("#"):
                 header_line_idx = i
                 break
@@ -173,12 +101,10 @@ def _insert_images_into_markdown(
             logger.warning(f"Could not find header '{header_text}' for image {plan.location_id}")
             continue
 
-        # Build image markdown
         alt_text = img["alt_text"] or f"Image: {header_text}"
         file_path = img["file_path"]
         image_md = f"\n![{alt_text}]({file_path})\n"
 
-        # Add source attribution based on image type
         image_type = img.get("image_type", "generated")
         if image_type == "public_domain" and img.get("attribution"):
             attr = img["attribution"]
@@ -194,10 +120,8 @@ def _insert_images_into_markdown(
         elif image_type == "generated":
             image_md += "\n*Image generated by Imagen*\n"
 
-        # Insert after the header line
         insertions.append((header_line_idx + 1, image_md))
 
-    # Sort by line index descending and insert
     insertions.sort(key=lambda x: x[0], reverse=True)
     for line_idx, md in insertions:
         lines.insert(line_idx, md)
@@ -213,25 +137,18 @@ def _determine_status(
     """Determine workflow status based on results."""
     if not image_plan:
         return "failed"
-
     if not final_images:
         return "failed"
-
     if len(final_images) == len(image_plan):
         return "success"
-
-    # Some images succeeded
     return "partial"
 
 
 async def finalize_node(state: IllustrateState) -> dict:
     """Finalize workflow: save images to files and insert into markdown.
 
-    This node:
-    1. Filters to approved images (passed review)
-    2. Saves each image to the output directory
-    3. Inserts image references into the markdown
-    4. Returns the final illustrated document
+    Uses selection_results to pick the winning image per location,
+    then saves to disk and inserts references into the markdown document.
 
     Returns:
         State update with final_images, illustrated_document, status
@@ -240,7 +157,7 @@ async def finalize_node(state: IllustrateState) -> dict:
     document = state["input"]["markdown_document"]
     image_plan = state.get("image_plan", [])
     generation_results = state.get("generation_results", [])
-    review_results = state.get("review_results", [])
+    selection_results = state.get("selection_results", [])
     existing_errors = state.get("errors", [])
 
     # Get output directory
@@ -251,41 +168,10 @@ async def finalize_node(state: IllustrateState) -> dict:
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Build lookup for plans (needed for comparison and saving)
     plans_by_id = {p.location_id: p for p in image_plan}
 
-    # Group ALL candidates by location
-    candidates_by_id, passed_ids = _group_candidates_by_location(generation_results, review_results)
-
-    # For each location, either use the passed candidate or compare all candidates
-    approved: list[ImageGenResult] = []
-    for loc_id, candidates in candidates_by_id.items():
-        if loc_id in passed_ids:
-            # At least one passed - use the last one that passed
-            # (most recent successful attempt)
-            approved.append(candidates[-1])
-        elif len(candidates) == 1:
-            # Only one candidate, nothing passed - use it anyway with warning
-            logger.warning(f"Using only candidate for {loc_id} despite review issues")
-            approved.append(candidates[0])
-        else:
-            # Multiple candidates, none passed - compare and select best
-            plan = plans_by_id.get(loc_id)
-            if plan:
-                logger.warning(
-                    f"No candidate passed review for {loc_id}, comparing {len(candidates)} candidates to select best"
-                )
-                best = await _compare_candidates(
-                    candidates=candidates,
-                    document_context=document[:3000],
-                    purpose=plan.purpose,
-                    brief=plan.brief,
-                )
-                approved.append(best)
-            else:
-                # No plan, just use last candidate
-                logger.warning(f"No plan for {loc_id}, using last candidate")
-                approved.append(candidates[-1])
+    # Pick winning results using selection_results
+    approved = _select_winning_results(generation_results, selection_results)
 
     logger.info(f"Finalizing {len(approved)} approved images")
 
@@ -307,13 +193,11 @@ async def finalize_node(state: IllustrateState) -> dict:
 
         # Determine file extension
         image_type = gen_result["image_type"]
-        ext = "png"  # Default for diagrams and Imagen
+        ext = "png"
         if image_type == "public_domain":
-            # Check if JPEG
             if gen_result["image_bytes"][:2] == b"\xff\xd8":
                 ext = "jpg"
 
-        # Save file
         filename = f"{location_id}.{ext}"
         file_path = os.path.join(output_dir, filename)
 
@@ -355,12 +239,12 @@ async def finalize_node(state: IllustrateState) -> dict:
     all_errors = existing_errors + errors
     status = _determine_status(image_plan, final_images, all_errors)
 
-    # Log which images were dropped (failed review after retries)
+    # Log dropped images
     planned_ids = {p.location_id for p in image_plan}
     approved_ids = {img["location_id"] for img in final_images}
     dropped_ids = planned_ids - approved_ids
     for loc_id in dropped_ids:
-        logger.warning(f"Image dropped (failed review after retries): {loc_id}")
+        logger.warning(f"Image dropped: {loc_id}")
 
     logger.info(f"Finalize complete: {len(final_images)}/{len(image_plan)} images, status={status}")
 
