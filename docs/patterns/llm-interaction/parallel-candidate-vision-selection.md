@@ -10,7 +10,7 @@ applicability:
 components: [llm_call, async_task, structured_output]
 complexity: moderate
 verified_in_production: true
-tags: [svg, vision, parallel, candidate-selection, asyncio, diagram, quality]
+tags: [svg, vision, parallel, candidate-selection, asyncio, diagram, quality, pair-comparison, tournament, imagen, mermaid, graphviz]
 shared: true
 gist_url: https://gist.github.com/DaveCBeck/04f092252437959539ad84e2d2e06a48
 article_path: .context/libs/thala-dev/content/2026-01-29-parallel-candidate-vision-selection.md
@@ -587,10 +587,100 @@ class DiagramResult:
     improvements_made: list[str] | None = None  # What was improved
 ```
 
+## Vision Pair Comparison (Tournament Selection)
+
+The original multi-image comparison (show all candidates to one LLM call) has been supplemented with a **tournament-style pair comparison** module that achieves 80.6% selection accuracy vs 55.7% for scoring-based evaluation (per MLLM-as-a-Judge research).
+
+### Shared Module
+
+```python
+# workflows/shared/vision_comparison.py
+
+async def vision_pair_select(
+    candidates: list[bytes],
+    selection_criteria: str,
+    model_tier: ModelTier = ModelTier.SONNET,
+) -> int:
+    """Tournament: compare sequentially, winner advances."""
+    current_best_idx = 0
+    for challenger_idx in range(1, len(candidates)):
+        winner = await _compare_pair(
+            candidates[current_best_idx],
+            candidates[challenger_idx],
+            selection_criteria, model_tier,
+        )
+        if winner == "B":
+            current_best_idx = challenger_idx
+    return current_best_idx
+```
+
+**Key details**:
+- Response constrained to "A" or "B" only (`max_tokens=16`)
+- Ambiguous responses default to "A" (defending champion)
+- Known positional bias toward Image A (MLLM bias + defending champion advantage)
+- Falls back to index 0 on any exception
+
+### Shared Multi-Candidate Selection
+
+A `generate_with_selection()` function abstracts the pattern for any diagram engine:
+
+```python
+# workflows/shared/diagram_utils/schemas.py
+
+async def generate_with_selection(
+    generator_fn: GeneratorFn,  # e.g. generate_mermaid_diagram
+    analysis: str,
+    config: DiagramConfig,
+    custom_instructions: str = "",
+    num_candidates: int = 3,
+    engine_name: str = "diagram",
+) -> DiagramResult:
+    tasks = [generator_fn(instructions, config, custom_instructions) for _ in range(num_candidates)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    successful = [r for r in results if isinstance(r, DiagramResult) and r.success and r.png_bytes]
+    if len(successful) <= 1:
+        return successful[0] if successful else DiagramResult.failure(f"All {engine_name} candidates failed")
+
+    # Vision pair comparison to select best
+    png_list = [r.png_bytes for r in successful]
+    best_idx = await vision_pair_select(png_list, instructions)
+    return successful[best_idx]
+```
+
+Used by:
+- `generate_mermaid_with_selection()` — Mermaid multi-candidate flow
+- `generate_graphviz_with_selection()` — Graphviz multi-candidate flow
+- `generate_article_header()` — Imagen multi-candidate flow (uses `vision_pair_select` directly)
+
+### Image Selection Rubric
+
+For public domain images, a weighted scoring rubric replaces generic selection:
+
+```python
+# core/images/selection.py
+
+class ImageSelection(BaseModel):
+    selected_index: int
+    brief_compliance_score: int = Field(ge=1, le=5)  # 40% weight
+    mood_score: int = Field(ge=1, le=5)               # 25% weight
+    quality_score: int = Field(ge=1, le=5)             # 20% weight
+    relevance_score: int = Field(ge=1, le=5)           # 15% weight
+    reasoning: str
+```
+
+Brief compliance is weighted highest (40%) because literal vs. metaphorical mismatches are the most common failure mode.
+
 ## Known Uses
 
-- `workflows/shared/diagram_utils/selection.py` - SVG diagram candidate generation and selection
-- `workflows/shared/diagram_utils/core.py` - Main diagram generation pipeline
+- `workflows/shared/vision_comparison.py` — Tournament-style pair comparison (shared)
+- `workflows/shared/diagram_utils/schemas.py:generate_with_selection()` — Shared multi-candidate selection
+- `workflows/shared/diagram_utils/selection.py` — SVG diagram candidate generation and selection (original)
+- `workflows/shared/diagram_utils/core.py` — Main diagram generation pipeline
+- `workflows/shared/diagram_utils/mermaid.py` — Mermaid with selection
+- `workflows/shared/diagram_utils/graphviz_engine.py` — Graphviz with selection
+- `workflows/shared/image_utils.py` — Imagen multi-candidate selection
+- `core/images/selection.py` — Weighted rubric image selection
 
 ## Consequences
 
@@ -621,16 +711,28 @@ Total: ~4x single generation, but produces higher quality output with better suc
 
 ## Related Patterns
 
-- [Batch API Cost Optimization](./batch-api-cost-optimization.md) - For batching many LLM calls
-- [Anthropic Claude Extended Thinking](./anthropic-claude-extended-thinking.md) - For complex reasoning in selection
+- [Batch API Cost Optimization](./batch-api-cost-optimization.md) — For batching many LLM calls
+- [Anthropic Claude Extended Thinking](./anthropic-claude-extended-thinking.md) — For complex reasoning in selection
+- [Validate-Repair-Render Loop](./validate-repair-render-loop.md) — What happens inside each engine candidate
+- [Diagram Engine Registry and Routing](./diagram-engine-registry-routing.md) — Routes to engines that use this pattern
+- [Structured Imagen Prompts](./structured-imagen-prompts.md) — Prompt structuring before multi-candidate Imagen generation
 
 ## Related Solutions
 
-- [SVG Overlap Detection](../../solutions/llm-output/svg-overlap-detection.md) - Programmatic overlap checking
-- [LLM Vision Integration](../../solutions/llm-issues/vision-model-integration.md) - Vision model usage
+- [SVG Overlap Detection](../../solutions/llm-output/svg-overlap-detection.md) — Programmatic overlap checking
+- [LLM Vision Integration](../../solutions/llm-issues/vision-model-integration.md) — Vision model usage
 
 ## References
 
-- Commit `6e171c7` - Original implementation: "refactor(diagram-utils): modularize into package with choose-best flow"
+- Commit `6e171c7` — Original implementation: "refactor(diagram-utils): modularize into package with choose-best flow"
+- Commit `feeaa1b` — feat(illustrate): quick wins — vision pair comparison, multi-candidate Imagen, rubric selection
+- Commit `b5336d9` — feat(illustrate): diagram engine overhaul — generate_with_selection(), Mermaid/Graphviz selection
+- Commit `9e43702` — fix(illustrate): resolve 14 code review findings
+- MLLM-as-a-Judge research: pair comparison achieves 80.6% accuracy vs 55.7% for scoring
 - [Anthropic Vision API](https://docs.anthropic.com/en/docs/vision)
 - [asyncio.gather documentation](https://docs.python.org/3/library/asyncio-task.html#asyncio.gather)
+- Files:
+  - `workflows/shared/vision_comparison.py` — Tournament pair comparison
+  - `workflows/shared/diagram_utils/schemas.py` — `generate_with_selection()`
+  - `workflows/shared/image_utils.py` — Imagen multi-candidate selection
+  - `core/images/selection.py` — Weighted rubric selection

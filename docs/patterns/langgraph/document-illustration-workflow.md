@@ -10,7 +10,7 @@ applicability:
 components: [workflow_graph, langgraph_node, langgraph_graph, llm_call]
 complexity: complex
 verified_in_production: true
-tags: [fan-out, fan-in, send, parallel-execution, vision-review, retry-loop, multi-source, diagram-refinement, quality-assessment, sync-barrier]
+tags: [fan-out, fan-in, send, parallel-execution, vision-review, retry-loop, multi-source, diagram-refinement, quality-assessment, sync-barrier, engine-routing, mermaid, graphviz, multi-query, vision-pair-comparison, structured-prompts, ssrf-prevention]
 ---
 
 # Document Illustration with Multi-Source Generation
@@ -28,6 +28,9 @@ Document illustration workflows face several challenges:
 3. **Quality control** needs vision-based assessment with retry capability
 4. **Different image types** require specialized handling (diagrams need refinement loops)
 5. **Graceful degradation** when preferred sources fail
+6. **Diagram engine selection** — different diagram types suit different renderers (Mermaid, Graphviz, raw SVG)
+7. **Image search quality** — single queries miss relevant results; multi-query pools with LLM selection improve coverage
+8. **AI image quality** — unstructured prompts to Imagen produce inconsistent results
 
 ## Solution
 
@@ -37,6 +40,10 @@ A LangGraph workflow with:
 - **Vision review** with structured output for quality assessment
 - **Conditional retry loop** for failed images within the same graph
 - **Nested refinement loop** (outside main graph) for SVG diagram quality
+- **Diagram engine routing** — subtype-based routing to Mermaid, Graphviz, or raw SVG with fallback chain
+- **Multi-query image search** — literal + conceptual queries pooled and deduplicated
+- **Structured Imagen prompts** — Pydantic schema converts briefs into front-loaded Imagen prompts
+- **Vision pair comparison** — tournament-style selection for both Imagen candidates and diagram candidates
 
 ### Workflow Architecture
 
@@ -342,6 +349,119 @@ def create_illustrate_graph() -> StateGraph:
     return builder.compile()
 ```
 
+### Diagram Engine Routing
+
+The `generate_additional` node routes diagram generation to the best engine based on the planned diagram subtype:
+
+```python
+# workflows/output/illustrate/nodes/generate_additional.py
+
+_MERMAID_SUBTYPES = {"flowchart", "sequence", "concept_map"}
+_GRAPHVIZ_SUBTYPES = {"network_graph", "hierarchy", "dependency_tree"}
+
+async def _generate_diagram(location_id, plan, brief, config):
+    subtype = plan.diagram_subtype
+    result = None
+
+    # Try preferred engine based on subtype
+    if subtype in _MERMAID_SUBTYPES and is_engine_available("mermaid"):
+        result = await generate_mermaid_with_selection(
+            analysis=brief, config=diagram_config, custom_instructions=brief,
+        )
+    elif subtype in _GRAPHVIZ_SUBTYPES and is_engine_available("graphviz"):
+        result = await generate_graphviz_with_selection(
+            analysis=brief, config=diagram_config, custom_instructions=brief,
+        )
+
+    # Fallback to SVG if preferred engine failed or unavailable
+    if result is None or not result.success:
+        result = await generate_diagram(
+            title="", content="", config=diagram_config, custom_instructions=brief,
+        )
+```
+
+**Pattern**: Engine availability is checked lazily at first access via a registry (`registry.py`), not per-call. The routing logic lives in the workflow node, not the engine, allowing precise control and logging.
+
+See: [Diagram Engine Registry and Routing](../llm-interaction/diagram-engine-registry-routing.md)
+
+### Multi-Query Image Search
+
+Public domain image search now uses multiple queries (literal + conceptual) to build a larger candidate pool:
+
+```python
+# workflows/output/illustrate/nodes/generate_additional.py
+
+async def _generate_public_domain(location_id, plan, brief, document_context):
+    queries = _build_search_queries(plan)  # Interleaves conceptual + literal
+    if queries:
+        service = get_image_service()
+        pool = await service.search_pool(
+            queries=queries, limit_per_query=3, orientation="landscape",
+        )
+        result = await select_best_image(
+            pool, query=queries[0], context=document_context,
+            custom_selection_criteria=brief,
+        )
+    else:
+        result = await get_image(query=plan.search_query or brief[:100], ...)
+```
+
+**Pattern**: The `ImageLocationPlan` schema now includes `literal_queries`, `conceptual_queries`, and `query_strategy` fields. Queries are interleaved for diversity, capped at 4 total, and deduplicated by URL in `search_pool()`.
+
+### Structured Imagen Prompts
+
+When a custom prompt is provided, it's converted to an Imagen-optimized format before generation:
+
+```python
+# workflows/shared/image_utils.py
+
+if custom_prompt:
+    prompt = await structure_brief_for_imagen(custom_prompt)
+    # Pydantic schema: primary_subject, composition, key_elements, style_and_mood, context_setting
+    # Front-loads must-have elements per Google's Imagen guide
+```
+
+See: [Structured Imagen Prompts](../llm-interaction/structured-imagen-prompts.md)
+
+### Vision Pair Comparison for Candidate Selection
+
+Both Imagen and diagram generation now use tournament-style vision pair comparison:
+
+```python
+# workflows/shared/vision_comparison.py
+
+async def vision_pair_select(candidates: list[bytes], selection_criteria: str) -> int:
+    """Tournament: compare sequentially, winner advances."""
+    current_best_idx = 0
+    for challenger_idx in range(1, len(candidates)):
+        winner = await _compare_pair(
+            candidates[current_best_idx], candidates[challenger_idx],
+            selection_criteria, model_tier,
+        )
+        if winner == "B":
+            current_best_idx = challenger_idx
+    return current_best_idx
+```
+
+**Known limitation**: Positional bias toward Image A (defending champion advantage + MLLM bias toward first image). Documented for future mitigation (random position assignment or swap-and-confirm).
+
+### SSRF Prevention
+
+Image downloads now validate URLs before fetching:
+
+```python
+# workflows/output/illustrate/nodes/generate_additional.py
+
+def _validate_image_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Only HTTPS URLs allowed")
+    # Block localhost, loopback, private/reserved IPs
+    ip = ipaddress.ip_address(hostname)
+    if ip.is_private or ip.is_loopback or ip.is_reserved:
+        raise ValueError(f"Private/reserved IP not allowed")
+```
+
 ### Multi-Source Generation with Fallback
 
 Header generation tries public domain first:
@@ -597,6 +717,10 @@ Return failure result (graceful degradation)
 | Retry loop | Higher success rate | Longer execution for failures |
 | Sync barriers | Clean phase separation | Additional graph nodes |
 | Separate refinement loop | Simpler main graph | Nested async complexity |
+| Engine routing | Best renderer per diagram type | Registry + routing logic |
+| Multi-query search | Broader candidate pool | More API calls per image |
+| Structured Imagen prompts | Consistent quality | Extra Haiku call per generation |
+| Vision pair comparison | 80.6% selection accuracy | N-1 vision calls per selection |
 
 ## Related Patterns
 
@@ -605,12 +729,29 @@ Return failure result (graceful degradation)
 - **Conditional Retry**: Quality-based regeneration loops
 - **Multi-Source Fallback**: Preference ordering with graceful degradation
 - **Nested Quality Loop**: Iterative refinement outside main graph
+- [Diagram Engine Registry and Routing](../llm-interaction/diagram-engine-registry-routing.md): Lazy engine detection + subtype routing
+- [Validate-Repair-Render Loop](../llm-interaction/validate-repair-render-loop.md): Mermaid/Graphviz generation pattern
+- [Structured Imagen Prompts](../llm-interaction/structured-imagen-prompts.md): Brief-to-prompt conversion
+- [Parallel Candidate Vision Selection](../llm-interaction/parallel-candidate-vision-selection.md): Multi-candidate generation + vision selection
 
 ## References
 
 - Commit: `6909ba2` - feat(illustrate): add document illustration workflow
+- Commit: `feeaa1b` - feat(illustrate): quick wins for image quality
+- Commit: `b5336d9` - feat(illustrate): diagram engine overhaul
+- Commit: `9e43702` - fix(illustrate): resolve 14 code review findings
 - Files:
-  - `/home/dave/thala/workflows/output/illustrate/graph.py` - Main workflow graph
-  - `/home/dave/thala/workflows/output/illustrate/state.py` - State with reducers
-  - `/home/dave/thala/workflows/shared/diagram_utils/refinement.py` - Quality loop
-  - `/home/dave/thala/workflows/shared/diagram_utils/quality_assessment.py` - Vision assessment
+  - `workflows/output/illustrate/graph.py` - Main workflow graph
+  - `workflows/output/illustrate/state.py` - State with reducers
+  - `workflows/output/illustrate/nodes/generate_additional.py` - Engine routing, multi-query search, SSRF validation
+  - `workflows/output/illustrate/schemas.py` - ImageLocationPlan with multi-query fields
+  - `workflows/shared/diagram_utils/registry.py` - Engine availability registry
+  - `workflows/shared/diagram_utils/mermaid.py` - Mermaid engine with validate-repair loop
+  - `workflows/shared/diagram_utils/graphviz_engine.py` - Graphviz engine with validate-repair loop
+  - `workflows/shared/diagram_utils/refinement.py` - Quality refinement loop
+  - `workflows/shared/diagram_utils/quality_assessment.py` - Vision assessment
+  - `workflows/shared/vision_comparison.py` - Tournament-style vision pair comparison
+  - `workflows/shared/imagen_prompts.py` - Structured Imagen prompt builder
+  - `workflows/shared/image_utils.py` - Multi-candidate Imagen generation
+  - `core/images/selection.py` - Weighted rubric image selection
+  - `core/images/service.py` - Multi-query search pool
