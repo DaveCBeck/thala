@@ -7,10 +7,11 @@ from langgraph.types import Send
 
 from .config import IllustrateConfig
 from .nodes import (
-    analyze_document_node,
+    creative_direction_node,
     finalize_node,
     generate_additional_node,
     generate_header_node,
+    plan_briefs_node,
     review_image_node,
 )
 from .schemas import ImageLocationPlan
@@ -34,7 +35,7 @@ def route_after_analysis(state: IllustrateState) -> list[Send] | str:
     """Route to generation after analysis.
 
     If analysis failed or no images planned, go to finalize.
-    Otherwise, fan out to generate nodes.
+    Otherwise, fan out to generate nodes with visual identity context.
     """
     if state.get("status") == "failed":
         logger.info("Analysis failed, going to finalize")
@@ -47,33 +48,22 @@ def route_after_analysis(state: IllustrateState) -> list[Send] | str:
 
     config = state.get("config") or IllustrateConfig()
     document = state["input"]["markdown_document"]
+    visual_identity = state.get("visual_identity")
 
     sends = []
 
     for plan in image_plan:
-        # Header uses special node
+        send_data = {
+            "location": plan,
+            "document_context": document,
+            "config": config,
+            "visual_identity": visual_identity,
+        }
+
         if plan.purpose == "header":
-            sends.append(
-                Send(
-                    "generate_header",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                    },
-                )
-            )
+            sends.append(Send("generate_header", send_data))
         else:
-            sends.append(
-                Send(
-                    "generate_additional",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                    },
-                )
-            )
+            sends.append(Send("generate_additional", send_data))
 
     logger.info(f"Routing to {len(sends)} generation nodes")
     return sends
@@ -162,6 +152,7 @@ def route_after_review(state: IllustrateState) -> list[Send] | str:
     retry_briefs = state.get("retry_briefs", {})
     image_plan = state.get("image_plan", [])
     document = state["input"]["markdown_document"]
+    visual_identity = state.get("visual_identity")
 
     # Filter to retries within limit
     eligible_retries = [loc_id for loc_id in pending_retries if retry_count.get(loc_id, 0) <= config.max_retries]
@@ -178,33 +169,19 @@ def route_after_review(state: IllustrateState) -> list[Send] | str:
 
         retry_brief = retry_briefs.get(loc_id)
 
-        # Use appropriate generation node
+        send_data = {
+            "location": plan,
+            "document_context": document,
+            "config": config,
+            "visual_identity": visual_identity,
+            "is_retry": True,
+            "retry_brief": retry_brief,
+        }
+
         if plan.purpose == "header":
-            sends.append(
-                Send(
-                    "generate_header",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                        "is_retry": True,
-                        "retry_brief": retry_brief,
-                    },
-                )
-            )
+            sends.append(Send("generate_header", send_data))
         else:
-            sends.append(
-                Send(
-                    "generate_additional",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                        "is_retry": True,
-                        "retry_brief": retry_brief,
-                    },
-                )
-            )
+            sends.append(Send("generate_additional", send_data))
 
     if sends:
         logger.info(f"Routing to {len(sends)} retry generation nodes")
@@ -219,7 +196,9 @@ def create_illustrate_graph() -> StateGraph:
     Flow:
         START
           ↓
-        analyze_document (plan all image locations)
+        creative_direction (Pass 1: visual identity + opportunity map)
+          ↓
+        plan_briefs (Pass 2: candidate briefs per location)
           ↓
         [conditional] → generate_header / generate_additional (parallel via Send)
           ↓
@@ -237,8 +216,9 @@ def create_illustrate_graph() -> StateGraph:
     """
     builder = StateGraph(IllustrateState)
 
-    # Add nodes
-    builder.add_node("analyze_document", analyze_document_node)
+    # Add nodes — two-pass planning + generation/review/finalize
+    builder.add_node("creative_direction", creative_direction_node)
+    builder.add_node("plan_briefs", plan_briefs_node)
     builder.add_node("generate_header", generate_header_node)
     builder.add_node("generate_additional", generate_additional_node)
     builder.add_node("sync_after_generation", sync_after_generation)
@@ -246,12 +226,13 @@ def create_illustrate_graph() -> StateGraph:
     builder.add_node("sync_after_review", sync_after_review)
     builder.add_node("finalize", finalize_node)
 
-    # Entry point
-    builder.add_edge(START, "analyze_document")
+    # Two-pass planning: creative_direction → plan_briefs
+    builder.add_edge(START, "creative_direction")
+    builder.add_edge("creative_direction", "plan_briefs")
 
-    # After analysis, fan out to generation
+    # After plan_briefs, fan out to generation
     builder.add_conditional_edges(
-        "analyze_document",
+        "plan_briefs",
         route_after_analysis,
         ["generate_header", "generate_additional", "finalize"],
     )

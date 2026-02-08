@@ -65,18 +65,22 @@ async def _compare_candidates(
             if image_bytes[:2] == b"\xff\xd8":
                 media_type = "image/jpeg"
 
-            content.append({
-                "type": "text",
-                "text": f"\n**Candidate {i + 1}:**",
-            })
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": media_type,
-                    "data": b64_image,
-                },
-            })
+            content.append(
+                {
+                    "type": "text",
+                    "text": f"\n**Candidate {i + 1}:**",
+                }
+            )
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": b64_image,
+                    },
+                }
+            )
 
         result = await invoke(
             tier=ModelTier.SONNET,
@@ -89,9 +93,7 @@ async def _compare_candidates(
         # Get the selected candidate (1-indexed)
         selected_idx = result.selected_candidate - 1
         if 0 <= selected_idx < len(candidates):
-            logger.info(
-                f"Comparison selected candidate {result.selected_candidate}: {result.reasoning[:100]}"
-            )
+            logger.info(f"Comparison selected candidate {result.selected_candidate}: {result.reasoning[:100]}")
             if result.issues_with_selected:
                 logger.warning(f"Selected image has issues: {result.issues_with_selected}")
             return candidates[selected_idx]

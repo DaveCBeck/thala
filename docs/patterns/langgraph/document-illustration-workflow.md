@@ -1,16 +1,17 @@
 ---
 name: document-illustration-workflow
 title: Document Illustration with Multi-Source Generation
-date: 2026-01-26
+date: 2026-02-08
 category: langgraph
 applicability:
   - "Workflows requiring parallel generation from multiple sources with quality review"
   - "Fan-out/fan-in patterns with conditional retry loops"
   - "Iterative refinement loops with vision-based assessment"
+  - "Multi-output workflows needing visual consistency across outputs"
 components: [workflow_graph, langgraph_node, langgraph_graph, llm_call]
 complexity: complex
 verified_in_production: true
-tags: [fan-out, fan-in, send, parallel-execution, vision-review, retry-loop, multi-source, diagram-refinement, quality-assessment, sync-barrier, engine-routing, mermaid, graphviz, multi-query, vision-pair-comparison, structured-prompts, ssrf-prevention]
+tags: [fan-out, fan-in, send, parallel-execution, vision-review, retry-loop, multi-source, diagram-refinement, quality-assessment, sync-barrier, engine-routing, mermaid, graphviz, multi-query, vision-pair-comparison, structured-prompts, ssrf-prevention, two-pass-planning, visual-identity, creative-direction]
 ---
 
 # Document Illustration with Multi-Source Generation
@@ -28,55 +29,49 @@ Document illustration workflows face several challenges:
 3. **Quality control** needs vision-based assessment with retry capability
 4. **Different image types** require specialized handling (diagrams need refinement loops)
 5. **Graceful degradation** when preferred sources fail
-6. **Diagram engine selection** — different diagram types suit different renderers (Mermaid, Graphviz, raw SVG)
-7. **Image search quality** — single queries miss relevant results; multi-query pools with LLM selection improve coverage
-8. **AI image quality** — unstructured prompts to Imagen produce inconsistent results
+6. **Diagram engine selection**—different diagram types suit different renderers (Mermaid, Graphviz, raw SVG)
+7. **Image search quality**—single queries miss relevant results; multi-query pools with LLM selection improve coverage
+8. **AI image quality**—unstructured prompts to Imagen produce inconsistent results
 
 ## Solution
 
 A LangGraph workflow with:
+- **Two-pass planning**—creative direction (visual identity) followed by brief writing, replacing a single monolithic analysis call
 - **Fan-out/fan-in** using `Send()` for parallel image generation
+- **Visual identity propagation**—palette, mood, style flow from planning into every generation prompt
 - **Sync barrier nodes** for coordination between phases
 - **Vision review** with structured output for quality assessment
 - **Conditional retry loop** for failed images within the same graph
 - **Nested refinement loop** (outside main graph) for SVG diagram quality
-- **Diagram engine routing** — subtype-based routing to Mermaid, Graphviz, or raw SVG with fallback chain
-- **Multi-query image search** — literal + conceptual queries pooled and deduplicated
-- **Structured Imagen prompts** — Pydantic schema converts briefs into front-loaded Imagen prompts
-- **Vision pair comparison** — tournament-style selection for both Imagen candidates and diagram candidates
+- **Diagram engine routing**—subtype-based routing to Mermaid, Graphviz, or raw SVG with fallback chain
+- **Multi-query image search**—literal plus conceptual queries pooled and deduplicated
+- **Structured Imagen prompts**—Pydantic schema converts briefs into front-loaded Imagen prompts
+- **Vision pair comparison**—tournament-style selection for both Imagen candidates and diagram candidates
 
 ### Workflow Architecture
 
-```
-START
-  |
-  v
-analyze_document (Sonnet plans all image locations)
-  |
-  v
-[conditional] --> Send("generate_header", {...}) for headers
-            \--> Send("generate_additional", {...}) for others
-            \--> "finalize" if no images planned
-  |
-  v (all generations complete)
-sync_after_generation (barrier node)
-  |
-  v
-[conditional] --> Send("review_image", {...}) for each success
-            \--> "finalize" if review disabled
-  |
-  v (all reviews complete)
-sync_after_review (barrier, update retry counts)
-  |
-  v
-[conditional] --> Send("generate_*", {..., retry_brief}) for retries
-            \--> "finalize" if no eligible retries
-  |
-  v
-finalize (save files, insert into markdown)
-  |
-  v
-END
+```mermaid
+graph TD
+    START([START])
+    START --> creative_direction["creative_direction<br/>(Pass 1: Sonnet establishes visual identity + opportunity map)"]
+    creative_direction --> plan_briefs["plan_briefs<br/>(Pass 2: Sonnet writes candidate briefs per selected opportunity)"]
+    plan_briefs --> conditional1{conditional}
+    conditional1 -->|headers| generate_header["Send('generate_header', {..., visual_identity})"]
+    conditional1 -->|others| generate_additional["Send('generate_additional', {..., visual_identity})"]
+    conditional1 -->|no images planned| finalize1[finalize]
+    generate_header --> sync_after_generation["sync_after_generation<br/>(barrier node)"]
+    generate_additional --> sync_after_generation
+    sync_after_generation --> conditional2{conditional}
+    conditional2 -->|each success| review_image["Send('review_image', {...})"]
+    conditional2 -->|review disabled| finalize2[finalize]
+    review_image --> sync_after_review["sync_after_review<br/>(barrier, update retry counts)"]
+    sync_after_review --> conditional3{conditional}
+    conditional3 -->|retries| generate_retry["Send('generate_*', {..., visual_identity, retry_brief})"]
+    conditional3 -->|no eligible retries| finalize3[finalize]
+    generate_retry --> sync_after_generation
+    finalize1 --> END([END])
+    finalize2 --> END
+    finalize3 --> END
 ```
 
 ## Implementation
@@ -114,7 +109,15 @@ class IllustrateState(TypedDict, total=False):
 
     # Analysis phase (no reducer - single node writes)
     extracted_title: str
-    image_plan: list[ImageLocationPlan]
+    image_plan: list[ImageLocationPlan]  # Backward compat: populated from candidate_briefs
+
+    # Creative direction (Pass 1 — single node writes)
+    visual_identity: VisualIdentity
+    image_opportunities: list[ImageOpportunity]
+    editorial_notes: str
+
+    # Candidate briefs (Pass 2 — retained for LangSmith observability)
+    candidate_briefs: list[CandidateBrief]
 
     # Generation phase - PARALLEL writes require reducers
     generation_results: Annotated[list[ImageGenResult], add]
@@ -136,11 +139,11 @@ class IllustrateState(TypedDict, total=False):
     status: Literal["success", "partial", "failed"]
 ```
 
-**Key insight**: The `merge_dicts` reducer handles dictionary fields like `retry_count` and `retry_briefs` that multiple parallel nodes might update.
+**Key insight**: The `merge_dicts` reducer handles dictionary fields like `retry_count` and `retry_briefs` that multiple parallel nodes might update. The new Pass 1 and Pass 2 fields (`visual_identity`, `image_opportunities`, `editorial_notes`, `candidate_briefs`) don't need reducers because they're written by single sequential nodes.
 
-### Fan-Out with Send()
+### Fan-Out with Send() and Visual Identity
 
-Route to parallel generation nodes based on analysis:
+Route to parallel generation nodes, propagating visual identity from planning:
 
 ```python
 # workflows/output/illustrate/graph.py
@@ -152,7 +155,7 @@ def route_after_analysis(state: IllustrateState) -> list[Send] | str:
     """Route to generation after analysis.
 
     If analysis failed or no images planned, go to finalize.
-    Otherwise, fan out to generate nodes.
+    Otherwise, fan out to generate nodes with visual identity context.
     """
     if state.get("status") == "failed":
         return "finalize"
@@ -163,33 +166,22 @@ def route_after_analysis(state: IllustrateState) -> list[Send] | str:
 
     config = state.get("config") or IllustrateConfig()
     document = state["input"]["markdown_document"]
+    visual_identity = state.get("visual_identity")
 
     sends = []
 
     for plan in image_plan:
-        # Header uses special node with public domain preference
+        send_data = {
+            "location": plan,
+            "document_context": document,
+            "config": config,
+            "visual_identity": visual_identity,  # From Pass 1
+        }
+
         if plan.purpose == "header":
-            sends.append(
-                Send(
-                    "generate_header",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                    },
-                )
-            )
+            sends.append(Send("generate_header", send_data))
         else:
-            sends.append(
-                Send(
-                    "generate_additional",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                    },
-                )
-            )
+            sends.append(Send("generate_additional", send_data))
 
     return sends
 ```
@@ -197,6 +189,8 @@ def route_after_analysis(state: IllustrateState) -> list[Send] | str:
 **Pattern**: Conditional edges can return either:
 - A string (single node name)
 - A list of `Send()` objects for parallel execution
+
+**Key change**: The `visual_identity` from Pass 1 is propagated through `Send()` data to every generation node, ensuring consistent style across all parallel branches.
 
 ### Sync Barrier Nodes
 
@@ -231,7 +225,7 @@ def sync_after_review(state: IllustrateState) -> dict:
 
 ### Conditional Retry Loop
 
-Route back to generation for failed images:
+Route back to generation for failed images, preserving visual identity:
 
 ```python
 def route_after_review(state: IllustrateState) -> list[Send] | str:
@@ -242,11 +236,10 @@ def route_after_review(state: IllustrateState) -> list[Send] | str:
     retry_briefs = state.get("retry_briefs", {})
     image_plan = state.get("image_plan", [])
     document = state["input"]["markdown_document"]
+    visual_identity = state.get("visual_identity")
 
-    # Filter to retries within limit
     eligible_retries = [
-        loc_id
-        for loc_id in pending_retries
+        loc_id for loc_id in pending_retries
         if retry_count.get(loc_id, 0) <= config.max_retries
     ]
 
@@ -259,52 +252,37 @@ def route_after_review(state: IllustrateState) -> list[Send] | str:
         if not plan:
             continue
 
-        retry_brief = retry_briefs.get(loc_id)
+        send_data = {
+            "location": plan,
+            "document_context": document,
+            "config": config,
+            "visual_identity": visual_identity,  # Maintained across retries
+            "is_retry": True,
+            "retry_brief": retry_briefs.get(loc_id),  # Vision feedback
+        }
 
-        # Use appropriate generation node
         if plan.purpose == "header":
-            sends.append(
-                Send(
-                    "generate_header",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                        "is_retry": True,
-                        "retry_brief": retry_brief,  # Vision feedback
-                    },
-                )
-            )
+            sends.append(Send("generate_header", send_data))
         else:
-            sends.append(
-                Send(
-                    "generate_additional",
-                    {
-                        "location": plan,
-                        "document_context": document,
-                        "config": config,
-                        "is_retry": True,
-                        "retry_brief": retry_brief,
-                    },
-                )
-            )
+            sends.append(Send("generate_additional", send_data))
 
     return sends if sends else "finalize"
 ```
 
-**Key insight**: The same generation nodes are reused for retries. The `retry_brief` contains vision model feedback for improved generation.
+**Key insight**: The same generation nodes are reused for retries. The `retry_brief` contains vision model feedback for improved generation. The `visual_identity` is preserved across retries to maintain style consistency.
 
 ### Graph Construction
 
-Wire up nodes with proper edge routing:
+Wire up nodes with two-pass planning and proper edge routing:
 
 ```python
 def create_illustrate_graph() -> StateGraph:
     """Create the illustrate workflow graph."""
     builder = StateGraph(IllustrateState)
 
-    # Add nodes
-    builder.add_node("analyze_document", analyze_document_node)
+    # Add nodes — two-pass planning + generation/review/finalize
+    builder.add_node("creative_direction", creative_direction_node)
+    builder.add_node("plan_briefs", plan_briefs_node)
     builder.add_node("generate_header", generate_header_node)
     builder.add_node("generate_additional", generate_additional_node)
     builder.add_node("sync_after_generation", sync_after_generation)
@@ -312,12 +290,13 @@ def create_illustrate_graph() -> StateGraph:
     builder.add_node("sync_after_review", sync_after_review)
     builder.add_node("finalize", finalize_node)
 
-    # Entry point
-    builder.add_edge(START, "analyze_document")
+    # Two-pass planning: creative_direction → plan_briefs
+    builder.add_edge(START, "creative_direction")
+    builder.add_edge("creative_direction", "plan_briefs")
 
-    # After analysis, fan out to generation
+    # After plan_briefs, fan out to generation
     builder.add_conditional_edges(
-        "analyze_document",
+        "plan_briefs",
         route_after_analysis,
         ["generate_header", "generate_additional", "finalize"],
     )
@@ -406,7 +385,7 @@ async def _generate_public_domain(location_id, plan, brief, document_context):
         result = await get_image(query=plan.search_query or brief[:100], ...)
 ```
 
-**Pattern**: The `ImageLocationPlan` schema now includes `literal_queries`, `conceptual_queries`, and `query_strategy` fields. Queries are interleaved for diversity, capped at 4 total, and deduplicated by URL in `search_pool()`.
+**Pattern**: The `ImageLocationPlan` schema now includes `literal_queries`, `conceptual_queries`, and `query_strategy` fields. Queries are interleaved for diversity, capped at four total, and deduplicated by URL in `search_pool()`.
 
 ### Structured Imagen Prompts
 
@@ -443,7 +422,7 @@ async def vision_pair_select(candidates: list[bytes], selection_criteria: str) -
     return current_best_idx
 ```
 
-**Known limitation**: Positional bias toward Image A (defending champion advantage + MLLM bias toward first image). Documented for future mitigation (random position assignment or swap-and-confirm).
+**Known limitation**: Positional bias toward Image A (defending champion advantage plus MLLM bias toward first image). Documented for future mitigation (random position assignment or swap-and-confirm).
 
 ### SSRF Prevention
 
@@ -462,9 +441,9 @@ def _validate_image_url(url: str) -> None:
         raise ValueError(f"Private/reserved IP not allowed")
 ```
 
-### Multi-Source Generation with Fallback
+### Multi-Source Generation with Fallback and Visual Identity
 
-Header generation tries public domain first:
+Header generation tries public domain first, injecting visual identity into Imagen prompts:
 
 ```python
 # workflows/output/illustrate/nodes/generate_header.py
@@ -473,10 +452,10 @@ async def generate_header_node(state: dict) -> dict:
     """Generate header image: try public domain first, fallback to Imagen."""
     plan: ImageLocationPlan = state["location"]
     config: IllustrateConfig = state.get("config") or IllustrateConfig()
+    visual_identity: VisualIdentity | None = state.get("visual_identity")
     is_retry: bool = state.get("is_retry", False)
     retry_brief: str | None = state.get("retry_brief")
 
-    # Use retry brief if this is a retry
     brief = retry_brief or plan.brief
 
     # Step 1: Try public domain (unless this is a retry)
@@ -485,7 +464,6 @@ async def generate_header_node(state: dict) -> dict:
             pd_result = await get_image(query=plan.search_query or brief[:100])
             image_bytes = await _download_image(pd_result.url)
 
-            # Vision evaluation: is this image "apposite"?
             is_apposite, reasoning = await _evaluate_pd_appositeness(
                 image_bytes=image_bytes,
                 document_context=state["document_context"],
@@ -508,9 +486,10 @@ async def generate_header_node(state: dict) -> dict:
         except NoResultsError:
             pass  # Fall through to Imagen
 
-    # Step 2: Generate with Imagen
+    # Step 2: Generate with Imagen (visual identity injected, for_imagen=True omits avoid list)
+    imagen_brief = brief + build_visual_identity_context(visual_identity, for_imagen=True)
     image_bytes, prompt_used = await generate_article_header(
-        custom_prompt=brief,
+        custom_prompt=imagen_brief,
         aspect_ratio=config.imagen_aspect_ratio,
     )
 
@@ -527,6 +506,8 @@ async def generate_header_node(state: dict) -> dict:
         ]
     }
 ```
+
+**Key detail**: `build_visual_identity_context(vi, for_imagen=True)` omits the avoid list for Imagen, because it has no negative prompt parameter and embedding "avoid X" in the positive prompt paradoxically causes generation of X.
 
 ### Vision Review with Retry Brief
 
@@ -631,7 +612,7 @@ async def refine_diagram_quality(
         if assessment.meets_threshold:
             return current_svg, assessment, quality_history
 
-        # Exit if no improvement for 2 consecutive rounds
+        # Exit if no improvement for two consecutive rounds
         if consecutive_no_improvement >= 2:
             break
 
@@ -650,18 +631,18 @@ async def refine_diagram_quality(
     return best_svg, best_assessment, quality_history
 ```
 
-**7 Quality Criteria**:
-1. `text_legibility` - Font sizes, contrast
-2. `overlap_free` - No element overlaps
-3. `visual_hierarchy` - Clear importance levels
-4. `spacing_balance` - Even whitespace distribution
-5. `layout_logic` - Natural reading flow
-6. `shape_appropriateness` - Correct shapes for content
-7. `completeness` - All key elements present
+**Seven quality criteria**:
+1. `text_legibility`—font sizes, contrast
+2. `overlap_free`—no element overlaps
+3. `visual_hierarchy`—clear importance levels
+4. `spacing_balance`—even whitespace distribution
+5. `layout_logic`—natural reading flow
+6. `shape_appropriateness`—correct shapes for content
+7. `completeness`—all key elements present
 
 ## Key Design Patterns
 
-### 1. Reducer Selection Guide
+### Reducer Selection Guide
 
 | State Field Type | Parallel Writes? | Recommended Reducer |
 |------------------|------------------|---------------------|
@@ -670,21 +651,20 @@ async def refine_diagram_quality(
 | Scalar | No | No reducer (last-write-wins) |
 | Scalar | Yes | Custom reducer or restructure |
 
-### 2. Sync Barrier Pattern
+### Sync Barrier Pattern
 
-```
-[Fan-out via Send()] --> node_a, node_b, node_c
-                              |       |       |
-                              +-------+-------+
-                                      |
-                                      v
-                              sync_barrier_node
-                                      |
-                                      v
-                              [Next phase]
+```mermaid
+graph TD
+    fanout["Fan-out via Send()"] --> node_a[node_a]
+    fanout --> node_b[node_b]
+    fanout --> node_c[node_c]
+    node_a --> sync[sync_barrier_node]
+    node_b --> sync
+    node_c --> sync
+    sync --> next["Next phase"]
 ```
 
-### 3. Conditional Retry Pattern
+### Conditional Retry Pattern
 
 ```python
 def route_after_review(state) -> list[Send] | str:
@@ -694,24 +674,21 @@ def route_after_review(state) -> list[Send] | str:
     return [Send("generate", {..., is_retry=True}) for id in eligible]
 ```
 
-### 4. Multi-Source Fallback Chain
+### Multi-Source Fallback Chain
 
-```
-Preferred Source (e.g., public domain)
-         |
-         | (not available or not suitable)
-         v
-Fallback Source (e.g., AI generated)
-         |
-         | (failed)
-         v
-Return failure result (graceful degradation)
+```mermaid
+graph TD
+    preferred["Preferred Source (e.g., public domain)"]
+    preferred -->|not available or not suitable| fallback["Fallback Source (e.g., AI generated)"]
+    fallback -->|failed| result["Return failure result (graceful degradation)"]
 ```
 
 ## Trade-offs
 
 | Aspect | Benefit | Cost |
 |--------|---------|------|
+| Two-pass planning | Visual consistency, better briefs | Two Sonnet calls instead of one, sequential latency |
+| Visual identity propagation | Unified style across all images | More data in Send() payloads |
 | Parallel generation | Faster total execution | More complex state management |
 | Vision review | Quality assurance | Additional API calls |
 | Retry loop | Higher success rate | Longer execution for failures |
@@ -720,7 +697,7 @@ Return failure result (graceful degradation)
 | Engine routing | Best renderer per diagram type | Registry + routing logic |
 | Multi-query search | Broader candidate pool | More API calls per image |
 | Structured Imagen prompts | Consistent quality | Extra Haiku call per generation |
-| Vision pair comparison | 80.6% selection accuracy | N-1 vision calls per selection |
+| Vision pair comparison | 80.6 percent selection accuracy | N-1 vision calls per selection |
 
 ## Related Patterns
 
@@ -729,6 +706,7 @@ Return failure result (graceful degradation)
 - **Conditional Retry**: Quality-based regeneration loops
 - **Multi-Source Fallback**: Preference ordering with graceful degradation
 - **Nested Quality Loop**: Iterative refinement outside main graph
+- [Two-Pass LLM Planning](../llm-interaction/two-pass-llm-planning.md): The two-pass creative direction + brief planning pattern
 - [Diagram Engine Registry and Routing](../llm-interaction/diagram-engine-registry-routing.md): Lazy engine detection + subtype routing
 - [Validate-Repair-Render Loop](../llm-interaction/validate-repair-render-loop.md): Mermaid/Graphviz generation pattern
 - [Structured Imagen Prompts](../llm-interaction/structured-imagen-prompts.md): Brief-to-prompt conversion
@@ -736,22 +714,28 @@ Return failure result (graceful degradation)
 
 ## References
 
-- Commit: `6909ba2` - feat(illustrate): add document illustration workflow
-- Commit: `feeaa1b` - feat(illustrate): quick wins for image quality
-- Commit: `b5336d9` - feat(illustrate): diagram engine overhaul
-- Commit: `9e43702` - fix(illustrate): resolve 14 code review findings
+- Commit: `6909ba2`—feat(illustrate): add document illustration workflow
+- Commit: `feeaa1b`—feat(illustrate): quick wins for image quality
+- Commit: `b5336d9`—feat(illustrate): diagram engine overhaul
+- Commit: `9e43702`—fix(illustrate): resolve 14 code review findings
+- Commit: `cc870ae`—feat(illustrate): two-pass planning with visual identity
+- Commit: `e7c0d34`—fix(illustrate): resolve nine code review findings
 - Files:
-  - `workflows/output/illustrate/graph.py` - Main workflow graph
-  - `workflows/output/illustrate/state.py` - State with reducers
-  - `workflows/output/illustrate/nodes/generate_additional.py` - Engine routing, multi-query search, SSRF validation
-  - `workflows/output/illustrate/schemas.py` - ImageLocationPlan with multi-query fields
-  - `workflows/shared/diagram_utils/registry.py` - Engine availability registry
-  - `workflows/shared/diagram_utils/mermaid.py` - Mermaid engine with validate-repair loop
-  - `workflows/shared/diagram_utils/graphviz_engine.py` - Graphviz engine with validate-repair loop
-  - `workflows/shared/diagram_utils/refinement.py` - Quality refinement loop
-  - `workflows/shared/diagram_utils/quality_assessment.py` - Vision assessment
-  - `workflows/shared/vision_comparison.py` - Tournament-style vision pair comparison
-  - `workflows/shared/imagen_prompts.py` - Structured Imagen prompt builder
-  - `workflows/shared/image_utils.py` - Multi-candidate Imagen generation
-  - `core/images/selection.py` - Weighted rubric image selection
-  - `core/images/service.py` - Multi-query search pool
+  - `workflows/output/illustrate/graph.py`—main workflow graph
+  - `workflows/output/illustrate/state.py`—state with reducers
+  - `workflows/output/illustrate/nodes/creative_direction.py`—Pass 1: visual identity plus opportunity map
+  - `workflows/output/illustrate/nodes/plan_briefs.py`—Pass 2: candidate briefs
+  - `workflows/output/illustrate/nodes/generate_additional.py`—engine routing, multi-query search, SSRF validation
+  - `workflows/output/illustrate/nodes/generate_header.py`—header with visual identity injection
+  - `workflows/output/illustrate/schemas.py`—VisualIdentity, ImageOpportunity, CandidateBrief, ImageLocationPlan
+  - `workflows/output/illustrate/prompts.py`—two-pass prompts plus build_visual_identity_context()
+  - `workflows/shared/diagram_utils/registry.py`—engine availability registry
+  - `workflows/shared/diagram_utils/mermaid.py`—Mermaid engine with validate-repair loop
+  - `workflows/shared/diagram_utils/graphviz_engine.py`—Graphviz engine with validate-repair loop
+  - `workflows/shared/diagram_utils/refinement.py`—quality refinement loop
+  - `workflows/shared/diagram_utils/quality_assessment.py`—vision assessment
+  - `workflows/shared/vision_comparison.py`—tournament-style vision pair comparison
+  - `workflows/shared/imagen_prompts.py`—structured Imagen prompt builder
+  - `workflows/shared/image_utils.py`—multi-candidate Imagen generation
+  - `core/images/selection.py`—weighted rubric image selection
+  - `core/images/service.py`—multi-query search pool

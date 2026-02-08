@@ -10,19 +10,33 @@ from workflows.shared.image_utils import generate_article_header
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..config import IllustrateConfig
-from ..prompts import HEADER_APPOSITES_SYSTEM, HEADER_APPOSITES_USER
-from ..schemas import HeaderAppositenessResult, ImageLocationPlan
+from ..prompts import HEADER_APPOSITES_SYSTEM, HEADER_APPOSITES_USER, build_visual_identity_context
+from ..schemas import HeaderAppositenessResult, ImageLocationPlan, VisualIdentity
 from ..state import ImageGenResult, WorkflowError
+from .generate_additional import _validate_image_url
 
 logger = logging.getLogger(__name__)
 
+MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20 MB
+
 
 async def _download_image(url: str) -> bytes:
-    """Download image from URL."""
+    """Download image from URL with size limit to prevent memory exhaustion."""
+    _validate_image_url(url)
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.content
+        chunks: list[bytes] = []
+        total = 0
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > MAX_IMAGE_SIZE:
+                    raise ValueError(
+                        f"Image exceeds size limit: >{MAX_IMAGE_SIZE} bytes "
+                        f"({MAX_IMAGE_SIZE // (1024 * 1024)} MB)"
+                    )
+                chunks.append(chunk)
+        return b"".join(chunks)
 
 
 async def _evaluate_pd_appositeness(
@@ -101,6 +115,7 @@ async def generate_header_node(state: dict) -> dict:
     plan: ImageLocationPlan = state["location"]
     document_context: str = state["document_context"]
     config: IllustrateConfig = state.get("config") or IllustrateConfig()
+    visual_identity: VisualIdentity | None = state.get("visual_identity")
     is_retry: bool = state.get("is_retry", False)
     retry_brief: str | None = state.get("retry_brief")
 
@@ -155,9 +170,7 @@ async def generate_header_node(state: dict) -> dict:
                 else:
                     # If we have a suggested query and more attempts, retry with it
                     if suggested_query and pd_attempt < max_pd_attempts:
-                        logger.info(
-                            f"PD image not apposite, retrying with suggested query: {suggested_query}"
-                        )
+                        logger.info(f"PD image not apposite, retrying with suggested query: {suggested_query}")
                         current_search_query = suggested_query
                     else:
                         logger.info(f"PD image not apposite ({reasoning}), falling back to Imagen")
@@ -183,10 +196,12 @@ async def generate_header_node(state: dict) -> dict:
 
     # Step 2: Generate with Imagen
     try:
+        # Inject visual identity into Imagen prompt (for_imagen=True omits avoid list)
+        imagen_brief = brief + build_visual_identity_context(visual_identity, for_imagen=True)
         image_bytes, prompt_used = await generate_article_header(
             title="",
             content="",
-            custom_prompt=brief,
+            custom_prompt=imagen_brief,
             aspect_ratio=config.imagen_aspect_ratio,
         )
 
