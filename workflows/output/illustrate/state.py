@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from typing_extensions import TypedDict
 
 from .config import IllustrateConfig
-from .schemas import ImageLocationPlan
+from .schemas import CandidateBrief, ImageLocationPlan, ImageOpportunity, VisualIdentity
 
 
 def merge_dicts(left: dict, right: dict) -> dict:
@@ -80,7 +80,15 @@ class IllustrateState(TypedDict, total=False):
 
     # Analysis phase
     extracted_title: str
-    image_plan: list[ImageLocationPlan]  # All planned image locations
+    image_plan: list[ImageLocationPlan]  # Backward compat: populated from candidate_briefs
+
+    # Creative direction (Pass 1)
+    visual_identity: VisualIdentity
+    image_opportunities: list[ImageOpportunity]
+    editorial_notes: str
+
+    # Candidate briefs (Pass 2)
+    candidate_briefs: list[CandidateBrief]
 
     # Generation phase (parallel aggregation via add reducer)
     generation_results: Annotated[list[ImageGenResult], add]

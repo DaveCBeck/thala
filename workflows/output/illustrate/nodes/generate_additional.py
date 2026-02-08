@@ -12,7 +12,8 @@ from workflows.shared.diagram_utils.registry import is_engine_available
 from workflows.shared.image_utils import generate_article_header
 
 from ..config import IllustrateConfig
-from ..schemas import ImageLocationPlan
+from ..prompts import build_visual_identity_context
+from ..schemas import ImageLocationPlan, VisualIdentity
 from ..state import ImageGenResult, WorkflowError
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ async def generate_additional_node(state: dict) -> dict:
     plan: ImageLocationPlan = state["location"]
     document_context: str = state["document_context"]
     config: IllustrateConfig = state.get("config") or IllustrateConfig()
+    visual_identity: VisualIdentity | None = state.get("visual_identity")
     retry_brief: str | None = state.get("retry_brief")
 
     # Use retry brief if this is a retry
@@ -92,6 +94,7 @@ async def generate_additional_node(state: dict) -> dict:
                 plan=plan,
                 brief=brief,
                 config=config,
+                visual_identity=visual_identity,
             )
 
         elif image_type == "generated":
@@ -100,6 +103,7 @@ async def generate_additional_node(state: dict) -> dict:
                 plan=plan,
                 brief=brief,
                 config=config,
+                visual_identity=visual_identity,
             )
 
         else:
@@ -274,6 +278,7 @@ async def _generate_diagram(
     plan: ImageLocationPlan,
     brief: str,
     config: IllustrateConfig,
+    visual_identity: VisualIdentity | None = None,
 ) -> dict:
     """Generate diagram, routing to the best engine based on subtype.
 
@@ -292,6 +297,10 @@ async def _generate_diagram(
         max_refinement_iterations=config.diagram_max_refinement_iterations,
     )
 
+    # Inject visual identity context (includes avoid list for LLM-consumed prompts)
+    vi_context = build_visual_identity_context(visual_identity)
+    diagram_brief = brief + vi_context if vi_context else brief
+
     subtype = plan.diagram_subtype
     result = None
 
@@ -301,9 +310,9 @@ async def _generate_diagram(
 
         logger.info(f"Routing diagram {location_id} to Mermaid engine (subtype={subtype})")
         result = await generate_mermaid_with_selection(
-            analysis=brief,
+            analysis=diagram_brief,
             config=diagram_config,
-            custom_instructions=brief,
+            custom_instructions=diagram_brief,
         )
 
     elif subtype in _GRAPHVIZ_SUBTYPES and is_engine_available("graphviz"):
@@ -311,9 +320,9 @@ async def _generate_diagram(
 
         logger.info(f"Routing diagram {location_id} to Graphviz engine (subtype={subtype})")
         result = await generate_graphviz_with_selection(
-            analysis=brief,
+            analysis=diagram_brief,
             config=diagram_config,
-            custom_instructions=brief,
+            custom_instructions=diagram_brief,
         )
 
     # Fallback to SVG if preferred engine failed or wasn't available
@@ -326,7 +335,7 @@ async def _generate_diagram(
             title="",
             content="",
             config=diagram_config,
-            custom_instructions=brief,
+            custom_instructions=diagram_brief,
         )
 
     if result.success and result.png_bytes:
@@ -388,12 +397,17 @@ async def _generate_imagen(
     plan: ImageLocationPlan,
     brief: str,
     config: IllustrateConfig,
+    visual_identity: VisualIdentity | None = None,
 ) -> dict:
     """Generate using Imagen."""
+    # Inject visual identity (for_imagen=True omits avoid list)
+    vi_context = build_visual_identity_context(visual_identity, for_imagen=True)
+    imagen_brief = brief + vi_context if vi_context else brief
+
     image_bytes, prompt_used = await generate_article_header(
         title="",
         content="",
-        custom_prompt=brief,
+        custom_prompt=imagen_brief,
         aspect_ratio=config.imagen_aspect_ratio,
     )
 

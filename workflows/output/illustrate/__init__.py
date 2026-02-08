@@ -60,14 +60,16 @@ async def illustrate_document(
         - status: "success", "partial", or "failed"
         - errors: Any errors encountered
     """
-    result = await illustrate_graph.ainvoke({
-        "input": {
-            "markdown_document": markdown_document,
-            "title": title,
-            "output_dir": output_dir,
-        },
-        "config": options or IllustrateConfig(),
-    })
+    result = await illustrate_graph.ainvoke(
+        {
+            "input": {
+                "markdown_document": markdown_document,
+                "title": title,
+                "output_dir": output_dir,
+            },
+            "config": options or IllustrateConfig(),
+        }
+    )
     return result
 
 
