@@ -178,6 +178,23 @@ async def finalize_node(state: IllustrateState) -> dict:
     # Pick winning results using selection_results
     approved = _select_winning_results(generation_results, selection_results)
 
+    # Filter out editorial cuts
+    editorial_result = state.get("editorial_review_result")
+    if editorial_result:
+        cut_ids = set(editorial_result.get("cut_location_ids", []))
+        if cut_ids:
+            before_count = len(approved)
+            approved = [r for r in approved if r["location_id"] not in cut_ids]
+            for cut_id in cut_ids:
+                # Find cut reason from evaluations
+                reason = "no reason given"
+                for ev in editorial_result.get("evaluations", []):
+                    if ev.get("location_id") == cut_id and ev.get("cut_reason"):
+                        reason = ev["cut_reason"]
+                        break
+                logger.info(f"Editorial cut applied: {cut_id} — {reason}")
+            logger.info(f"Editorial review: {before_count} → {len(approved)} images after cuts")
+
     logger.info(f"Finalizing {len(approved)} approved images")
 
     # Save images and build final_images list

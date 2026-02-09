@@ -1,6 +1,8 @@
 """Node implementations for illustrate workflow."""
 
+from .assemble_document import assemble_document_node
 from .creative_direction import creative_direction_node
+from .editorial_review import editorial_review_node
 from .finalize import finalize_node
 from .generate_candidate import generate_candidate_node
 from .plan_briefs import plan_briefs_node
@@ -11,5 +13,7 @@ __all__ = [
     "plan_briefs_node",
     "generate_candidate_node",
     "select_per_location_node",
+    "assemble_document_node",
+    "editorial_review_node",
     "finalize_node",
 ]

@@ -399,7 +399,7 @@ class TestRouteToSelection:
 
 
 class TestRouteAfterSelection:
-    def test_no_failures_goes_to_finalize(self):
+    def test_no_failures_goes_to_assemble_document(self):
         state = {
             "selection_results": [
                 LocationSelection(
@@ -414,7 +414,7 @@ class TestRouteAfterSelection:
             "candidate_briefs": [],
             "input": {"markdown_document": ""},
         }
-        assert route_after_selection(state) == "finalize"
+        assert route_after_selection(state) == "assemble_document"
 
     def test_retry_with_cross_strategy_fallback(self):
         briefs = [
@@ -443,7 +443,7 @@ class TestRouteAfterSelection:
         for send in sends:
             assert send.arg["brief"].image_type == "generated"
 
-    def test_exceeds_retry_limit_goes_to_finalize(self):
+    def test_exceeds_retry_limit_goes_to_assemble_document(self):
         state = {
             "selection_results": [
                 LocationSelection(
@@ -459,7 +459,7 @@ class TestRouteAfterSelection:
             "candidate_briefs": [_make_brief(location_id="s1")],
             "input": {"markdown_document": ""},
         }
-        assert route_after_selection(state) == "finalize"
+        assert route_after_selection(state) == "assemble_document"
 
 
 # ---------------------------------------------------------------------------
@@ -758,10 +758,10 @@ class TestSyncAfterSelectionClearsBytes:
 
         sync_after_selection(state)
 
-        assert gen_results[0]["image_bytes"] == b""      # s1 loser
-        assert gen_results[1]["image_bytes"] == b"S1_WIN" # s1 winner
-        assert gen_results[2]["image_bytes"] == b"S2_WIN" # s2 winner
-        assert gen_results[3]["image_bytes"] == b""      # s2 loser
+        assert gen_results[0]["image_bytes"] == b""  # s1 loser
+        assert gen_results[1]["image_bytes"] == b"S1_WIN"  # s1 winner
+        assert gen_results[2]["image_bytes"] == b"S2_WIN"  # s2 winner
+        assert gen_results[3]["image_bytes"] == b""  # s2 loser
 
     def test_retry_round_uses_latest_selection(self):
         """After retry, latest selection determines winner; old losers stay cleared."""
@@ -798,10 +798,10 @@ class TestSyncAfterSelectionClearsBytes:
         sync_after_selection(state)
 
         # Only the retry winner keeps its bytes
-        assert gen_results[0]["image_bytes"] == b""           # old loser
-        assert gen_results[1]["image_bytes"] == b""           # old loser
+        assert gen_results[0]["image_bytes"] == b""  # old loser
+        assert gen_results[1]["image_bytes"] == b""  # old loser
         assert gen_results[2]["image_bytes"] == b"RETRY_WIN"  # retry winner
-        assert gen_results[3]["image_bytes"] == b""           # retry loser
+        assert gen_results[3]["image_bytes"] == b""  # retry loser
 
     def test_skips_already_empty_bytes(self):
         """Entries with image_bytes=None (failed generation) are left as-is."""

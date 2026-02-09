@@ -21,9 +21,7 @@ DiagramSubtype = Literal[
 def validate_location_id_format(v: str) -> str:
     """Validate that location_id contains only alphanumeric characters, hyphens, and underscores."""
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
-        raise ValueError(
-            f"location_id must contain only alphanumeric characters, hyphens, and underscores, got: {v!r}"
-        )
+        raise ValueError(f"location_id must contain only alphanumeric characters, hyphens, and underscores, got: {v!r}")
     return v
 
 
@@ -259,3 +257,41 @@ class ImageLocationPlan(BaseModel):
         return validate_location_id_format(v)
 
 
+# ---------------------------------------------------------------------------
+# Editorial review schemas (Plan 4)
+# ---------------------------------------------------------------------------
+
+
+class EditorialImageEvaluation(BaseModel):
+    """Evaluation of a single image in the document context."""
+
+    location_id: str
+    contribution_rank: int = Field(description="1 = strongest contribution, N = weakest")
+    visual_coherence: int = Field(ge=1, le=5)
+    pacing_contribution: int = Field(ge=1, le=5)
+    variety_contribution: int = Field(ge=1, le=5)
+    individual_quality: int = Field(ge=1, le=5)
+    cut_reason: str | None = Field(default=None, description="Only for images marked for cutting")
+
+    @field_validator("location_id")
+    @classmethod
+    def validate_location_id(cls, v: str) -> str:
+        return validate_location_id_format(v)
+
+
+class EditorialReviewResult(BaseModel):
+    """Full editorial review output."""
+
+    evaluations: list[EditorialImageEvaluation]
+    cut_location_ids: list[str] = Field(description="The location_ids to remove")
+    editorial_summary: str = Field(description="Overall assessment for logging")
+
+    @field_validator("evaluations", mode="before")
+    @classmethod
+    def parse_evaluations_json(cls, v: Any) -> list:
+        return _parse_json_string_list(v)
+
+    @field_validator("cut_location_ids", mode="before")
+    @classmethod
+    def parse_cut_ids_json(cls, v: Any) -> list:
+        return _parse_json_string_list(v)
