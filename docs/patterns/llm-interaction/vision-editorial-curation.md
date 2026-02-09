@@ -12,6 +12,8 @@ complexity: moderate
 verified_in_production: true
 tags: [vision, editorial, curation, multi-image, document-level, coherence, sonnet, over-generation, quality-gate]
 shared: true
+gist_url: https://gist.github.com/DaveCBeck/05862ebff5aabcd73ea3f3fc69fda5a6
+article_path: .context/libs/thala-dev/content/generation/2026-02-09-vision-editorial-curation.md
 ---
 
 # Vision-Based Editorial Image Curation
