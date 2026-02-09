@@ -14,6 +14,9 @@ root_cause: "Multiple stateful bugs in the add-reducer accumulation pattern and 
 resolution_type: code_fix
 severity: high
 tags: [retry-logic, selection-bugs, add-reducer, deduplication, langgraph, state-management, over-generation, memory-management]
+shared: true
+gist_url: https://gist.github.com/DaveCBeck/c4057f4a5651332e2cf333f4ec417128
+article_path: .context/libs/thala-dev/content/generation/2026-02-09-over-generation-pair-selection-langgraph.md
 ---
 
 # Over-Generation Retry and Selection Logic Bugs

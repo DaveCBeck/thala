@@ -11,6 +11,9 @@ components: [workflow_graph, langgraph_node, langgraph_graph, llm_call]
 complexity: moderate
 verified_in_production: true
 tags: [over-generation, pair-selection, vision-comparison, fan-out, fan-in, quality-tiers, cross-strategy-fallback, redundancy, send, candidate-generation]
+shared: true
+gist_url: https://gist.github.com/DaveCBeck/c4057f4a5651332e2cf333f4ec417128
+article_path: .context/libs/thala-dev/content/generation/2026-02-09-over-generation-pair-selection-langgraph.md
 ---
 
 # Over-Generation with Per-Location Pair Selection
