@@ -320,6 +320,7 @@ The key insight is that whenever you need N outputs that should feel like they c
 ## Related Patterns
 
 - [Document Illustration Workflow](../langgraph/document-illustration-workflow.md)—The LangGraph workflow that uses this pattern
+- [Over-Generation with Per-Location Pair Selection](../langgraph/over-generation-pair-selection.md)—Downstream: two candidates per location from two briefs, with vision pair selection
 - [Structured Imagen Prompts](./structured-imagen-prompts.md)—Brief-to-prompt conversion downstream
 - [Parallel Candidate Vision Selection](./parallel-candidate-vision-selection.md)—Multi-candidate generation downstream
 - [Central LLM Broker Routing](./central-llm-broker-routing.md)—Model tier routing used by both passes
