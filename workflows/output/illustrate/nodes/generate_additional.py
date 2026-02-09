@@ -10,9 +10,7 @@ from urllib.parse import urlparse
 import httpx
 
 from core.images import NoResultsError, get_image
-from workflows.shared.diagram_utils import DiagramConfig, generate_diagram
-from workflows.shared.diagram_utils.registry import is_engine_available
-from workflows.shared.image_utils import generate_article_header
+from workflows.shared.image_utils import generate_article_header, generate_diagram_image
 
 from ..config import IllustrateConfig
 from ..prompts import build_visual_identity_context
@@ -22,10 +20,6 @@ from ..state import ImageGenResult, WorkflowError
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20 MB
-
-# Diagram subtypes grouped by preferred rendering engine
-_MERMAID_SUBTYPES = {"flowchart", "sequence", "concept_map"}
-_GRAPHVIZ_SUBTYPES = {"network_graph", "hierarchy", "dependency_tree"}
 
 
 def _validate_image_url(url: str) -> None:
@@ -196,96 +190,37 @@ async def _generate_diagram(
     visual_identity: VisualIdentity | None = None,
     brief_id: str = "",
 ) -> dict:
-    """Generate diagram, routing to the best engine based on subtype.
+    """Generate diagram using Gemini 3 Pro image generation.
 
-    Routing:
-    - flowchart/sequence/concept_map → Mermaid (with vision selection)
-    - network_graph/hierarchy/dependency_tree → Graphviz (with vision selection)
-    - custom_artistic/None → raw SVG (existing pipeline)
+    Uses for_imagen=True for visual identity injection (same "avoid" paradox
+    as Imagen — embedding "avoid X" in positive prompts causes generation of X).
 
-    Falls back to SVG if the preferred engine is unavailable or fails.
+    Note: custom_artistic is intercepted by generate_candidate_node and
+    routed to Imagen instead — it never reaches this function.
     """
-    diagram_config = DiagramConfig(
-        width=config.diagram_width,
-        height=config.diagram_height,
-        enable_refinement_loop=config.enable_diagram_refinement,
-        quality_threshold=config.diagram_quality_threshold,
-        max_refinement_iterations=config.diagram_max_refinement_iterations,
-    )
-
-    # Inject visual identity context (includes avoid list for LLM-consumed prompts)
-    vi_context = build_visual_identity_context(visual_identity)
+    vi_context = build_visual_identity_context(visual_identity, for_imagen=True)
     diagram_brief = brief + vi_context if vi_context else brief
 
-    subtype = plan.diagram_subtype
-    result = None
+    image_bytes, prompt_used = await generate_diagram_image(brief=diagram_brief)
 
-    # Try preferred engine based on subtype
-    if subtype in _MERMAID_SUBTYPES and is_engine_available("mermaid"):
-        from workflows.shared.diagram_utils.mermaid import generate_mermaid_with_selection
-
-        logger.info(f"Routing diagram {location_id} to Mermaid engine (subtype={subtype})")
-        result = await generate_mermaid_with_selection(
-            analysis=diagram_brief,
-            config=diagram_config,
-            custom_instructions=diagram_brief,
-        )
-
-    elif subtype in _GRAPHVIZ_SUBTYPES and is_engine_available("graphviz"):
-        from workflows.shared.diagram_utils.graphviz_engine import generate_graphviz_with_selection
-
-        logger.info(f"Routing diagram {location_id} to Graphviz engine (subtype={subtype})")
-        result = await generate_graphviz_with_selection(
-            analysis=diagram_brief,
-            config=diagram_config,
-            custom_instructions=diagram_brief,
-        )
-
-    # Fallback to SVG if preferred engine failed or wasn't available
-    if result is None or not result.success:
-        if result and not result.success:
-            logger.warning(
-                f"Preferred engine failed for {location_id} (subtype={subtype}): {result.error}, falling back to SVG"
-            )
-        result = await generate_diagram(
-            title="",
-            content="",
-            config=diagram_config,
-            custom_instructions=diagram_brief,
-        )
-
-    if result.success and result.png_bytes:
+    if image_bytes:
         logger.info(f"Generated diagram for {location_id}")
-
-        # Check for overlap warnings
-        errors = []
-        if result.error:  # Contains overlap info even on success
-            errors.append(
-                WorkflowError(
-                    location_id=location_id,
-                    severity="warning",
-                    message=result.error,
-                    stage="generation",
-                )
-            )
-
         return {
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
                     brief_id=brief_id,
                     success=True,
-                    image_bytes=result.png_bytes,
+                    image_bytes=image_bytes,
                     image_type="diagram",
-                    prompt_or_query_used=brief[:200],
+                    prompt_or_query_used=prompt_used or brief[:200],
                     alt_text=f"Diagram: {plan.insertion_after_header}",
                     attribution=None,
                 )
-            ],
-            "errors": errors if errors else [],
+            ]
         }
     else:
-        logger.error(f"Diagram generation failed for {location_id}: {result.error}")
+        logger.error(f"Diagram generation failed for {location_id}")
         return {
             "generation_results": [
                 ImageGenResult(
@@ -294,7 +229,7 @@ async def _generate_diagram(
                     success=False,
                     image_bytes=None,
                     image_type="diagram",
-                    prompt_or_query_used=brief[:200],
+                    prompt_or_query_used=prompt_used or brief[:200],
                     alt_text=None,
                     attribution=None,
                 )
@@ -303,7 +238,7 @@ async def _generate_diagram(
                 WorkflowError(
                     location_id=location_id,
                     severity="error",
-                    message=f"Diagram generation failed: {result.error}",
+                    message="Diagram generation failed: Gemini returned no image",
                     stage="generation",
                 )
             ],

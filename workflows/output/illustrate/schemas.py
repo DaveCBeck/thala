@@ -14,6 +14,7 @@ DiagramSubtype = Literal[
     "network_graph",
     "hierarchy",
     "dependency_tree",
+    "custom_diagram",
     "custom_artistic",
 ]
 
@@ -248,7 +249,9 @@ class ImageLocationPlan(BaseModel):
         description="For diagrams: subtype determines rendering engine. "
         "flowchart/sequence/concept_map → Mermaid, "
         "network_graph/hierarchy/dependency_tree → Graphviz, "
-        "custom_artistic → raw SVG.",
+        "custom_diagram → raw SVG. "
+        "custom_artistic → routes to Imagen (use when the location needs "
+        "an artistic/painterly visual rather than a structured diagram).",
     )
 
     @field_validator("location_id")

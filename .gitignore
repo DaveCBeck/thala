@@ -9,6 +9,7 @@ worktrees.md
 logs/
 tests/test_data/
 tests/traces/
+tests/integration/illustrate_steps/outputs/
 **/claude.md
 
 # Thala local state (queue, outputs, credentials)

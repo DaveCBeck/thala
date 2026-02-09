@@ -9,6 +9,7 @@ import logging
 import re
 
 from core.llm_broker import BatchPolicy
+from core.task_queue.rate_limits import get_mmdc_semaphore
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from .schemas import DiagramConfig, DiagramResult
@@ -47,13 +48,14 @@ MERMAID_GENERATION_SYSTEM = """You are an expert at creating Mermaid diagrams. G
 
 RULES:
 - Use quotes around node labels that contain special characters or spaces
-- Always close subgraphs with 'end'
 - Use valid edge syntax: --> for directed, --- for undirected
 - Keep node labels concise (under 40 characters)
-- Use subgraphs to group related concepts
-- Maximum 15-20 nodes for readability
+- Maximum 12-15 nodes for readability
 - Use meaningful node IDs (not just A, B, C)
 - For flowcharts, prefer 'graph TD' (top-down) or 'graph LR' (left-right)
+- Use edge labels (e.g. -->|"label"|) to annotate relationships
+- DO NOT use 'subgraph' blocks — they are not supported by the renderer
+- Keep the diagram FLAT: all nodes at the same level, connected by edges
 
 Output ONLY the Mermaid code, no markdown fences, no explanation."""
 
@@ -70,10 +72,10 @@ Fix the errors while preserving the diagram's intent and structure.
 
 Common fixes:
 - Add quotes around labels with special characters (parentheses, colons, etc.)
-- Close unclosed subgraphs with 'end'
 - Fix edge syntax (use --> not ->)
 - Remove invalid characters from node IDs
 - Fix indentation issues
+- Remove any 'subgraph' blocks (not supported) — flatten into regular nodes and edges
 
 Output ONLY the corrected Mermaid code, no explanation."""
 
@@ -110,7 +112,8 @@ async def generate_mermaid_diagram(
     is_valid = False
     errors = ""
     for attempt in range(3):
-        is_valid, errors = await asyncio.to_thread(_validate_mermaid, mermaid_code)
+        async with get_mmdc_semaphore():
+            is_valid, errors = await asyncio.to_thread(_validate_mermaid, mermaid_code)
         if is_valid:
             break
         if attempt < 2:
@@ -218,7 +221,8 @@ async def _render_mermaid_to_png(code: str, width: int = 800, background: str = 
             logger.error(f"Mermaid rendering failed: {e}")
             return None
 
-    return await asyncio.to_thread(_render)
+    async with get_mmdc_semaphore():
+        return await asyncio.to_thread(_render)
 
 
 async def generate_mermaid_with_selection(

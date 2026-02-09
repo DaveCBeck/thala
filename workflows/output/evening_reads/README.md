@@ -24,6 +24,8 @@ Each deep-dive is assigned one of three narrative approaches at planning time:
 - **finding**: Leads with striking quantitative result, explores implications
 - **contrarian**: Steelmans assumption, then complicates with evidence
 
+Each approach ends with a curated closing move (callback, telescoping, concrete scene, etc.) chosen to suit the piece, rather than a fixed "open questions" section.
+
 ## Usage
 
 ```python

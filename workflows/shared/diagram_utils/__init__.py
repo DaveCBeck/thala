@@ -1,5 +1,12 @@
 """Diagram generation utilities using LLM-generated SVG.
 
+.. deprecated::
+    This pipeline (Mermaid/Graphviz/SVG → overlap check → vision select →
+    refinement loop) has been replaced by direct Gemini 3 Pro image generation
+    in ``workflows.shared.image_utils.generate_diagram_image()``.
+    This package is retained for backward compatibility and will be removed
+    in a follow-up PR after production validation.
+
 Generates relevant diagrams from content using a multi-stage pipeline:
 1. Analyze content to determine if/how to create a diagram
 2. Generate multiple SVG candidates in parallel

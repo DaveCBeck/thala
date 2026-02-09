@@ -15,6 +15,11 @@ tags: [mermaid, graphviz, svg, registry, routing, fallback, lazy-initialization,
 
 # Diagram Engine Registry and Subtype-Based Routing
 
+> **Deprecation note (2026-02-09):** The Mermaid/Graphviz/SVG routing pipeline has been
+> replaced by Gemini 3 Pro image generation in `workflows.shared.image_utils.generate_diagram_image()`.
+> The registry and routing code is retained for backward compatibility. The `custom_artistic`
+> subtype now routes to Imagen via `generate_candidate_node`. See the updated routing table below.
+
 ## Intent
 
 Detect available diagram rendering engines once at startup, then route diagram generation requests to the best engine for each diagram subtype — with automatic fallback to a universally available engine.
@@ -132,6 +137,24 @@ The `svg` engine (raw SVG via LLM + cairosvg conversion) is always registered. I
 `reset_registry()` allows tests to manipulate availability without module-level side effects.
 
 ## Guidelines
+
+### Current Routing (post-Gemini migration)
+
+All diagram subtypes now route to **Gemini 3 Pro image generation** via `generate_diagram_image()`, except `custom_artistic` which routes to **Imagen** (artistic/painterly visuals, not structured diagrams).
+
+| Subtype | Engine | Rationale |
+|---------|--------|-----------|
+| `flowchart` | Gemini 3 Pro | Sharp text, clean layout |
+| `sequence` | Gemini 3 Pro | Sharp text, clean layout |
+| `concept_map` | Gemini 3 Pro | Sharp text, clean layout |
+| `network_graph` | Gemini 3 Pro | Sharp text, clean layout |
+| `hierarchy` | Gemini 3 Pro | Sharp text, clean layout |
+| `dependency_tree` | Gemini 3 Pro | Sharp text, clean layout |
+| `custom_diagram` | Gemini 3 Pro | Generic diagram fallback |
+| `custom_artistic` | Imagen | Artistic/painterly (intercepted in `generate_candidate_node`) |
+| (unknown/None) | Gemini 3 Pro | Safe default |
+
+### Legacy Routing (pre-Gemini, retained in `diagram_utils/`)
 
 | Subtype | Preferred Engine | Rationale |
 |---------|-----------------|-----------|

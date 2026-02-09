@@ -37,6 +37,12 @@ async def generate_candidate_node(state: dict) -> dict:
     image_type = brief.image_type
     brief_text = brief.brief
 
+    # custom_artistic subtype: step 2 overriding step 1's "diagram" suggestion
+    # to request an artistic/painterly image instead — route to Imagen.
+    is_artistic_override = (
+        image_type == "diagram" and brief.diagram_subtype == "custom_artistic"
+    )
+
     try:
         if image_type == "public_domain":
             result = await _generate_public_domain(
@@ -46,7 +52,7 @@ async def generate_candidate_node(state: dict) -> dict:
                 document_context=document_context,
                 brief_id=brief_id,
             )
-        elif image_type == "diagram":
+        elif image_type == "diagram" and not is_artistic_override:
             result = await _generate_diagram(
                 location_id=location_id,
                 plan=plan,
@@ -55,7 +61,9 @@ async def generate_candidate_node(state: dict) -> dict:
                 visual_identity=visual_identity,
                 brief_id=brief_id,
             )
-        elif image_type == "generated":
+        elif image_type == "generated" or is_artistic_override:
+            if is_artistic_override:
+                logger.info(f"Routing custom_artistic diagram {location_id} to Imagen")
             result = await _generate_imagen(
                 location_id=location_id,
                 plan=plan,

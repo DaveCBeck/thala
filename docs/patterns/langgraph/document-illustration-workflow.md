@@ -56,7 +56,7 @@ graph TD
     START --> creative_direction["creative_direction<br/>(Pass 1: visual identity + opportunity map)"]
     creative_direction --> plan_briefs["plan_briefs<br/>(Pass 2: two candidate briefs per location)"]
     plan_briefs --> conditional1{route_after_analysis}
-    conditional1 -->|per brief| generate_candidate["Send('generate_candidate', {brief, plan, brief_id, ...})<br/>(~12 parallel tasks)"]
+    conditional1 -->|per brief| generate_candidate["Send('generate_candidate', {brief, plan, brief_id, ...})<br/>(~16 parallel tasks — N+2 surplus)"]
     conditional1 -->|no briefs| finalize1[finalize]
     generate_candidate --> sync_after_generation["sync_after_generation<br/>(barrier — counts results)"]
     sync_after_generation --> conditional2{route_to_selection}
@@ -351,30 +351,26 @@ def create_illustrate_graph() -> StateGraph:
     return builder.compile()
 ```
 
-### Diagram Engine Routing
+### Diagram Generation
 
-The `generate_candidate` node delegates diagram generation to the appropriate engine:
+Diagrams are generated via **Gemini 3 Pro image generation** (`generate_diagram_image()` in `image_utils.py`), which produces sharp, legible text at up to 2K/4K resolution. This replaced the previous Mermaid/Graphviz/SVG pipeline.
+
+The `custom_artistic` subtype is intercepted by `generate_candidate_node` and routed to **Imagen** instead (artistic/painterly visuals, not structured diagrams).
 
 ```python
-# workflows/output/illustrate/nodes/generate_additional.py
+# workflows/output/illustrate/nodes/generate_candidate.py
 
-_MERMAID_SUBTYPES = {"flowchart", "sequence", "concept_map"}
-_GRAPHVIZ_SUBTYPES = {"network_graph", "hierarchy", "dependency_tree"}
+is_artistic_override = (
+    image_type == "diagram" and brief.diagram_subtype == "custom_artistic"
+)
 
-async def _generate_diagram(location_id, plan, brief, config, ...):
-    subtype = plan.diagram_subtype
-
-    if subtype in _MERMAID_SUBTYPES and is_engine_available("mermaid"):
-        result = await generate_mermaid_with_selection(...)
-    elif subtype in _GRAPHVIZ_SUBTYPES and is_engine_available("graphviz"):
-        result = await generate_graphviz_with_selection(...)
-
-    # Fallback to SVG if preferred engine failed or unavailable
-    if result is None or not result.success:
-        result = await generate_diagram(...)
+if image_type == "diagram" and not is_artistic_override:
+    result = await _generate_diagram(...)   # → Gemini 3 Pro
+elif image_type == "generated" or is_artistic_override:
+    result = await _generate_imagen(...)    # → Imagen
 ```
 
-See: [Diagram Engine Registry and Routing](../llm-interaction/diagram-engine-registry-routing.md)
+See: [Diagram Engine Registry and Routing](../llm-interaction/diagram-engine-registry-routing.md) (legacy routing retained for backward compatibility)
 
 ### Multi-Query Image Search
 

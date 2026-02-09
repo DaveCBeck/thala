@@ -1,5 +1,6 @@
-"""Image generation utilities using Google Imagen with LLM-generated prompts."""
+"""Image generation utilities using Google Imagen and Gemini with LLM-generated prompts."""
 
+import asyncio
 import logging
 import os
 
@@ -8,8 +9,9 @@ from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 logger = logging.getLogger(__name__)
 
-# Image generation model
+# Image generation models
 IMAGEN_MODEL = "imagen-4.0-ultra-generate-001"
+GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview"
 
 # Lazy-initialized genai client (reused across calls)
 _genai_client = None
@@ -223,4 +225,125 @@ async def _select_best_imagen_candidate(
         return candidates[best_idx]
     except Exception as e:
         logger.warning(f"Imagen vision selection failed, using first candidate: {e}")
+        return candidates[0]
+
+
+DIAGRAM_PROMPT_PREFIX = (
+    "Generate a clear, professional diagram image with sharp, legible text. "
+    "Use clean lines, consistent spacing, and high contrast. "
+    "The diagram should be informative and visually organized.\n\n"
+)
+
+
+async def generate_diagram_image(
+    brief: str,
+    aspect_ratio: str = "3:2",
+    num_candidates: int = 2,
+) -> tuple[bytes | None, str | None]:
+    """Generate a diagram image using Gemini 3 Pro image generation.
+
+    Gemini 3 Pro is optimized for sharp, legible text and diagrams at up to
+    2K/4K resolution — replacing the previous Mermaid/Graphviz/SVG pipeline.
+
+    Generates multiple candidates in parallel and uses vision pair comparison
+    to select the best one.
+
+    Args:
+        brief: Natural-language diagram brief from plan_briefs.
+        aspect_ratio: Image aspect ratio (default "3:2" for 900x600 diagram shape).
+        num_candidates: Number of parallel generation calls (default 2).
+
+    Returns:
+        Tuple of (PNG image bytes, prompt used) or (None, None) if generation fails.
+    """
+    try:
+        from google.genai import types
+    except ImportError:
+        logger.error("google-genai package not installed. Run: pip install google-genai")
+        return None, None
+
+    try:
+        client = _get_genai_client()
+    except ValueError:
+        logger.error("GEMINI_API_KEY environment variable not set")
+        return None, None
+
+    prompt = DIAGRAM_PROMPT_PREFIX + brief
+
+    async def _generate_one() -> bytes | None:
+        """Single Gemini image generation call."""
+        from core.task_queue.rate_limits import get_imagen_semaphore
+
+        async with get_imagen_semaphore():
+            response = await client.aio.models.generate_content(
+                model=GEMINI_IMAGE_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                    ),
+                ),
+            )
+
+        # Extract image bytes from response parts
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                for part in candidate.content.parts:
+                    if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                        return part.inline_data.data
+            # Log what we got instead of an image
+            text_parts = [
+                p.text[:100] for p in (candidate.content.parts if candidate.content and candidate.content.parts else []) if p.text
+            ]
+            logger.warning(f"Gemini returned no image. finish_reason={candidate.finish_reason}, text={text_parts}")
+        else:
+            logger.warning(f"Gemini returned no candidates. prompt_feedback={response.prompt_feedback}")
+        return None
+
+    try:
+        results = await asyncio.gather(
+            *[_generate_one() for _ in range(num_candidates)],
+            return_exceptions=True,
+        )
+
+        candidates = [r for r in results if isinstance(r, bytes)]
+
+        if not candidates:
+            errors = [r for r in results if isinstance(r, Exception)]
+            logger.warning(f"No diagram images generated — {len(errors)} errors: {errors[:2]}")
+            return None, prompt
+
+        if len(candidates) == 1:
+            logger.info(f"Generated 1 diagram candidate ({len(candidates[0])} bytes)")
+            return candidates[0], prompt
+
+        logger.info(f"Generated {len(candidates)} diagram candidates, selecting best...")
+        best = await _select_best_diagram_candidate(candidates, prompt, brief)
+        return best, prompt
+
+    except Exception as e:
+        logger.error(f"Diagram image generation failed: {e}")
+        return None, prompt
+
+
+async def _select_best_diagram_candidate(
+    candidates: list[bytes],
+    prompt: str,
+    brief: str,
+) -> bytes:
+    """Select the best diagram candidate via vision pair comparison.
+
+    Falls back to first candidate if vision comparison fails.
+    """
+    try:
+        from workflows.shared.vision_comparison import vision_pair_select
+
+        criteria = brief if brief else prompt
+        best_idx = await vision_pair_select(candidates, criteria)
+        logger.info(f"Vision selected diagram candidate {best_idx + 1} of {len(candidates)}")
+        return candidates[best_idx]
+    except Exception as e:
+        logger.warning(f"Diagram vision selection failed, using first candidate: {e}")
         return candidates[0]

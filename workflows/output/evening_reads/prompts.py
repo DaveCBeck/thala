@@ -148,7 +148,12 @@ Structure your essay as an unfolding investigation:
 2. **Stakes and context** (1-2 paragraphs): Explain why this matters / what it reveals about the broader field
 3. **Main body** (bulk of piece): Work through the theme, treating each element as a piece of the puzzle
 4. **Synthesis** (1-2 paragraphs): Surface the tensions and what this reveals
-5. **Open questions** (1 paragraph): What we still don't know and why it matters
+5. **Close** (1-2 paragraphs): Choose the closing move that best serves your piece:
+   - *Callback*: Return to the opening puzzle or image with transformed understanding—the reader now sees it differently
+   - *The next question*: The investigation refined the mystery rather than solving it—end on the single sharpest question the piece has made newly askable
+   - *Telescoping in*: End on one vivid, specific detail from the source material that crystallises the whole investigation
+
+   Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
 """
     + _DEEP_DIVE_STYLE
 )
@@ -166,7 +171,12 @@ Structure your essay as implications rippling outward:
 3. **Mechanism** (bulk of piece): Walk through the mechanism/process/system that produced it
 4. **Connections** (several paragraphs): How does this finding connect to other work?
 5. **Limitations** (1-2 paragraphs): Address trade-offs and what the finding doesn't tell us
-6. **Open questions** (1 paragraph): What remains unclear and future directions
+6. **Close** (1-2 paragraphs): Choose the closing move that best serves your piece:
+   - *Practical pivot*: Land the implications on someone making a real decision—what does this finding mean for a person acting this season?
+   - *Telescoping out*: Zoom from the specific finding to a much larger reframing—the number you opened with reshapes something bigger
+   - *Concrete scene*: End with a specific person, place, or moment that embodies the finding's significance—show it mattering rather than saying it matters
+
+   Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
 """
     + _DEEP_DIVE_STYLE
 )
@@ -185,7 +195,12 @@ Structure your essay as assumption-tested-by-evidence:
 2. **The complication** (1-2 paragraphs): Introduce what doesn't fit
 3. **The evidence** (bulk of piece): Work through the evidence that complicates the simple story
 4. **Resolution attempts** (several paragraphs): Examine attempts to address or work around the problem
-5. **Productive uncertainty** (1-2 paragraphs): Why the complication matters, what it opens up
+5. **Close** (1-2 paragraphs): Choose the closing move that best serves your piece:
+   - *Unresolved tension*: Place two contradictory truths side by side and leave them there—the discomfort is the point
+   - *Callback to the assumption*: Return to the comfortable story from the opening and let the reader feel how differently it lands now
+   - *Concrete scene*: End with a specific person or moment who embodies the paradox—someone acting inside the contradiction
+
+   Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
 """
     + _DEEP_DIVE_STYLE
 )

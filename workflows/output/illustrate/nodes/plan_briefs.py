@@ -115,7 +115,9 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
     editorial_notes = state.get("editorial_notes", "")
 
     target_count = (1 if config.generate_header_image else 0) + config.additional_image_count
-    selected = _select_opportunities(opportunities, target_count, config)
+    # Select N+2 to maintain over-generation surplus through to editorial review
+    select_count = target_count + 2
+    selected = _select_opportunities(opportunities, select_count, config)
 
     try:
         result = await invoke(

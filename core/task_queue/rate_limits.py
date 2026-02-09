@@ -10,6 +10,7 @@ import os
 
 _imagen_semaphore: asyncio.Semaphore | None = None
 _openalex_semaphore: asyncio.Semaphore | None = None
+_mmdc_semaphore: asyncio.Semaphore | None = None
 
 
 def get_imagen_semaphore() -> asyncio.Semaphore:
@@ -28,3 +29,16 @@ def get_openalex_semaphore() -> asyncio.Semaphore:
         limit = int(os.environ.get("THALA_OPENALEX_CONCURRENCY", "20"))
         _openalex_semaphore = asyncio.Semaphore(limit)
     return _openalex_semaphore
+
+
+def get_mmdc_semaphore() -> asyncio.Semaphore:
+    """Get or create the global Mermaid (mmdc/PhantomJS) semaphore.
+
+    Default concurrency=1 because PhantomJS uses shared temp files
+    that cause race conditions under parallel execution.
+    """
+    global _mmdc_semaphore
+    if _mmdc_semaphore is None:
+        limit = int(os.environ.get("THALA_MMDC_CONCURRENCY", "1"))
+        _mmdc_semaphore = asyncio.Semaphore(limit)
+    return _mmdc_semaphore

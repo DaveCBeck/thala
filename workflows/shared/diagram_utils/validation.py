@@ -63,7 +63,11 @@ def validate_and_sanitize_svg(svg_string: str, width: int = 800, height: int = 6
         return None
 
     # Ensure required attributes
-    if tree.get("xmlns") is None:
+    # lxml stores xmlns as a namespace declaration in nsmap, not as a regular
+    # attribute — tree.get("xmlns") always returns None even when present.
+    # Check nsmap to avoid adding a duplicate that cairosvg rejects.
+    has_svg_ns = tree.nsmap.get(None) == "http://www.w3.org/2000/svg"
+    if not has_svg_ns:
         tree.set("xmlns", "http://www.w3.org/2000/svg")
     if tree.get("viewBox") is None:
         w = tree.get("width", str(width))
