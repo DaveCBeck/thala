@@ -10,6 +10,7 @@ from workflows.output.illustrate.graph import (
     route_after_analysis,
     route_after_selection,
     route_to_selection,
+    sync_after_selection,
 )
 from workflows.output.illustrate.nodes.finalize import _select_winning_results
 from workflows.output.illustrate.nodes.generate_candidate import generate_candidate_node
@@ -19,6 +20,7 @@ from workflows.output.illustrate.nodes.select_per_location import (
 from workflows.output.illustrate.schemas import (
     CandidateBrief,
     ImageLocationPlan,
+    ImageOpportunity,
     VisualIdentity,
 )
 from workflows.output.illustrate.state import ImageGenResult, LocationSelection
@@ -69,6 +71,19 @@ def _make_gen_result(**overrides):
     return ImageGenResult(**defaults)
 
 
+def _make_opportunity(**overrides):
+    defaults = dict(
+        location_id="section_1",
+        insertion_after_header="Introduction",
+        purpose="illustration",
+        suggested_type="generated",
+        strength="strong",
+        rationale="Helps readers visualize the concept",
+    )
+    defaults.update(overrides)
+    return ImageOpportunity(**defaults)
+
+
 def _make_vi():
     return VisualIdentity(
         primary_style="editorial watercolor",
@@ -97,7 +112,7 @@ class TestGenerateCandidateNode:
 
         mock_result = {
             "generation_results": [
-                _make_gen_result(image_type="public_domain", brief_id=""),
+                _make_gen_result(image_type="public_domain", brief_id="section_1_1"),
             ]
         }
 
@@ -122,7 +137,7 @@ class TestGenerateCandidateNode:
 
         mock_result = {
             "generation_results": [
-                _make_gen_result(image_type="diagram", brief_id=""),
+                _make_gen_result(image_type="diagram", brief_id="section_1_1"),
             ]
         }
 
@@ -147,7 +162,7 @@ class TestGenerateCandidateNode:
 
         mock_result = {
             "generation_results": [
-                _make_gen_result(image_type="generated", brief_id=""),
+                _make_gen_result(image_type="generated", brief_id="section_1_1"),
             ]
         }
 
@@ -309,7 +324,7 @@ class TestRouteAfterAnalysis:
 
 class TestRouteToSelection:
     def test_no_results_goes_to_finalize(self):
-        state = {"generation_results": [], "candidate_briefs": []}
+        state = {"generation_results": []}
         assert route_to_selection(state) == "finalize"
 
     def test_groups_by_location_and_filters_successful(self):
@@ -318,9 +333,16 @@ class TestRouteToSelection:
             _make_gen_result(location_id="s1", brief_id="s1_2", success=False, image_bytes=None),
             _make_gen_result(location_id="s2", brief_id="s2_1", success=True),
         ]
-        briefs = [_make_brief(location_id="s1"), _make_brief(location_id="s2")]
+        opportunities = [
+            _make_opportunity(location_id="s1", rationale="Illustrates key idea"),
+            _make_opportunity(location_id="s2", rationale="Shows architecture"),
+        ]
 
-        state = {"generation_results": results, "candidate_briefs": briefs}
+        state = {
+            "generation_results": results,
+            "image_opportunities": opportunities,
+            "editorial_notes": "Keep images varied",
+        }
         sends = route_to_selection(state)
 
         assert len(sends) == 2
@@ -330,6 +352,45 @@ class TestRouteToSelection:
         # s1 should have 1 successful candidate (s1_2 failed)
         s1_send = next(s for s in sends if s.arg["location_id"] == "s1")
         assert len(s1_send.arg["candidates"]) == 1
+
+    def test_selection_criteria_uses_opportunity_not_brief(self):
+        """Selection criteria must come from ImageOpportunity (neutral)
+        rather than a candidate brief (biased toward candidate 1)."""
+        results = [
+            _make_gen_result(location_id="s1", brief_id="s1_1", success=True),
+            _make_gen_result(location_id="s1", brief_id="s1_2", success=True),
+        ]
+        opportunities = [
+            _make_opportunity(
+                location_id="s1",
+                purpose="illustration",
+                rationale="Visualize the data pipeline",
+            ),
+        ]
+
+        state = {
+            "generation_results": results,
+            "image_opportunities": opportunities,
+            "editorial_notes": "Prefer warm tones",
+        }
+        sends = route_to_selection(state)
+
+        criteria = sends[0].arg["selection_criteria"]
+        assert "illustration" in criteria
+        assert "Visualize the data pipeline" in criteria
+        assert "Prefer warm tones" in criteria
+
+    def test_selection_criteria_without_opportunity_or_notes(self):
+        """Gracefully handles missing opportunities and editorial_notes."""
+        results = [
+            _make_gen_result(location_id="s1", brief_id="s1_1", success=True),
+        ]
+        state = {"generation_results": results}
+        sends = route_to_selection(state)
+
+        # Should still produce a send, with empty criteria
+        assert len(sends) == 1
+        assert sends[0].arg["selection_criteria"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -490,3 +551,280 @@ class TestSelectWinningResults:
 
         winners = _select_winning_results(gen_results, selection)
         assert len(winners) == 1
+
+    def test_retry_success_overrides_earlier_failure(self):
+        """Later retry-round selection must override an earlier 'failed' entry.
+
+        The add reducer accumulates entries across rounds, so selection_results
+        may contain [failed_round1, excellent_round2] for the same location.
+        The retry success must win.
+        """
+        gen_results = [
+            # Round 1: both candidates failed (no image_bytes)
+            _make_gen_result(location_id="s1", brief_id="s1_1", success=False, image_bytes=None),
+            _make_gen_result(location_id="s1", brief_id="s1_2", success=False, image_bytes=None),
+            # Round 2 (retry): new candidate succeeds
+            _make_gen_result(location_id="s1", brief_id="s1_1_retry", image_bytes=b"RETRY_OK"),
+        ]
+        # Accumulated selection_results: round-1 failure first, then round-2 success
+        selection = [
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id=None,
+                quality_tier="failed",
+                reasoning="both candidates failed in round 1",
+            ),
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id="s1_1_retry",
+                quality_tier="excellent",
+                reasoning="retry succeeded",
+            ),
+        ]
+
+        winners = _select_winning_results(gen_results, selection)
+        assert len(winners) == 1
+        assert winners[0]["brief_id"] == "s1_1_retry"
+        assert winners[0]["image_bytes"] == b"RETRY_OK"
+
+    def test_retry_failure_still_means_no_winner(self):
+        """If the retry also fails, the location should still produce no winner."""
+        gen_results = [
+            _make_gen_result(location_id="s1", brief_id="s1_1", success=False, image_bytes=None),
+        ]
+        selection = [
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id=None,
+                quality_tier="failed",
+                reasoning="round 1 failed",
+            ),
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id=None,
+                quality_tier="failed",
+                reasoning="retry also failed",
+            ),
+        ]
+
+        winners = _select_winning_results(gen_results, selection)
+        assert len(winners) == 0
+
+    def test_mixed_locations_retry_and_first_pass(self):
+        """Multiple locations: one succeeds on first pass, one needs retry."""
+        gen_results = [
+            # s1: succeeds first pass
+            _make_gen_result(location_id="s1", brief_id="s1_1", image_bytes=b"S1_OK"),
+            _make_gen_result(location_id="s1", brief_id="s1_2", image_bytes=b"S1_ALT"),
+            # s2: fails first pass, succeeds on retry
+            _make_gen_result(location_id="s2", brief_id="s2_1", success=False, image_bytes=None),
+            _make_gen_result(location_id="s2", brief_id="s2_1_retry", image_bytes=b"S2_RETRY"),
+        ]
+        selection = [
+            # s1: selected on first pass
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id="s1_2",
+                quality_tier="excellent",
+                reasoning="picked candidate 2",
+            ),
+            # s2: failed first pass
+            LocationSelection(
+                location_id="s2",
+                selected_brief_id=None,
+                quality_tier="failed",
+                reasoning="both failed",
+            ),
+            # s2: retry succeeded
+            LocationSelection(
+                location_id="s2",
+                selected_brief_id="s2_1_retry",
+                quality_tier="acceptable",
+                reasoning="retry worked",
+            ),
+        ]
+
+        winners = _select_winning_results(gen_results, selection)
+        assert len(winners) == 2
+        winner_ids = {w["brief_id"] for w in winners}
+        assert "s1_2" in winner_ids
+        assert "s2_1_retry" in winner_ids
+
+
+# ---------------------------------------------------------------------------
+# sync_after_selection: image_bytes cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestSyncAfterSelectionClearsBytes:
+    def test_clears_loser_bytes(self):
+        """Non-winning candidates should have image_bytes cleared to b""."""
+        gen_results = [
+            _make_gen_result(location_id="s1", brief_id="s1_1", image_bytes=b"LOSER"),
+            _make_gen_result(location_id="s1", brief_id="s1_2", image_bytes=b"WINNER"),
+        ]
+        selection_results = [
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id="s1_2",
+                quality_tier="excellent",
+                reasoning="better",
+            ),
+        ]
+
+        state = {
+            "generation_results": gen_results,
+            "selection_results": selection_results,
+            "retry_count": {},
+        }
+
+        sync_after_selection(state)
+
+        # Winner bytes preserved
+        assert gen_results[1]["image_bytes"] == b"WINNER"
+        # Loser bytes cleared
+        assert gen_results[0]["image_bytes"] == b""
+
+    def test_preserves_winner_bytes(self):
+        """Winner image_bytes must survive clearing."""
+        winner = _make_gen_result(brief_id="s1_1", image_bytes=b"KEEPER")
+        state = {
+            "generation_results": [winner],
+            "selection_results": [
+                LocationSelection(
+                    location_id="s1",
+                    selected_brief_id="s1_1",
+                    quality_tier="acceptable",
+                    reasoning="auto",
+                ),
+            ],
+            "retry_count": {},
+        }
+
+        sync_after_selection(state)
+        assert winner["image_bytes"] == b"KEEPER"
+
+    def test_clears_all_when_all_failed(self):
+        """When selection is 'failed', all candidates for that location are cleared."""
+        gen_results = [
+            _make_gen_result(location_id="s1", brief_id="s1_1", image_bytes=b"A"),
+            _make_gen_result(location_id="s1", brief_id="s1_2", image_bytes=b"B"),
+        ]
+        state = {
+            "generation_results": gen_results,
+            "selection_results": [
+                LocationSelection(
+                    location_id="s1",
+                    selected_brief_id=None,
+                    quality_tier="failed",
+                    reasoning="both bad",
+                ),
+            ],
+            "retry_count": {},
+        }
+
+        sync_after_selection(state)
+        assert gen_results[0]["image_bytes"] == b""
+        assert gen_results[1]["image_bytes"] == b""
+
+    def test_multiple_locations_only_losers_cleared(self):
+        """With multiple locations, only non-winners per location are cleared."""
+        gen_results = [
+            _make_gen_result(location_id="s1", brief_id="s1_1", image_bytes=b"S1_LOSE"),
+            _make_gen_result(location_id="s1", brief_id="s1_2", image_bytes=b"S1_WIN"),
+            _make_gen_result(location_id="s2", brief_id="s2_1", image_bytes=b"S2_WIN"),
+            _make_gen_result(location_id="s2", brief_id="s2_2", image_bytes=b"S2_LOSE"),
+        ]
+        selection_results = [
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id="s1_2",
+                quality_tier="excellent",
+                reasoning="better",
+            ),
+            LocationSelection(
+                location_id="s2",
+                selected_brief_id="s2_1",
+                quality_tier="acceptable",
+                reasoning="ok",
+            ),
+        ]
+
+        state = {
+            "generation_results": gen_results,
+            "selection_results": selection_results,
+            "retry_count": {},
+        }
+
+        sync_after_selection(state)
+
+        assert gen_results[0]["image_bytes"] == b""      # s1 loser
+        assert gen_results[1]["image_bytes"] == b"S1_WIN" # s1 winner
+        assert gen_results[2]["image_bytes"] == b"S2_WIN" # s2 winner
+        assert gen_results[3]["image_bytes"] == b""      # s2 loser
+
+    def test_retry_round_uses_latest_selection(self):
+        """After retry, latest selection determines winner; old losers stay cleared."""
+        gen_results = [
+            # Round 1 candidates (both failed selection)
+            _make_gen_result(location_id="s1", brief_id="s1_1", image_bytes=b"OLD_A"),
+            _make_gen_result(location_id="s1", brief_id="s1_2", image_bytes=b"OLD_B"),
+            # Round 2 retry candidates
+            _make_gen_result(location_id="s1", brief_id="s1_1_retry1", image_bytes=b"RETRY_WIN"),
+            _make_gen_result(location_id="s1", brief_id="s1_2_retry1", image_bytes=b"RETRY_LOSE"),
+        ]
+        # Accumulated selection_results from both rounds
+        selection_results = [
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id=None,
+                quality_tier="failed",
+                reasoning="round 1 failed",
+            ),
+            LocationSelection(
+                location_id="s1",
+                selected_brief_id="s1_1_retry1",
+                quality_tier="excellent",
+                reasoning="retry succeeded",
+            ),
+        ]
+
+        state = {
+            "generation_results": gen_results,
+            "selection_results": selection_results,
+            "retry_count": {},
+        }
+
+        sync_after_selection(state)
+
+        # Only the retry winner keeps its bytes
+        assert gen_results[0]["image_bytes"] == b""           # old loser
+        assert gen_results[1]["image_bytes"] == b""           # old loser
+        assert gen_results[2]["image_bytes"] == b"RETRY_WIN"  # retry winner
+        assert gen_results[3]["image_bytes"] == b""           # retry loser
+
+    def test_skips_already_empty_bytes(self):
+        """Entries with image_bytes=None (failed generation) are left as-is."""
+        gen_results = [
+            _make_gen_result(brief_id="s1_1", success=False, image_bytes=None),
+            _make_gen_result(brief_id="s1_2", image_bytes=b"WINNER"),
+        ]
+        state = {
+            "generation_results": gen_results,
+            "selection_results": [
+                LocationSelection(
+                    location_id="s1",
+                    selected_brief_id="s1_2",
+                    quality_tier="acceptable",
+                    reasoning="only option",
+                ),
+            ],
+            "retry_count": {},
+        }
+
+        sync_after_selection(state)
+
+        # Failed entry stays None (not mutated to b"")
+        assert gen_results[0]["image_bytes"] is None
+        # Winner preserved
+        assert gen_results[1]["image_bytes"] == b"WINNER"

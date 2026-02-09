@@ -44,6 +44,7 @@ async def generate_candidate_node(state: dict) -> dict:
                 plan=plan,
                 brief=brief_text,
                 document_context=document_context,
+                brief_id=brief_id,
             )
         elif image_type == "diagram":
             result = await _generate_diagram(
@@ -52,6 +53,7 @@ async def generate_candidate_node(state: dict) -> dict:
                 brief=brief_text,
                 config=config,
                 visual_identity=visual_identity,
+                brief_id=brief_id,
             )
         elif image_type == "generated":
             result = await _generate_imagen(
@@ -60,14 +62,11 @@ async def generate_candidate_node(state: dict) -> dict:
                 brief=brief_text,
                 config=config,
                 visual_identity=visual_identity,
+                brief_id=brief_id,
             )
         else:
             logger.error(f"Unknown image type: {image_type}")
             return _failure_result(location_id, brief_id, image_type, brief_text, f"Unknown image type: {image_type}")
-
-        # Tag all generation results with brief_id
-        for gen_result in result.get("generation_results", []):
-            gen_result["brief_id"] = brief_id
 
         return result
 

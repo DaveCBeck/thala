@@ -38,13 +38,18 @@ def _select_winning_results(
             results_by_brief_id[gen["brief_id"]] = gen
             results_by_location[gen["location_id"]].append(gen)
 
+    # Deduplicate selections: keep only the LAST entry per location_id.
+    # selection_results uses an `add` reducer, so retry-round entries appear
+    # after earlier rounds.  Without dedup the first (often "failed") entry
+    # claims the slot and the retry success is silently skipped.
+    latest_selection: dict[str, LocationSelection] = {}
+    for selection in selection_results:
+        latest_selection[selection["location_id"]] = selection
+
     winners: list[ImageGenResult] = []
     selected_locations: set[str] = set()
 
-    for selection in selection_results:
-        loc_id = selection["location_id"]
-        if loc_id in selected_locations:
-            continue  # Skip duplicate selections for same location
+    for loc_id, selection in latest_selection.items():
         selected_locations.add(loc_id)
 
         if selection["quality_tier"] == "failed":

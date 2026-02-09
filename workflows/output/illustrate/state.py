@@ -38,16 +38,6 @@ class ImageGenResult(TypedDict):
     attribution: dict | None  # For public domain images
 
 
-class ImageReviewResult(TypedDict):
-    """Result from vision review."""
-
-    location_id: str
-    passed: bool
-    severity: Literal["minor", "substantive"] | None  # If not passed
-    issues: list[str]  # Identified problems
-    improved_brief: str | None  # For retry
-
-
 class LocationSelection(TypedDict):
     """Result of per-location pair comparison."""
 

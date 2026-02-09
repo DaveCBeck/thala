@@ -1,4 +1,7 @@
-"""Generate additional images (public domain, diagrams, or generated)."""
+"""Image generation helpers (public domain, diagrams, Imagen).
+
+Used by generate_candidate.py via the _generate_* helper functions.
+"""
 
 import ipaddress
 import logging
@@ -17,6 +20,8 @@ from ..schemas import ImageLocationPlan, VisualIdentity
 from ..state import ImageGenResult, WorkflowError
 
 logger = logging.getLogger(__name__)
+
+MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20 MB
 
 # Diagram subtypes grouped by preferred rendering engine
 _MERMAID_SUBTYPES = {"flowchart", "sequence", "concept_map"}
@@ -45,114 +50,21 @@ def _validate_image_url(url: str) -> None:
 
 
 async def _download_image(url: str) -> bytes:
-    """Download image from URL."""
+    """Download image from URL with size limit to prevent memory exhaustion."""
     _validate_image_url(url)
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.content
-
-
-async def generate_additional_node(state: dict) -> dict:
-    """Generate an additional image based on the plan.
-
-    This node is invoked via Send() for each additional image location.
-    It handles all three image types:
-    - public_domain: Search and download from Pexels/Unsplash
-    - diagram: Generate SVG diagram and convert to PNG
-    - generated: Use Imagen to generate
-
-    Args:
-        state: Contains location plan, document_context, config
-
-    Returns:
-        State update with generation_results
-    """
-    plan: ImageLocationPlan = state["location"]
-    document_context: str = state["document_context"]
-    config: IllustrateConfig = state.get("config") or IllustrateConfig()
-    visual_identity: VisualIdentity | None = state.get("visual_identity")
-    retry_brief: str | None = state.get("retry_brief")
-
-    # Use retry brief if this is a retry
-    brief = retry_brief or plan.brief
-    location_id = plan.location_id
-    image_type = plan.image_type
-
-    try:
-        if image_type == "public_domain":
-            return await _generate_public_domain(
-                location_id=location_id,
-                plan=plan,
-                brief=brief,
-                document_context=document_context,
-            )
-
-        elif image_type == "diagram":
-            return await _generate_diagram(
-                location_id=location_id,
-                plan=plan,
-                brief=brief,
-                config=config,
-                visual_identity=visual_identity,
-            )
-
-        elif image_type == "generated":
-            return await _generate_imagen(
-                location_id=location_id,
-                plan=plan,
-                brief=brief,
-                config=config,
-                visual_identity=visual_identity,
-            )
-
-        else:
-            logger.error(f"Unknown image type: {image_type}")
-            return {
-                "generation_results": [
-                    ImageGenResult(
-                        location_id=location_id,
-                        success=False,
-                        image_bytes=None,
-                        image_type=image_type,
-                        prompt_or_query_used=brief,
-                        alt_text=None,
-                        attribution=None,
+        chunks: list[bytes] = []
+        total = 0
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > MAX_IMAGE_SIZE:
+                    raise ValueError(
+                        f"Image exceeds size limit: >{MAX_IMAGE_SIZE} bytes ({MAX_IMAGE_SIZE // (1024 * 1024)} MB)"
                     )
-                ],
-                "errors": [
-                    WorkflowError(
-                        location_id=location_id,
-                        severity="error",
-                        message=f"Unknown image type: {image_type}",
-                        stage="generation",
-                    )
-                ],
-            }
-
-    except Exception as e:
-        logger.error(f"Image generation failed for {location_id}: {e}")
-        return {
-            "generation_results": [
-                ImageGenResult(
-                    location_id=location_id,
-                    success=False,
-                    image_bytes=None,
-                    image_type=image_type,
-                    prompt_or_query_used=brief,
-                    alt_text=None,
-                    attribution=None,
-                )
-            ],
-            "errors": [
-                WorkflowError(
-                    location_id=location_id,
-                    severity="error",
-                    message=f"Generation failed: {e}",
-                    stage="generation",
-                )
-            ],
-        }
+                chunks.append(chunk)
+        return b"".join(chunks)
 
 
 async def _generate_public_domain(
@@ -160,6 +72,7 @@ async def _generate_public_domain(
     plan: ImageLocationPlan,
     brief: str,
     document_context: str,
+    brief_id: str = "",
 ) -> dict:
     """Generate using public domain image search.
 
@@ -212,6 +125,7 @@ async def _generate_public_domain(
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
+                    brief_id=brief_id,
                     success=True,
                     image_bytes=image_bytes,
                     image_type="public_domain",
@@ -228,6 +142,7 @@ async def _generate_public_domain(
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
+                    brief_id=brief_id,
                     success=False,
                     image_bytes=None,
                     image_type="public_domain",
@@ -279,6 +194,7 @@ async def _generate_diagram(
     brief: str,
     config: IllustrateConfig,
     visual_identity: VisualIdentity | None = None,
+    brief_id: str = "",
 ) -> dict:
     """Generate diagram, routing to the best engine based on subtype.
 
@@ -357,6 +273,7 @@ async def _generate_diagram(
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
+                    brief_id=brief_id,
                     success=True,
                     image_bytes=result.png_bytes,
                     image_type="diagram",
@@ -373,6 +290,7 @@ async def _generate_diagram(
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
+                    brief_id=brief_id,
                     success=False,
                     image_bytes=None,
                     image_type="diagram",
@@ -398,6 +316,7 @@ async def _generate_imagen(
     brief: str,
     config: IllustrateConfig,
     visual_identity: VisualIdentity | None = None,
+    brief_id: str = "",
 ) -> dict:
     """Generate using Imagen."""
     # Inject visual identity (for_imagen=True omits avoid list)
@@ -417,6 +336,7 @@ async def _generate_imagen(
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
+                    brief_id=brief_id,
                     success=True,
                     image_bytes=image_bytes,
                     image_type="generated",
@@ -432,6 +352,7 @@ async def _generate_imagen(
             "generation_results": [
                 ImageGenResult(
                     location_id=location_id,
+                    brief_id=brief_id,
                     success=False,
                     image_bytes=None,
                     image_type="generated",

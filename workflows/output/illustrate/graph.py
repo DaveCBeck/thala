@@ -36,7 +36,7 @@ from .nodes import (
     plan_briefs_node,
     select_per_location_node,
 )
-from .schemas import CandidateBrief, ImageLocationPlan
+from .schemas import CandidateBrief, ImageLocationPlan, ImageOpportunity
 from .state import IllustrateState
 
 logger = logging.getLogger(__name__)
@@ -109,10 +109,32 @@ def sync_after_generation(state: IllustrateState) -> dict:
     return {}
 
 
+def _build_selection_criteria(
+    opportunities: list[ImageOpportunity],
+    editorial_notes: str,
+    location_id: str,
+) -> str:
+    """Build neutral selection criteria from ImageOpportunity fields.
+
+    Uses rationale + purpose (which describe *why* the location needs an
+    image) rather than any single candidate's brief, so comparison is
+    unbiased between candidates.
+    """
+    parts: list[str] = []
+    for opp in opportunities:
+        if opp.location_id == location_id:
+            parts.append(f"Purpose: {opp.purpose}. {opp.rationale}")
+            break
+
+    if editorial_notes:
+        parts.append(f"Editorial guidance: {editorial_notes}")
+
+    return " | ".join(parts)
+
+
 def route_to_selection(state: IllustrateState) -> list[Send] | str:
     """Group generation results by location_id, fan out pair comparison."""
     generation_results = state.get("generation_results", [])
-    candidate_briefs = state.get("candidate_briefs", [])
 
     if not generation_results:
         logger.info("No generation results, going to finalize")
@@ -123,11 +145,9 @@ def route_to_selection(state: IllustrateState) -> list[Send] | str:
     for r in generation_results:
         by_location[r["location_id"]].append(r)
 
-    # Build brief text lookup for selection criteria
-    brief_text_by_location: dict[str, str] = {}
-    for brief in candidate_briefs:
-        if brief.location_id not in brief_text_by_location:
-            brief_text_by_location[brief.location_id] = brief.brief
+    # Build neutral selection criteria from opportunities + editorial notes
+    opportunities = state.get("image_opportunities", [])
+    editorial_notes = state.get("editorial_notes", "")
 
     sends = []
     for location_id, candidates in by_location.items():
@@ -138,7 +158,9 @@ def route_to_selection(state: IllustrateState) -> list[Send] | str:
                 {
                     "location_id": location_id,
                     "candidates": successful,
-                    "selection_criteria": brief_text_by_location.get(location_id, ""),
+                    "selection_criteria": _build_selection_criteria(
+                        opportunities, editorial_notes, location_id
+                    ),
                 },
             )
         )
@@ -150,19 +172,50 @@ def route_to_selection(state: IllustrateState) -> list[Send] | str:
 def sync_after_selection(state: IllustrateState) -> dict:
     """Synchronization barrier after all selections complete.
 
-    Updates retry_count for failed locations.
+    Updates retry_count for failed locations and clears image_bytes
+    from non-winning generation results to free memory.
     """
     selection_results = state.get("selection_results", [])
     passed = sum(1 for s in selection_results if s["quality_tier"] != "failed")
     failed = sum(1 for s in selection_results if s["quality_tier"] == "failed")
 
-    # Update retry counts for failed locations
-    retry_count = dict(state.get("retry_count", {}))
+    # Derive retry counts directly from accumulated selection_results.
+    # selection_results uses an add reducer, so it grows across rounds —
+    # each failed round appends one "failed" entry per location.
+    # Counting failed entries per location gives the exact retry count
+    # without the over-inflation bug of the old increment-per-entry approach.
+    retry_count: dict[str, int] = {}
     for s in selection_results:
         if s["quality_tier"] == "failed":
-            retry_count[s["location_id"]] = retry_count.get(s["location_id"], 0) + 1
+            loc = s["location_id"]
+            retry_count[loc] = retry_count.get(loc, 0) + 1
 
-    logger.info(f"Selection sync: {passed} selected, {failed} failed")
+    # Free memory: clear image_bytes from non-winning candidates.
+    # generation_results uses Annotated[list, add], so we cannot replace the
+    # list — mutate entries in-place instead.
+    #
+    # Deduplicate selections (keep last per location, matching
+    # _select_winning_results logic) to identify winning brief_ids.
+    latest_selection: dict[str, dict] = {}
+    for s in selection_results:
+        latest_selection[s["location_id"]] = s
+
+    winning_brief_ids: set[str | None] = set()
+    for sel in latest_selection.values():
+        if sel["quality_tier"] != "failed" and sel["selected_brief_id"]:
+            winning_brief_ids.add(sel["selected_brief_id"])
+
+    generation_results = state.get("generation_results", [])
+    cleared = 0
+    for gen in generation_results:
+        if gen["brief_id"] not in winning_brief_ids and gen.get("image_bytes"):
+            gen["image_bytes"] = b""
+            cleared += 1
+
+    logger.info(
+        f"Selection sync: {passed} selected, {failed} failed, "
+        f"{cleared} losers cleared"
+    )
     return {"retry_count": retry_count}
 
 
@@ -206,22 +259,12 @@ def route_after_selection(state: IllustrateState) -> list[Send] | str:
             continue
 
         # Generate two retry candidates with fallback image types
-        for i, orig_brief in enumerate(location_briefs[:2]):
+        for orig_brief in location_briefs[:2]:
             fallback_type = _FALLBACK_IMAGE_TYPE.get(orig_brief.image_type, "generated")
-            retry_brief = CandidateBrief(
-                location_id=orig_brief.location_id,
-                candidate_index=orig_brief.candidate_index,
-                image_type=fallback_type,
-                brief=orig_brief.brief,
-                relationship_to_text=orig_brief.relationship_to_text,
-                visual_identity_references=orig_brief.visual_identity_references,
-                literal_queries=orig_brief.literal_queries,
-                conceptual_queries=orig_brief.conceptual_queries,
-                query_strategy=orig_brief.query_strategy,
-                diagram_subtype=orig_brief.diagram_subtype,
-            )
+            retry_brief = orig_brief.model_copy(update={"image_type": fallback_type})
 
-            brief_id = f"{loc_id}_{orig_brief.candidate_index}_retry"
+            round_num = retry_count.get(loc_id, 0)
+            brief_id = f"{loc_id}_{orig_brief.candidate_index}_retry{round_num}"
             send_data = {
                 "location": plan,
                 "brief": retry_brief,
