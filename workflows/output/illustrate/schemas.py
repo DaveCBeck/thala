@@ -18,6 +18,15 @@ DiagramSubtype = Literal[
 ]
 
 
+def validate_location_id_format(v: str) -> str:
+    """Validate that location_id contains only alphanumeric characters, hyphens, and underscores."""
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
+        raise ValueError(
+            f"location_id must contain only alphanumeric characters, hyphens, and underscores, got: {v!r}"
+        )
+    return v
+
+
 def _parse_json_string_list(v: Any) -> list:
     """Handle LLM returning JSON string instead of list."""
     if isinstance(v, str):
@@ -101,12 +110,7 @@ class ImageOpportunity(BaseModel):
     @field_validator("location_id")
     @classmethod
     def validate_location_id(cls, v: str) -> str:
-        if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
-            raise ValueError(
-                f"location_id must contain only alphanumeric characters, "
-                f"hyphens, and underscores, got: {v!r}"
-            )
-        return v
+        return validate_location_id_format(v)
 
 
 class CreativeDirectionResult(BaseModel):
@@ -174,12 +178,7 @@ class CandidateBrief(BaseModel):
     @field_validator("location_id")
     @classmethod
     def validate_location_id(cls, v: str) -> str:
-        if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
-            raise ValueError(
-                f"location_id must contain only alphanumeric characters, "
-                f"hyphens, and underscores, got: {v!r}"
-            )
-        return v
+        return validate_location_id_format(v)
 
     @field_validator("literal_queries", "conceptual_queries", mode="before")
     @classmethod
@@ -254,74 +253,9 @@ class ImageLocationPlan(BaseModel):
         "custom_artistic → raw SVG.",
     )
 
-
-class VisionReviewResult(BaseModel):
-    """Result of vision review of a generated image."""
-
-    fits_context: bool = Field(
-        description="Whether the image fits the document context",
-    )
-    has_substantive_errors: bool = Field(
-        description="True if there are factual/substantive errors requiring regeneration",
-    )
-    has_minor_issues: bool = Field(
-        description="True if there are minor issues (log warning but accept)",
-    )
-    issues: list[str] = Field(
-        description="List of identified issues",
-        default_factory=list,
-    )
-    recommendation: Literal["accept", "accept_with_warning", "retry", "fail"] = Field(
-        description="What to do with this image",
-    )
-    improved_brief: str | None = Field(
-        default=None,
-        description="If retry recommended, an improved brief/prompt",
-    )
-
-    @field_validator("issues", mode="before")
+    @field_validator("location_id")
     @classmethod
-    def parse_issues_json_string(cls, v: Any) -> list:
-        return _parse_json_string_list(v)
+    def validate_location_id(cls, v: str) -> str:
+        return validate_location_id_format(v)
 
 
-class ImageCompareResult(BaseModel):
-    """Result of comparing multiple image candidates."""
-
-    selected_candidate: int = Field(
-        ge=1,
-        le=5,
-        description="Which candidate is best (1-indexed)",
-    )
-    reasoning: str = Field(
-        description="Brief explanation of why this candidate was selected",
-    )
-    issues_with_selected: list[str] = Field(
-        default_factory=list,
-        description="Any remaining issues with the selected image (for logging)",
-    )
-
-    @field_validator("issues_with_selected", mode="before")
-    @classmethod
-    def parse_issues_json_string(cls, v: Any) -> list:
-        return _parse_json_string_list(v)
-
-
-class HeaderAppositenessResult(BaseModel):
-    """Result of evaluating whether a public domain image is 'apposite' for header."""
-
-    is_apposite: bool = Field(
-        description="Whether this public domain image is particularly fitting for the header",
-    )
-    reasoning: str = Field(
-        description="Explanation of why/why not the image is apposite",
-    )
-    quality_score: int = Field(
-        ge=1,
-        le=5,
-        description="Quality score 1-5: 1=poor fit, 5=excellent fit",
-    )
-    suggested_search_query: str | None = Field(
-        default=None,
-        description="If not apposite, suggest a better search query that would find a more fitting image",
-    )

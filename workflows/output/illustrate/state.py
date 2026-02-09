@@ -29,6 +29,7 @@ class ImageGenResult(TypedDict):
     """Result from image generation attempt."""
 
     location_id: str
+    brief_id: str  # "{location_id}_{candidate_index}" — groups results by brief
     success: bool
     image_bytes: bytes | None
     image_type: Literal["generated", "public_domain", "diagram"]
@@ -37,14 +38,13 @@ class ImageGenResult(TypedDict):
     attribution: dict | None  # For public domain images
 
 
-class ImageReviewResult(TypedDict):
-    """Result from vision review."""
+class LocationSelection(TypedDict):
+    """Result of per-location pair comparison."""
 
     location_id: str
-    passed: bool
-    severity: Literal["minor", "substantive"] | None  # If not passed
-    issues: list[str]  # Identified problems
-    improved_brief: str | None  # For retry
+    selected_brief_id: str | None  # None if both failed
+    quality_tier: Literal["excellent", "acceptable", "failed"]
+    reasoning: str
 
 
 class FinalImage(TypedDict):
@@ -87,20 +87,17 @@ class IllustrateState(TypedDict, total=False):
     image_opportunities: list[ImageOpportunity]
     editorial_notes: str
 
-    # Candidate briefs (Pass 2)
-    # Retained for LangSmith tracing/observability; not consumed by downstream nodes.
+    # Candidate briefs (Pass 2) — used by routing to fan out per-brief generation
     candidate_briefs: list[CandidateBrief]
 
     # Generation phase (parallel aggregation via add reducer)
     generation_results: Annotated[list[ImageGenResult], add]
 
-    # Review phase (parallel aggregation via add reducer)
-    review_results: Annotated[list[ImageReviewResult], add]
+    # Selection phase (parallel aggregation via add reducer)
+    selection_results: Annotated[list[LocationSelection], add]
 
-    # Retry tracking (use reducers for parallel aggregation)
+    # Retry tracking
     retry_count: Annotated[dict[str, int], merge_dicts]  # location_id -> attempt count
-    pending_retries: Annotated[list[str], add]  # location_ids needing retry
-    retry_briefs: Annotated[dict[str, str], merge_dicts]  # location_id -> improved brief
 
     # Final output
     final_images: list[FinalImage]

@@ -58,7 +58,6 @@ async def process_file(filename: str) -> None:
         output_dir=str(images_dir),
         options=IllustrateConfig(
             additional_image_count=2,
-            enable_vision_review=True,
         ),
     )
 

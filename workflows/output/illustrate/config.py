@@ -41,16 +41,12 @@ class IllustrateConfig(BaseModel):
         description="Height for SVG diagrams in pixels",
     )
 
-    # Review settings
-    enable_vision_review: bool = Field(
-        default=True,
-        description="Enable Sonnet vision review of generated images",
-    )
+    # Retry settings
     max_retries: int = Field(
-        default=2,
+        default=1,
         ge=0,
         le=3,
-        description="Max retries for substantive errors before image is dropped",
+        description="Max retry rounds for locations where both candidates fail",
     )
 
     # Output settings

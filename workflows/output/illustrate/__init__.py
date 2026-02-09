@@ -14,7 +14,6 @@ Example:
         output_dir="/path/to/images",
         options=IllustrateConfig(
             additional_image_count=2,
-            enable_vision_review=True,
         ),
     )
 
@@ -28,13 +27,13 @@ from langsmith import traceable
 
 from .config import IllustrateConfig
 from .graph import illustrate_graph
-from .schemas import ImageLocationPlan, VisionReviewResult
+from .schemas import ImageLocationPlan
 from .state import (
     FinalImage,
     IllustrateInput,
     IllustrateState,
     ImageGenResult,
-    ImageReviewResult,
+    LocationSelection,
 )
 
 
@@ -84,9 +83,8 @@ __all__ = [
     "IllustrateState",
     "IllustrateInput",
     "ImageGenResult",
-    "ImageReviewResult",
+    "LocationSelection",
     "FinalImage",
     # Schemas
     "ImageLocationPlan",
-    "VisionReviewResult",
 ]

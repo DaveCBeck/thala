@@ -19,6 +19,22 @@ logger = logging.getLogger(__name__)
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
+def _detect_media_type(image_bytes: bytes) -> str:
+    """Detect media type from image magic bytes.
+
+    Args:
+        image_bytes: Raw image bytes
+
+    Returns:
+        Media type string: "image/png" or "image/jpeg"
+    """
+    # Check for PNG magic bytes: \x89PNG\r\n\x1a\n
+    if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    # Default to JPEG for most stock photos
+    return "image/jpeg"
+
+
 PAIR_COMPARISON_SYSTEM = """You are comparing two images to select the better one.
 
 Evaluate based on the selection criteria provided. Consider:
@@ -112,13 +128,16 @@ async def _compare_pair(
     b64_a = base64.b64encode(image_a).decode("utf-8")
     b64_b = base64.b64encode(image_b).decode("utf-8")
 
+    media_type_a = _detect_media_type(image_a)
+    media_type_b = _detect_media_type(image_b)
+
     content_parts = [
         {"type": "text", "text": PAIR_COMPARISON_USER.format(criteria=criteria)},
         {
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": "image/png",
+                "media_type": media_type_a,
                 "data": b64_a,
             },
         },
@@ -127,7 +146,7 @@ async def _compare_pair(
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": "image/png",
+                "media_type": media_type_b,
                 "data": b64_b,
             },
         },

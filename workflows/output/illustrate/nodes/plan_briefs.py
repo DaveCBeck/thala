@@ -108,10 +108,7 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
     image_opportunities = state.get("image_opportunities", [])
 
     if not visual_identity or not image_opportunities:
-        logger.warning(
-            "Skipping plan_briefs: no visual identity or opportunities "
-            "(creative_direction may have failed)"
-        )
+        logger.warning("Skipping plan_briefs: no visual identity or opportunities (creative_direction may have failed)")
         return {"image_plan": [], "status": "failed"}
 
     opportunities: list[ImageOpportunity] = image_opportunities

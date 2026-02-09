@@ -681,6 +681,8 @@ Brief compliance is weighted highest (40%) because literal vs. metaphorical mism
 - `workflows/shared/diagram_utils/graphviz_engine.py` — Graphviz with selection
 - `workflows/shared/image_utils.py` — Imagen multi-candidate selection
 - `core/images/selection.py` — Weighted rubric image selection
+- `workflows/output/illustrate/nodes/select_per_location.py` — Per-location pair selection in over-generation workflow
+- `workflows/output/illustrate/graph.py:route_to_selection()` — Groups generation results by location for pair comparison
 
 ## Consequences
 
@@ -711,6 +713,7 @@ Total: ~4x single generation, but produces higher quality output with better suc
 
 ## Related Patterns
 
+- [Over-Generation with Per-Location Pair Selection](../langgraph/over-generation-pair-selection.md) — Workflow-level application: two candidates per location with pair selection and cross-strategy fallback
 - [Batch API Cost Optimization](./batch-api-cost-optimization.md) — For batching many LLM calls
 - [Anthropic Claude Extended Thinking](./anthropic-claude-extended-thinking.md) — For complex reasoning in selection
 - [Validate-Repair-Render Loop](./validate-repair-render-loop.md) — What happens inside each engine candidate
@@ -728,6 +731,8 @@ Total: ~4x single generation, but produces higher quality output with better suc
 - Commit `feeaa1b` — feat(illustrate): quick wins — vision pair comparison, multi-candidate Imagen, rubric selection
 - Commit `b5336d9` — feat(illustrate): diagram engine overhaul — generate_with_selection(), Mermaid/Graphviz selection
 - Commit `9e43702` — fix(illustrate): resolve 14 code review findings
+- Commit `57fa0cf` — feat(illustrate): over-generation with per-location pair selection
+- Commit `de777b2` — fix(illustrate): resolve 15 code review findings (media type detection, selection criteria bias fix)
 - MLLM-as-a-Judge research: pair comparison achieves 80.6% accuracy vs 55.7% for scoring
 - [Anthropic Vision API](https://docs.anthropic.com/en/docs/vision)
 - [asyncio.gather documentation](https://docs.python.org/3/library/asyncio-task.html#asyncio.gather)
