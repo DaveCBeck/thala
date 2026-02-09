@@ -7,92 +7,26 @@ import pytest
 from workflows.output.illustrate.config import IllustrateConfig
 from workflows.output.illustrate.graph import route_after_assembly, route_after_selection
 from workflows.output.illustrate.nodes.assemble_document import (
-    _build_assembled_markdown,
     assemble_document_node,
 )
 from workflows.output.illustrate.nodes.editorial_review import (
     _compute_cuts_count,
     editorial_review_node,
 )
-from workflows.output.illustrate.nodes.finalize import finalize_node
+from workflows.output.illustrate.nodes.finalize import _determine_status, finalize_node
 from workflows.output.illustrate.schemas import (
     EditorialImageEvaluation,
     EditorialReviewResult,
-    ImageLocationPlan,
-    ImageOpportunity,
-    VisualIdentity,
 )
-from workflows.output.illustrate.state import (
-    AssembledImage,
-    ImageGenResult,
-    LocationSelection,
+from workflows.output.illustrate.state import FinalImage, LocationSelection
+
+from .conftest import (
+    _make_assembled_image,
+    _make_gen_result,
+    _make_opportunity,
+    _make_plan,
+    _make_vi,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_plan(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        insertion_after_header="Introduction",
-        purpose="illustration",
-        image_type="generated",
-        brief="A striking image",
-    )
-    defaults.update(overrides)
-    return ImageLocationPlan(**defaults)
-
-
-def _make_gen_result(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        brief_id="section_1_1",
-        success=True,
-        image_bytes=b"PNG_DATA",
-        image_type="generated",
-        prompt_or_query_used="test prompt",
-        alt_text="Test image",
-        attribution=None,
-    )
-    defaults.update(overrides)
-    return ImageGenResult(**defaults)
-
-
-def _make_opportunity(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        insertion_after_header="Introduction",
-        purpose="illustration",
-        suggested_type="generated",
-        strength="strong",
-        rationale="Helps readers visualize the concept",
-    )
-    defaults.update(overrides)
-    return ImageOpportunity(**defaults)
-
-
-def _make_vi():
-    return VisualIdentity(
-        primary_style="editorial watercolor",
-        color_palette=["warm amber", "deep teal"],
-        mood="contemplative",
-        lighting="soft diffused",
-        avoid=["neon colors"],
-    )
-
-
-def _make_assembled_image(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        image_type="generated",
-        purpose="illustration",
-        image_bytes=b"IMG_BYTES",
-    )
-    defaults.update(overrides)
-    return AssembledImage(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +161,6 @@ class TestAssembleDocumentNode:
             "image_opportunities": [],
         }
         result = await assemble_document_node(state)
-        assert result["assembled_document"] == "# Title\n\nSome text"
         assert result["assembled_images"] == []
 
     async def test_three_winners(self):
@@ -264,7 +197,6 @@ class TestAssembleDocumentNode:
         result = await assemble_document_node(state)
 
         assert len(result["assembled_images"]) == 3
-        assert "data:image/png;base64," in result["assembled_document"]
 
     async def test_six_winners(self):
         plans = [_make_plan(location_id=f"s{i}", insertion_after_header=f"Section {i}") for i in range(6)]
@@ -318,36 +250,6 @@ class TestAssembleDocumentNode:
 
 
 # ---------------------------------------------------------------------------
-# _build_assembled_markdown
-# ---------------------------------------------------------------------------
-
-
-class TestBuildAssembledMarkdown:
-    def test_inserts_base64_after_header(self):
-        plan = _make_plan(insertion_after_header="Intro")
-        gen = _make_gen_result(image_bytes=b"\x89PNG\r\n\x1a\nDATA")
-        result = _build_assembled_markdown("# Intro\n\nText", [(gen, plan)])
-        assert "data:image/png;base64," in result
-        assert "# Intro" in result
-
-    def test_empty_winners(self):
-        result = _build_assembled_markdown("# Doc\n\nText", [])
-        assert result == "# Doc\n\nText"
-
-    def test_missing_header_skipped(self):
-        plan = _make_plan(insertion_after_header="Nonexistent")
-        gen = _make_gen_result(image_bytes=b"DATA")
-        result = _build_assembled_markdown("# Intro\n\nText", [(gen, plan)])
-        assert "data:" not in result
-
-    def test_jpeg_detection(self):
-        plan = _make_plan(insertion_after_header="Intro")
-        gen = _make_gen_result(image_bytes=b"\xff\xd8\xff\xe0JPEG_DATA")
-        result = _build_assembled_markdown("# Intro\n\nText", [(gen, plan)])
-        assert "data:image/jpeg;base64," in result
-
-
-# ---------------------------------------------------------------------------
 # editorial_review_node
 # ---------------------------------------------------------------------------
 
@@ -366,7 +268,6 @@ class TestEditorialReviewNode:
         }
         result = await editorial_review_node(state)
         assert result["editorial_review_result"]["cut_location_ids"] == []
-        assert result["assembled_document"] == ""
 
     async def test_zero_cuts_when_at_target(self):
         """When exactly at target count, cut 0."""
@@ -431,7 +332,6 @@ class TestEditorialReviewNode:
             result = await editorial_review_node(state)
 
         assert set(result["editorial_review_result"]["cut_location_ids"]) == {"s4", "s5"}
-        assert result["assembled_document"] == ""  # Cleared after use
         assert result["assembled_images"] == []  # Cleared after use
 
     async def test_header_protection(self):
@@ -546,6 +446,68 @@ class TestEditorialReviewNode:
         # Should be capped to 2
         assert len(result["editorial_review_result"]["cut_location_ids"]) == 2
 
+    async def test_oversized_image_skipped_from_vision_call(self):
+        """Images exceeding MAX_IMAGE_SIZE are excluded from the vision call."""
+        from workflows.output.illustrate.nodes.generate_additional import MAX_IMAGE_SIZE
+
+        oversized_bytes = b"\x89PNG\r\n\x1a\n" + b"X" * (MAX_IMAGE_SIZE + 1)
+        normal_bytes = b"\x89PNG\r\n\x1a\nDATA"
+
+        non_header = [
+            _make_assembled_image(location_id="s0", image_bytes=normal_bytes),
+            _make_assembled_image(location_id="s1", image_bytes=oversized_bytes),
+            _make_assembled_image(location_id="s2", image_bytes=normal_bytes),
+            _make_assembled_image(location_id="s3", image_bytes=normal_bytes),
+        ]
+        # 4 non-header opps -> target = 2, 4 surviving -> surplus = 2
+        opportunities = [
+            _make_opportunity(location_id="header", purpose="header"),
+        ] + [_make_opportunity(location_id=f"s{i}") for i in range(4)]
+
+        mock_result = EditorialReviewResult(
+            evaluations=[],
+            cut_location_ids=["s2", "s3"],
+            editorial_summary="Cut two weakest",
+        )
+
+        mock_structured_llm = AsyncMock()
+        mock_structured_llm.ainvoke.return_value = mock_result
+        mock_base_llm = MagicMock()
+        mock_base_llm.with_structured_output.return_value = mock_structured_llm
+
+        state = {
+            "assembled_images": non_header,
+            "image_opportunities": opportunities,
+            "visual_identity": _make_vi(),
+        }
+
+        with patch(
+            "workflows.output.illustrate.nodes.editorial_review.get_llm",
+            return_value=mock_base_llm,
+        ):
+            result = await editorial_review_node(state)
+
+        # Verify the LLM was called
+        mock_structured_llm.ainvoke.assert_called_once()
+        call_args = mock_structured_llm.ainvoke.call_args[0][0]
+        user_content = call_args[1]["content"]
+
+        # Count image parts -- oversized s1 should be excluded
+        image_parts = [p for p in user_content if p.get("type") == "image"]
+        assert len(image_parts) == 3  # s0, s2, s3 only (s1 skipped)
+
+        # Verify location labels don't include s1
+        text_parts = [
+            p
+            for p in user_content
+            if p.get("type") == "text" and "Image above" in p.get("text", "")
+        ]
+        location_ids_in_call = [p["text"] for p in text_parts]
+        assert not any("s1" in t for t in location_ids_in_call)
+
+        # The review result should still work
+        assert result["editorial_review_result"]["cut_location_ids"] == ["s2", "s3"]
+
 
 # ---------------------------------------------------------------------------
 # Finalize filtering editorial cuts
@@ -635,6 +597,123 @@ class TestFinalizeWithEditorialCuts:
 
         result = await finalize_node(state)
         assert len(result["final_images"]) == 1
+
+    async def test_editorial_cuts_do_not_cause_false_partial(self, tmp_path):
+        """All non-cut locations have images -> status must be 'success', not 'partial'."""
+        plans = [_make_plan(location_id=f"s{i}", insertion_after_header=f"Section {i}") for i in range(4)]
+        gen_results = [_make_gen_result(location_id=f"s{i}", brief_id=f"s{i}_1") for i in range(4)]
+        selections = [
+            LocationSelection(
+                location_id=f"s{i}",
+                selected_brief_id=f"s{i}_1",
+                quality_tier="excellent",
+                reasoning="good",
+            )
+            for i in range(4)
+        ]
+
+        editorial_result = EditorialReviewResult(
+            evaluations=[
+                EditorialImageEvaluation(
+                    location_id="s2",
+                    contribution_rank=4,
+                    visual_coherence=2,
+                    pacing_contribution=2,
+                    variety_contribution=2,
+                    individual_quality=2,
+                    cut_reason="Weakest image",
+                ),
+            ],
+            cut_location_ids=["s2"],
+            editorial_summary="Cut one weakest",
+        )
+
+        doc = "\n\n".join(f"# Section {i}\n\nText {i}" for i in range(4))
+        state = {
+            "input": {"markdown_document": doc},
+            "config": IllustrateConfig(output_dir=str(tmp_path)),
+            "image_plan": plans,
+            "generation_results": gen_results,
+            "selection_results": selections,
+            "errors": [],
+            "editorial_review_result": editorial_result.model_dump(),
+        }
+
+        result = await finalize_node(state)
+
+        # 3 out of 4 survived, but 1 was cut — so all expected locations have images
+        assert len(result["final_images"]) == 3
+        assert result["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# _determine_status with editorial cuts
+# ---------------------------------------------------------------------------
+
+
+class TestDetermineStatusWithCuts:
+    def test_cuts_excluded_from_expected(self):
+        """Cutting 1 of 4 planned, 3 images produced -> success."""
+        plans = [_make_plan(location_id=f"s{i}") for i in range(4)]
+        finals = [
+            FinalImage(
+                location_id=f"s{i}",
+                insertion_after_header=f"Section {i}",
+                file_path=f"/tmp/s{i}.png",
+                alt_text="img",
+                image_type="generated",
+                attribution=None,
+            )
+            for i in [0, 1, 3]
+        ]
+        assert _determine_status(plans, finals, [], cut_location_ids={"s2"}) == "success"
+
+    def test_no_cuts_still_partial(self):
+        """Without cuts, 3 of 4 planned is partial."""
+        plans = [_make_plan(location_id=f"s{i}") for i in range(4)]
+        finals = [
+            FinalImage(
+                location_id=f"s{i}",
+                insertion_after_header=f"Section {i}",
+                file_path=f"/tmp/s{i}.png",
+                alt_text="img",
+                image_type="generated",
+                attribution=None,
+            )
+            for i in [0, 1, 3]
+        ]
+        assert _determine_status(plans, finals, []) == "partial"
+
+    def test_all_cut_with_some_remaining(self):
+        """All planned cut except those with images -> success."""
+        plans = [_make_plan(location_id=f"s{i}") for i in range(4)]
+        finals = [
+            FinalImage(
+                location_id="s0",
+                insertion_after_header="Section 0",
+                file_path="/tmp/s0.png",
+                alt_text="img",
+                image_type="generated",
+                attribution=None,
+            ),
+        ]
+        assert _determine_status(plans, finals, [], cut_location_ids={"s1", "s2", "s3"}) == "success"
+
+    def test_none_cuts_backward_compat(self):
+        """None cut_location_ids behaves like pre-fix code."""
+        plans = [_make_plan(location_id=f"s{i}") for i in range(3)]
+        finals = [
+            FinalImage(
+                location_id=f"s{i}",
+                insertion_after_header=f"Section {i}",
+                file_path=f"/tmp/s{i}.png",
+                alt_text="img",
+                image_type="generated",
+                attribution=None,
+            )
+            for i in range(3)
+        ]
+        assert _determine_status(plans, finals, [], cut_location_ids=None) == "success"
 
 
 # ---------------------------------------------------------------------------

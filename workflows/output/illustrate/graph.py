@@ -201,7 +201,7 @@ def sync_after_selection(state: IllustrateState) -> dict:
     # list — mutate entries in-place instead.
     #
     # Deduplicate selections (keep last per location, matching
-    # _select_winning_results logic) to identify winning brief_ids.
+    # select_winning_results logic) to identify winning brief_ids.
     latest_selection: dict[str, dict] = {}
     for s in selection_results:
         latest_selection[s["location_id"]] = s

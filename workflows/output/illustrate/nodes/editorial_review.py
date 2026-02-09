@@ -9,14 +9,16 @@ import logging
 
 from workflows.shared.llm_utils import ModelTier, get_llm
 
-from ..schemas import EditorialReviewResult
+from ..schemas import EditorialReviewResult, ImageOpportunity
 from ..state import AssembledImage, IllustrateState
+from ..utils import detect_media_type
+from .generate_additional import MAX_IMAGE_SIZE
 
 logger = logging.getLogger(__name__)
 
 EDITORIAL_SYSTEM = """You are an editorial art director reviewing the full set of illustrations for a long-form article. Your job is to ensure the illustrations work as a cohesive set."""
 
-EDITORIAL_USER = """You will evaluate {n_images} non-header images from this article. You must cut exactly {cuts_count} of them — the ones that contribute LEAST to the overall quality.
+EDITORIAL_USER = """This article was intentionally illustrated with {cuts_count} more images than needed so you can select the strongest set. You will evaluate {n_images} non-header images and cut the {cuts_count} that contribute least to the overall article.
 
 Evaluate each image on:
 1. Visual coherence — Does it match the style/identity of the other images?
@@ -36,7 +38,7 @@ The images are shown below with their location IDs."""
 
 def _compute_cuts_count(
     non_header_images: list[AssembledImage],
-    image_opportunities: list[dict],
+    image_opportunities: list[ImageOpportunity],
 ) -> int:
     """Compute how many images to cut.
 
@@ -53,13 +55,6 @@ def _compute_cuts_count(
     return max(0, min(2, surplus))
 
 
-def _detect_media_type(image_bytes: bytes) -> str:
-    """Detect media type from image magic bytes."""
-    if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png"
-    return "image/jpeg"
-
-
 async def editorial_review_node(state: IllustrateState) -> dict:
     """Vision-based editorial review of the full illustrated document.
 
@@ -67,7 +62,7 @@ async def editorial_review_node(state: IllustrateState) -> dict:
     Uses a single SONNET vision call with all images.
 
     Returns:
-        State update with editorial_review_result. Clears assembled_document.
+        State update with editorial_review_result.
     """
     assembled_images = state.get("assembled_images", [])
     image_opportunities = state.get("image_opportunities", [])
@@ -88,7 +83,6 @@ async def editorial_review_node(state: IllustrateState) -> dict:
         )
         return {
             "editorial_review_result": result.model_dump(),
-            "assembled_document": "",
             "assembled_images": [],
         }
 
@@ -97,17 +91,9 @@ async def editorial_review_node(state: IllustrateState) -> dict:
     color_palette = ""
     mood = ""
     if visual_identity:
-        primary_style = (
-            visual_identity.primary_style
-            if hasattr(visual_identity, "primary_style")
-            else visual_identity.get("primary_style", "")
-        )
-        color_palette = (
-            ", ".join(visual_identity.color_palette)
-            if hasattr(visual_identity, "color_palette")
-            else ", ".join(visual_identity.get("color_palette", []))
-        )
-        mood = visual_identity.mood if hasattr(visual_identity, "mood") else visual_identity.get("mood", "")
+        primary_style = visual_identity.primary_style
+        color_palette = ", ".join(visual_identity.color_palette)
+        mood = visual_identity.mood
 
     # Build multimodal message
     user_prompt = EDITORIAL_USER.format(
@@ -124,7 +110,15 @@ async def editorial_review_node(state: IllustrateState) -> dict:
         image_bytes = img["image_bytes"]
         if not image_bytes:
             continue
-        media_type = _detect_media_type(image_bytes)
+        if len(image_bytes) > MAX_IMAGE_SIZE:
+            logger.warning(
+                "Skipping oversized image '%s' (%d bytes, limit %d) from editorial review",
+                img["location_id"],
+                len(image_bytes),
+                MAX_IMAGE_SIZE,
+            )
+            continue
+        media_type = detect_media_type(image_bytes)
         b64 = base64.b64encode(image_bytes).decode("utf-8")
         content_parts.append(
             {
@@ -154,7 +148,7 @@ async def editorial_review_node(state: IllustrateState) -> dict:
 
         # Validate cut count doesn't exceed requested
         valid_location_ids = {img["location_id"] for img in non_header_images}
-        cut_ids = [cid for cid in response.cut_location_ids if cid in valid_location_ids]
+        cut_ids = list(dict.fromkeys(cid for cid in response.cut_location_ids if cid in valid_location_ids))
         cut_ids = cut_ids[:cuts_count]  # Never cut more than requested
 
         result = response.model_copy(update={"cut_location_ids": cut_ids})
@@ -178,11 +172,10 @@ async def editorial_review_node(state: IllustrateState) -> dict:
         result = EditorialReviewResult(
             evaluations=[],
             cut_location_ids=[],
-            editorial_summary=f"Editorial review failed: {e}. All images kept.",
+            editorial_summary="Editorial review failed. All images kept.",
         )
 
     return {
         "editorial_review_result": result.model_dump(),
-        "assembled_document": "",  # Clear to free memory
         "assembled_images": [],  # Clear to free memory
     }

@@ -109,7 +109,6 @@ class IllustrateState(TypedDict, total=False):
     retry_count: Annotated[dict[str, int], merge_dicts]  # location_id -> attempt count
 
     # Assembly phase (for editorial review)
-    assembled_document: str  # Markdown with base64 data URIs (pre-review)
     assembled_images: list[AssembledImage]  # Metadata for placed images
 
     # Editorial review phase

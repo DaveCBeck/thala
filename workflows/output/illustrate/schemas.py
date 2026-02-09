@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Shared literal type for diagram subtypes
 DiagramSubtype = Literal[
@@ -265,12 +265,33 @@ class ImageLocationPlan(BaseModel):
 class EditorialImageEvaluation(BaseModel):
     """Evaluation of a single image in the document context."""
 
+    model_config = ConfigDict(extra="forbid")
+
     location_id: str
-    contribution_rank: int = Field(description="1 = strongest contribution, N = weakest")
-    visual_coherence: int = Field(ge=1, le=5)
-    pacing_contribution: int = Field(ge=1, le=5)
-    variety_contribution: int = Field(ge=1, le=5)
-    individual_quality: int = Field(ge=1, le=5)
+    contribution_rank: int = Field(
+        ge=1,
+        description="1=strongest contribution to the article, N=weakest",
+    )
+    visual_coherence: int = Field(
+        ge=1,
+        le=5,
+        description="1=clashes with surrounding images, 5=perfectly complements the visual identity",
+    )
+    pacing_contribution: int = Field(
+        ge=1,
+        le=5,
+        description="1=creates clustering with nearby images, 5=well-spaced in document flow",
+    )
+    variety_contribution: int = Field(
+        ge=1,
+        le=5,
+        description="1=redundant with other images, 5=adds unique visual perspective",
+    )
+    individual_quality: int = Field(
+        ge=1,
+        le=5,
+        description="1=poor composition or artifacts, 5=publication-ready quality",
+    )
     cut_reason: str | None = Field(default=None, description="Only for images marked for cutting")
 
     @field_validator("location_id")
@@ -281,6 +302,8 @@ class EditorialImageEvaluation(BaseModel):
 
 class EditorialReviewResult(BaseModel):
     """Full editorial review output."""
+
+    model_config = ConfigDict(extra="forbid")
 
     evaluations: list[EditorialImageEvaluation]
     cut_location_ids: list[str] = Field(description="The location_ids to remove")
