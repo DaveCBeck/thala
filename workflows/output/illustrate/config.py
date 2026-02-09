@@ -41,6 +41,12 @@ class IllustrateConfig(BaseModel):
         description="Height for SVG diagrams in pixels",
     )
 
+    # Editorial review settings
+    enable_editorial_review: bool = Field(
+        default=True,
+        description="Enable full-document editorial review to cut weakest images",
+    )
+
     # Retry settings
     max_retries: int = Field(
         default=1,

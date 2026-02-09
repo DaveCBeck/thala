@@ -4,72 +4,18 @@ import logging
 import os
 import re
 import tempfile
-from collections import defaultdict
 from typing import Literal
 
 from ..config import IllustrateConfig
 from ..schemas import ImageLocationPlan
 from ..state import (
     FinalImage,
-    ImageGenResult,
     IllustrateState,
-    LocationSelection,
     WorkflowError,
 )
+from ..utils import select_winning_results
 
 logger = logging.getLogger(__name__)
-
-
-def _select_winning_results(
-    generation_results: list[ImageGenResult],
-    selection_results: list[LocationSelection],
-) -> list[ImageGenResult]:
-    """Pick the winning ImageGenResult per location based on selection_results.
-
-    For each location with a selection, find the generation result matching
-    the selected_brief_id. Falls back to the last successful result if
-    the selected brief_id can't be found.
-    """
-    # Build lookup: brief_id -> ImageGenResult
-    results_by_brief_id: dict[str, ImageGenResult] = {}
-    results_by_location: dict[str, list[ImageGenResult]] = defaultdict(list)
-    for gen in generation_results:
-        if gen["success"] and gen.get("image_bytes"):
-            results_by_brief_id[gen["brief_id"]] = gen
-            results_by_location[gen["location_id"]].append(gen)
-
-    # Deduplicate selections: keep only the LAST entry per location_id.
-    # selection_results uses an `add` reducer, so retry-round entries appear
-    # after earlier rounds.  Without dedup the first (often "failed") entry
-    # claims the slot and the retry success is silently skipped.
-    latest_selection: dict[str, LocationSelection] = {}
-    for selection in selection_results:
-        latest_selection[selection["location_id"]] = selection
-
-    winners: list[ImageGenResult] = []
-    selected_locations: set[str] = set()
-
-    for loc_id, selection in latest_selection.items():
-        selected_locations.add(loc_id)
-
-        if selection["quality_tier"] == "failed":
-            continue  # Both candidates failed, no image for this location
-
-        brief_id = selection["selected_brief_id"]
-        if brief_id and brief_id in results_by_brief_id:
-            winners.append(results_by_brief_id[brief_id])
-        elif loc_id in results_by_location:
-            # Fallback: use the last successful result for this location
-            logger.warning(f"Selected brief_id {brief_id} not found for {loc_id}, using fallback")
-            winners.append(results_by_location[loc_id][-1])
-
-    # Also include any successful results for locations without selection
-    # (e.g., from retry rounds that bypass selection)
-    for loc_id, results in results_by_location.items():
-        if loc_id not in selected_locations:
-            winners.append(results[-1])
-
-    return winners
 
 
 def _insert_images_into_markdown(
@@ -138,13 +84,21 @@ def _determine_status(
     image_plan: list[ImageLocationPlan],
     final_images: list[FinalImage],
     errors: list[WorkflowError],
+    cut_location_ids: set[str] | None = None,
 ) -> Literal["success", "partial", "failed"]:
-    """Determine workflow status based on results."""
+    """Determine workflow status based on results.
+
+    Locations that were editorially cut are excluded from the expected
+    set so they don't count as missing.
+    """
     if not image_plan:
         return "failed"
     if not final_images:
         return "failed"
-    if len(final_images) == len(image_plan):
+    expected = len(image_plan) - len(cut_location_ids) if cut_location_ids else len(image_plan)
+    if expected <= 0:
+        return "success" if final_images else "failed"
+    if len(final_images) >= expected:
         return "success"
     return "partial"
 
@@ -176,7 +130,25 @@ async def finalize_node(state: IllustrateState) -> dict:
     plans_by_id = {p.location_id: p for p in image_plan}
 
     # Pick winning results using selection_results
-    approved = _select_winning_results(generation_results, selection_results)
+    approved = select_winning_results(generation_results, selection_results)
+
+    # Filter out editorial cuts
+    editorial_result = state.get("editorial_review_result")
+    cut_ids: set[str] = set()
+    if editorial_result:
+        cut_ids = set(editorial_result.get("cut_location_ids", []))
+        if cut_ids:
+            before_count = len(approved)
+            approved = [r for r in approved if r["location_id"] not in cut_ids]
+            for cut_id in cut_ids:
+                # Find cut reason from evaluations
+                reason = "no reason given"
+                for ev in editorial_result.get("evaluations", []):
+                    if ev.get("location_id") == cut_id and ev.get("cut_reason"):
+                        reason = ev["cut_reason"]
+                        break
+                logger.info(f"Editorial cut applied: {cut_id} — {reason}")
+            logger.info(f"Editorial review: {before_count} → {len(approved)} images after cuts")
 
     logger.info(f"Finalizing {len(approved)} approved images")
 
@@ -240,9 +212,9 @@ async def finalize_node(state: IllustrateState) -> dict:
         image_plan=image_plan,
     )
 
-    # Determine status
+    # Determine status — exclude editorial cuts from the expected count
     all_errors = existing_errors + errors
-    status = _determine_status(image_plan, final_images, all_errors)
+    status = _determine_status(image_plan, final_images, all_errors, cut_ids or None)
 
     # Log dropped images
     planned_ids = {p.location_id for p in image_plan}

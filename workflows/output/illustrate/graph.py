@@ -17,6 +17,12 @@ Graph shape:
       ↓
     [conditional] retry_failed  (only locations where both failed)
       ↓
+    assemble_document           (place winning images into markdown)
+      ↓
+    [conditional] editorial_review or finalize
+      ↓
+    editorial_review            (vision-based full-document curation)
+      ↓
     finalize                    (save files, insert into markdown)
       ↓
     END
@@ -30,7 +36,9 @@ from langgraph.types import Send
 
 from .config import IllustrateConfig
 from .nodes import (
+    assemble_document_node,
     creative_direction_node,
+    editorial_review_node,
     finalize_node,
     generate_candidate_node,
     plan_briefs_node,
@@ -158,9 +166,7 @@ def route_to_selection(state: IllustrateState) -> list[Send] | str:
                 {
                     "location_id": location_id,
                     "candidates": successful,
-                    "selection_criteria": _build_selection_criteria(
-                        opportunities, editorial_notes, location_id
-                    ),
+                    "selection_criteria": _build_selection_criteria(opportunities, editorial_notes, location_id),
                 },
             )
         )
@@ -195,7 +201,7 @@ def sync_after_selection(state: IllustrateState) -> dict:
     # list — mutate entries in-place instead.
     #
     # Deduplicate selections (keep last per location, matching
-    # _select_winning_results logic) to identify winning brief_ids.
+    # select_winning_results logic) to identify winning brief_ids.
     latest_selection: dict[str, dict] = {}
     for s in selection_results:
         latest_selection[s["location_id"]] = s
@@ -212,10 +218,7 @@ def sync_after_selection(state: IllustrateState) -> dict:
             gen["image_bytes"] = b""
             cleared += 1
 
-    logger.info(
-        f"Selection sync: {passed} selected, {failed} failed, "
-        f"{cleared} losers cleared"
-    )
+    logger.info(f"Selection sync: {passed} selected, {failed} failed, {cleared} losers cleared")
     return {"retry_count": retry_count}
 
 
@@ -240,8 +243,8 @@ def route_after_selection(state: IllustrateState) -> list[Send] | str:
     ]
 
     if not failed_locations:
-        logger.info("No failed locations to retry, going to finalize")
-        return "finalize"
+        logger.info("No failed locations to retry, going to assemble_document")
+        return "assemble_document"
 
     # Build brief lookup
     briefs_by_location: dict[str, list[CandidateBrief]] = defaultdict(list)
@@ -279,6 +282,18 @@ def route_after_selection(state: IllustrateState) -> list[Send] | str:
         logger.info(f"Routing to {len(sends)} retry generation nodes")
         return sends
 
+    return "assemble_document"
+
+
+def route_after_assembly(state: IllustrateState) -> str:
+    """Route to editorial review or directly to finalize.
+
+    Skips editorial review when enable_editorial_review=False.
+    """
+    config = state.get("config") or IllustrateConfig()
+    if config.enable_editorial_review:
+        return "editorial_review"
+    logger.info("Editorial review disabled, going directly to finalize")
     return "finalize"
 
 
@@ -291,7 +306,9 @@ def create_illustrate_graph() -> StateGraph:
           → sync_after_generation
           → [fan-out] select_per_location (~6 parallel)
           → sync_after_selection
-          → [conditional] retry (generate_candidate) or finalize
+          → [conditional] retry (generate_candidate) or assemble_document
+          → assemble_document
+          → [conditional] editorial_review or finalize
           → finalize → END
     """
     builder = StateGraph(IllustrateState)
@@ -303,6 +320,8 @@ def create_illustrate_graph() -> StateGraph:
     builder.add_node("sync_after_generation", sync_after_generation)
     builder.add_node("select_per_location", select_per_location_node)
     builder.add_node("sync_after_selection", sync_after_selection)
+    builder.add_node("assemble_document", assemble_document_node)
+    builder.add_node("editorial_review", editorial_review_node)
     builder.add_node("finalize", finalize_node)
 
     # Two-pass planning
@@ -329,12 +348,22 @@ def create_illustrate_graph() -> StateGraph:
     # All selection nodes converge to sync
     builder.add_edge("select_per_location", "sync_after_selection")
 
-    # After selection sync, retry failed or finalize
+    # After selection sync, retry failed or assemble_document
     builder.add_conditional_edges(
         "sync_after_selection",
         route_after_selection,
-        ["generate_candidate", "finalize"],
+        ["generate_candidate", "assemble_document"],
     )
+
+    # Assemble → editorial review or finalize
+    builder.add_conditional_edges(
+        "assemble_document",
+        route_after_assembly,
+        ["editorial_review", "finalize"],
+    )
+
+    # Editorial review → finalize
+    builder.add_edge("editorial_review", "finalize")
 
     # Finalize to end
     builder.add_edge("finalize", END)

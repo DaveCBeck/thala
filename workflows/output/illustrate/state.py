@@ -9,6 +9,15 @@ from .config import IllustrateConfig
 from .schemas import CandidateBrief, ImageLocationPlan, ImageOpportunity, VisualIdentity
 
 
+class AssembledImage(TypedDict):
+    """Metadata for an image placed in the assembled document."""
+
+    location_id: str
+    image_type: Literal["generated", "public_domain", "diagram"]
+    purpose: str  # header, illustration, diagram
+    image_bytes: bytes  # Raw image data for vision call
+
+
 def merge_dicts(left: dict, right: dict) -> dict:
     """Reducer that merges dictionaries from parallel nodes."""
     result = dict(left) if left else {}
@@ -98,6 +107,12 @@ class IllustrateState(TypedDict, total=False):
 
     # Retry tracking
     retry_count: Annotated[dict[str, int], merge_dicts]  # location_id -> attempt count
+
+    # Assembly phase (for editorial review)
+    assembled_images: list[AssembledImage]  # Metadata for placed images
+
+    # Editorial review phase
+    editorial_review_result: dict  # EditorialReviewResult as dict
 
     # Final output
     final_images: list[FinalImage]

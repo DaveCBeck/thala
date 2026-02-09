@@ -12,86 +12,20 @@ from workflows.output.illustrate.graph import (
     route_to_selection,
     sync_after_selection,
 )
-from workflows.output.illustrate.nodes.finalize import _select_winning_results
+from workflows.output.illustrate.utils import select_winning_results
 from workflows.output.illustrate.nodes.generate_candidate import generate_candidate_node
 from workflows.output.illustrate.nodes.select_per_location import (
     select_per_location_node,
 )
-from workflows.output.illustrate.schemas import (
-    CandidateBrief,
-    ImageLocationPlan,
-    ImageOpportunity,
-    VisualIdentity,
+from workflows.output.illustrate.state import LocationSelection
+
+from .conftest import (
+    _make_brief,
+    _make_gen_result,
+    _make_opportunity,
+    _make_plan,
+    _make_vi,
 )
-from workflows.output.illustrate.state import ImageGenResult, LocationSelection
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_plan(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        insertion_after_header="Introduction",
-        purpose="illustration",
-        image_type="generated",
-        brief="A striking image",
-    )
-    defaults.update(overrides)
-    return ImageLocationPlan(**defaults)
-
-
-def _make_brief(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        candidate_index=1,
-        image_type="generated",
-        brief="A striking image",
-        relationship_to_text="evocative",
-        visual_identity_references="warm palette",
-    )
-    defaults.update(overrides)
-    return CandidateBrief(**defaults)
-
-
-def _make_gen_result(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        brief_id="section_1_1",
-        success=True,
-        image_bytes=b"PNG_DATA",
-        image_type="generated",
-        prompt_or_query_used="test prompt",
-        alt_text="Test image",
-        attribution=None,
-    )
-    defaults.update(overrides)
-    return ImageGenResult(**defaults)
-
-
-def _make_opportunity(**overrides):
-    defaults = dict(
-        location_id="section_1",
-        insertion_after_header="Introduction",
-        purpose="illustration",
-        suggested_type="generated",
-        strength="strong",
-        rationale="Helps readers visualize the concept",
-    )
-    defaults.update(overrides)
-    return ImageOpportunity(**defaults)
-
-
-def _make_vi():
-    return VisualIdentity(
-        primary_style="editorial watercolor",
-        color_palette=["warm amber", "deep teal"],
-        mood="contemplative",
-        lighting="soft diffused",
-        avoid=["neon colors"],
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +333,7 @@ class TestRouteToSelection:
 
 
 class TestRouteAfterSelection:
-    def test_no_failures_goes_to_finalize(self):
+    def test_no_failures_goes_to_assemble_document(self):
         state = {
             "selection_results": [
                 LocationSelection(
@@ -414,7 +348,7 @@ class TestRouteAfterSelection:
             "candidate_briefs": [],
             "input": {"markdown_document": ""},
         }
-        assert route_after_selection(state) == "finalize"
+        assert route_after_selection(state) == "assemble_document"
 
     def test_retry_with_cross_strategy_fallback(self):
         briefs = [
@@ -443,7 +377,7 @@ class TestRouteAfterSelection:
         for send in sends:
             assert send.arg["brief"].image_type == "generated"
 
-    def test_exceeds_retry_limit_goes_to_finalize(self):
+    def test_exceeds_retry_limit_goes_to_assemble_document(self):
         state = {
             "selection_results": [
                 LocationSelection(
@@ -459,7 +393,7 @@ class TestRouteAfterSelection:
             "candidate_briefs": [_make_brief(location_id="s1")],
             "input": {"markdown_document": ""},
         }
-        assert route_after_selection(state) == "finalize"
+        assert route_after_selection(state) == "assemble_document"
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +413,7 @@ class TestFallbackMap:
 
 
 # ---------------------------------------------------------------------------
-# Finalize: _select_winning_results
+# Finalize: select_winning_results
 # ---------------------------------------------------------------------------
 
 
@@ -498,7 +432,7 @@ class TestSelectWinningResults:
             ),
         ]
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 1
         assert winners[0]["brief_id"] == "s1_2"
 
@@ -515,7 +449,7 @@ class TestSelectWinningResults:
             ),
         ]
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 0
 
     def test_locations_without_selection_included(self):
@@ -525,7 +459,7 @@ class TestSelectWinningResults:
         ]
         selection = []  # No selection for this location
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 1
         assert winners[0]["location_id"] == "retry_loc"
 
@@ -549,7 +483,7 @@ class TestSelectWinningResults:
             ),
         ]
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 1
 
     def test_retry_success_overrides_earlier_failure(self):
@@ -582,7 +516,7 @@ class TestSelectWinningResults:
             ),
         ]
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 1
         assert winners[0]["brief_id"] == "s1_1_retry"
         assert winners[0]["image_bytes"] == b"RETRY_OK"
@@ -607,7 +541,7 @@ class TestSelectWinningResults:
             ),
         ]
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 0
 
     def test_mixed_locations_retry_and_first_pass(self):
@@ -644,7 +578,7 @@ class TestSelectWinningResults:
             ),
         ]
 
-        winners = _select_winning_results(gen_results, selection)
+        winners = select_winning_results(gen_results, selection)
         assert len(winners) == 2
         winner_ids = {w["brief_id"] for w in winners}
         assert "s1_2" in winner_ids
@@ -758,10 +692,10 @@ class TestSyncAfterSelectionClearsBytes:
 
         sync_after_selection(state)
 
-        assert gen_results[0]["image_bytes"] == b""      # s1 loser
-        assert gen_results[1]["image_bytes"] == b"S1_WIN" # s1 winner
-        assert gen_results[2]["image_bytes"] == b"S2_WIN" # s2 winner
-        assert gen_results[3]["image_bytes"] == b""      # s2 loser
+        assert gen_results[0]["image_bytes"] == b""  # s1 loser
+        assert gen_results[1]["image_bytes"] == b"S1_WIN"  # s1 winner
+        assert gen_results[2]["image_bytes"] == b"S2_WIN"  # s2 winner
+        assert gen_results[3]["image_bytes"] == b""  # s2 loser
 
     def test_retry_round_uses_latest_selection(self):
         """After retry, latest selection determines winner; old losers stay cleared."""
@@ -798,10 +732,10 @@ class TestSyncAfterSelectionClearsBytes:
         sync_after_selection(state)
 
         # Only the retry winner keeps its bytes
-        assert gen_results[0]["image_bytes"] == b""           # old loser
-        assert gen_results[1]["image_bytes"] == b""           # old loser
+        assert gen_results[0]["image_bytes"] == b""  # old loser
+        assert gen_results[1]["image_bytes"] == b""  # old loser
         assert gen_results[2]["image_bytes"] == b"RETRY_WIN"  # retry winner
-        assert gen_results[3]["image_bytes"] == b""           # retry loser
+        assert gen_results[3]["image_bytes"] == b""  # retry loser
 
     def test_skips_already_empty_bytes(self):
         """Entries with image_bytes=None (failed generation) are left as-is."""
