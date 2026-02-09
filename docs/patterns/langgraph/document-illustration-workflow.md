@@ -11,7 +11,7 @@ applicability:
 components: [workflow_graph, langgraph_node, langgraph_graph, llm_call]
 complexity: complex
 verified_in_production: true
-tags: [fan-out, fan-in, send, parallel-execution, over-generation, pair-selection, quality-tiers, cross-strategy-fallback, retry-loop, multi-source, diagram-refinement, sync-barrier, engine-routing, mermaid, graphviz, multi-query, vision-pair-comparison, structured-prompts, ssrf-prevention, two-pass-planning, visual-identity, creative-direction]
+tags: [fan-out, fan-in, send, parallel-execution, over-generation, pair-selection, quality-tiers, cross-strategy-fallback, retry-loop, multi-source, diagram-refinement, sync-barrier, engine-routing, mermaid, graphviz, multi-query, vision-pair-comparison, structured-prompts, ssrf-prevention, two-pass-planning, visual-identity, creative-direction, editorial-review, vision-editorial-curation]
 ---
 
 # Document Illustration with Multi-Source Generation
@@ -43,6 +43,7 @@ A LangGraph workflow with:
 - **Quality tiers**—excellent (2 candidates, vision selected), acceptable (1 candidate, auto-selected), failed (0 candidates)
 - **Cross-strategy fallback**—when both candidates fail, retry with alternate image source type
 - **Sync barrier nodes** for coordination between phases
+- **Editorial review**—single SONNET vision call evaluates all non-header images holistically to cut surplus from over-generation
 - **Diagram engine routing**—subtype-based routing to Mermaid, Graphviz, or raw SVG with fallback chain
 - **Multi-query image search**—literal plus conceptual queries pooled and deduplicated
 - **Structured Imagen prompts**—Pydantic schema converts briefs into front-loaded Imagen prompts
@@ -64,11 +65,16 @@ graph TD
     select_per_location --> sync_after_selection["sync_after_selection<br/>(barrier — derive retry counts, free memory)"]
     sync_after_selection --> conditional3{route_after_selection}
     conditional3 -->|failed locations| generate_candidate_retry["Send('generate_candidate', {fallback_type, retry brief_id})<br/>(cross-strategy)"]
-    conditional3 -->|no failures| finalize3[finalize]
     generate_candidate_retry --> sync_after_generation
+    conditional3 -->|no failures| assemble_document["assemble_document<br/>(collect winning images into document order)"]
+    assemble_document --> conditional4{route_after_assembly}
+    conditional4 -->|editorial enabled| editorial_review["editorial_review<br/>(SONNET vision: holistic cut of surplus images)"]
+    conditional4 -->|editorial disabled| finalize3[finalize]
+    editorial_review --> finalize4[finalize]
     finalize1 --> END([END])
     finalize2 --> END
     finalize3 --> END
+    finalize4 --> END
 ```
 
 ## Implementation
@@ -109,6 +115,12 @@ class IllustrateState(TypedDict, total=False):
     # Final output
     final_images: list[FinalImage]
     illustrated_document: str
+
+    # Assembly phase
+    assembled_images: list[AssembledImage]
+
+    # Editorial review
+    editorial_review_result: dict  # EditorialReviewResult.model_dump()
 
     # Workflow metadata
     errors: Annotated[list[WorkflowError], add]
@@ -269,6 +281,39 @@ def route_after_selection(state: IllustrateState) -> list[Send] | str:
 - Round number in `brief_id` prevents collision when `max_retries > 1`
 - `max_retries` reduced from 2 to 1 since over-generation provides inherent redundancy
 
+### Assemble Document and Editorial Review
+
+After selection and retries, images are assembled and optionally reviewed:
+
+```python
+# workflows/output/illustrate/nodes/editorial_review.py
+
+async def editorial_review_node(state: IllustrateState) -> dict:
+    """Single SONNET vision call evaluating all non-header images."""
+    assembled_images = state.get("assembled_images", [])
+    non_header_images = [img for img in assembled_images if img["purpose"] != "header"]
+
+    cuts_count = _compute_cuts_count(non_header_images, image_opportunities)
+
+    # Build multimodal message with all images
+    content_parts = [{"type": "text", "text": user_prompt}]
+    for img in non_header_images:
+        # [image, label] pairs interleaved
+        content_parts.append({"type": "image", "source": {...}})
+        content_parts.append({"type": "text", "text": f"Image '{location_id}' ..."})
+
+    llm = get_llm(tier=ModelTier.SONNET).with_structured_output(EditorialReviewResult)
+    response = await llm.ainvoke([system, {"role": "user", "content": content_parts}])
+```
+
+Key design decisions:
+- **Holistic evaluation**: All images seen simultaneously enables coherence/pacing judgments
+- **Adaptive cut count**: `_compute_cuts_count` adapts to selection failures — never cuts below target N
+- **Config-gated**: `route_after_assembly()` skips editorial review when `enable_editorial_review=False`
+- **Fails open**: If vision call fails, keeps all images
+
+See: [Vision-Based Editorial Curation](../llm-interaction/vision-editorial-curation.md)
+
 ### Graph Construction
 
 ```python
@@ -281,6 +326,8 @@ def create_illustrate_graph() -> StateGraph:
     builder.add_node("sync_after_generation", sync_after_generation)
     builder.add_node("select_per_location", select_per_location_node)
     builder.add_node("sync_after_selection", sync_after_selection)
+    builder.add_node("assemble_document", assemble_document_node)
+    builder.add_node("editorial_review", editorial_review_node)
     builder.add_node("finalize", finalize_node)
 
     builder.add_edge(START, "creative_direction")
@@ -295,7 +342,10 @@ def create_illustrate_graph() -> StateGraph:
     builder.add_edge("select_per_location", "sync_after_selection")
 
     builder.add_conditional_edges("sync_after_selection", route_after_selection,
-                                  ["generate_candidate", "finalize"])
+                                  ["generate_candidate", "assemble_document"])
+    builder.add_conditional_edges("assemble_document", route_after_assembly,
+                                  ["editorial_review", "finalize"])
+    builder.add_edge("editorial_review", "finalize")
     builder.add_edge("finalize", END)
 
     return builder.compile()
@@ -427,6 +477,7 @@ _FALLBACK_IMAGE_TYPE = {
 | Multi-query search | Broader candidate pool | More API calls per image |
 | Structured Imagen prompts | Consistent quality | Extra Haiku call per generation |
 | Memory cleanup in sync | Reduced memory after selection | In-place mutation of reducer-managed list |
+| Editorial review | Document-level quality gating | One extra Sonnet vision call, memory spike from base64 encoding |
 
 ## Related Patterns
 
@@ -436,10 +487,12 @@ _FALLBACK_IMAGE_TYPE = {
 - [Diagram Engine Registry and Routing](../llm-interaction/diagram-engine-registry-routing.md): Lazy engine detection + subtype routing
 - [Validate-Repair-Render Loop](../llm-interaction/validate-repair-render-loop.md): Mermaid/Graphviz generation pattern
 - [Structured Imagen Prompts](../llm-interaction/structured-imagen-prompts.md): Brief-to-prompt conversion
+- [Vision-Based Editorial Curation](../llm-interaction/vision-editorial-curation.md): Holistic multi-image review pattern
 
 ## Related Solutions
 
 - [Over-Generation Retry and Selection Logic Bugs](../../solutions/workflow-reliability/overgeneration-retry-selection-bugs.md): 15 code review findings from over-generation implementation
+- [Editorial Review Code Findings](../../solutions/workflow-reliability/editorial-review-code-findings.md): 15 code review findings from editorial review
 
 ## References
 
@@ -451,6 +504,8 @@ _FALLBACK_IMAGE_TYPE = {
 - Commit: `e7c0d34`—fix(illustrate): resolve nine code review findings
 - Commit: `57fa0cf`—feat(illustrate): over-generation with per-location pair selection
 - Commit: `de777b2`—fix(illustrate): resolve 15 code review findings
+- Commit: `c56a75b`—feat(illustrate): editorial review — vision-based full-document curation
+- Commit: `d2557a9`—fix(illustrate): resolve 15 code review findings — DRY, schemas, security, dead code
 - Files:
   - `workflows/output/illustrate/graph.py`—main workflow graph
   - `workflows/output/illustrate/state.py`—state with reducers
@@ -459,6 +514,8 @@ _FALLBACK_IMAGE_TYPE = {
   - `workflows/output/illustrate/nodes/generate_candidate.py`—unified candidate generation node
   - `workflows/output/illustrate/nodes/generate_additional.py`—engine routing, multi-query search, SSRF validation
   - `workflows/output/illustrate/nodes/select_per_location.py`—per-location vision pair selection
+  - `workflows/output/illustrate/nodes/editorial_review.py`—editorial review node
+  - `workflows/output/illustrate/nodes/assemble_document.py`—document assembly node
   - `workflows/output/illustrate/nodes/finalize.py`—winning result selection and markdown insertion
   - `workflows/output/illustrate/schemas.py`—VisualIdentity, ImageOpportunity, CandidateBrief, ImageLocationPlan
   - `workflows/output/illustrate/prompts.py`—two-pass prompts plus build_visual_identity_context()
