@@ -1,39 +1,23 @@
-"""Run-based log rotation manager.
+"""Run context manager for date-based logging.
 
 Provides run lifecycle management for module-based logging. A "run" is a
-logical unit of work (task queue dispatch or test execution) that triggers
-log rotation on first write to each module's log file.
-
-Thread Safety
--------------
-The `should_rotate()` function uses a threading.Lock to ensure atomic
-check-and-add operations on the rotation set. This prevents race conditions
-when multiple threads inherit the same ContextVar context and share the
-same `_rotated_this_run` set reference.
-
-While Python's logging.Handler.handle() acquires a per-handler lock before
-calling emit(), multiple handlers or loggers can call should_rotate()
-concurrently. The explicit lock in should_rotate() ensures that:
-1. Only one thread can check and mark a log as rotated at a time
-2. No duplicate rotations occur even under concurrent access
+logical unit of work (task queue dispatch or test execution). The run ID
+is embedded in log lines via RunContextFormatter so parallel tasks are
+distinguishable.
 
 Usage:
     from core.logging import start_run, end_run
 
-    start_run("task-abc123")  # Triggers rotation on first log to each module
+    start_run("task-abc123")
     try:
         # ... do work ...
     finally:
         end_run()
 """
 
-import threading
 from contextvars import ContextVar
 
-# Both must be ContextVars for async safety - prevents state leakage between
-# concurrent async runs
 _current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=None)
-_rotated_this_run: ContextVar[set[str] | None] = ContextVar("rotated_this_run", default=None)
 
 # Cache module-to-log resolution (populated on first access per module name)
 # This is a global cache shared across runs - module names don't change
@@ -41,10 +25,6 @@ _rotated_this_run: ContextVar[set[str] | None] = ContextVar("rotated_this_run", 
 # Do NOT create loggers with dynamic names (e.g., f"module.{task_id}") as the cache
 # is unbounded. Module names are finite and determined by the codebase structure.
 _module_log_cache: dict[str, str] = {}
-
-# Lock for thread-safe check-and-add in should_rotate()
-# Prevents race condition when multiple threads share the same ContextVar context
-_rotation_lock = threading.Lock()
 
 # Mapping from module path prefixes to log file names
 # Uses longest-prefix-match to resolve module paths to log names
@@ -85,65 +65,26 @@ _SORTED_PREFIXES = sorted(MODULE_TO_LOG.keys(), key=len, reverse=True)
 def start_run(run_id: str) -> None:
     """Signal start of new run.
 
-    Triggers log rotation on first log message to each module within this run.
-    Safe to call multiple times - subsequent calls reset the rotation tracking.
+    Sets the run ID in the current async context. The run ID is embedded in
+    log lines by RunContextFormatter.
 
     Args:
         run_id: Unique identifier for this run (e.g., task_id, test name)
     """
     _current_run_id.set(run_id)
-    _rotated_this_run.set(set())  # Fresh set per async context
 
 
 def end_run() -> None:
     """Signal end of run.
 
-    Best-effort cleanup - may not be called on crash. Rotation is triggered
-    by start_run(), so missing end_run() calls don't affect correctness.
+    Clears the run ID from the current async context.
     """
     _current_run_id.set(None)
-    _rotated_this_run.set(None)
 
 
 def get_current_run_id() -> str | None:
     """Get the current run ID, if any."""
     return _current_run_id.get()
-
-
-def should_rotate(log_name: str) -> bool:
-    """Check if rotation is needed for this log file.
-
-    Returns True if:
-    1. We're in a run (start_run() was called)
-    2. This log file hasn't been rotated yet in this run
-
-    Also marks the log as rotated to prevent duplicate rotations.
-
-    Thread Safety:
-        Uses _rotation_lock to make the check-and-add operation atomic.
-        This prevents race conditions when multiple threads share the same
-        ContextVar context (e.g., threads spawned from a parent that called
-        start_run()). Without the lock, two threads could both pass the
-        "if log_name in rotated" check before either adds to the set.
-
-    Args:
-        log_name: The log file name (without .log extension)
-
-    Returns:
-        True if rotation should happen, False otherwise
-    """
-    run_id = _current_run_id.get()
-    rotated = _rotated_this_run.get()
-
-    if run_id is None or rotated is None:
-        return False
-
-    # Atomic check-and-add to prevent race conditions
-    with _rotation_lock:
-        if log_name in rotated:
-            return False
-        rotated.add(log_name)
-        return True
 
 
 def module_to_log_name(module_name: str) -> str:

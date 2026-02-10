@@ -16,25 +16,28 @@ Persistent queue infrastructure for managing long-running workflows with budget 
 
 ```bash
 # Add literature review task (default)
-python -m core.task_queue.cli add "quantum computing applications" \
+python3 -m core.task_queue.cli add "quantum computing applications" \
   -c technology --priority high --quality standard
 
 # Add web research task
-python -m core.task_queue.cli add "AI impact on employment 2025" \
+python3 -m core.task_queue.cli add "AI impact on employment 2025" \
   -c technology --type web_research --quality standard
 
 # Show status (budget, queue, next task)
-python -m core.task_queue.cli status
+python3 -m core.task_queue.cli status
 
 # List tasks
-python -m core.task_queue.cli list --status pending
+python3 -m core.task_queue.cli list --status pending
+
+# Run up to 5 tasks in parallel with 3-minute stagger between starts
+python3 -m core.task_queue.cli parallel --count 5 --stagger 3.0
 
 # Configure concurrency
-python -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
+python3 -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
 
 # Start/stop daemon
-python -m core.task_queue.cli start
-python -m core.task_queue.cli stop
+python3 -m core.task_queue.cli start
+python3 -m core.task_queue.cli stop
 ```
 
 ### Programmatic Usage
@@ -350,7 +353,7 @@ LANGSMITH_API_KEY=...              # Required for cost tracking
 
 ```bash
 # Via CLI
-python -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
+python3 -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
 
 # Via API
 queue.set_concurrency(mode="stagger_hours", stagger_hours=24.0)

@@ -12,8 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .budget_tracker import BudgetTracker
+from .categories import load_categories_from_publications
 from .checkpoint import CheckpointManager
 from .lifecycle import cleanup_supervisor_resources
+from .paths import PUBLICATIONS_FILE
 from .queue_manager import TaskQueueManager
 from .schemas import Task, TaskStatus
 from .shutdown import get_shutdown_coordinator
@@ -140,17 +142,61 @@ def _select_tasks(queue_manager: TaskQueueManager, count: int) -> list[Task]:
     Called via asyncio.to_thread() to avoid blocking the event loop
     with fcntl.flock().
 
-    Tasks are sorted by priority (highest first), then by creation time
-    (oldest first) for FIFO within the same priority level. This mirrors
-    the ordering used by TaskScheduler.get_next_eligible_task().
+    Uses round-robin category rotation (matching the sequential scheduler)
+    to ensure thematic diversity. Within each category, picks the highest-
+    priority task first, then FIFO by creation time.
     """
     with queue_manager.persistence.lock():
         queue = queue_manager.persistence.read_queue()
         pending = [t for t in queue["topics"] if t["status"] == TaskStatus.PENDING.value]
-        # Sort by priority descending (4=urgent > 3=high > 2=normal > 1=low),
-        # then by created_at ascending (FIFO within same priority).
-        pending.sort(key=lambda t: (-t.get("priority", 2), t.get("created_at", "")))
-        selected = pending[:count]
+        if not pending:
+            return []
+
+        categories = load_categories_from_publications(PUBLICATIONS_FILE)
+        last_idx = queue.get("last_category_index", -1)
+
+        # Sync categories if they've changed
+        if queue.get("categories") != categories:
+            queue["categories"] = categories
+            if last_idx >= len(categories):
+                last_idx = -1
+
+        # Build per-category task lists, sorted by priority desc then FIFO
+        by_category: dict[str, list[Task]] = {}
+        for task in pending:
+            by_category.setdefault(task["category"], []).append(task)
+        for tasks in by_category.values():
+            tasks.sort(key=lambda t: (-t.get("priority", 2), t.get("created_at", "")))
+
+        # Walk categories round-robin, picking one task per category per pass
+        selected: list[Task] = []
+        passes = 0
+        while len(selected) < count and passes < len(pending):
+            added_this_round = False
+            for offset in range(len(categories)):
+                if len(selected) >= count:
+                    break
+                cat_idx = (last_idx + 1 + offset + passes * len(categories)) % len(categories)
+                category = categories[cat_idx]
+                cat_tasks = by_category.get(category, [])
+                if cat_tasks:
+                    selected.append(cat_tasks.pop(0))
+                    last_idx = cat_idx
+                    added_this_round = True
+            if not added_this_round:
+                break
+            passes += 1
+
+        # Fallback: if categories don't cover all tasks (e.g. deprecated
+        # category), fill remaining slots with highest-priority leftovers
+        if len(selected) < count:
+            selected_ids = {t["id"] for t in selected}
+            leftovers = [t for t in pending if t["id"] not in selected_ids]
+            leftovers.sort(key=lambda t: (-t.get("priority", 2), t.get("created_at", "")))
+            selected.extend(leftovers[: count - len(selected)])
+
+        # Persist category index and mark tasks as in-progress
+        queue["last_category_index"] = last_idx
         now = datetime.now(timezone.utc).isoformat()
         for task in selected:
             task["status"] = TaskStatus.IN_PROGRESS.value

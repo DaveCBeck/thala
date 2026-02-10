@@ -9,7 +9,16 @@ echo "**** Setting up Zotero plugins ****"
 # Install zip if not available
 if ! command -v zip &> /dev/null; then
     echo "**** Installing zip ****"
-    apt-get update -qq && apt-get install -y -qq zip >/dev/null 2>&1
+    apt-get update -qq 2>&1 | grep -v "^W:" || true
+    if ! apt-get install -y -qq zip 2>/dev/null; then
+        echo "**** Retrying with --allow-unauthenticated ****"
+        apt-get install -y -qq --allow-unauthenticated zip 2>&1
+    fi
+fi
+
+if ! command -v zip &> /dev/null; then
+    echo "**** ERROR: zip installation failed! Plugin will not be installed. ****"
+    exit 1
 fi
 
 # Create distribution extensions directory if it doesn't exist

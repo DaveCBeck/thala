@@ -1,7 +1,7 @@
-"""Module-based logging with run-based rotation.
+"""Module-based logging with date-stamped files.
 
-This package provides per-module log files with automatic rotation at
-run boundaries (task queue dispatch or test execution).
+This package provides per-module log files using date-stamped filenames
+for safe parallel workflow execution.
 
 Usage:
     # At run entry points (task_queue, tests):
@@ -19,12 +19,16 @@ Usage:
     logger.info("This goes to the appropriate module log file")
 
 Log files are created in logs/:
-    - logs/lit-review.log, logs/supervision.log, etc. (per-module)
-    - logs/run-3p.log (all third-party libraries)
-    - logs/*.previous.log (previous run's logs)
+    - logs/lit-review.2026-02-10.log, logs/supervision.2026-02-10.log, etc.
+    - logs/run-3p.2026-02-10.log (all third-party libraries)
+    - Old dated files are cleaned up after THALA_LOG_RETENTION_DAYS (default 7)
 """
 
-from core.logging.handlers import ModuleDispatchHandler, ThirdPartyHandler
+from core.logging.handlers import (
+    ModuleDispatchHandler,
+    RunContextFormatter,
+    ThirdPartyHandler,
+)
 from core.logging.run_manager import (
     MODULE_TO_LOG,
     end_run,
@@ -40,4 +44,6 @@ __all__ = [
     # Handlers (for config.py)
     "ModuleDispatchHandler",
     "ThirdPartyHandler",
+    # Formatter
+    "RunContextFormatter",
 ]

@@ -74,12 +74,13 @@ def configure_logging(name: str = "thala") -> Path:
 
     Sets up logging with:
     - Console: Compact format, defaults to WARNING level
-    - Per-module files: Detailed format, defaults to INFO level
-      Each module writes to logs/<module>.log based on MODULE_TO_LOG mapping
-    - Third-party: All third-party logs go to logs/run-3p.log
+    - Per-module files: Date-stamped files ({module}.{YYYY-MM-DD}.log),
+      defaults to INFO level. Each module's log is based on MODULE_TO_LOG mapping.
+    - Third-party: All third-party logs go to run-3p.{YYYY-MM-DD}.log
 
-    Log rotation happens automatically on each "run" (task queue dispatch or
-    test execution) via start_run(). Each module keeps current + previous log.
+    File handlers use RunContextFormatter to embed [run_id] in each line,
+    making parallel tasks distinguishable via grep. Old dated files are
+    cleaned up after THALA_LOG_RETENTION_DAYS (default 7).
 
     Args:
         name: Unused, kept for backwards compatibility.
@@ -88,6 +89,7 @@ def configure_logging(name: str = "thala") -> Path:
         THALA_LOG_LEVEL_CONSOLE: Console log level (default: WARNING)
         THALA_LOG_LEVEL_FILE: File log level (default: INFO)
         THALA_LOG_DIR: Directory for log files (default: ./logs/)
+        THALA_LOG_RETENTION_DAYS: Days to keep dated log files (default: 7)
 
     Returns:
         Path to the log directory
@@ -98,7 +100,7 @@ def configure_logging(name: str = "thala") -> Path:
     """
     global _logging_configured
 
-    from core.logging import ModuleDispatchHandler, ThirdPartyHandler
+    from core.logging import ModuleDispatchHandler, RunContextFormatter, ThirdPartyHandler
 
     # Determine log directory
     log_dir = Path(os.getenv("THALA_LOG_DIR", _get_project_root() / "logs"))
@@ -118,7 +120,7 @@ def configure_logging(name: str = "thala") -> Path:
 
     # Formatters
     console_formatter = logging.Formatter("%(levelname)s - %(name)s - %(message)s")
-    file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    file_formatter = RunContextFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # Console handler (for thala code only)
     console_handler = logging.StreamHandler()
