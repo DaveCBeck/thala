@@ -25,39 +25,12 @@ logger = logging.getLogger(__name__)
 class HeadingAnalysis(BaseModel):
     """Analysis of a single heading."""
 
-    heading: str = Field(description="Exact heading text")
-    is_chapter: bool = Field(description="Whether this is a chapter boundary")
-    chapter_author: Optional[str] = Field(default=None, description="Author name if multi-author book")
-
-
-class ChapterClassification(BaseModel):
-    """Classification of a chapter for content filtering."""
-
-    title: str = Field(description="Exact chapter title")
-    action: str = Field(
-        description="'include' for main content, 'exclude' for non-content, 'combine_with_previous' to merge with preceding chapter"
+    heading: str = Field(description="Exact heading text (without # prefix or token count)")
+    is_content: bool = Field(
+        description="True for substantive content, false for non-content (Abstract, References, Acknowledgements, etc.)"
     )
-    reason: Optional[str] = Field(default=None, description="Brief reason if not 'include'")
-
-
-class ChapterClassificationResult(BaseModel):
-    """Result of chapter content classification."""
-
-    chapters: list[ChapterClassification] = Field(description="Classification of each chapter")
-
-    @field_validator("chapters", mode="before")
-    @classmethod
-    def parse_json_string(cls, v: Any) -> list:
-        """Handle LLM returning JSON string instead of list."""
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, list):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-            raise ValueError(f"chapters must be a list, got unparseable string: {v[:100]}...")
-        return v if v is not None else []
+    chunk_boundary: bool = Field(description="True if this heading starts a new chunk for summarization")
+    chapter_author: Optional[str] = Field(default=None, description="Author name if multi-author book")
 
 
 class HeadingAnalysisResult(BaseModel):
@@ -84,6 +57,21 @@ class HeadingAnalysisResult(BaseModel):
         return v if v is not None else []
 
 
+NON_CONTENT_HEADINGS = {
+    "abstract", "references", "bibliography", "works cited",
+    "acknowledgements", "acknowledgments", "author contributions",
+    "funding", "conflicts of interest", "conflict of interest",
+    "abbreviations", "appendix", "supplementary material",
+    "supplementary data", "supporting information",
+}
+
+
+def _is_non_content_heading(text: str) -> bool:
+    """Check if a heading is non-content (references, acknowledgements, etc.)."""
+    normalised = text.strip("*").strip().lower()
+    return normalised in NON_CONTENT_HEADINGS
+
+
 def _build_chapter_boundaries(markdown: str, headings: list[dict], analysis: list[dict]) -> list[ChapterInfo]:
     """
     Build ChapterInfo list from heading analysis.
@@ -91,33 +79,52 @@ def _build_chapter_boundaries(markdown: str, headings: list[dict], analysis: lis
     Args:
         markdown: Full markdown text
         headings: List of all headings with positions
-        analysis: LLM analysis marking chapter boundaries
+        analysis: LLM analysis with is_content and chunk_boundary fields
 
     Returns:
         List of ChapterInfo dicts
     """
-    # Find headings marked as chapters
-    chapter_headings = []
     analysis_map = {item["heading"]: item for item in analysis}
 
+    # Collect headings where both is_content=true AND chunk_boundary=true
+    chapter_headings = []
     for heading in headings:
         heading_text = heading["text"]
-        if heading_text in analysis_map and analysis_map[heading_text].get("is_chapter"):
-            author = analysis_map[heading_text].get("chapter_author")
+        item = analysis_map.get(heading_text)
+        if item and item.get("is_content") and item.get("chunk_boundary"):
             chapter_headings.append(
                 {
                     "title": heading_text,
                     "position": heading["position"],
-                    "author": author,
+                    "author": item.get("chapter_author"),
                 }
             )
+
+    # Find the position of the first non-content heading after the last chapter.
+    # Uses LLM-driven is_content=false classification, with _is_non_content_heading as fallback.
+    first_non_content_pos = None
+    if chapter_headings:
+        last_chapter_pos = chapter_headings[-1]["position"]
+        for heading in headings:
+            if heading["position"] <= last_chapter_pos:
+                continue
+            heading_text = heading["text"]
+            item = analysis_map.get(heading_text)
+            is_non_content = (item and not item.get("is_content")) or _is_non_content_heading(heading_text)
+            if is_non_content:
+                first_non_content_pos = heading["position"]
+                break
 
     # Build chapter boundaries
     chapters = []
     for i, chapter in enumerate(chapter_headings):
         start = chapter["position"]
-        # End is start of next chapter, or end of document
-        end = chapter_headings[i + 1]["position"] if i + 1 < len(chapter_headings) else len(markdown)
+        if i + 1 < len(chapter_headings):
+            end = chapter_headings[i + 1]["position"]
+        elif first_non_content_pos is not None:
+            end = first_non_content_pos
+        else:
+            end = len(markdown)
 
         chapter_text = markdown[start:end]
         word_count = count_words(chapter_text)
@@ -133,185 +140,6 @@ def _build_chapter_boundaries(markdown: str, headings: list[dict], analysis: lis
         )
 
     return chapters
-
-
-MIN_CHAPTER_WORDS = 100  # Chapters below this are too short to summarize
-
-
-async def _filter_content_chapters(
-    chapters: list[ChapterInfo],
-    short_summary: str | None = None,
-) -> tuple[list[ChapterInfo], list[ChapterInfo]]:
-    """
-    Filter chapters to identify main content vs non-content/subsidiary sections.
-
-    Filtering stages:
-    1. LLM classification: Identify non-content, or chapters to combine with previous
-    2. Word count filter: Skip any remaining chapters below MIN_CHAPTER_WORDS
-
-    The LLM sees ALL chapters with word counts, allowing it to intelligently combine
-    short intro sections with their following content rather than discarding them.
-
-    Example scenario:
-        Input chapters:
-        - Introduction (80 words)      → combine_with_previous (first, so falls back to include)
-        - Background (150 words)       → include
-        - Methodology (60 words)       → combine_with_previous → merged into Background
-        - Data Collection (400 words)  → combine_with_previous → merged into Background
-        - Results (1200 words)         → include
-
-        Output: Background (610 words combined), Results (1200 words)
-
-    The short "Methodology" intro paragraph gets merged with substantive sections
-    rather than being discarded by a pre-filter.
-
-    Args:
-        chapters: List of detected chapters
-        short_summary: Optional 100-word summary for document context
-
-    Returns:
-        Tuple of (content_chapters, excluded_chapters)
-    """
-    if not chapters:
-        return [], []
-
-    # Stage 1: Prepare chapter list with word counts for LLM classification
-    chapter_list = "\n".join([f"- {c['title']} ({c['word_count']:,} words)" for c in chapters])
-
-    # Add document context if available
-    context_section = ""
-    if short_summary:
-        context_section = f"""DOCUMENT SUMMARY (for context):
-{short_summary}
-
-"""
-
-    system_prompt = f"""{context_section}Classify each chapter/section. For each, choose one action:
-
-ACTION: "include" - Main content to summarize
-- Topic chapters that discuss the document's subject matter
-- Author's Introduction, Methods, Results, Discussion, Conclusion
-- Numbered chapters (Chapter 1, Chapter 2, etc.)
-- In academic papers: ALL sections discussing findings, methods, analysis
-- Word count helps: substantial sections (500+ words) are usually content
-
-ACTION: "exclude" - Non-content to skip entirely
-- Abstract (already captured in short summary)
-- References, Bibliography, Works Cited
-- Index, Glossary, Appendix (unless substantive analysis)
-- Acknowledgements, Funding, Conflicts of Interest
-- About the Author, Contributors, Dedications
-- Title pages, Copyright, Credits
-
-ACTION: "combine_with_previous" - Merge into preceding chapter
-- Very short sections (<300 words) that continue the previous topic
-- Sub-sections that shouldn't stand alone
-- Note: First chapter cannot use this action
-
-IMPORTANT: Topic-specific headings are almost always content!
-If a heading relates to the document's subject matter (based on the summary above),
-it should be "include" even if it sounds like a generic term.
-
-When in doubt, use "include"."""
-
-    try:
-        result = await invoke(
-            tier=ModelTier.DEEPSEEK_V3,
-            system=system_prompt,
-            user=f"CHAPTERS:\n{chapter_list}",
-            schema=ChapterClassificationResult,
-            config=InvokeConfig(max_tokens=4096),
-        )
-
-        # Build lookup map
-        classification_map = {c.title: c for c in result.chapters}
-
-        content_chapters = []
-        excluded_chapters = []
-
-        for i, chapter in enumerate(chapters):
-            classification = classification_map.get(chapter["title"])
-            if not classification:
-                # Not in response, default to include
-                content_chapters.append(chapter)
-                continue
-
-            action = classification.action.lower().strip()
-
-            if action == "exclude":
-                excluded_chapters.append(chapter)
-                logger.debug(f"Excluding chapter '{chapter['title']}': {classification.reason}")
-            elif action == "combine_with_previous" and content_chapters:
-                # Merge this chapter's content range into the previous one
-                prev_chapter = content_chapters[-1]
-                combined = ChapterInfo(
-                    title=prev_chapter["title"],
-                    start_position=prev_chapter["start_position"],
-                    end_position=chapter["end_position"],
-                    author=prev_chapter["author"],
-                    word_count=prev_chapter["word_count"] + chapter["word_count"],
-                )
-                content_chapters[-1] = combined
-                logger.debug(f"Combined '{chapter['title']}' with '{prev_chapter['title']}'")
-            else:
-                # "include" or fallback
-                content_chapters.append(chapter)
-
-        if excluded_chapters:
-            excluded_titles = [c["title"] for c in excluded_chapters]
-            logger.info(f"Filtered {len(excluded_chapters)} non-content chapters: {excluded_titles}")
-
-        # Stage 2: Filter out any remaining chapters too short to summarize
-        # (after combining, some may still be below threshold)
-        final_content = []
-        short_chapters = []
-        for chapter in content_chapters:
-            if chapter["word_count"] < MIN_CHAPTER_WORDS:
-                short_chapters.append(chapter)
-                logger.debug(
-                    f"Excluding short chapter '{chapter['title']}' "
-                    f"({chapter['word_count']} words, below {MIN_CHAPTER_WORDS})"
-                )
-            else:
-                final_content.append(chapter)
-
-        if short_chapters:
-            logger.info(f"Filtered {len(short_chapters)} chapters below {MIN_CHAPTER_WORDS} words (post-combine)")
-            excluded_chapters.extend(short_chapters)
-
-        content_chapters = final_content
-
-        # Log token counts for content chapters (estimate ~1.3 tokens per word)
-        content_words = sum(c["word_count"] for c in content_chapters)
-        content_tokens = int(content_words * 1.3)
-        excluded_words = sum(c["word_count"] for c in excluded_chapters)
-        excluded_tokens = int(excluded_words * 1.3)
-        logger.info(
-            f"[TOKEN_TRACKING] Post-filter chapters: {len(content_chapters)} chapters, "
-            f"{content_tokens:,} tokens ({content_words:,} words) | "
-            f"Excluded: {excluded_tokens:,} tokens ({excluded_words:,} words)"
-        )
-
-        return content_chapters, excluded_chapters
-
-    except Exception as e:
-        logger.warning(f"Chapter content filtering failed: {e}. Applying word count filter only.")
-        # Fallback: just apply word count filter
-        content_chapters = []
-        excluded_chapters = []
-        for chapter in chapters:
-            if chapter["word_count"] < MIN_CHAPTER_WORDS:
-                excluded_chapters.append(chapter)
-            else:
-                content_chapters.append(chapter)
-
-        content_words = sum(c["word_count"] for c in content_chapters)
-        content_tokens = int(content_words * 1.3)
-        logger.info(
-            f"[TOKEN_TRACKING] Post-filter chapters (fallback): "
-            f"{len(content_chapters)} chapters, {content_tokens:,} tokens"
-        )
-        return content_chapters, excluded_chapters
 
 
 @traceable(run_type="chain", name="DetectChapters")
@@ -385,20 +213,58 @@ async def detect_chapters(state: DocumentProcessingState) -> dict[str, Any]:
         metadata_updates = state.get("metadata_updates", {})
         is_multi_author = metadata_updates.get("multi_author", False)
 
-        # Prepare heading list for LLM
-        heading_list = "\n".join([f"{'#' * h['level']} {h['text']}" for h in headings])
+        # Prepare heading list for LLM — include token counts per section
+        heading_lines = []
+        for i, h in enumerate(headings):
+            start = h["position"]
+            end = headings[i + 1]["position"] if i + 1 < len(headings) else len(markdown)
+            section_tokens = estimate_tokens_fast(markdown[start:end], with_safety_margin=False)
+            heading_lines.append(f"{'#' * h['level']} {h['text']}  (~{section_tokens:,} tokens)")
+        heading_list = "\n".join(heading_lines)
 
         # Build prompt
-        system_prompt = """Analyze document headings and identify which ones represent major section divisions.
-Mark each heading with is_chapter=true if it represents a major division boundary, false otherwise.
+        system_prompt = """You are splitting a document into chapters for two downstream purposes:
+1. Each chapter will be summarized independently (10:1 compression).
+2. Each chapter summary will be embedded for semantic search / retrieval.
 
-Guidelines:
-- Major divisions include: chapters, parts, numbered top-level sections (1, 2, 3 or 1.0, 2.0), or consistently-styled major headings
-- Be LIBERAL in identifying divisions - if headings appear to mark major content shifts, mark them as chapters
-- Common patterns: "Chapter N", "Part N", just numbers (1, 2, 3), Roman numerals (I, II, III), or descriptive titles at consistent heading levels
-- For academic papers: Introduction, Methods, Results, Discussion, Conclusion are major divisions
-- Sub-sections within chapters (e.g., 1.1, 1.2 under section 1) should be marked false
-- When in doubt, prefer marking more headings as chapters rather than fewer - splitting is better than one huge chunk"""
+For each heading, set TWO orthogonal fields:
+
+• is_content — true for substantive content headings; false for non-content sections
+  (Abstract, References, Bibliography, Acknowledgements, Author Contributions,
+  Funding, Conflicts of Interest, Abbreviations, Appendix, Supplementary Material).
+  Non-content sections are excluded from summarization entirely.
+
+• chunk_boundary — true if this heading starts a new chunk for summarization.
+  Only meaningful when is_content=true. Non-content headings should always have
+  chunk_boundary=false.
+
+HOW TO REASON ABOUT SIZE:
+Each heading shows its section's token count. When you set chunk_boundary=false on a
+content heading, its tokens merge into the preceding chunk. Before setting
+chunk_boundary=true, mentally sum the tokens of consecutive sections that would form
+the resulting chunk. Aim for every chunk to be at least 3 000 tokens.
+
+RULES:
+1. The first content heading in the document MUST have chunk_boundary=true.
+   Every document should have at least 2 content chunks unless the entire document
+   is under 6 000 tokens.
+2. Most documents have a natural three-part structure: introductory material, main
+   content, and discussion/conclusion. Prefer preserving these as separate chunks
+   even if one part is slightly under 3 000 tokens.
+3. If a content section is under 3 000 tokens, default to chunk_boundary=false so it
+   merges with its neighbour. The ONLY exception is if the section is on a completely
+   unrelated topic (e.g. "Methods" vs "Results") where combining would make the
+   embedding meaningless. Sub-topics within the same broad subject do NOT qualify —
+   they belong together.
+4. Very large sections (>60 000 tokens) should be split at sub-headings that represent
+   genuine topic shifts.
+5. Top-level headings (chapters, parts, numbered sections like 1, 2, 3) are natural
+   chunk boundaries — but still merge them if the result would be under 3 000 tokens
+   and they cover the same broad topic as their neighbour.
+6. Sub-sections (1.1, 1.2) are almost never chunk boundaries.
+7. Non-content sections must ALWAYS have is_content=false and chunk_boundary=false.
+
+When in doubt, prefer fewer, larger chunks over many small ones."""
 
         if is_multi_author:
             system_prompt += (
@@ -411,7 +277,7 @@ Guidelines:
             # use_json_schema_method=True for stricter validation, combined with
             # field validator to handle edge case of JSON strings in list fields
             result = await invoke(
-                tier=ModelTier.DEEPSEEK_V3,
+                tier=ModelTier.DEEPSEEK_R1,
                 system=system_prompt,
                 user=heading_list,
                 schema=HeadingAnalysisResult,
@@ -429,10 +295,11 @@ Guidelines:
 
                 if chapters:
                     logger.info(f"Created {len(chapters)} chapters from top-level headings")
-                    # Filter to content chapters only
-                    short_summary = state.get("short_summary_english") or state.get("short_summary")
-                    content_chapters, excluded = await _filter_content_chapters(chapters, short_summary=short_summary)
-                    logger.info(f"After filtering: {len(content_chapters)} content chapters ({len(excluded)} excluded)")
+                    # Filter out non-content chapters using heuristic
+                    content_chapters = [c for c in chapters if not _is_non_content_heading(c["title"])]
+                    excluded_count = len(chapters) - len(content_chapters)
+                    if excluded_count:
+                        logger.info(f"Filtered {excluded_count} non-content chapters from heading fallback")
                     return {
                         "chapters": content_chapters,
                         "needs_tenth_summary": True,
@@ -450,13 +317,8 @@ Guidelines:
 
             logger.info(f"Detected {len(chapters)} chapters for 10:1 summary")
 
-            # Filter to content chapters only
-            short_summary = state.get("short_summary_english") or state.get("short_summary")
-            content_chapters, excluded = await _filter_content_chapters(chapters, short_summary=short_summary)
-            logger.info(f"After filtering: {len(content_chapters)} content chapters ({len(excluded)} excluded)")
-
             return {
-                "chapters": content_chapters,
+                "chapters": chapters,
                 "needs_tenth_summary": True,
                 "current_status": "chapters_detected",
             }
