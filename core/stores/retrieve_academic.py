@@ -140,6 +140,8 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         authors: Optional[list[str]] = None,
         preferred_formats: Optional[list[str]] = None,
         timeout_seconds: int = 120,
+        venue: Optional[str] = None,
+        year: Optional[int] = None,
     ) -> RetrieveJobResponse:
         """
         Submit a retrieval request.
@@ -150,6 +152,8 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
             authors: Optional author names to improve matching
             preferred_formats: Preferred formats (default: ["pdf", "epub"])
             timeout_seconds: Max time for retrieval (default: 120)
+            venue: Optional journal/conference name to improve matching
+            year: Optional publication year to improve matching
 
         Returns:
             RetrieveJobResponse with job_id and initial status
@@ -166,6 +170,10 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
             payload["authors"] = authors
         if preferred_formats:
             payload["preferred_formats"] = preferred_formats
+        if venue:
+            payload["venue"] = venue
+        if year:
+            payload["year"] = year
 
         response = await client.post("/retrieve", json=payload)
         response.raise_for_status()

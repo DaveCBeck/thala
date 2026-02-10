@@ -33,6 +33,30 @@ def _parse_work(work: dict) -> OpenAlexWork:
     # Prefer oa_url for scraping, fallback to DOI, then OpenAlex ID
     url = oa_url or doi or work.get("id", "")
 
+    # Collect all unique OA URLs from locations array (best first)
+    oa_urls: list[str] = []
+    seen_urls: set[str] = set()
+    if oa_url:
+        oa_urls.append(oa_url)
+        seen_urls.add(oa_url)
+
+    for loc in work.get("locations", []):
+        if not loc.get("is_oa"):
+            continue
+        for url_key in ("pdf_url", "landing_page_url"):
+            loc_url = loc.get(url_key)
+            if loc_url and loc_url not in seen_urls:
+                oa_urls.append(loc_url)
+                seen_urls.add(loc_url)
+
+    # Extract PMC ID from ids object
+    pmcid = None
+    ids = work.get("ids", {})
+    raw_pmcid = ids.get("pmcid")
+    if raw_pmcid:
+        # May be full URL like "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3429343"
+        pmcid = raw_pmcid.split("/")[-1] if "/" in raw_pmcid else raw_pmcid
+
     # Parse authors (limit to first 5)
     authors = []
     for authorship in work.get("authorships", [])[:5]:
@@ -66,6 +90,8 @@ def _parse_work(work: dict) -> OpenAlexWork:
         url=url,
         doi=doi,
         oa_url=oa_url,
+        oa_urls=oa_urls,
+        pmcid=pmcid,
         abstract=_reconstruct_abstract(work.get("abstract_inverted_index", {})),
         authors=authors,
         publication_date=work.get("publication_date"),

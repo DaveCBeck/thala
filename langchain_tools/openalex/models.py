@@ -19,6 +19,8 @@ class OpenAlexWork(BaseModel):
     url: str  # oa_url if available, else DOI (preferred for scraping)
     doi: Optional[str] = None  # Always keep DOI for citations
     oa_url: Optional[str] = None  # Open access URL for full text
+    oa_urls: list[str] = Field(default_factory=list)  # All OA URLs (best first)
+    pmcid: Optional[str] = None  # PubMed Central ID (e.g. "PMC3429343")
     abstract: Optional[str] = None
     authors: list[OpenAlexAuthor] = Field(default_factory=list)
     publication_date: Optional[str] = None

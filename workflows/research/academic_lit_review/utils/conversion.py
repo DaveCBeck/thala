@@ -90,6 +90,8 @@ def convert_to_paper_metadata(
         primary_topic=work_dict.get("primary_topic"),
         is_oa=work_dict.get("is_oa", False),
         oa_url=work_dict.get("oa_url"),
+        oa_urls=work_dict.get("oa_urls", []),
+        pmcid=work_dict.get("pmcid"),
         oa_status=work_dict.get("oa_status"),
         referenced_works=work_dict.get("referenced_works", []),
         citing_works_count=work_dict.get("cited_by_count", 0),

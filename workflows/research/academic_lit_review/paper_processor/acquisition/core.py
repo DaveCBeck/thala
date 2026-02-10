@@ -60,7 +60,7 @@ from workflows.research.academic_lit_review.paper_processor.types import (
 from core.scraping.pdf import process_document_smart, MarkerProcessingError
 from core.scraping.types import ContentSource
 
-from .sources import try_oa_download
+from .sources import try_doi_download, try_oa_download, try_pmc_download
 
 if TYPE_CHECKING:
     from workflows.research.academic_lit_review.paper_processor.fallback import (
@@ -299,15 +299,15 @@ async def run_paper_pipeline(
             oa_acquired_count = 0
 
             async def try_acquire_single(paper: PaperMetadata, index: int) -> tuple[str, Optional[str], Optional[str]]:
-                """Try OA first, then submit to retrieve-academic if needed.
+                """Try OA URLs, PMC, DOI resolution, then retrieve-academic.
 
-                OA successes are pushed directly to the processing queue for
+                OA/PMC successes are pushed directly to the processing queue for
                 immediate marker processing (streaming), rather than waiting
-                for all OA attempts to complete.
+                for all attempts to complete.
 
                 Returns:
                     (doi, job_id_or_none, local_path)
-                    - If OA succeeded: (doi, None, None) - already pushed to queue
+                    - If OA/PMC/DOI succeeded: (doi, None, None) - already pushed to queue
                     - If needs retrieve: (doi, job_id, local_path)
                     - If failed: raises exception
                 """
@@ -319,23 +319,52 @@ async def run_paper_pipeline(
 
                     doi = paper.get("doi")
                     title = paper.get("title", "Unknown")
-                    oa_url = paper.get("oa_url")
+                    oa_urls = paper.get("oa_urls", [])
+                    pmcid = paper.get("pmcid")
 
                     safe_doi = doi.replace("/", "_").replace(":", "_")
                     local_path = output_dir / f"{safe_doi}.pdf"
 
-                    # Try OA download first if URL available
-                    if oa_url:
+                    # Track failed hosts for DOI skip logic (change 5)
+                    failed_hosts: set[str] = set()
+
+                    # Try each OA URL in order (best first)
+                    for oa_url in oa_urls:
                         source, is_markdown, content_source, provider = await try_oa_download(oa_url, local_path, doi)
                         if source:
-                            # Push directly to queue - stream to marker immediately
                             oa_acquired_count += 1
                             acquired_count += 1
                             acquired_paths[doi] = source
                             _emit_oa_acq_log(doi, oa_url, content_source, provider)
                             logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired via OA (streaming): {doi}")
                             await _send_to_marker((doi, source, papers_by_doi[doi], is_markdown))
-                            return doi, None, None  # Signal OA handled
+                            return doi, None, None
+                        # Track failed host for DOI skip
+                        from urllib.parse import urlparse
+                        failed_hosts.add(urlparse(oa_url).netloc)
+
+                    # Try PMC if we have a PMC ID
+                    if pmcid:
+                        source, is_markdown, content_source, provider = await try_pmc_download(pmcid, doi, local_path)
+                        if source:
+                            oa_acquired_count += 1
+                            acquired_count += 1
+                            acquired_paths[doi] = source
+                            _acq_log(doi, "downloaded via PMC", pmcid)
+                            logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired via PMC (streaming): {doi}")
+                            await _send_to_marker((doi, source, papers_by_doi[doi], is_markdown))
+                            return doi, None, None
+
+                    # Try resolving DOI to publisher URL (skip if same host already failed)
+                    source, is_markdown, content_source, provider = await try_doi_download(doi, local_path, failed_hosts)
+                    if source:
+                        oa_acquired_count += 1
+                        acquired_count += 1
+                        acquired_paths[doi] = source
+                        _acq_log(doi, "downloaded via DOI resolution", provider or "unknown")
+                        logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired via DOI resolution (streaming): {doi}")
+                        await _send_to_marker((doi, source, papers_by_doi[doi], is_markdown))
+                        return doi, None, None
 
                     # Fall back to retrieve-academic
                     authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
@@ -344,6 +373,8 @@ async def run_paper_pipeline(
                         title=title,
                         authors=authors,
                         timeout_seconds=int(ACQUISITION_TIMEOUT),
+                        venue=paper.get("venue"),
+                        year=paper.get("year"),
                     )
 
                     return doi, job.job_id, str(local_path)
@@ -448,18 +479,33 @@ async def run_paper_pipeline(
                             break
 
                         fallback_doi = fallback_paper.get("doi")
-                        oa_url = fallback_paper.get("oa_url")
+                        oa_urls = fallback_paper.get("oa_urls", [])
+                        pmcid = fallback_paper.get("pmcid")
                         safe_doi = fallback_doi.replace("/", "_").replace(":", "_")
                         local_path = output_dir / f"{safe_doi}.pdf"
 
-                        # Try OA download first
-                        if oa_url:
+                        # Try OA URLs first
+                        oa_success = False
+                        for oa_url in oa_urls:
                             source, is_markdown, content_source, provider = await try_oa_download(oa_url, local_path, fallback_doi)
                             if source:
                                 acquired_paths[fallback_doi] = source
                                 _emit_oa_acq_log(fallback_doi, oa_url, content_source, provider)
                                 await _send_to_marker((fallback_doi, source, fallback_paper, is_markdown))
                                 logger.debug(f"Fallback acquired via OA: {fallback_doi}")
+                                oa_success = True
+                                break
+                        if oa_success:
+                            continue
+
+                        # Try PMC
+                        if pmcid:
+                            source, is_markdown, content_source, provider = await try_pmc_download(pmcid, fallback_doi, local_path)
+                            if source:
+                                acquired_paths[fallback_doi] = source
+                                _acq_log(fallback_doi, "downloaded via PMC", pmcid)
+                                await _send_to_marker((fallback_doi, source, fallback_paper, is_markdown))
+                                logger.debug(f"Fallback acquired via PMC: {fallback_doi}")
                                 continue
 
                         # Fall back to retrieve-academic

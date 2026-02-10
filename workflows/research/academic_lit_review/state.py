@@ -64,6 +64,8 @@ class PaperMetadata(TypedDict):
     primary_topic: Optional[str]
     is_oa: bool  # Open access
     oa_url: Optional[str]
+    oa_urls: list[str]  # All OA URLs from OpenAlex locations (best first)
+    pmcid: Optional[str]  # PubMed Central ID (e.g. "PMC3429343")
     oa_status: Optional[str]  # "gold", "green", "hybrid", etc.
     referenced_works: list[str]  # DOIs of cited papers
     citing_works_count: int
