@@ -6,7 +6,7 @@ top-level orchestration.
 
 import asyncio
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -460,3 +460,73 @@ class TestSelectTasksCheckpointAware:
         categories = [t["category"] for t in selected]
         assert "alpha" in categories
         assert "beta" in categories
+
+
+# ---------------------------------------------------------------------------
+# _select_tasks — DEFERRED task handling
+# ---------------------------------------------------------------------------
+
+class TestSelectTasksDeferred:
+    """Tests for DEFERRED task selection in _select_tasks."""
+
+    def test_selects_deferred_with_expired_next_run(self):
+        """DEFERRED tasks whose next_run_after has passed are included in candidate pool."""
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        deferred = _make_task(task_id="d1", status=TaskStatus.DEFERRED.value)
+        deferred["next_run_after"] = past
+        qm = _mock_queue_manager([deferred])
+
+        selected = _select_tasks(qm, count=5)
+
+        assert len(selected) == 1
+        assert selected[0]["id"] == "d1"
+        assert selected[0]["status"] == TaskStatus.IN_PROGRESS.value
+
+    def test_skips_deferred_with_future_next_run(self):
+        """DEFERRED tasks whose next_run_after is in the future are skipped."""
+        future = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+        deferred = _make_task(task_id="d1", status=TaskStatus.DEFERRED.value)
+        deferred["next_run_after"] = future
+        pending = _make_task(task_id="p1")
+        qm = _mock_queue_manager([deferred, pending])
+
+        selected = _select_tasks(qm, count=5)
+
+        assert len(selected) == 1
+        assert selected[0]["id"] == "p1"
+
+    def test_deferred_without_next_run_treated_as_eligible(self):
+        """DEFERRED tasks missing next_run_after are treated as immediately eligible."""
+        deferred = _make_task(task_id="d1", status=TaskStatus.DEFERRED.value)
+        # No next_run_after key at all
+        qm = _mock_queue_manager([deferred])
+
+        selected = _select_tasks(qm, count=5)
+
+        assert len(selected) == 1
+        assert selected[0]["id"] == "d1"
+
+    def test_deferred_with_malformed_next_run_treated_as_eligible(self):
+        """DEFERRED tasks with invalid next_run_after are treated as eligible."""
+        deferred = _make_task(task_id="d1", status=TaskStatus.DEFERRED.value)
+        deferred["next_run_after"] = "not-a-date"
+        qm = _mock_queue_manager([deferred])
+
+        selected = _select_tasks(qm, count=5)
+
+        assert len(selected) == 1
+
+    def test_deferred_mixed_with_pending(self):
+        """Both DEFERRED (eligible) and PENDING tasks can be selected together."""
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        deferred = _make_task(task_id="d1", status=TaskStatus.DEFERRED.value)
+        deferred["next_run_after"] = past
+        pending = _make_task(task_id="p1")
+        qm = _mock_queue_manager([deferred, pending])
+
+        selected = _select_tasks(qm, count=5)
+
+        assert len(selected) == 2
+        selected_ids = {t["id"] for t in selected}
+        assert "d1" in selected_ids
+        assert "p1" in selected_ids
