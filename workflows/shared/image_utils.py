@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 IMAGEN_MODEL = "imagen-4.0-ultra-generate-001"
 GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview"
 
+# Conservative timeout for Google genai API calls (seconds).
+# Normal calls complete in 10-30s; this prevents silent hangs from
+# blocking the entire illustration graph indefinitely (see: 1bad433d RCA).
+GOOGLE_API_TIMEOUT = 120
+
 # Lazy-initialized genai client (reused across calls)
 _genai_client = None
 
@@ -176,13 +181,16 @@ async def generate_article_header(
         from core.task_queue.rate_limits import get_imagen_semaphore
 
         async with get_imagen_semaphore():
-            response = await client.aio.models.generate_images(
-                model=IMAGEN_MODEL,
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=sample_count,
-                    aspect_ratio=aspect_ratio,
+            response = await asyncio.wait_for(
+                client.aio.models.generate_images(
+                    model=IMAGEN_MODEL,
+                    prompt=prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=sample_count,
+                        aspect_ratio=aspect_ratio,
+                    ),
                 ),
+                timeout=GOOGLE_API_TIMEOUT,
             )
 
         candidates = [
@@ -275,15 +283,18 @@ async def generate_diagram_image(
         from core.task_queue.rate_limits import get_imagen_semaphore
 
         async with get_imagen_semaphore():
-            response = await client.aio.models.generate_content(
-                model=GEMINI_IMAGE_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                    image_config=types.ImageConfig(
-                        aspect_ratio=aspect_ratio,
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=GEMINI_IMAGE_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"],
+                        image_config=types.ImageConfig(
+                            aspect_ratio=aspect_ratio,
+                        ),
                     ),
                 ),
+                timeout=GOOGLE_API_TIMEOUT,
             )
 
         # Extract image bytes from response parts
