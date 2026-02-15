@@ -1,4 +1,8 @@
-"""Article illustration engine."""
+"""Shared article illustration engine.
+
+Moved from lit_review_full/engines/illustration_engine.py to avoid
+dependency inversion when imported from illustrate_and_publish.
+"""
 
 import logging
 from typing import Any
@@ -50,13 +54,15 @@ async def illustrate_articles(
     for output in final_outputs:
         article_id = output["id"]
         try:
-            article_result = await illustrate_graph.ainvoke({
-                "input": {
-                    "markdown_document": output["content"],
-                    "title": output["title"],
-                    "output_dir": str(illust_dir / f"{article_id}_images"),
+            article_result = await illustrate_graph.ainvoke(
+                {
+                    "input": {
+                        "markdown_document": output["content"],
+                        "title": output["title"],
+                        "output_dir": str(illust_dir / f"{article_id}_images"),
+                    }
                 }
-            })
+            )
 
             article_path = illust_dir / f"{article_id}.md"
             article_content = article_result.get("illustrated_document", output["content"])

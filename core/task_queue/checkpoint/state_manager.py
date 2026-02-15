@@ -65,10 +65,7 @@ class CheckpointStateManager:
 
             # Remove any existing checkpoint for this task
             # Handle both task_id and topic_id for backward compat
-            work["active_tasks"] = [
-                c for c in work["active_tasks"]
-                if c.get("task_id", c.get("topic_id")) != task_id
-            ]
+            work["active_tasks"] = [c for c in work["active_tasks"] if c.get("task_id", c.get("topic_id")) != task_id]
             work["active_tasks"].append(checkpoint)
             work["process_locks"][task_id] = str(os.getpid())
 
@@ -186,10 +183,7 @@ class CheckpointStateManager:
 
             work = self.storage._read_current_work_sync()
 
-            work["active_tasks"] = [
-                c for c in work["active_tasks"]
-                if c.get("task_id", c.get("topic_id")) != task_id
-            ]
+            work["active_tasks"] = [c for c in work["active_tasks"] if c.get("task_id", c.get("topic_id")) != task_id]
             work["process_locks"].pop(task_id, None)
 
             self.storage._write_current_work_sync(work)

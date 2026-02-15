@@ -1,4 +1,5 @@
 """Task management commands."""
+
 import json
 import sys
 
@@ -100,7 +101,9 @@ def cmd_add(args):
 
     print(f"Added task: {task_id}")
     print(f"  Type: {task_type}")
-    print(f"  {'Query' if task_type == 'web_research' else 'Topic'}: {identifier[:60]}{'...' if len(identifier) > 60 else ''}")
+    print(
+        f"  {'Query' if task_type == 'web_research' else 'Topic'}: {identifier[:60]}{'...' if len(identifier) > 60 else ''}"
+    )
     print(f"  Category: {category}")
     print(f"  Priority: {priority.name}")
     print(f"  Quality: {args.quality}")
@@ -181,7 +184,7 @@ def cmd_reorder(args):
     if args.export:
         data = {
             "instructions": "Reorder tasks by editing the 'order' list. Highest priority first. "
-                          "You can also edit priority values (1=low, 2=normal, 3=high, 4=urgent).",
+            "You can also edit priority values (1=low, 2=normal, 3=high, 4=urgent).",
             "tasks": [
                 {
                     "id": t["id"],

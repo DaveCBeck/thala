@@ -41,7 +41,8 @@ class PublishingScheduler:
 
         # Get existing publish_series tasks for this category
         publish_tasks = [
-            t for t in queue["topics"]
+            t
+            for t in queue["topics"]
             if t.get("task_type") == "publish_series"
             and t.get("category") == category
             and t.get("status") != TaskStatus.COMPLETED.value

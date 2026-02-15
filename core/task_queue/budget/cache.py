@@ -57,6 +57,7 @@ class CostCacheManager:
     def get_current_period(self) -> str:
         """Get current period key (project + month) for cache isolation."""
         from datetime import timezone
+
         month = datetime.now(timezone.utc).strftime("%Y-%m")
         # Include project name so different projects have separate cache entries
         return f"{self.langsmith_project}:{month}"
@@ -67,6 +68,7 @@ class CostCacheManager:
             return False
 
         from datetime import timezone
+
         last_aggregated = datetime.fromisoformat(entry["last_aggregated"])
         # Handle both naive and aware datetimes
         if last_aggregated.tzinfo is None:

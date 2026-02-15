@@ -98,8 +98,7 @@ class ShutdownCoordinator:
         except NotImplementedError:
             # Windows doesn't support add_signal_handler
             logger.warning(
-                "Signal handlers not supported on this platform. "
-                "Graceful shutdown via Ctrl+C may not work properly."
+                "Signal handlers not supported on this platform. Graceful shutdown via Ctrl+C may not work properly."
             )
 
     def remove_signal_handlers(self) -> None:

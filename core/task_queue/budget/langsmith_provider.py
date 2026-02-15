@@ -70,9 +70,8 @@ class LangSmithCostProvider:
             print("  Fetching costs from LangSmith...", end="", flush=True)
 
         from datetime import timezone
-        start_of_month = datetime.now(timezone.utc).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+
+        start_of_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         total_cost = 0.0
         token_breakdown: dict[str, int] = {}
@@ -107,9 +106,7 @@ class LangSmithCostProvider:
                 # Track token breakdown by run name (workflow type)
                 if run.total_tokens:
                     run_type = run.name or "unknown"
-                    token_breakdown[run_type] = (
-                        token_breakdown.get(run_type, 0) + run.total_tokens
-                    )
+                    token_breakdown[run_type] = token_breakdown.get(run_type, 0) + run.total_tokens
 
             if show_progress:
                 print(f" done ({run_count} traces)")
@@ -133,6 +130,7 @@ class LangSmithCostProvider:
 
         # Update cache
         from datetime import timezone
+
         now = datetime.now(timezone.utc)
 
         cache["periods"][period] = {
@@ -146,7 +144,5 @@ class LangSmithCostProvider:
         cache["last_sync"] = now.isoformat()
         self.cache_manager.write_cache(cache)
 
-        logger.info(
-            f"Month-to-date cost: {format_cost(total_cost)} ({run_count} traces)"
-        )
+        logger.info(f"Month-to-date cost: {format_cost(total_cost)} ({run_count} traces)")
         return total_cost

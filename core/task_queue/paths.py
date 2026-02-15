@@ -25,6 +25,9 @@ DAEMON_PID_FILE = QUEUE_DIR / "daemon.pid"
 DAEMON_LOG_FILE = QUEUE_DIR / "daemon.log"
 INCREMENTAL_DIR = QUEUE_DIR / "incremental"
 
+# Persistent state directory (rate limit counters, etc.)
+STATE_DIR = THALA_DIR / "state"
+
 # Output directory (was: output/ and .outputs/)
 OUTPUT_DIR = THALA_DIR / "output"
 
@@ -39,4 +42,5 @@ def ensure_directories() -> None:
     """Create .thala directory structure if it doesn't exist."""
     THALA_DIR.mkdir(exist_ok=True)
     QUEUE_DIR.mkdir(exist_ok=True)
+    STATE_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)

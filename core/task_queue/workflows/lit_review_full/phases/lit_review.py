@@ -38,12 +38,8 @@ async def run_lit_review_phase(
     )
 
     if not lit_result.get("final_report"):
-        raise RuntimeError(
-            f"Literature review failed: {lit_result.get('errors', 'Unknown error')}"
-        )
+        raise RuntimeError(f"Literature review failed: {lit_result.get('errors', 'Unknown error')}")
 
-    logger.info(
-        f"Lit review complete: {len(lit_result.get('paper_corpus', {}))} papers"
-    )
+    logger.info(f"Lit review complete: {len(lit_result.get('paper_corpus', {}))} papers")
 
     return lit_result

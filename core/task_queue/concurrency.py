@@ -19,9 +19,7 @@ class ConcurrencyValidator:
             True if a new task can start
         """
         config = queue["concurrency"]
-        in_progress = [
-            t for t in queue["topics"] if t["status"] == TaskStatus.IN_PROGRESS.value
-        ]
+        in_progress = [t for t in queue["topics"] if t["status"] == TaskStatus.IN_PROGRESS.value]
 
         if config["mode"] == "max_concurrent":
             return len(in_progress) < config["max_concurrent"]
@@ -31,11 +29,7 @@ class ConcurrencyValidator:
                 return True
 
             # Find most recently started task
-            started_times = [
-                datetime.fromisoformat(t["started_at"])
-                for t in in_progress
-                if t["started_at"]
-            ]
+            started_times = [datetime.fromisoformat(t["started_at"]) for t in in_progress if t["started_at"]]
 
             if not started_times:
                 return True

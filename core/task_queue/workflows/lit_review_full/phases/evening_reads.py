@@ -32,12 +32,8 @@ async def run_evening_reads_phase(
     series_result = await evening_reads(final_report, editorial_stance)
 
     if not series_result.get("final_outputs"):
-        raise RuntimeError(
-            f"Series generation failed: {series_result.get('errors', 'Unknown error')}"
-        )
+        raise RuntimeError(f"Series generation failed: {series_result.get('errors', 'Unknown error')}")
 
-    logger.info(
-        f"Series complete: {len(series_result.get('final_outputs', []))} articles"
-    )
+    logger.info(f"Series complete: {len(series_result.get('final_outputs', []))} articles")
 
     return series_result

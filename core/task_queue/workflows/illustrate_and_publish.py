@@ -1,0 +1,285 @@
+"""Illustrate-and-publish workflow.
+
+Budget-aware illustration + immediate Substack draft publishing.
+Spawned by lit_review_full after saving unillustrated articles to disk.
+
+This workflow:
+1. Loads the manifest written by lit_review_full
+2. For each article (that isn't already done):
+   a. Checks daily Imagen budget via try_acquire()
+   b. Illustrates the article
+   c. Publishes as a Substack draft
+   d. Persists per-article progress
+3. Defers with next_run_after when budget exhausted
+4. Completes when all articles are illustrated and drafted
+"""
+
+import json
+import logging
+import shutil
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Optional
+
+from langsmith import traceable
+
+from .base import BaseWorkflow
+
+logger = logging.getLogger(__name__)
+
+# Hours to wait before retrying after budget exhaustion
+DEFER_HOURS = 3
+
+
+class IllustrateAndPublishWorkflow(BaseWorkflow):
+    """Budget-aware illustration and draft publishing workflow."""
+
+    @property
+    def task_type(self) -> str:
+        return "illustrate_and_publish"
+
+    @property
+    def phases(self) -> list[str]:
+        return ["processing", "complete"]
+
+    @property
+    def is_zero_cost(self) -> bool:
+        """Uses Sonnet for prompt generation and vision comparison."""
+        return False
+
+    @property
+    def bypass_concurrency(self) -> bool:
+        """Manages own scheduling via DEFERRED status."""
+        return True
+
+    def get_task_identifier(self, task: dict[str, Any]) -> str:
+        source_id = task.get("source_task_id", "unknown")[:8]
+        topic = task.get("topic", "unknown")[:40]
+        return f"illustrate({source_id}): {topic}"
+
+    @traceable(run_type="chain", name="Task_IllustrateAndPublish")
+    async def run(
+        self,
+        task: dict[str, Any],
+        checkpoint_callback: Callable[[str], None],
+        resume_from: Optional[dict] = None,
+        *,
+        flush_checkpoints: Optional[Callable[[], Awaitable[None]]] = None,
+        update_items_callback: Optional[Callable[[str, list[dict]], Awaitable[None]]] = None,
+    ) -> dict[str, Any]:
+        """Run the illustrate-and-publish workflow.
+
+        Args:
+            task: IllustrateAndPublishTask with items, manifest_path, etc.
+            checkpoint_callback: Progress callback
+            resume_from: Optional checkpoint for resumption
+            flush_checkpoints: Async function to await pending checkpoint writes
+            update_items_callback: Async callback to persist item updates to queue
+
+        Returns:
+            Dict with status (success/deferred/failed), plus details
+        """
+        from core.task_queue.rate_limits import get_imagen_daily_tracker
+        from workflows.output.illustrate import illustrate_graph
+
+        checkpoint_callback("processing")
+
+        items = task["items"]
+        manifest_path = task.get("manifest_path")
+        category = task.get("category", "")
+
+        # Load manifest for metadata
+        manifest = self._load_manifest(manifest_path)
+        if not manifest:
+            return {"status": "failed", "errors": [{"phase": "processing", "error": "Manifest not found or invalid"}]}
+
+        output_dir = Path(manifest["output_dir"])
+
+        # Fast-fail: check if any budget remains
+        daily_tracker = get_imagen_daily_tracker()
+        unillustrated = [i for i in items if not i.get("illustrated")]
+        if unillustrated:
+            remaining = await daily_tracker.remaining()
+            if remaining == 0:
+                next_run = (datetime.now(timezone.utc) + timedelta(hours=DEFER_HOURS)).isoformat()
+                logger.info(f"No daily budget remaining, deferring {len(unillustrated)} articles")
+                return {"status": "deferred", "next_run_after": next_run}
+
+        # Per-article loop: illustrate → publish → checkpoint
+        errors = []
+        progress_made = False
+
+        for item in items:
+            # Skip fully completed items
+            if item.get("draft_id"):
+                continue
+
+            # Illustrate if not yet done
+            if not item.get("illustrated"):
+                # Non-consuming check only — the actual try_acquire() happens
+                # inside generate_article_header() (image_utils.py) which is
+                # the single source of truth for daily budget consumption.
+                if await daily_tracker.remaining() < 1:
+                    logger.info("Daily budget exhausted after illustrating some articles")
+                    break
+
+                try:
+                    illustrated_path = await self._illustrate_article(item, output_dir, illustrate_graph)
+                    item["illustrated"] = True
+                    item["illustrated_path"] = str(illustrated_path)
+                    progress_made = True
+                except Exception as e:
+                    logger.error(f"Failed to illustrate {item['id']}: {e}")
+                    errors.append({"item": item["id"], "error": str(e)})
+                    # Save unillustrated version as fallback
+                    source = Path(item["source_path"])
+                    if source.exists():
+                        fallback_path = output_dir / f"{item['id']}_unillustrated.md"
+                        fallback_path.write_text(source.read_text())
+                        item["illustrated"] = True
+                        item["illustrated_path"] = str(fallback_path)
+                        progress_made = True
+
+            # Publish (whether just illustrated or previously illustrated but not drafted)
+            if item.get("illustrated") and not item.get("draft_id"):
+                try:
+                    draft_result = await self._publish_draft(item, category)
+                    item["draft_id"] = draft_result.get("post_id")
+                    item["draft_url"] = draft_result.get("draft_url")
+                    progress_made = True
+                except Exception as e:
+                    logger.error(f"Failed to publish {item['id']}: {e}")
+                    errors.append({"item": item["id"], "error": str(e)})
+
+            # Persist progress after each article
+            if flush_checkpoints:
+                await flush_checkpoints()
+            if update_items_callback:
+                await update_items_callback(task["id"], items)
+            checkpoint_callback("processing", phase_outputs={"last_item": item["id"]})
+
+        # Status determination
+        all_done = all(i.get("draft_id") for i in items)
+        if all_done:
+            # Clean up source directory on success
+            self._cleanup_source_dir(output_dir)
+            return {"status": "success", "items": items}
+
+        remaining_items = [i for i in items if not i.get("draft_id")]
+        if progress_made or not errors:
+            # Still work to do — defer for later
+            next_run = (datetime.now(timezone.utc) + timedelta(hours=DEFER_HOURS)).isoformat()
+            logger.info(f"Deferring {len(remaining_items)} remaining articles until {next_run}")
+            return {"status": "deferred", "next_run_after": next_run, "items": items}
+
+        return {"status": "failed", "errors": errors, "items": items}
+
+    def save_outputs(
+        self,
+        task: dict[str, Any],
+        result: dict[str, Any],
+    ) -> dict[str, str]:
+        """No additional outputs to save — articles saved during processing."""
+        return {}
+
+    def _load_manifest(self, manifest_path: str | None) -> dict | None:
+        """Load and validate manifest.json."""
+        if not manifest_path:
+            return None
+        path = Path(manifest_path)
+        if not path.exists():
+            logger.error(f"Manifest not found: {manifest_path}")
+            return None
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to load manifest: {e}")
+            return None
+
+    async def _illustrate_article(self, item: dict, output_dir: Path, illustrate_graph: Any) -> Path:
+        """Illustrate a single article and save to disk.
+
+        Args:
+            item: Article metadata dict with source_path, title, id.
+            output_dir: Directory to write illustrated output into.
+            illustrate_graph: LangGraph CompiledGraph for illustration pipeline.
+        """
+        source_path = Path(item["source_path"])
+        content = source_path.read_text()
+
+        article_result = await illustrate_graph.ainvoke(
+            {
+                "input": {
+                    "markdown_document": content,
+                    "title": item["title"],
+                    "output_dir": str(output_dir / f"{item['id']}_images"),
+                }
+            }
+        )
+
+        illustrated_content = article_result.get("illustrated_document", content)
+        illustrated_path = output_dir / f"{item['id']}_illustrated.md"
+        illustrated_path.write_text(illustrated_content)
+
+        logger.info(f"Illustrated article: {item['title'][:50]}")
+        return illustrated_path
+
+    async def _publish_draft(self, item: dict, category: str) -> dict:
+        """Publish an illustrated article as a Substack draft."""
+        import asyncio
+
+        from core.task_queue.paths import SUBSTACK_COOKIES_FILE
+        from core.task_queue.workflows.shared.publication_config import load_publication_config
+        from utils.substack_publish import SubstackConfig, SubstackPublisher
+
+        # Load publication config for this category
+        pub_config = load_publication_config(category)
+
+        # Read illustrated content
+        content_path = Path(item.get("illustrated_path", item["source_path"]))
+        content = content_path.read_text()
+
+        # Determine audience: overview is "everyone", others could vary
+        audience = "everyone"
+        if item["id"] == "lit_review":
+            audience = "only_paid"
+
+        config = SubstackConfig(
+            cookies_path=str(SUBSTACK_COOKIES_FILE),
+            publication_url=pub_config.get("publication_url"),
+            audience=audience,
+        )
+        publisher = SubstackPublisher(config)
+
+        # SubstackPublisher.create_draft is sync — run in thread
+        result = await asyncio.to_thread(
+            publisher.create_draft,
+            markdown=content,
+            title=item["title"],
+        )
+
+        if not result.get("success"):
+            raise RuntimeError(f"Draft creation failed: {result.get('error', 'unknown')}")
+
+        logger.info(f"Published draft: {item['title'][:50]} -> {result.get('draft_url')}")
+        return result
+
+    def _cleanup_source_dir(self, output_dir: Path) -> None:
+        """Remove the unillustrated source directory after successful completion.
+
+        Safety: the ``"unillustrated_"`` substring check guards against
+        accidentally deleting directories that were not created by
+        ``save_and_spawn``.  The naming convention is enforced at
+        creation time in ``save_and_spawn.py`` which always uses the
+        ``unillustrated_<topic_slug>_<timestamp>`` pattern.  Because
+        this workflow only receives paths from that producer, a simple
+        name-based check is sufficient -- no secondary bookkeeping or
+        marker files are needed.
+        """
+        try:
+            if output_dir.exists() and "unillustrated_" in output_dir.name:
+                shutil.rmtree(output_dir)
+                logger.info(f"Cleaned up source directory: {output_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up {output_dir}: {e}")

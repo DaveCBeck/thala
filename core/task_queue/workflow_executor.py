@@ -20,7 +20,8 @@ from .budget_tracker import BudgetTracker
 from .checkpoint import CheckpointManager
 from .task_context import clear_task_context, set_task_context
 from .queue_manager import TaskQueueManager
-from .schemas import Task, WorkflowCheckpoint
+from .schemas import Task, TaskStatus, WorkflowCheckpoint
+from .schemas.enums import TaskType
 from .shutdown import ShutdownCoordinator
 from .workflows import get_workflow, DEFAULT_WORKFLOW_TYPE
 
@@ -142,8 +143,15 @@ async def run_task_workflow(
                         logger.error(f"Checkpoint flush write {i} failed: {result}")
                 pending_checkpoint_tasks.clear()
 
-        # Run the workflow (pass shutdown_coordinator if workflow supports it)
-        result = await workflow.run(task, checkpoint_callback, resume_from, flush_checkpoints=flush_pending_checkpoints)
+        # Callback for workflows that persist per-item progress (e.g. illustrate_and_publish)
+        async def update_items_callback(tid: str, items: list[dict]) -> None:
+            await asyncio.to_thread(queue_manager.update_task, tid, items=items)
+
+        # Run the workflow
+        run_kwargs: dict = {"flush_checkpoints": flush_pending_checkpoints}
+        if task_type == TaskType.ILLUSTRATE_AND_PUBLISH.value:
+            run_kwargs["update_items_callback"] = update_items_callback
+        result = await workflow.run(task, checkpoint_callback, resume_from, **run_kwargs)
 
         # Save outputs
         checkpoint_callback("saving")
@@ -156,16 +164,36 @@ async def run_task_workflow(
         # Ensure all pending checkpoint writes complete before marking done
         await await_pending_checkpoints()
 
-        # Mark complete or failed
-        if result.get("status") == "success":
+        # Handle workflow result status
+        result_status = result.get("status")
+        if result_status == "success":
             await asyncio.to_thread(queue_manager.mark_completed, task_id)
             await checkpoint_mgr.complete_work(task_id)
             logger.info(f"Task {task_id[:8]} completed successfully")
-        elif result.get("status") == "partial":
+        elif result_status == "partial":
             # Partial success - mark complete but log warnings
             await asyncio.to_thread(queue_manager.mark_completed, task_id)
             await checkpoint_mgr.complete_work(task_id)
             logger.warning(f"Task {task_id[:8]} completed with errors: {result.get('errors')}")
+        elif result_status == "deferred":
+            next_run = result.get("next_run_after")
+            await asyncio.to_thread(
+                queue_manager.update_task,
+                task_id,
+                status=TaskStatus.DEFERRED.value,
+                next_run_after=next_run,
+                started_at=None,
+            )
+            # Clear checkpoint — illustrate_and_publish stores resumption state
+            # in task["items"], not checkpoint phase_outputs. Leaving a stale
+            # checkpoint with a dead PID would cause double-scheduling via
+            # get_incomplete_work() in addition to DEFERRED status selection.
+            await checkpoint_mgr.complete_work(task_id)
+            logger.info(f"Task {task_id[:8]} deferred until {next_run}")
+        elif result_status == "waiting":
+            # publish_series returns "waiting" when items aren't due yet.
+            # Don't mark as failed — task will be retried on next run.
+            logger.info(f"Task {task_id[:8]} waiting — no items due")
         else:
             error = str(result.get("errors", "Unknown error"))
             await asyncio.to_thread(queue_manager.mark_failed, task_id, error)

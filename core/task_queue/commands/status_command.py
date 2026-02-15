@@ -1,4 +1,5 @@
 """Status command implementation."""
+
 import asyncio
 
 from ..budget_tracker import BudgetTracker
@@ -28,6 +29,7 @@ def cmd_status(args):
     except Exception as e:
         print(f"  Error getting budget: {e}")
         import traceback
+
         traceback.print_exc()
         status = None
 

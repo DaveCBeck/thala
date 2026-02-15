@@ -73,9 +73,6 @@ async def run_enhancement_phase(
     else:
         final_report = enhance_result.get("final_report", lit_result["final_report"])
 
-    logger.info(
-        f"Enhancement complete: status={enhance_result.get('status')}, "
-        f"report_length={len(final_report)}"
-    )
+    logger.info(f"Enhancement complete: status={enhance_result.get('status')}, report_length={len(final_report)}")
 
     return enhance_result, final_report

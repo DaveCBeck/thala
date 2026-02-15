@@ -104,8 +104,7 @@ class CheckpointStorage:
         except json.JSONDecodeError as e:
             # File corrupted (likely from interrupted write during CTRL-C)
             logger.warning(
-                f"Corrupted checkpoint file {self.current_work_file}: {e}. "
-                "Starting fresh with no incomplete work."
+                f"Corrupted checkpoint file {self.current_work_file}: {e}. Starting fresh with no incomplete work."
             )
             # Back up corrupted file for debugging
             backup_path = self.current_work_file.with_suffix(".corrupted")
@@ -144,6 +143,7 @@ class CheckpointStorage:
             archive_path = self.current_work_file.with_suffix(".previous.json")
             try:
                 import shutil
+
                 shutil.copy2(self.current_work_file, archive_path)
                 logger.debug(f"Archived checkpoint to {archive_path}")
             except OSError as e:

@@ -1,6 +1,7 @@
 """Task scheduling with round-robin category selection."""
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -41,10 +42,22 @@ class TaskScheduler:
         if not self.validator.can_start_new_task(queue):
             return None
 
-        # Get pending tasks
-        pending = [
-            t for t in queue["topics"] if t["status"] == TaskStatus.PENDING.value
-        ]
+        # Get pending + eligible deferred tasks
+        now = datetime.now(timezone.utc)
+        pending = []
+        for t in queue["topics"]:
+            if t["status"] == TaskStatus.PENDING.value:
+                pending.append(t)
+            elif t["status"] == TaskStatus.DEFERRED.value:
+                next_run = t.get("next_run_after")
+                if not next_run:
+                    pending.append(t)
+                else:
+                    try:
+                        if now >= datetime.fromisoformat(next_run):
+                            pending.append(t)
+                    except (ValueError, TypeError):
+                        pending.append(t)
 
         if not pending:
             return None
