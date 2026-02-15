@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.quality_config import QualityTier
 from workflows.research.web_research.state import (
     DeepResearchState,
@@ -154,13 +155,15 @@ async def deep_research(
         config={
             "recursion_limit": recursion_limit,
             "run_id": run_id,
-            "run_name": f"deep_research:{query[:30]}",
+            "run_name": f"deep_research:{query[:60]}",
             "tags": [
                 f"quality:{quality}",
                 "workflow:web_research",
                 f"lang:{primary_lang}",
+                *get_trace_tags(),
             ],
             "metadata": {
+                **get_trace_metadata(),
                 "topic": query[:100],
                 "quality_tier": quality,
                 "language": primary_lang,

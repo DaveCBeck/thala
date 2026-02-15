@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Optional
 
+from langsmith import traceable
+
 from .base import BaseWorkflow
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ class WebResearchWorkflow(BaseWorkflow):
         except ValueError:
             return set()
 
+    @traceable(run_type="chain", name="Task_WebResearch")
     async def run(
         self,
         task: dict[str, Any],
@@ -61,7 +64,7 @@ class WebResearchWorkflow(BaseWorkflow):
         """
         # Import workflows here to avoid circular imports
         from workflows.research.web_research import deep_research
-        from workflows.output.evening_reads import evening_reads_graph
+        from workflows.output.evening_reads import evening_reads
 
         query = task.get("query") or task.get("topic")  # Support both field names
         quality = task.get("quality", "standard")
@@ -139,12 +142,9 @@ class WebResearchWorkflow(BaseWorkflow):
                 logger.info(f"Using editorial stance for category: {task.get('category')}")
 
             try:
-                series_result = await evening_reads_graph.ainvoke({
-                    "input": {
-                        "literature_review": research_result["final_report"],
-                        "editorial_stance": editorial_stance,
-                    }
-                })
+                series_result = await evening_reads(
+                    research_result["final_report"], editorial_stance
+                )
 
                 if not series_result.get("final_outputs"):
                     raise RuntimeError(

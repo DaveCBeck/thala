@@ -7,6 +7,8 @@ import asyncio
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.shared.image_utils import generate_article_header
 
 from ..state import EveningReadsState, ImageOutput
@@ -14,6 +16,7 @@ from ..state import EveningReadsState, ImageOutput
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="EveningReads_GenerateImages")
 async def generate_images_node(state: EveningReadsState) -> dict[str, Any]:
     """Generate header images for all articles.
 

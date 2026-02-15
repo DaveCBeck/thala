@@ -3,6 +3,8 @@
 import logging
 import re
 
+from langsmith import traceable
+
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
@@ -32,6 +34,7 @@ def _extract_title_from_markdown(content: str) -> str:
     return "Untitled Document"
 
 
+@traceable(run_type="chain", name="Illustrate_CreativeDirection")
 async def creative_direction_node(state: IllustrateState) -> dict:
     """Pass 1: Establish visual identity and identify image opportunities.
 

@@ -3,6 +3,8 @@
 import json
 import logging
 
+from langsmith import traceable
+
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
@@ -93,6 +95,7 @@ def _briefs_to_image_plan(
     return plans
 
 
+@traceable(run_type="chain", name="Illustrate_PlanBriefs")
 async def plan_briefs_node(state: IllustrateState) -> dict:
     """Pass 2: Generate candidate briefs for each image opportunity.
 

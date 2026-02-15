@@ -7,6 +7,8 @@ identifies the weakest for cutting. This is the N-from-N+2 quality gate.
 import base64
 import logging
 
+from langsmith import traceable
+
 from workflows.shared.llm_utils import ModelTier, get_llm
 
 from ..schemas import EditorialReviewResult, ImageOpportunity
@@ -55,6 +57,7 @@ def _compute_cuts_count(
     return max(0, min(2, surplus))
 
 
+@traceable(run_type="chain", name="Illustrate_EditorialReview")
 async def editorial_review_node(state: IllustrateState) -> dict:
     """Vision-based editorial review of the full illustrated document.
 

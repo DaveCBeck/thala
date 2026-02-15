@@ -10,6 +10,7 @@ from typing import Any, Literal
 from langsmith import traceable
 
 from core.task_queue.schemas import IncrementalCheckpointCallback
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.enhance.supervision.builder import create_enhancement_graph
 from workflows.enhance.supervision.types import EnhanceInput, EnhanceResult, EnhanceState
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
@@ -145,10 +146,31 @@ async def enhance_report(
     # Create and run the graph
     graph = create_enhancement_graph(loops=loops)
 
+    # Always build tracing config; merge caller's config if provided
+    trace_config = {
+        "run_name": f"supervision:{topic[:60]}",
+        "tags": [
+            f"quality:{quality}",
+            "workflow:supervision",
+            *get_trace_tags(),
+        ],
+        "metadata": {
+            **get_trace_metadata(),
+            "topic": topic[:100],
+            "quality_tier": quality,
+            "loops": loops,
+        },
+    }
     if config:
-        final_state = await graph.ainvoke(initial_state, config=config)
-    else:
-        final_state = await graph.ainvoke(initial_state)
+        for key, value in config.items():
+            if key == "tags" and isinstance(value, list):
+                trace_config["tags"].extend(value)
+            elif key == "metadata" and isinstance(value, dict):
+                trace_config["metadata"].update(value)
+            else:
+                trace_config[key] = value
+
+    final_state = await graph.ainvoke(initial_state, config=trace_config)
 
     # Extract loops that were run from progress
     loops_run = [entry.get("loop", "unknown") for entry in final_state.get("loop_progress", [])]

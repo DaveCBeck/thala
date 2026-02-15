@@ -7,6 +7,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.quality_config import QualityTier
 
 from ..quality_presets import EDITING_QUALITY_PRESETS
@@ -89,13 +90,15 @@ async def editing(
             initial_state,
             config={
                 "run_id": run_id,
-                "run_name": f"editing:{topic[:30]}",
+                "run_name": f"editing:{topic[:60]}",
                 "recursion_limit": 100,  # Higher limit for many parallel sections
                 "tags": [
                     f"quality:{quality}",
                     "workflow:editing",
+                    *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": topic[:100],
                     "quality_tier": quality,
                     "doc_length": len(document),

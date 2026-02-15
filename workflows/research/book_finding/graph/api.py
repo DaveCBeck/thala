@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.language import get_language_config
 from workflows.shared.quality_config import QualityTier
 from workflows.shared.workflow_state_store import save_workflow_state
@@ -114,13 +115,15 @@ async def book_finding(
             initial_state,
             config={
                 "run_id": run_id,
-                "run_name": f"books:{theme[:30]}",
+                "run_name": f"books:{theme[:60]}",
                 "tags": [
                     f"quality:{quality}",
                     "workflow:book_finding",
                     f"lang:{language}",
+                    *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": theme[:100],
                     "quality_tier": quality,
                     "language": language,

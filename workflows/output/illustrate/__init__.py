@@ -25,6 +25,8 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
+
 from .config import IllustrateConfig
 from .graph import illustrate_graph
 from .schemas import ImageLocationPlan
@@ -59,6 +61,7 @@ async def illustrate_document(
         - status: "success", "partial", or "failed"
         - errors: Any errors encountered
     """
+    display_title = (title or "Untitled")[:60]
     result = await illustrate_graph.ainvoke(
         {
             "input": {
@@ -67,7 +70,18 @@ async def illustrate_document(
                 "output_dir": output_dir,
             },
             "config": options or IllustrateConfig(),
-        }
+        },
+        config={
+            "run_name": f"illustrate:{display_title}",
+            "tags": [
+                "workflow:illustrate",
+                *get_trace_tags(),
+            ],
+            "metadata": {
+                **get_trace_metadata(),
+                "topic": (title or "Untitled")[:100],
+            },
+        },
     )
     return result
 

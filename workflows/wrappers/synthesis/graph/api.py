@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.quality_config import QualityTier
 from workflows.shared.workflow_state_store import save_workflow_state
 from workflows.wrappers.synthesis.state import SynthesisInput, SynthesisState
@@ -143,14 +144,16 @@ async def synthesis(
             initial_state,
             config={
                 "run_id": run_id,
-                "run_name": f"synthesis:{topic[:30]}",
+                "run_name": f"synthesis:{topic[:60]}",
                 "recursion_limit": 200,  # Higher limit for many parallel workers
                 "tags": [
                     f"quality:{quality}",
                     "workflow:synthesis",
                     f"lang:{language}",
+                    *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": topic[:100],
                     "quality_tier": quality,
                     "question_count": len(research_questions),

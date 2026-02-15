@@ -8,6 +8,8 @@ import logging
 import re
 from typing import Any
 
+from langsmith import traceable
+
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
@@ -62,6 +64,7 @@ def _format_deep_dive_list(drafts: list[DeepDiveDraft]) -> str:
     return "\n".join(items)
 
 
+@traceable(run_type="chain", name="EveningReads_WriteOverview")
 async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     """Write the overview article.
 
