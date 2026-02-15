@@ -17,7 +17,16 @@ from .checkpoints import CurrentWork, WorkflowCheckpoint
 from .config import ConcurrencyConfig, TaskQueue
 from .cost import CostCache, CostEntry, IncrementalState
 from .enums import TaskCategory, TaskPriority, TaskStatus, TaskType
-from .tasks import PublishItem, PublishSeriesTask, Task, TopicTask, WebResearchTask
+from .tasks import (
+    IllustrateAndPublishTask,
+    IllustratePublishItem,
+    IllustratePublishManifest,
+    PublishItem,
+    PublishSeriesTask,
+    Task,
+    TopicTask,
+    WebResearchTask,
+)
 
 __all__ = [
     # Callbacks
@@ -33,6 +42,9 @@ __all__ = [
     "WebResearchTask",
     "PublishItem",
     "PublishSeriesTask",
+    "IllustratePublishManifest",
+    "IllustratePublishItem",
+    "IllustrateAndPublishTask",
     "Task",
     # Config
     "ConcurrencyConfig",

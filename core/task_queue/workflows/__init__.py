@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     pass
 
 # Import workflow implementations
+from .illustrate_and_publish import IllustrateAndPublishWorkflow
 from .lit_review_full import LitReviewFullWorkflow
 from .publish_series import PublishSeriesWorkflow
 from .web_research import WebResearchWorkflow
@@ -33,6 +34,7 @@ WORKFLOW_REGISTRY: dict[str, type[BaseWorkflow]] = {
     "lit_review_full": LitReviewFullWorkflow,
     "publish_series": PublishSeriesWorkflow,
     "web_research": WebResearchWorkflow,
+    "illustrate_and_publish": IllustrateAndPublishWorkflow,
 }
 
 # Default workflow type for backward compatibility
@@ -85,6 +87,7 @@ __all__ = [
     "get_workflow",
     "get_phases",
     "get_available_types",
+    "IllustrateAndPublishWorkflow",
     "LitReviewFullWorkflow",
     "PublishSeriesWorkflow",
     "WebResearchWorkflow",

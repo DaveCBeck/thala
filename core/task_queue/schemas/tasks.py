@@ -115,5 +115,65 @@ class PublishSeriesTask(TypedDict):
     tags: list[str]  # Searchable tags
 
 
+class IllustratePublishManifest(TypedDict):
+    """Schema for the manifest.json written by lit_review_full save_and_spawn phase.
+
+    Makes the inter-workflow contract explicit and testable.
+    """
+
+    topic: str
+    category: str
+    quality: str
+    source_task_id: str
+    output_dir: str  # Absolute path to unillustrated directory
+    articles: list[dict]  # [{id, title, filename}, ...]
+
+
+class IllustratePublishItem(TypedDict):
+    """A single article in an illustrate_and_publish task."""
+
+    id: str  # "overview", "deep_dive_1", etc.
+    title: str
+    source_path: str  # Path to unillustrated markdown
+    illustrated: bool  # Has illustration completed?
+    illustrated_path: Optional[str]  # Path to illustrated markdown (once done)
+    draft_id: Optional[str]  # Substack draft ID (once published)
+    draft_url: Optional[str]  # Substack draft URL (once published)
+
+
+class IllustrateAndPublishTask(TypedDict):
+    """An illustrate-and-publish task in the queue.
+
+    Budget-aware illustration + immediate Substack draft publishing.
+    Spawned by lit_review_full after saving unillustrated articles.
+    """
+
+    id: str
+    task_type: str  # "illustrate_and_publish"
+    status: str
+    category: str
+    priority: int
+    quality: str
+    source_task_id: str  # Parent lit_review_full task ID
+    topic: str
+    manifest_path: str  # Path to manifest.json
+    items: list[IllustratePublishItem]
+    next_run_after: Optional[str]  # ISO datetime for DEFERRED scheduling
+
+    # Timestamps (ISO format)
+    created_at: str
+    started_at: Optional[str]
+    completed_at: Optional[str]
+
+    # Workflow tracking
+    langsmith_run_id: Optional[str]
+    current_phase: Optional[str]
+    error_message: Optional[str]
+
+    # Metadata
+    notes: Optional[str]
+    tags: list[str]
+
+
 # Union type for all task types
-Task = Union[TopicTask, WebResearchTask, PublishSeriesTask]
+Task = Union[TopicTask, WebResearchTask, PublishSeriesTask, IllustrateAndPublishTask]

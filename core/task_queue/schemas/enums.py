@@ -9,9 +9,10 @@ class TaskType(Enum):
     Each task type maps to a workflow implementation in core/task_queue/workflows/.
     """
 
-    LIT_REVIEW_FULL = "lit_review_full"  # lit_review → enhance → evening_reads → illustrate
+    LIT_REVIEW_FULL = "lit_review_full"  # lit_review → enhance → evening_reads → save_and_spawn
     WEB_RESEARCH = "web_research"  # deep_research → evening_reads
-    PUBLISH_SERIES = "publish_series"  # Schedule-aware draft publishing
+    PUBLISH_SERIES = "publish_series"  # Schedule-aware draft publishing (deprecated)
+    ILLUSTRATE_AND_PUBLISH = "illustrate_and_publish"  # Budget-aware illustration + draft publishing
 
 
 class TaskStatus(Enum):

@@ -142,8 +142,15 @@ async def run_task_workflow(
                         logger.error(f"Checkpoint flush write {i} failed: {result}")
                 pending_checkpoint_tasks.clear()
 
-        # Run the workflow (pass shutdown_coordinator if workflow supports it)
-        result = await workflow.run(task, checkpoint_callback, resume_from, flush_checkpoints=flush_pending_checkpoints)
+        # Callback for workflows that persist per-item progress (e.g. illustrate_and_publish)
+        async def update_items_callback(tid: str, items: list[dict]) -> None:
+            await asyncio.to_thread(queue_manager.update_task, tid, items=items)
+
+        # Run the workflow
+        run_kwargs: dict = {"flush_checkpoints": flush_pending_checkpoints}
+        if task_type == "illustrate_and_publish":
+            run_kwargs["update_items_callback"] = update_items_callback
+        result = await workflow.run(task, checkpoint_callback, resume_from, **run_kwargs)
 
         # Save outputs
         checkpoint_callback("saving")
