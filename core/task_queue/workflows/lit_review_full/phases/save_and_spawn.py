@@ -3,11 +3,11 @@
 import asyncio
 import json
 import logging
-import os
-import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from core.task_queue.utils import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +16,8 @@ async def run_save_and_spawn_phase(
     task: dict[str, Any],
     final_report: str,
     final_outputs: list[dict],
-    get_output_dir_fn,
-    slugify_fn,
+    get_output_dir_fn: Callable[[], Path],
+    slugify_fn: Callable[[str], str],
 ) -> dict[str, Any]:
     """Save unillustrated articles to disk, publish lit review as draft, spawn illustrate_and_publish task.
 
@@ -36,7 +36,7 @@ async def run_save_and_spawn_phase(
     category = task.get("category", "")
     quality = task.get("quality", "standard")
     topic_slug = slugify_fn(topic)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     # Create output directory with task ID to prevent collisions
     output_dir = get_output_dir_fn()
@@ -73,7 +73,7 @@ async def run_save_and_spawn_phase(
         "articles": articles,
     }
     manifest_path = unillust_dir / "manifest.json"
-    _write_atomic(manifest_path, manifest)
+    write_json_atomic(manifest_path, manifest, indent=2)
     logger.info(f"Wrote manifest with {len(articles)} articles")
 
     # Publish lit review as Substack draft (audience: only_paid)
@@ -84,7 +84,7 @@ async def run_save_and_spawn_phase(
         logger.error(f"Failed to publish lit review draft: {e}")
 
     # Spawn illustrate_and_publish task
-    illustrate_task_id = _spawn_illustrate_task(
+    illustrate_task_id = await _spawn_illustrate_task(
         task=task,
         manifest_path=str(manifest_path),
         unillust_dir=unillust_dir,
@@ -97,21 +97,6 @@ async def run_save_and_spawn_phase(
         "lit_review_draft_url": lit_review_draft_url,
         "output_dir": str(unillust_dir),
     }
-
-
-def _write_atomic(path: Path, data: dict) -> None:
-    """Write JSON atomically via temp file + rename."""
-    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2)
-        Path(tmp_path).rename(path)
-    except Exception:
-        try:
-            Path(tmp_path).unlink(missing_ok=True)
-        except Exception:
-            pass
-        raise
 
 
 async def _publish_lit_review_draft(content: str, topic: str, category: str) -> str | None:
@@ -149,7 +134,7 @@ async def _publish_lit_review_draft(content: str, topic: str, category: str) -> 
         return None
 
 
-def _spawn_illustrate_task(
+async def _spawn_illustrate_task(
     task: dict[str, Any],
     manifest_path: str,
     unillust_dir: Path,
@@ -178,7 +163,8 @@ def _spawn_illustrate_task(
         )
 
     queue = TaskQueueManager()
-    return queue.add_task(
+    return await asyncio.to_thread(
+        queue.add_task,
         task_type="illustrate_and_publish",
         category=task["category"],
         priority=task["priority"],

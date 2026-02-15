@@ -15,11 +15,11 @@ import fcntl
 import json
 import logging
 import os
-import tempfile
 from datetime import date
 from pathlib import Path
 
 from .paths import STATE_DIR
+from .utils import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ class ImagenDailyTracker:
             if data["count"] >= self._limit:
                 return False
             data["count"] += 1
-            self._write_state_atomic(data)
+            write_json_atomic(self._state_file, data)
             return True
 
     def _remaining_sync(self) -> int:
@@ -133,27 +133,13 @@ class ImagenDailyTracker:
         except (FileNotFoundError, json.JSONDecodeError, ValueError):
             return {"date": _today_str(), "count": 0}
 
-    def _write_state_atomic(self, data: dict) -> None:
-        """Write state via temp file + rename for atomicity."""
-        fd, tmp_path = tempfile.mkstemp(dir=str(self._state_dir), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(data, f)
-            Path(tmp_path).rename(self._state_file)
-        except Exception:
-            # Clean up temp file on error
-            try:
-                Path(tmp_path).unlink(missing_ok=True)
-            except Exception:
-                pass
-            raise
-
 
 class _FileLock:
     """Simple context manager wrapping fcntl.flock."""
 
     def __init__(self, path: Path):
         self._path = path
+        self._fd: int | None = None
 
     def __enter__(self):
         self._path.touch(exist_ok=True)
@@ -189,7 +175,7 @@ class ImagenRPMLimiter:
         """Wait until a token is available, then consume it."""
         while True:
             async with self._lock:
-                now = asyncio.get_event_loop().time()
+                now = asyncio.get_running_loop().time()
                 if self._last_refill == 0.0:
                     self._last_refill = now
                 elapsed = now - self._last_refill

@@ -156,8 +156,10 @@ class TestIllustrateAndPublishWorkflow:
         """Workflow defers after illustrating some articles when budget exhausted mid-loop."""
         manifest_path = _make_manifest(tmp_path)
         task = _make_task(tmp_path, manifest_path)
-        # First acquire succeeds, second fails
-        tracker = _mock_daily_tracker(remaining=1, acquire_results=[True, False])
+        # remaining() is called per-article as a non-consuming check.
+        # First article: remaining=1 (proceed), second article: remaining=0 (break).
+        tracker = _mock_daily_tracker(remaining=1)
+        tracker.remaining = AsyncMock(side_effect=[1, 1, 0])
 
         async def mock_publish(item, category):
             return {"post_id": f"draft-{item['id']}", "draft_url": f"https://example.com/{item['id']}"}
@@ -235,6 +237,6 @@ class TestIllustrateAndPublishWorkflow:
 
     def test_properties(self, workflow):
         assert workflow.task_type == "illustrate_and_publish"
-        assert workflow.is_zero_cost is True
+        assert workflow.is_zero_cost is False
         assert workflow.bypass_concurrency is True
         assert workflow.phases == ["processing", "complete"]

@@ -21,6 +21,7 @@ from .checkpoint import CheckpointManager
 from .task_context import clear_task_context, set_task_context
 from .queue_manager import TaskQueueManager
 from .schemas import Task, TaskStatus, WorkflowCheckpoint
+from .schemas.enums import TaskType
 from .shutdown import ShutdownCoordinator
 from .workflows import get_workflow, DEFAULT_WORKFLOW_TYPE
 
@@ -148,7 +149,7 @@ async def run_task_workflow(
 
         # Run the workflow
         run_kwargs: dict = {"flush_checkpoints": flush_pending_checkpoints}
-        if task_type == "illustrate_and_publish":
+        if task_type == TaskType.ILLUSTRATE_AND_PUBLISH.value:
             run_kwargs["update_items_callback"] = update_items_callback
         result = await workflow.run(task, checkpoint_callback, resume_from, **run_kwargs)
 

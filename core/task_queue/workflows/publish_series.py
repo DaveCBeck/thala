@@ -10,7 +10,6 @@ This workflow:
 4. Completes when all items have been published
 """
 
-import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -191,28 +190,12 @@ class PublishSeriesWorkflow(BaseWorkflow):
     def _load_publication_config(self, category: str) -> dict:
         """Load publication config for a category.
 
-        Args:
-            category: Task category (e.g., "technology")
-
-        Returns:
-            Dict with publication_url, subdomain, etc.
+        Delegates to the shared helper in
+        ``core.task_queue.workflows.shared.publication_config``.
         """
-        if not PUBLICATIONS_CONFIG.exists():
-            logger.warning(f"Publications config not found: {PUBLICATIONS_CONFIG}")
-            return {}
+        from core.task_queue.workflows.shared.publication_config import load_publication_config
 
-        with open(PUBLICATIONS_CONFIG) as f:
-            pubs = json.load(f)
-
-        # Return config for category, or first available
-        if category in pubs:
-            return pubs[category]
-
-        # Fallback to first category
-        if pubs:
-            return next(iter(pubs.values()))
-
-        return {}
+        return load_publication_config(category)
 
     def _get_next_publish_date(self, task: dict[str, Any]) -> Optional[str]:
         """Get the next publish date for unpublished items.

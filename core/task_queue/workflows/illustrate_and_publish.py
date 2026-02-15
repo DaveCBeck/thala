@@ -44,8 +44,8 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
 
     @property
     def is_zero_cost(self) -> bool:
-        """Imagen cost tracked separately via daily counter."""
-        return True
+        """Uses Sonnet for prompt generation and vision comparison."""
+        return False
 
     @property
     def bypass_concurrency(self) -> bool:
@@ -116,7 +116,10 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
 
             # Illustrate if not yet done
             if not item.get("illustrated"):
-                if not await daily_tracker.try_acquire():
+                # Non-consuming check only — the actual try_acquire() happens
+                # inside generate_article_header() (image_utils.py) which is
+                # the single source of truth for daily budget consumption.
+                if await daily_tracker.remaining() < 1:
                     logger.info("Daily budget exhausted after illustrating some articles")
                     break
 
@@ -194,8 +197,14 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
             logger.error(f"Failed to load manifest: {e}")
             return None
 
-    async def _illustrate_article(self, item: dict, output_dir: Path, illustrate_graph) -> Path:
-        """Illustrate a single article and save to disk."""
+    async def _illustrate_article(self, item: dict, output_dir: Path, illustrate_graph: Any) -> Path:
+        """Illustrate a single article and save to disk.
+
+        Args:
+            item: Article metadata dict with source_path, title, id.
+            output_dir: Directory to write illustrated output into.
+            illustrate_graph: LangGraph CompiledGraph for illustration pipeline.
+        """
         source_path = Path(item["source_path"])
         content = source_path.read_text()
 
@@ -221,10 +230,11 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         import asyncio
 
         from core.task_queue.paths import SUBSTACK_COOKIES_FILE
+        from core.task_queue.workflows.shared.publication_config import load_publication_config
         from utils.substack_publish import SubstackConfig, SubstackPublisher
 
         # Load publication config for this category
-        pub_config = self._load_publication_config(category)
+        pub_config = load_publication_config(category)
 
         # Read illustrated content
         content_path = Path(item.get("illustrated_path", item["source_path"]))
@@ -255,27 +265,18 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         logger.info(f"Published draft: {item['title'][:50]} -> {result.get('draft_url')}")
         return result
 
-    def _load_publication_config(self, category: str) -> dict:
-        """Load publication config for a category from publications.json."""
-        import json as json_mod
-
-        from core.task_queue.paths import PUBLICATIONS_FILE
-
-        if not PUBLICATIONS_FILE.exists():
-            return {}
-        try:
-            with open(PUBLICATIONS_FILE) as f:
-                pubs = json_mod.load(f)
-            if category in pubs:
-                return pubs[category]
-            if pubs:
-                return next(iter(pubs.values()))
-        except Exception:
-            pass
-        return {}
-
     def _cleanup_source_dir(self, output_dir: Path) -> None:
-        """Remove the unillustrated source directory after successful completion."""
+        """Remove the unillustrated source directory after successful completion.
+
+        Safety: the ``"unillustrated_"`` substring check guards against
+        accidentally deleting directories that were not created by
+        ``save_and_spawn``.  The naming convention is enforced at
+        creation time in ``save_and_spawn.py`` which always uses the
+        ``unillustrated_<topic_slug>_<timestamp>`` pattern.  Because
+        this workflow only receives paths from that producer, a simple
+        name-based check is sufficient -- no secondary bookkeeping or
+        marker files are needed.
+        """
         try:
             if output_dir.exists() and "unillustrated_" in output_dir.name:
                 shutil.rmtree(output_dir)
