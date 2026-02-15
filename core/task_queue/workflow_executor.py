@@ -177,7 +177,8 @@ async def run_task_workflow(
         elif result_status == "deferred":
             next_run = result.get("next_run_after")
             await asyncio.to_thread(
-                queue_manager.update_task, task_id,
+                queue_manager.update_task,
+                task_id,
                 status=TaskStatus.DEFERRED.value,
                 next_run_after=next_run,
                 started_at=None,

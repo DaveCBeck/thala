@@ -226,10 +226,7 @@ class PublishSeriesWorkflow(BaseWorkflow):
         base_date = datetime.fromisoformat(task["base_date"])
         items = task["items"]
 
-        unpublished = [
-            item for item in items
-            if not item["published"]
-        ]
+        unpublished = [item for item in items if not item["published"]]
 
         if not unpublished:
             return None

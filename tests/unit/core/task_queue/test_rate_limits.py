@@ -38,6 +38,7 @@ def _reset_globals():
 # Semaphore tests (existing)
 # ---------------------------------------------------------------------------
 
+
 class TestGetImagenSemaphore:
     def test_lazy_init_creates_semaphore(self):
         first = get_imagen_semaphore()
@@ -75,6 +76,7 @@ class TestSemaphoreIndependence:
 # ---------------------------------------------------------------------------
 # ImagenDailyTracker
 # ---------------------------------------------------------------------------
+
 
 class TestImagenDailyTracker:
     @pytest.mark.asyncio
@@ -156,6 +158,7 @@ class TestImagenDailyTracker:
 # ImagenRPMLimiter
 # ---------------------------------------------------------------------------
 
+
 class TestImagenRPMLimiter:
     @pytest.mark.asyncio
     async def test_acquire_succeeds_within_burst(self):
@@ -194,6 +197,7 @@ class TestImagenRPMLimiter:
 # Lazy factories
 # ---------------------------------------------------------------------------
 
+
 class TestLazyFactories:
     def test_get_imagen_daily_tracker_returns_singleton(self):
         t1 = get_imagen_daily_tracker()
@@ -218,6 +222,7 @@ class TestLazyFactories:
 # ---------------------------------------------------------------------------
 # reset_rate_limiters
 # ---------------------------------------------------------------------------
+
 
 class TestResetRateLimiters:
     def test_reset_clears_all_globals(self):

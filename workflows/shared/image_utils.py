@@ -223,13 +223,15 @@ async def generate_article_header(
         # Attach metadata to LangSmith trace
         rt = get_current_run_tree()
         if rt:
-            rt.metadata.update({
-                "model": IMAGEN_MODEL,
-                "prompt": prompt[:500],
-                "image_count": len(candidates),
-                "aspect_ratio": aspect_ratio,
-                "latency_ms": latency_ms,
-            })
+            rt.metadata.update(
+                {
+                    "model": IMAGEN_MODEL,
+                    "prompt": prompt[:500],
+                    "image_count": len(candidates),
+                    "aspect_ratio": aspect_ratio,
+                    "latency_ms": latency_ms,
+                }
+            )
 
         if not candidates:
             logger.warning(f"No images generated for '{title}' - response was empty")
@@ -341,7 +343,9 @@ async def generate_diagram_image(
                         return part.inline_data.data
             # Log what we got instead of an image
             text_parts = [
-                p.text[:100] for p in (candidate.content.parts if candidate.content and candidate.content.parts else []) if p.text
+                p.text[:100]
+                for p in (candidate.content.parts if candidate.content and candidate.content.parts else [])
+                if p.text
             ]
             logger.warning(f"Gemini returned no image. finish_reason={candidate.finish_reason}, text={text_parts}")
         else:
@@ -362,13 +366,15 @@ async def generate_diagram_image(
         # Attach metadata to LangSmith trace
         rt = get_current_run_tree()
         if rt:
-            rt.metadata.update({
-                "model": GEMINI_IMAGE_MODEL,
-                "prompt": brief[:500],
-                "image_count": len(candidates),
-                "aspect_ratio": aspect_ratio,
-                "latency_ms": latency_ms,
-            })
+            rt.metadata.update(
+                {
+                    "model": GEMINI_IMAGE_MODEL,
+                    "prompt": brief[:500],
+                    "image_count": len(candidates),
+                    "aspect_ratio": aspect_ratio,
+                    "latency_ms": latency_ms,
+                }
+            )
 
         if not candidates:
             errors = [r for r in results if isinstance(r, Exception)]

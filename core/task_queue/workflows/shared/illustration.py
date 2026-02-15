@@ -54,13 +54,15 @@ async def illustrate_articles(
     for output in final_outputs:
         article_id = output["id"]
         try:
-            article_result = await illustrate_graph.ainvoke({
-                "input": {
-                    "markdown_document": output["content"],
-                    "title": output["title"],
-                    "output_dir": str(illust_dir / f"{article_id}_images"),
+            article_result = await illustrate_graph.ainvoke(
+                {
+                    "input": {
+                        "markdown_document": output["content"],
+                        "title": output["title"],
+                        "output_dir": str(illust_dir / f"{article_id}_images"),
+                    }
                 }
-            })
+            )
 
             article_path = illust_dir / f"{article_id}.md"
             article_content = article_result.get("illustrated_document", output["content"])

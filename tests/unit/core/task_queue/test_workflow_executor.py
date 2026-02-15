@@ -3,7 +3,6 @@
 Covers DEFERRED and "waiting" result status handling.
 """
 
-import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -89,9 +88,7 @@ async def test_deferred_status_updates_task_and_clears_checkpoint(mock_deps):
     ):
         from core.task_queue.workflow_executor import run_task_workflow
 
-        result = await run_task_workflow(
-            task, queue_manager, checkpoint_mgr, budget_tracker
-        )
+        result = await run_task_workflow(task, queue_manager, checkpoint_mgr, budget_tracker)
 
     assert result["status"] == "deferred"
 
@@ -124,9 +121,7 @@ async def test_waiting_status_does_not_mark_failed(mock_deps):
     ):
         from core.task_queue.workflow_executor import run_task_workflow
 
-        result = await run_task_workflow(
-            task, queue_manager, checkpoint_mgr, budget_tracker
-        )
+        result = await run_task_workflow(task, queue_manager, checkpoint_mgr, budget_tracker)
 
     assert result["status"] == "waiting"
 

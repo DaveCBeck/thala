@@ -56,9 +56,7 @@ async def run_parallel_tasks(
     checkpoints_by_id = {cp["task_id"]: cp for cp in incomplete}
 
     # Atomic task selection (sync I/O with fcntl.flock — run in thread pool)
-    tasks = await asyncio.to_thread(
-        _select_tasks, queue_manager, count, resumable_ids
-    )
+    tasks = await asyncio.to_thread(_select_tasks, queue_manager, count, resumable_ids)
     if not tasks:
         logger.info("No eligible tasks to run")
         coordinator.remove_signal_handlers()
@@ -129,18 +127,13 @@ async def run_parallel_tasks(
                     queue = queue_manager.persistence.read_queue()
                     reset_count = 0
                     for task in queue["topics"]:
-                        if (
-                            task["id"] in selected_ids
-                            and task["status"] == TaskStatus.IN_PROGRESS.value
-                        ):
+                        if task["id"] in selected_ids and task["status"] == TaskStatus.IN_PROGRESS.value:
                             task["status"] = TaskStatus.PENDING.value
                             task.pop("started_at", None)
                             reset_count += 1
                     if reset_count:
                         queue_manager.persistence.write_queue(queue)
-                        logger.info(
-                            f"Reset {reset_count} orphaned task(s) back to PENDING"
-                        )
+                        logger.info(f"Reset {reset_count} orphaned task(s) back to PENDING")
 
             await asyncio.to_thread(_reset_orphaned)
         except Exception:
@@ -170,10 +163,7 @@ def _select_tasks(
 
         # Reset orphaned IN_PROGRESS tasks (no checkpoint) back to PENDING
         for task in queue["topics"]:
-            if (
-                task["status"] == TaskStatus.IN_PROGRESS.value
-                and task["id"] not in resumable_ids
-            ):
+            if task["status"] == TaskStatus.IN_PROGRESS.value and task["id"] not in resumable_ids:
                 task["status"] = TaskStatus.PENDING.value
                 task.pop("started_at", None)
 
@@ -195,7 +185,9 @@ def _select_tasks(
                         if now >= datetime.fromisoformat(next_run):
                             candidates.append(t)
                     except (ValueError, TypeError):
-                        logger.warning(f"DEFERRED task {t['id'][:8]} has malformed next_run_after={next_run!r}, treating as eligible")
+                        logger.warning(
+                            f"DEFERRED task {t['id'][:8]} has malformed next_run_after={next_run!r}, treating as eligible"
+                        )
                         candidates.append(t)
         if not candidates:
             return []
@@ -263,10 +255,7 @@ def _select_tasks(
         # Reset unselected resumable tasks back to PENDING
         selected_set = {t["id"] for t in selected}
         for task in queue["topics"]:
-            if (
-                task["status"] == TaskStatus.IN_PROGRESS.value
-                and task["id"] not in selected_set
-            ):
+            if task["status"] == TaskStatus.IN_PROGRESS.value and task["id"] not in selected_set:
                 task["status"] = TaskStatus.PENDING.value
                 task.pop("started_at", None)
 

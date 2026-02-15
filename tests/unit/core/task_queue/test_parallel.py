@@ -19,6 +19,7 @@ from core.task_queue.schemas.enums import TaskStatus
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_task(
     task_id: str = "aaa",
     status: str = TaskStatus.PENDING.value,
@@ -70,6 +71,7 @@ def _mock_queue_manager(tasks: list[dict]) -> MagicMock:
 # ---------------------------------------------------------------------------
 # _select_tasks
 # ---------------------------------------------------------------------------
+
 
 class TestSelectTasks:
     """Tests for _select_tasks atomic selection."""
@@ -201,6 +203,7 @@ class TestSelectTasks:
 # ---------------------------------------------------------------------------
 # run_parallel_tasks
 # ---------------------------------------------------------------------------
+
 
 class TestRunParallelTasks:
     """Tests for run_parallel_tasks top-level orchestration."""
@@ -367,6 +370,7 @@ class TestRunParallelTasks:
 # _select_tasks — checkpoint-aware behaviour
 # ---------------------------------------------------------------------------
 
+
 class TestSelectTasksCheckpointAware:
     """Tests for _select_tasks resumable/orphan handling."""
 
@@ -465,6 +469,7 @@ class TestSelectTasksCheckpointAware:
 # ---------------------------------------------------------------------------
 # _select_tasks — DEFERRED task handling
 # ---------------------------------------------------------------------------
+
 
 class TestSelectTasksDeferred:
     """Tests for DEFERRED task selection in _select_tasks."""

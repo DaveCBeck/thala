@@ -67,6 +67,7 @@ def get_mmdc_semaphore() -> asyncio.Semaphore:
 # Imagen daily tracker
 # ---------------------------------------------------------------------------
 
+
 def _today_str() -> str:
     return date.today().isoformat()
 
@@ -134,9 +135,7 @@ class ImagenDailyTracker:
 
     def _write_state_atomic(self, data: dict) -> None:
         """Write state via temp file + rename for atomicity."""
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(self._state_dir), suffix=".tmp"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=str(self._state_dir), suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as f:
                 json.dump(data, f)
@@ -171,6 +170,7 @@ class _FileLock:
 # ---------------------------------------------------------------------------
 # Imagen RPM limiter (token bucket)
 # ---------------------------------------------------------------------------
+
 
 class ImagenRPMLimiter:
     """In-memory token bucket for per-minute rate cap.
@@ -232,6 +232,7 @@ def get_imagen_rpm_limiter() -> ImagenRPMLimiter:
 # ---------------------------------------------------------------------------
 # Reset (lifecycle cleanup)
 # ---------------------------------------------------------------------------
+
 
 def reset_rate_limiters() -> None:
     """Reset all rate limiter globals. Call on supervisor shutdown."""

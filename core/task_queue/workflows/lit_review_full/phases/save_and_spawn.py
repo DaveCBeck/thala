@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,11 +55,13 @@ async def run_save_and_spawn_phase(
         filename = f"{article_id}.md"
         article_path = unillust_dir / filename
         article_path.write_text(output["content"])
-        articles.append({
-            "id": article_id,
-            "title": output["title"],
-            "filename": filename,
-        })
+        articles.append(
+            {
+                "id": article_id,
+                "title": output["title"],
+                "filename": filename,
+            }
+        )
 
     # Write manifest atomically (write to tmp, then rename) — acts as commit point
     manifest = {
@@ -77,9 +79,7 @@ async def run_save_and_spawn_phase(
     # Publish lit review as Substack draft (audience: only_paid)
     lit_review_draft_url = None
     try:
-        lit_review_draft_url = await _publish_lit_review_draft(
-            final_report, topic, category
-        )
+        lit_review_draft_url = await _publish_lit_review_draft(final_report, topic, category)
     except Exception as e:
         logger.error(f"Failed to publish lit review draft: {e}")
 
@@ -114,9 +114,7 @@ def _write_atomic(path: Path, data: dict) -> None:
         raise
 
 
-async def _publish_lit_review_draft(
-    content: str, topic: str, category: str
-) -> str | None:
+async def _publish_lit_review_draft(content: str, topic: str, category: str) -> str | None:
     """Publish the lit review as a Substack draft. Returns draft URL."""
     from core.task_queue.paths import PUBLICATIONS_FILE, SUBSTACK_COOKIES_FILE
     from utils.substack_publish import SubstackConfig, SubstackPublisher
@@ -167,15 +165,17 @@ def _spawn_illustrate_task(
     # Build items list
     items = []
     for article in articles:
-        items.append({
-            "id": article["id"],
-            "title": titles.get(article["id"], article["id"]),
-            "source_path": str(unillust_dir / article["filename"]),
-            "illustrated": False,
-            "illustrated_path": None,
-            "draft_id": None,
-            "draft_url": None,
-        })
+        items.append(
+            {
+                "id": article["id"],
+                "title": titles.get(article["id"], article["id"]),
+                "source_path": str(unillust_dir / article["filename"]),
+                "illustrated": False,
+                "illustrated_path": None,
+                "draft_id": None,
+                "draft_url": None,
+            }
+        )
 
     queue = TaskQueueManager()
     return queue.add_task(

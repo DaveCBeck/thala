@@ -105,10 +105,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     f"iteration {incremental_state.get('iteration_count', 0)}"
                 )
 
-            logger.info(
-                f"Resuming lit_review_full from {current_phase}, "
-                f"skipping completed phases: {completed_phases}"
-            )
+            logger.info(f"Resuming lit_review_full from {current_phase}, skipping completed phases: {completed_phases}")
         else:
             logger.info(f"Starting lit_review_full workflow: {topic[:50]}...")
 
@@ -152,16 +149,16 @@ class LitReviewFullWorkflow(BaseWorkflow):
         # Phase 2: Enhancement (supervision + editing)
         if "supervision" in completed_phases and "editing" in completed_phases:
             enhance_result = phase_outputs.get("enhance_result")
-            final_report = phase_outputs.get("final_report") or (enhance_result.get("final_report") if enhance_result else None)
+            final_report = phase_outputs.get("final_report") or (
+                enhance_result.get("final_report") if enhance_result else None
+            )
             logger.info("Skipping supervision/editing phases (already complete)")
         else:
             checkpoint_callback("supervision")
             try:
                 # Pass incremental_state only if we're resuming the supervision phase
                 supervision_incremental_state = (
-                    incremental_state
-                    if incremental_state and incremental_state.get("phase") == "supervision"
-                    else None
+                    incremental_state if incremental_state and incremental_state.get("phase") == "supervision" else None
                 )
 
                 enhance_result, final_report = await run_enhancement_phase(

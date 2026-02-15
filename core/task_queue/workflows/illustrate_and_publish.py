@@ -117,13 +117,11 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
             # Illustrate if not yet done
             if not item.get("illustrated"):
                 if not await daily_tracker.try_acquire():
-                    logger.info(f"Daily budget exhausted after illustrating some articles")
+                    logger.info("Daily budget exhausted after illustrating some articles")
                     break
 
                 try:
-                    illustrated_path = await self._illustrate_article(
-                        item, output_dir, illustrate_graph
-                    )
+                    illustrated_path = await self._illustrate_article(item, output_dir, illustrate_graph)
                     item["illustrated"] = True
                     item["illustrated_path"] = str(illustrated_path)
                     progress_made = True
@@ -196,20 +194,20 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
             logger.error(f"Failed to load manifest: {e}")
             return None
 
-    async def _illustrate_article(
-        self, item: dict, output_dir: Path, illustrate_graph
-    ) -> Path:
+    async def _illustrate_article(self, item: dict, output_dir: Path, illustrate_graph) -> Path:
         """Illustrate a single article and save to disk."""
         source_path = Path(item["source_path"])
         content = source_path.read_text()
 
-        article_result = await illustrate_graph.ainvoke({
-            "input": {
-                "markdown_document": content,
-                "title": item["title"],
-                "output_dir": str(output_dir / f"{item['id']}_images"),
+        article_result = await illustrate_graph.ainvoke(
+            {
+                "input": {
+                    "markdown_document": content,
+                    "title": item["title"],
+                    "output_dir": str(output_dir / f"{item['id']}_images"),
+                }
             }
-        })
+        )
 
         illustrated_content = article_result.get("illustrated_document", content)
         illustrated_path = output_dir / f"{item['id']}_illustrated.md"
@@ -222,7 +220,7 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         """Publish an illustrated article as a Substack draft."""
         import asyncio
 
-        from core.task_queue.paths import PUBLICATIONS_FILE, SUBSTACK_COOKIES_FILE
+        from core.task_queue.paths import SUBSTACK_COOKIES_FILE
         from utils.substack_publish import SubstackConfig, SubstackPublisher
 
         # Load publication config for this category
