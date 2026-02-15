@@ -1,4 +1,5 @@
 """Run command implementation."""
+
 import asyncio
 import sys
 
@@ -53,13 +54,15 @@ def cmd_run(args):
                 sys.exit(0)
 
         print("\nResuming workflow...")
-        sys.exit(_run_workflow_sync(
-            task=task,
-            manager=manager,
-            checkpoint_mgr=checkpoint_mgr,
-            budget_tracker=budget_tracker,
-            resume_from=checkpoint,
-        ))
+        sys.exit(
+            _run_workflow_sync(
+                task=task,
+                manager=manager,
+                checkpoint_mgr=checkpoint_mgr,
+                budget_tracker=budget_tracker,
+                resume_from=checkpoint,
+            )
+        )
 
     # Get next eligible task
     task = manager.get_next_eligible_task()
@@ -91,8 +94,10 @@ def cmd_run(args):
 
     # Show budget status
     status = budget_tracker.get_budget_status()
-    print(f"\n  Budget: {format_cost(status['current_cost'])} / {format_cost(status['monthly_budget'])} "
-          f"({status['percent_used']:.1f}%)")
+    print(
+        f"\n  Budget: {format_cost(status['current_cost'])} / {format_cost(status['monthly_budget'])} "
+        f"({status['percent_used']:.1f}%)"
+    )
 
     if not args.yes:
         response = input("\nStart this task? [y/N] ")
@@ -100,10 +105,12 @@ def cmd_run(args):
             sys.exit(0)
 
     print("\nStarting workflow...")
-    sys.exit(_run_workflow_sync(
-        task=task,
-        manager=manager,
-        checkpoint_mgr=checkpoint_mgr,
-        budget_tracker=budget_tracker,
-        resume_from=None,
-    ))
+    sys.exit(
+        _run_workflow_sync(
+            task=task,
+            manager=manager,
+            checkpoint_mgr=checkpoint_mgr,
+            budget_tracker=budget_tracker,
+            resume_from=None,
+        )
+    )

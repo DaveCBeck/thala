@@ -27,9 +27,9 @@ class WebResearchWorkflow(BaseWorkflow):
     @property
     def phases(self) -> list[str]:
         return [
-            "research",        # Deep web research
-            "evening_reads",   # Article series generation
-            "saving",          # Output to disk
+            "research",  # Deep web research
+            "evening_reads",  # Article series generation
+            "saving",  # Output to disk
             "complete",
         ]
 
@@ -78,8 +78,7 @@ class WebResearchWorkflow(BaseWorkflow):
             completed_phases = self._get_completed_phases(resume_from)
             phase_outputs = resume_from.get("phase_outputs", {})
             logger.info(
-                f"Resuming web_research from {resume_from['phase']}, "
-                f"skipping completed phases: {completed_phases}"
+                f"Resuming web_research from {resume_from['phase']}, skipping completed phases: {completed_phases}"
             )
         else:
             logger.info(f"Starting web_research workflow: {query[:50]}...")
@@ -104,9 +103,7 @@ class WebResearchWorkflow(BaseWorkflow):
                 )
 
                 if not research_result.get("final_report"):
-                    raise RuntimeError(
-                        f"Web research failed: {research_result.get('errors', 'Unknown error')}"
-                    )
+                    raise RuntimeError(f"Web research failed: {research_result.get('errors', 'Unknown error')}")
 
                 logger.info(
                     f"Research complete: {research_result.get('source_count', 0)} sources, "
@@ -114,10 +111,14 @@ class WebResearchWorkflow(BaseWorkflow):
                 )
 
                 if research_result.get("errors"):
-                    errors.extend([
-                        {"phase": "research", **err} if isinstance(err, dict) else {"phase": "research", "error": str(err)}
-                        for err in research_result["errors"]
-                    ])
+                    errors.extend(
+                        [
+                            {"phase": "research", **err}
+                            if isinstance(err, dict)
+                            else {"phase": "research", "error": str(err)}
+                            for err in research_result["errors"]
+                        ]
+                    )
 
                 # Save outputs for potential resume
                 checkpoint_callback("research", phase_outputs={"research_result": research_result})
@@ -137,23 +138,18 @@ class WebResearchWorkflow(BaseWorkflow):
 
             # Load editorial stance for the publication
             from workflows.output.evening_reads.editorial import load_editorial_stance
+
             editorial_stance = load_editorial_stance(task.get("category", ""))
             if editorial_stance:
                 logger.info(f"Using editorial stance for category: {task.get('category')}")
 
             try:
-                series_result = await evening_reads(
-                    research_result["final_report"], editorial_stance
-                )
+                series_result = await evening_reads(research_result["final_report"], editorial_stance)
 
                 if not series_result.get("final_outputs"):
-                    raise RuntimeError(
-                        f"Series generation failed: {series_result.get('errors', 'Unknown error')}"
-                    )
+                    raise RuntimeError(f"Series generation failed: {series_result.get('errors', 'Unknown error')}")
 
-                logger.info(
-                    f"Series complete: {len(series_result.get('final_outputs', []))} articles"
-                )
+                logger.info(f"Series complete: {len(series_result.get('final_outputs', []))} articles")
 
                 # Save outputs for potential resume
                 checkpoint_callback(

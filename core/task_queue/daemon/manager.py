@@ -1,4 +1,5 @@
 """Daemon process management."""
+
 import asyncio
 import os
 import signal
@@ -80,10 +81,12 @@ def cmd_daemon(args):
     from ..runner import run_queue_loop
 
     try:
-        asyncio.run(run_queue_loop(
-            max_tasks=args.max_tasks,
-            check_interval=args.check_interval,
-        ))
+        asyncio.run(
+            run_queue_loop(
+                max_tasks=args.max_tasks,
+                check_interval=args.check_interval,
+            )
+        )
     finally:
         DAEMON_PID_FILE.unlink(missing_ok=True)
         print("Daemon stopped")

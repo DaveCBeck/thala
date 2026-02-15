@@ -59,6 +59,7 @@ class BudgetCalculator:
 
         # Calculate days remaining in month
         from datetime import timezone
+
         now = datetime.now(timezone.utc)
         if now.month == 12:
             next_month = now.replace(year=now.year + 1, month=1, day=1)
@@ -102,8 +103,7 @@ class BudgetCalculator:
 
         if status["action"] == "pause":
             return False, (
-                f"Budget exceeded ({format_cost(status['current_cost'])} / "
-                f"{format_cost(status['monthly_budget'])})"
+                f"Budget exceeded ({format_cost(status['current_cost'])} / {format_cost(status['monthly_budget'])})"
             )
 
         if status["action"] == "slowdown":
@@ -126,6 +126,7 @@ class BudgetCalculator:
 
         # Expected percent used based on day of month
         from datetime import timezone
+
         day_of_month = datetime.now(timezone.utc).day
         days_in_month = 30  # Approximation
         expected_percent = (day_of_month / days_in_month) * 100

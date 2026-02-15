@@ -183,16 +183,10 @@ class IncrementalStateManager:
 
             # Phase filter
             if phase and state.get("phase") != phase:
-                logger.debug(
-                    f"Incremental state phase mismatch: "
-                    f"expected {phase}, got {state.get('phase')}"
-                )
+                logger.debug(f"Incremental state phase mismatch: expected {phase}, got {state.get('phase')}")
                 return None
 
-            logger.info(
-                f"Loaded incremental state: {task_id[:8]} {state['phase']} "
-                f"({state['iteration_count']} items)"
-            )
+            logger.info(f"Loaded incremental state: {task_id[:8]} {state['phase']} ({state['iteration_count']} items)")
             return state
 
         except json.JSONDecodeError as e:

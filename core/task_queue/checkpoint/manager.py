@@ -64,9 +64,7 @@ class CheckpointManager:
         **kwargs,
     ) -> None:
         """Update checkpoint for a task."""
-        await self.state_manager.update_checkpoint(
-            task_id, phase, phase_outputs, **kwargs
-        )
+        await self.state_manager.update_checkpoint(task_id, phase, phase_outputs, **kwargs)
 
     async def complete_work(self, task_id: str) -> None:
         """Mark work as complete and remove checkpoint."""

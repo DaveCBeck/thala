@@ -42,9 +42,7 @@ class BudgetTracker:
         # Initialize components
         self.cache_manager = CostCacheManager(self.cost_cache_file, self.langsmith_project)
         self.cost_provider = LangSmithCostProvider(self.cache_manager, self.langsmith_project)
-        self.calculator = BudgetCalculator(
-            self.cost_provider, self.monthly_budget, self.budget_action
-        )
+        self.calculator = BudgetCalculator(self.cost_provider, self.monthly_budget, self.budget_action)
 
     @property
     def client(self):
