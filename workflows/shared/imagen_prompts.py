@@ -6,6 +6,7 @@ with must-have elements front-loaded (per Google's Imagen prompt guide).
 
 import logging
 
+from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.llm_broker import BatchPolicy
@@ -69,6 +70,7 @@ def build_imagen_prompt(structure: ImagenPromptStructure) -> str:
     return ", ".join(p for p in parts if p)
 
 
+@traceable(run_type="chain", name="Imagen_StructureBrief")
 async def structure_brief_for_imagen(brief: str) -> str:
     """Convert an unstructured brief into an Imagen-optimized prompt.
 

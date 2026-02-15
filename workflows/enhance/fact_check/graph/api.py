@@ -119,10 +119,10 @@ async def fact_check(
                     *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": topic[:100],
                     "quality_tier": quality,
                     "has_citations": has_citations,
-                    **get_trace_metadata(),
                 },
             },
         )

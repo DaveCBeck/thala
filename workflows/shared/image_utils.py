@@ -97,6 +97,7 @@ IMAGE_PROMPT_USER = """Write an image generation prompt for a header image for t
 Remember: Create an evocative, professional editorial image that complements the article's themes without literally illustrating them. The image should be a square format, 1:1 aspect ratio."""
 
 
+@traceable(run_type="chain", name="Imagen_GeneratePrompt")
 async def generate_image_prompt(
     title: str,
     content: str,
@@ -185,6 +186,7 @@ async def generate_article_header(
     try:
         from core.task_queue.rate_limits import get_imagen_semaphore
 
+        # Wall-clock time including semaphore wait
         t0 = time.monotonic()
         async with get_imagen_semaphore():
             response = await asyncio.wait_for(
@@ -333,6 +335,7 @@ async def generate_diagram_image(
         return None
 
     try:
+        # Wall-clock time including semaphore wait
         t0 = time.monotonic()
         results = await asyncio.gather(
             *[_generate_one() for _ in range(num_candidates)],

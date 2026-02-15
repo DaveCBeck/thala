@@ -123,10 +123,10 @@ async def book_finding(
                     *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": theme[:100],
                     "quality_tier": quality,
                     "language": language,
-                    **get_trace_metadata(),
                 },
             },
         )

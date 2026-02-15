@@ -2,6 +2,8 @@
 
 import asyncio
 
+import pytest
+
 from core.task_queue.task_context import (
     clear_task_context,
     get_task_context,
@@ -11,11 +13,17 @@ from core.task_queue.task_context import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clean_context():
+    clear_task_context()
+    yield
+    clear_task_context()
+
+
 class TestTaskContext:
     """Test the set/get/clear lifecycle."""
 
     def test_default_is_none(self):
-        clear_task_context()
         assert get_task_context() is None
 
     def test_set_and_get(self):
@@ -26,7 +34,6 @@ class TestTaskContext:
         assert ctx.task_type == "lit_review_full"
         assert ctx.topic == "AI in Healthcare"
         assert ctx.quality_tier == "standard"
-        clear_task_context()
 
     def test_clear(self):
         set_task_context("1", "web_research", "Topic", "quick")
@@ -36,19 +43,14 @@ class TestTaskContext:
     def test_context_is_frozen(self):
         set_task_context("1", "web_research", "Topic", "quick")
         ctx = get_task_context()
-        try:
+        with pytest.raises(AttributeError):
             ctx.task_id = "changed"  # type: ignore[misc]
-            assert False, "Should have raised"
-        except AttributeError:
-            pass
-        clear_task_context()
 
 
 class TestTraceMetadata:
     """Test get_trace_metadata() helper."""
 
     def test_returns_empty_dict_when_no_context(self):
-        clear_task_context()
         assert get_trace_metadata() == {}
 
     def test_returns_metadata_when_context_set(self):
@@ -60,21 +62,25 @@ class TestTraceMetadata:
             "topic": "Deep Learning",
             "quality_tier": "comprehensive",
         }
-        clear_task_context()
+
+    def test_truncates_long_topic_to_100_chars(self):
+        long_topic = "A" * 200
+        set_task_context("1", "web_research", long_topic, "quick")
+        meta = get_trace_metadata()
+        assert len(meta["topic"]) == 100
+        assert meta["topic"] == "A" * 100
 
 
 class TestTraceTags:
     """Test get_trace_tags() helper."""
 
     def test_returns_empty_list_when_no_context(self):
-        clear_task_context()
         assert get_trace_tags() == []
 
     def test_returns_tags_when_context_set(self):
         set_task_context("7", "web_research", "Climate Change", "standard")
         tags = get_trace_tags()
         assert tags == ["task:7", "type:web_research"]
-        clear_task_context()
 
 
 class TestAsyncIsolation:

@@ -98,10 +98,10 @@ async def editing(
                     *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": topic[:100],
                     "quality_tier": quality,
                     "doc_length": len(document),
-                    **get_trace_metadata(),
                 },
             },
         )

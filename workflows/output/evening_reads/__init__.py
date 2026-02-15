@@ -17,6 +17,7 @@ Usage:
 """
 
 import re
+from typing import Any
 
 from langsmith import traceable
 
@@ -50,7 +51,7 @@ def _extract_topic(literature_review: str) -> str:
 async def evening_reads(
     literature_review: str,
     editorial_stance: str = "",
-) -> dict:
+) -> dict[str, Any]:
     """Run the evening reads workflow with full tracing.
 
     Args:
@@ -76,8 +77,8 @@ async def evening_reads(
                 *get_trace_tags(),
             ],
             "metadata": {
-                "topic": topic[:100],
                 **get_trace_metadata(),
+                "topic": topic[:100],
             },
         },
     )

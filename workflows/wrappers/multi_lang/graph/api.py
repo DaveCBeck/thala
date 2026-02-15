@@ -172,12 +172,12 @@ async def multi_lang_research(
             *get_trace_tags(),
         ],
         "metadata": {
+            **get_trace_metadata(),
             "topic": topic[:100],
             "quality_tier": quality,
             "mode": mode,
             "workflow_type": workflow,
             "language_count": len(languages) if languages else 0,
-            **get_trace_metadata(),
         },
     }
 

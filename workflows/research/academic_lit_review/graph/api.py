@@ -106,11 +106,11 @@ async def academic_lit_review(
                     *get_trace_tags(),
                 ],
                 "metadata": {
+                    **get_trace_metadata(),
                     "topic": topic[:100],
                     "quality_tier": quality,
                     "question_count": len(research_questions),
                     "language": language,
-                    **get_trace_metadata(),
                 },
             },
         )

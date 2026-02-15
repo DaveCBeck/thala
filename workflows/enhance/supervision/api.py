@@ -155,14 +155,20 @@ async def enhance_report(
             *get_trace_tags(),
         ],
         "metadata": {
+            **get_trace_metadata(),
             "topic": topic[:100],
             "quality_tier": quality,
             "loops": loops,
-            **get_trace_metadata(),
         },
     }
     if config:
-        trace_config.update(config)
+        for key, value in config.items():
+            if key == "tags" and isinstance(value, list):
+                trace_config["tags"].extend(value)
+            elif key == "metadata" and isinstance(value, dict):
+                trace_config["metadata"].update(value)
+            else:
+                trace_config[key] = value
 
     final_state = await graph.ainvoke(initial_state, config=trace_config)
 

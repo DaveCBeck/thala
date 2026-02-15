@@ -78,8 +78,8 @@ async def illustrate_document(
                 *get_trace_tags(),
             ],
             "metadata": {
-                "topic": (title or "Untitled")[:100],
                 **get_trace_metadata(),
+                "topic": (title or "Untitled")[:100],
             },
         },
     )

@@ -21,10 +21,9 @@ from typing import Any
 
 from langsmith import traceable
 from langgraph.graph import END, START, StateGraph
-
-from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from langgraph.types import Send
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.document_processing.nodes import (
     check_metadata,
     create_zotero_stub,
@@ -164,7 +163,7 @@ async def process_document(
     }
 
     run_id = uuid.uuid4()
-    desc = title or (source[:30] if isinstance(source, str) else "document")
+    desc = title or (source[:60] if isinstance(source, str) else "document")
     primary_lang = (langs[0] if langs else "en").lower()[:2]
     logger.info(f"Starting document processing for: {title or source[:100]}")
     logger.info(f"LangSmith run ID: {run_id}")
@@ -180,10 +179,10 @@ async def process_document(
                 *get_trace_tags(),
             ],
             "metadata": {
+                **get_trace_metadata(),
                 "topic": (title or source[:100])[:100],
                 "item_type": item_type,
                 "language": primary_lang,
-                **get_trace_metadata(),
             },
         },
     )

@@ -163,10 +163,10 @@ async def deep_research(
                 *get_trace_tags(),
             ],
             "metadata": {
+                **get_trace_metadata(),
                 "topic": query[:100],
                 "quality_tier": quality,
                 "language": primary_lang,
-                **get_trace_metadata(),
             },
         },
     )
