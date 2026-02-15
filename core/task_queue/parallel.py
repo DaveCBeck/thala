@@ -177,12 +177,26 @@ def _select_tasks(
                 task["status"] = TaskStatus.PENDING.value
                 task.pop("started_at", None)
 
-        # Build candidate pool: resumable (still IN_PROGRESS) + PENDING
-        candidates = [
-            t
-            for t in queue["topics"]
-            if t["status"] in (TaskStatus.IN_PROGRESS.value, TaskStatus.PENDING.value)
-        ]
+        # Build candidate pool: resumable (still IN_PROGRESS) + PENDING + eligible DEFERRED
+        now = datetime.now(timezone.utc)
+        candidates = []
+        for t in queue["topics"]:
+            if t["status"] in (TaskStatus.IN_PROGRESS.value, TaskStatus.PENDING.value):
+                candidates.append(t)
+            elif t["status"] == TaskStatus.DEFERRED.value:
+                # Only include DEFERRED tasks whose next_run_after has passed
+                next_run = t.get("next_run_after")
+                if not next_run:
+                    # Missing next_run_after — treat as immediately eligible
+                    logger.warning(f"DEFERRED task {t['id'][:8]} missing next_run_after, treating as eligible")
+                    candidates.append(t)
+                else:
+                    try:
+                        if now >= datetime.fromisoformat(next_run):
+                            candidates.append(t)
+                    except (ValueError, TypeError):
+                        logger.warning(f"DEFERRED task {t['id'][:8]} has malformed next_run_after={next_run!r}, treating as eligible")
+                        candidates.append(t)
         if not candidates:
             return []
 
@@ -260,7 +274,7 @@ def _select_tasks(
         queue["last_category_index"] = last_idx
         now = datetime.now(timezone.utc).isoformat()
         for task in selected:
-            if task["status"] == TaskStatus.PENDING.value:
+            if task["status"] in (TaskStatus.PENDING.value, TaskStatus.DEFERRED.value):
                 task["status"] = TaskStatus.IN_PROGRESS.value
                 task["started_at"] = now
         queue_manager.persistence.write_queue(queue)

@@ -20,6 +20,7 @@ class TaskStatus(Enum):
     PENDING = "pending"  # Not yet started
     IN_PROGRESS = "in_progress"  # Currently running
     PAUSED = "paused"  # Manually paused or budget-paused
+    DEFERRED = "deferred"  # Re-runnable after next_run_after
     COMPLETED = "completed"  # Successfully finished
     FAILED = "failed"  # Failed with error
 

@@ -182,9 +182,23 @@ async def generate_article_header(
             logger.error(f"Failed to generate image prompt for '{title}'")
             return None, None
 
-    # Step 2: Generate images using Imagen (semaphore limits concurrent API calls)
+    # Step 2: Generate images using Imagen
+    # Three-layer rate limiting: daily (cheapest) → RPM (may sleep) → semaphore (concurrency)
     try:
-        from core.task_queue.rate_limits import get_imagen_semaphore
+        from core.task_queue.rate_limits import (
+            get_imagen_daily_tracker,
+            get_imagen_rpm_limiter,
+            get_imagen_semaphore,
+        )
+
+        daily_tracker = get_imagen_daily_tracker()
+        rpm_limiter = get_imagen_rpm_limiter()
+
+        if not await daily_tracker.try_acquire():
+            logger.warning(f"Imagen daily budget exhausted, skipping image for '{title}'")
+            return None, prompt
+
+        await rpm_limiter.acquire()
 
         # Wall-clock time including semaphore wait
         t0 = time.monotonic()

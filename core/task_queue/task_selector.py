@@ -28,8 +28,9 @@ def _find_bypass_task(queue_manager: TaskQueueManager) -> Optional[Task]:
         First eligible bypass task, or None
     """
     pending_tasks = queue_manager.list_tasks(status=TaskStatus.PENDING)
+    deferred_tasks = queue_manager.list_tasks(status=TaskStatus.DEFERRED)
 
-    for task in pending_tasks:
+    for task in pending_tasks + deferred_tasks:
         task_type = task.get("task_type", "lit_review_full")
         workflow = get_workflow(task_type)
         if getattr(workflow, "bypass_concurrency", False):
