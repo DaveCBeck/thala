@@ -229,9 +229,9 @@ async def run_paper_pipeline(
         Tuple of (acquired, processing_results, acquisition_failed, processing_failed, fallback_substitutions)
     """
     async with RetrieveAcademicClient() as client:
-        if not await client.health_check():
-            logger.warning("Retrieve-academic service unavailable, skipping full-text acquisition")
-            return {}, {}, [p.get("doi") for p in papers], [], []
+        service_available = await client.health_check()
+        if not service_available:
+            logger.warning("Retrieve-academic service unavailable, will attempt OA/PMC/DOI sources only")
 
         output_dir = Path("/tmp/thala_papers")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -367,6 +367,8 @@ async def run_paper_pipeline(
                         return doi, None, None
 
                     # Fall back to retrieve-academic
+                    if not service_available:
+                        raise RuntimeError("retrieve-academic service unavailable")
                     authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
                     job = await client.retrieve(
                         doi=doi,
@@ -509,6 +511,10 @@ async def run_paper_pipeline(
                                 continue
 
                         # Fall back to retrieve-academic
+                        if not service_available:
+                            acquisition_failed.append(fallback_doi)
+                            _acq_log(fallback_doi, "could not download", "retrieve-academic service unavailable")
+                            continue
                         authors = [a.get("name") for a in fallback_paper.get("authors", [])[:5] if a.get("name")]
                         try:
                             path, _ = await client.retrieve_and_download(
