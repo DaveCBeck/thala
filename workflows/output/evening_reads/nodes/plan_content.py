@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
@@ -13,6 +15,7 @@ from ..state import DeepDiveAssignment, EveningReadsState
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="EveningReads_PlanContent")
 async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
     """Plan the 4-part series using structured output.
 

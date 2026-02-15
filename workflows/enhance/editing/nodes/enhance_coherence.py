@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from workflows.enhance.editing.document_model import DocumentModel
 from workflows.enhance.editing.schemas import EnhanceCoherenceReview
 from workflows.enhance.editing.prompts import (
@@ -14,6 +16,7 @@ from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 logger = logging.getLogger(__name__)
 
 
+@traceable(run_type="chain", name="Editing_EnhanceCoherence")
 async def enhance_coherence_review_node(state: dict) -> dict[str, Any]:
     """Review coherence after an enhancement pass.
 

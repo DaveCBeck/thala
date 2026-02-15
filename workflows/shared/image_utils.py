@@ -3,6 +3,10 @@
 import asyncio
 import logging
 import os
+import time
+
+from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
@@ -130,6 +134,7 @@ async def generate_image_prompt(
         return None
 
 
+@traceable(run_type="tool", name="Imagen_GenerateHeader")
 async def generate_article_header(
     title: str,
     content: str,
@@ -180,6 +185,7 @@ async def generate_article_header(
     try:
         from core.task_queue.rate_limits import get_imagen_semaphore
 
+        t0 = time.monotonic()
         async with get_imagen_semaphore():
             response = await asyncio.wait_for(
                 client.aio.models.generate_images(
@@ -192,10 +198,22 @@ async def generate_article_header(
                 ),
                 timeout=GOOGLE_API_TIMEOUT,
             )
+        latency_ms = int((time.monotonic() - t0) * 1000)
 
         candidates = [
             img.image.image_bytes for img in (response.generated_images or []) if img.image and img.image.image_bytes
         ]
+
+        # Attach metadata to LangSmith trace
+        rt = get_current_run_tree()
+        if rt:
+            rt.metadata.update({
+                "model": IMAGEN_MODEL,
+                "prompt": prompt[:500],
+                "image_count": len(candidates),
+                "aspect_ratio": aspect_ratio,
+                "latency_ms": latency_ms,
+            })
 
         if not candidates:
             logger.warning(f"No images generated for '{title}' - response was empty")
@@ -243,6 +261,7 @@ DIAGRAM_PROMPT_PREFIX = (
 )
 
 
+@traceable(run_type="tool", name="Gemini_GenerateDiagram")
 async def generate_diagram_image(
     brief: str,
     aspect_ratio: str = "3:2",
@@ -314,12 +333,25 @@ async def generate_diagram_image(
         return None
 
     try:
+        t0 = time.monotonic()
         results = await asyncio.gather(
             *[_generate_one() for _ in range(num_candidates)],
             return_exceptions=True,
         )
+        latency_ms = int((time.monotonic() - t0) * 1000)
 
         candidates = [r for r in results if isinstance(r, bytes)]
+
+        # Attach metadata to LangSmith trace
+        rt = get_current_run_tree()
+        if rt:
+            rt.metadata.update({
+                "model": GEMINI_IMAGE_MODEL,
+                "prompt": brief[:500],
+                "image_count": len(candidates),
+                "aspect_ratio": aspect_ratio,
+                "latency_ms": latency_ms,
+            })
 
         if not candidates:
             errors = [r for r in results if isinstance(r, Exception)]

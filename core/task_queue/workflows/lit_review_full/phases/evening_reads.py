@@ -19,7 +19,7 @@ async def run_evening_reads_phase(
     Returns:
         Series result with final_outputs
     """
-    from workflows.output.evening_reads import evening_reads_graph
+    from workflows.output.evening_reads import evening_reads
     from workflows.output.evening_reads.editorial import load_editorial_stance
 
     logger.info("Phase 3: Generating evening reads series")
@@ -29,12 +29,7 @@ async def run_evening_reads_phase(
     if editorial_stance:
         logger.info(f"Using editorial stance for category: {category}")
 
-    series_result = await evening_reads_graph.ainvoke({
-        "input": {
-            "literature_review": final_report,
-            "editorial_stance": editorial_stance,
-        }
-    })
+    series_result = await evening_reads(final_report, editorial_stance)
 
     if not series_result.get("final_outputs"):
         raise RuntimeError(

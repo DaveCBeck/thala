@@ -17,6 +17,7 @@ from typing import Optional
 from core.logging import end_run, start_run
 
 from .budget_tracker import BudgetTracker
+from .task_context import clear_task_context, set_task_context
 from .checkpoint import CheckpointManager
 from .queue_manager import TaskQueueManager
 from .schemas import Task, WorkflowCheckpoint
@@ -66,6 +67,14 @@ async def run_task_workflow(
 
     # Start logging run (triggers log rotation on first write to each module)
     start_run(task_id)
+
+    # Propagate task identity to all workflow entry points via ContextVar
+    set_task_context(
+        task_id=task_id,
+        task_type=task_type,
+        topic=task_identifier,
+        quality_tier=task.get("quality", "standard"),
+    )
 
     try:
         # Generate langsmith_run_id (or use existing if resuming)
@@ -184,4 +193,5 @@ async def run_task_workflow(
         # Broker lifecycle is managed by the caller (queue_loop or parallel supervisor),
         # not per-workflow. Stopping here would kill the shared singleton for all
         # in-flight workflows during parallel execution.
+        clear_task_context()
         end_run()

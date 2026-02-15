@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.quality_config import QualityTier
 from workflows.wrappers.multi_lang.state import (
     MultiLangState,
@@ -162,12 +163,13 @@ async def multi_lang_research(
     # Run the graph
     config = {
         "run_id": run_id,
-        "run_name": f"multi_lang:{topic[:50]}",
+        "run_name": f"multi_lang:{topic[:60]}",
         "tags": [
             f"quality:{quality}",
             "workflow:multi_lang",
             f"mode:{mode}",
             f"subworkflow:{workflow}",
+            *get_trace_tags(),
         ],
         "metadata": {
             "topic": topic[:100],
@@ -175,6 +177,7 @@ async def multi_lang_research(
             "mode": mode,
             "workflow_type": workflow,
             "language_count": len(languages) if languages else 0,
+            **get_trace_metadata(),
         },
     }
 

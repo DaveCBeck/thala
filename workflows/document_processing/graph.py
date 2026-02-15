@@ -21,6 +21,8 @@ from typing import Any
 
 from langsmith import traceable
 from langgraph.graph import END, START, StateGraph
+
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from langgraph.types import Send
 
 from workflows.document_processing.nodes import (
@@ -170,16 +172,18 @@ async def process_document(
         initial_state,
         config={
             "run_id": run_id,
-            "run_name": f"doc:{desc[:30]}",
+            "run_name": f"doc:{desc[:60]}",
             "tags": [
                 "workflow:document_processing",
                 f"lang:{primary_lang}",
                 f"item_type:{item_type}",
+                *get_trace_tags(),
             ],
             "metadata": {
                 "topic": (title or source[:100])[:100],
                 "item_type": item_type,
                 "language": primary_lang,
+                **get_trace_metadata(),
             },
         },
     )

@@ -8,6 +8,8 @@ import logging
 import re
 from typing import Any, Literal
 
+from langsmith import traceable
+
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
@@ -95,6 +97,7 @@ def _extract_relevant_sections(lit_review: str, section_names: list[str]) -> str
     return lit_review
 
 
+@traceable(run_type="chain", name="EveningReads_WriteDeepDive")
 async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     """Write a single deep-dive article.
 

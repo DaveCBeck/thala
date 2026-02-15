@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from langsmith import traceable
 
+from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.quality_config import QualityTier
 
 from ..quality_presets import FACT_CHECK_QUALITY_PRESETS
@@ -110,16 +111,18 @@ async def fact_check(
             initial_state,
             config={
                 "run_id": run_id,
-                "run_name": f"fact_check:{topic[:30]}",
+                "run_name": f"fact_check:{topic[:60]}",
                 "recursion_limit": 100,  # Higher limit for many parallel sections
                 "tags": [
                     f"quality:{quality}",
                     "workflow:fact_check",
+                    *get_trace_tags(),
                 ],
                 "metadata": {
                     "topic": topic[:100],
                     "quality_tier": quality,
                     "has_citations": has_citations,
+                    **get_trace_metadata(),
                 },
             },
         )

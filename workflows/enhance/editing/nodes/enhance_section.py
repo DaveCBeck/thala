@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langsmith import traceable
 from langgraph.types import Send
 
 from workflows.enhance.editing.document_model import DocumentModel, Section
@@ -135,6 +136,7 @@ def route_to_enhance_sections(state: dict) -> list[Send] | str:
     return sends
 
 
+@traceable(run_type="chain", name="Editing_EnhanceSection")
 async def enhance_section_worker(state: dict) -> dict[str, Any]:
     """Enhance a single section using paper corpus tools.
 
