@@ -32,26 +32,19 @@ def save_workflow_outputs(
     """
     output_paths = {}
 
-    # If we have illustrated paths, use those as the primary outputs
-    illustrated_paths = result.get("illustrated_paths", {})
-    if illustrated_paths:
-        output_paths.update(illustrated_paths)
-        logger.info(f"Using illustrated paths: {list(illustrated_paths.keys())}")
-
     # Save metadata summary
     output_dir = get_output_dir_fn()
     timestamp = generate_timestamp_fn()
     topic_slug = slugify_fn(task.get("topic", "unknown"))
 
-    # Save a summary file with all paths and publish task info
     summary_path = output_dir / f"summary_{topic_slug}_{timestamp}.json"
     summary = {
         "topic": task.get("topic"),
         "quality": task.get("quality"),
         "category": task.get("category"),
         "generated_at": datetime.now().isoformat(),
-        "illustrated_paths": illustrated_paths,
-        "publish_task_id": result.get("publish_task_id"),
+        "illustrate_task_id": result.get("illustrate_task_id"),
+        "lit_review_draft_url": result.get("lit_review_draft_url"),
         "status": result.get("status"),
         "errors": result.get("errors"),
     }
@@ -59,8 +52,8 @@ def save_workflow_outputs(
         json.dump(summary, f, indent=2)
     output_paths["summary"] = str(summary_path)
 
-    # If no illustrated versions, save raw versions
-    if not illustrated_paths:
+    # Save raw versions (unillustrated articles are saved by save_and_spawn phase)
+    if True:
         lit_result = result.get("lit_review", {})
         final_report = result.get("final_report") or lit_result.get("final_report")
 

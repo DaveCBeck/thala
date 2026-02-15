@@ -72,6 +72,7 @@ class PublishSeriesWorkflow(BaseWorkflow):
         Returns:
             Dict with status, published items, etc.
         """
+        logger.warning("publish_series is deprecated — new tasks use illustrate_and_publish")
         checkpoint_callback("checking")
 
         base_date = datetime.fromisoformat(task["base_date"])

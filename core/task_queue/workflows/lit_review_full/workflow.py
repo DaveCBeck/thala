@@ -1,14 +1,13 @@
 """Full literature review workflow.
 
-Pipeline: lit_review → enhance (supervision+editing) → evening_reads → illustrate → spawn_publish
+Pipeline: lit_review → enhance (supervision+editing) → evening_reads → save_and_spawn
 
 This is the complete academic research workflow that:
 1. Discovers and processes academic papers
 2. Generates an initial literature review
 3. Enhances with supervision loops and editing
 4. Produces an evening reads article series
-5. Illustrates all articles with images
-6. Spawns a publish_series task for scheduled draft creation
+5. Saves unillustrated articles and spawns illustrate_and_publish task
 """
 
 import logging
@@ -37,8 +36,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
             "supervision",
             "editing",
             "evening_reads",
-            "illustrate",
-            "spawn_publish",
+            "save_and_spawn",
             "saving",
             "complete",
         ]
@@ -75,8 +73,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
         from .phases.lit_review import run_lit_review_phase
         from .phases.enhancement import run_enhancement_phase
         from .phases.evening_reads import run_evening_reads_phase
-        from .phases.illustration import run_illustration_phase
-        from .phases.publish_spawn import run_publish_spawn_phase
+        from .phases.save_and_spawn import run_save_and_spawn_phase
 
         topic = task["topic"]
         research_questions = task.get("research_questions")
@@ -120,8 +117,8 @@ class LitReviewFullWorkflow(BaseWorkflow):
         enhance_result = None
         series_result = None
         final_report = None
-        illustrated_paths = {}
-        publish_task_id = None
+        illustrate_task_id = None
+        lit_review_draft_url = None
 
         # Phase 1: Literature review
         if "lit_review" in completed_phases:
@@ -231,58 +228,41 @@ class LitReviewFullWorkflow(BaseWorkflow):
                 errors.append({"phase": "evening_reads", "error": str(e)})
                 series_result = {"final_outputs": []}
 
-        # Phase 4: Illustrate articles
-        if "illustrate" in completed_phases:
-            illustrated_paths = phase_outputs.get("illustrated_paths", {})
-            logger.info("Skipping illustrate phase (already complete)")
+        # Phase 4: Save articles to disk, publish lit review draft, spawn illustrate_and_publish task
+        if "save_and_spawn" in completed_phases:
+            illustrate_task_id = phase_outputs.get("illustrate_task_id")
+            lit_review_draft_url = phase_outputs.get("lit_review_draft_url")
+            logger.info("Skipping save_and_spawn phase (already complete)")
         else:
-            checkpoint_callback("illustrate")
-            final_outputs = series_result.get("final_outputs", [])
-            if final_outputs:
+            checkpoint_callback("save_and_spawn")
+            final_outputs = series_result.get("final_outputs", []) if series_result else []
+            if final_report and final_outputs:
                 try:
-                    illustrated_paths = await run_illustration_phase(
+                    spawn_result = await run_save_and_spawn_phase(
                         task=task,
                         final_report=final_report,
                         final_outputs=final_outputs,
                         get_output_dir_fn=self.get_output_dir,
-                        generate_timestamp_fn=self.generate_timestamp,
                         slugify_fn=self.slugify,
                     )
+                    illustrate_task_id = spawn_result.get("illustrate_task_id")
+                    lit_review_draft_url = spawn_result.get("lit_review_draft_url")
                     checkpoint_callback(
-                        "illustrate",
+                        "save_and_spawn",
                         phase_outputs={
                             "lit_result": lit_result,
                             "enhance_result": enhance_result,
                             "final_report": final_report,
                             "series_result": series_result,
-                            "illustrated_paths": illustrated_paths,
+                            "illustrate_task_id": illustrate_task_id,
+                            "lit_review_draft_url": lit_review_draft_url,
                         },
                     )
-                    # Flush to ensure phase_outputs are persisted before next phase
                     if flush_checkpoints:
                         await flush_checkpoints()
                 except Exception as e:
-                    logger.error(f"Illustration failed: {e}", exc_info=True)
-                    errors.append({"phase": "illustrate", "error": str(e)})
-
-        # Phase 5: Spawn publish_series task
-        if "spawn_publish" in completed_phases:
-            publish_task_id = phase_outputs.get("publish_task_id")
-            logger.info("Skipping spawn_publish phase (already complete)")
-        else:
-            checkpoint_callback("spawn_publish")
-            final_outputs = series_result.get("final_outputs", []) if series_result else []
-            if illustrated_paths and not errors:
-                try:
-                    publish_task_id = run_publish_spawn_phase(
-                        task=task,
-                        lit_review_path=illustrated_paths.get("lit_review"),
-                        illustrated_paths=illustrated_paths,
-                        final_outputs=final_outputs,
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to spawn publish task: {e}", exc_info=True)
-                    errors.append({"phase": "spawn_publish", "error": str(e)})
+                    logger.error(f"Save and spawn failed: {e}", exc_info=True)
+                    errors.append({"phase": "save_and_spawn", "error": str(e)})
 
         # Determine status
         if not lit_result or not lit_result.get("final_report"):
@@ -299,8 +279,8 @@ class LitReviewFullWorkflow(BaseWorkflow):
             "enhance": enhance_result,
             "series": series_result,
             "final_report": final_report,
-            "illustrated_paths": illustrated_paths,
-            "publish_task_id": publish_task_id,
+            "illustrate_task_id": illustrate_task_id,
+            "lit_review_draft_url": lit_review_draft_url,
             "errors": errors,
         }
 
