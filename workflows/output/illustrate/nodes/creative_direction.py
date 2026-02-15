@@ -68,7 +68,7 @@ async def creative_direction_node(state: IllustrateState) -> dict:
                 generate_header=config.generate_header_image,
             ),
             schema=CreativeDirectionResult,
-            config=InvokeConfig(max_tokens=4000, batch_policy=BatchPolicy.PREFER_SPEED),
+            config=InvokeConfig(max_tokens=4000, batch_policy=BatchPolicy.PREFER_BALANCE),
         )
 
         # Resolve hex colors for diagram injection

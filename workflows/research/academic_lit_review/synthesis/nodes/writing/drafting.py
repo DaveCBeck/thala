@@ -107,7 +107,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         user=intro_prompt,
         config=InvokeConfig(
             max_tokens=4096,
-            batch_policy=BatchPolicy.PREFER_SPEED,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
         ),
     )
 
@@ -117,7 +117,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         user=method_prompt,
         config=InvokeConfig(
             max_tokens=4096,
-            batch_policy=BatchPolicy.PREFER_SPEED,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
         ),
     )
 
@@ -218,7 +218,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         user=discussion_prompt,
         config=InvokeConfig(
             max_tokens=4096,
-            batch_policy=BatchPolicy.PREFER_SPEED,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
         ),
     )
 
@@ -228,7 +228,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         user=conclusions_prompt,
         config=InvokeConfig(
             max_tokens=4096,
-            batch_policy=BatchPolicy.PREFER_SPEED,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
         ),
     )
 

@@ -133,7 +133,7 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
                 editorial_notes=editorial_notes,
             ),
             schema=PlanBriefsResult,
-            config=InvokeConfig(max_tokens=8000, batch_policy=BatchPolicy.PREFER_SPEED),
+            config=InvokeConfig(max_tokens=8000, batch_policy=BatchPolicy.PREFER_BALANCE),
         )
 
         image_plan = _briefs_to_image_plan(result.candidate_briefs, selected, config)

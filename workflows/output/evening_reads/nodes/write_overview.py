@@ -109,7 +109,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
             user=user_prompt,
             config=InvokeConfig(
                 max_tokens=MAX_TOKENS,
-                batch_policy=BatchPolicy.PREFER_SPEED,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )
 

@@ -11,6 +11,7 @@ from workflows.enhance.editing.prompts import (
     ENHANCE_COHERENCE_REVIEW_SYSTEM,
     ENHANCE_COHERENCE_REVIEW_USER,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,11 @@ async def enhance_coherence_review_node(state: dict) -> dict[str, Any]:
             system=ENHANCE_COHERENCE_REVIEW_SYSTEM,
             user=user_prompt,
             schema=EnhanceCoherenceReview,
-            config=InvokeConfig(max_tokens=2000, cache=False),
+            config=InvokeConfig(
+                max_tokens=2000,
+                cache=False,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+            ),
         )
 
         logger.info(

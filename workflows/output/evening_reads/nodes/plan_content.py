@@ -52,7 +52,7 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
             schema=PlanningOutput,
             config=InvokeConfig(
                 max_tokens=4096,
-                batch_policy=BatchPolicy.PREFER_SPEED,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )
 

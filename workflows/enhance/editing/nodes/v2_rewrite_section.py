@@ -279,7 +279,7 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
             user=user_prompt,
             config=InvokeConfig(
                 max_tokens=8000,
-                batch_policy=BatchPolicy.PREFER_SPEED,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )
         rewritten_content = response.content.strip()

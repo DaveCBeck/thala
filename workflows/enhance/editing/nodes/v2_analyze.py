@@ -9,6 +9,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..prompts import V2_GLOBAL_ANALYSIS_SYSTEM, V2_GLOBAL_ANALYSIS_USER
@@ -91,6 +92,7 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
                 max_tokens=8000,
                 thinking_budget=thinking_budget if use_opus else None,
                 cache=False if thinking_budget else True,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )
     except Exception as e:

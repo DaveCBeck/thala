@@ -105,7 +105,7 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
                 thinking_budget=8000,
                 max_tokens=32000,
                 cache=False,
-                batch_policy=BatchPolicy.PREFER_SPEED,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from langsmith import traceable
 
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..prompts import V2_VERIFICATION_SYSTEM, V2_VERIFICATION_USER
@@ -166,7 +167,11 @@ async def v2_reassemble_node(state: dict) -> dict[str, Any]:
                     changes_summary=changes_summary,
                 ),
                 schema=V2FinalVerification,
-                config=InvokeConfig(max_tokens=2000, cache=False),
+                config=InvokeConfig(
+                    max_tokens=2000,
+                    cache=False,
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                ),
             )
         except Exception as e:
             logger.error(f"Verification LLM call failed: {e}")
