@@ -48,8 +48,17 @@ async def run_parallel_tasks(
     checkpoint_mgr = CheckpointManager(queue_dir=queue_dir)
     budget_tracker = BudgetTracker(queue_dir=queue_dir)
 
+    # Identify resumable tasks (have checkpoint but owning process is dead)
+    incomplete = await checkpoint_mgr.get_incomplete_work()
+    resumable_ids = {cp["task_id"] for cp in incomplete}
+    if resumable_ids:
+        logger.info(f"Found {len(resumable_ids)} resumable task(s) with checkpoints")
+    checkpoints_by_id = {cp["task_id"]: cp for cp in incomplete}
+
     # Atomic task selection (sync I/O with fcntl.flock — run in thread pool)
-    tasks = await asyncio.to_thread(_select_tasks, queue_manager, count)
+    tasks = await asyncio.to_thread(
+        _select_tasks, queue_manager, count, resumable_ids
+    )
     if not tasks:
         logger.info("No eligible tasks to run")
         coordinator.remove_signal_handlers()
@@ -60,7 +69,8 @@ async def run_parallel_tasks(
     for task in tasks:
         tid = task["id"][:8]
         identifier = task.get("topic") or task.get("query", "unknown")
-        logger.info(f"  {tid}: {identifier[:60]}")
+        resuming = " (resuming)" if task["id"] in resumable_ids else ""
+        logger.info(f"  {tid}: {identifier[:60]}{resuming}")
 
     try:
         # Stagger starts and run concurrently
@@ -85,6 +95,7 @@ async def run_parallel_tasks(
                 queue_manager,
                 checkpoint_mgr,
                 budget_tracker,
+                resume_from=checkpoints_by_id.get(task["id"]),
                 shutdown_coordinator=coordinator,
             )
 
@@ -136,20 +147,43 @@ async def run_parallel_tasks(
             logger.exception("Error resetting orphaned tasks")
 
 
-def _select_tasks(queue_manager: TaskQueueManager, count: int) -> list[Task]:
-    """Atomically select and claim pending tasks under queue lock.
+def _select_tasks(
+    queue_manager: TaskQueueManager,
+    count: int,
+    resumable_ids: set[str] | None = None,
+) -> list[Task]:
+    """Atomically select and claim tasks under queue lock.
 
     Called via asyncio.to_thread() to avoid blocking the event loop
     with fcntl.flock().
 
-    Uses round-robin category rotation (matching the sequential scheduler)
-    to ensure thematic diversity. Within each category, picks the highest-
-    priority task first, then FIFO by creation time.
+    Prioritises resumable tasks (those with checkpoints in current_work.json)
+    over fresh pending tasks. Resets orphaned IN_PROGRESS tasks (no checkpoint)
+    back to PENDING. Uses round-robin category rotation (matching the
+    sequential scheduler) to ensure thematic diversity. Within each category,
+    resumable tasks come first, then highest-priority, then FIFO.
     """
+    resumable_ids = resumable_ids or set()
+
     with queue_manager.persistence.lock():
         queue = queue_manager.persistence.read_queue()
-        pending = [t for t in queue["topics"] if t["status"] == TaskStatus.PENDING.value]
-        if not pending:
+
+        # Reset orphaned IN_PROGRESS tasks (no checkpoint) back to PENDING
+        for task in queue["topics"]:
+            if (
+                task["status"] == TaskStatus.IN_PROGRESS.value
+                and task["id"] not in resumable_ids
+            ):
+                task["status"] = TaskStatus.PENDING.value
+                task.pop("started_at", None)
+
+        # Build candidate pool: resumable (still IN_PROGRESS) + PENDING
+        candidates = [
+            t
+            for t in queue["topics"]
+            if t["status"] in (TaskStatus.IN_PROGRESS.value, TaskStatus.PENDING.value)
+        ]
+        if not candidates:
             return []
 
         categories = load_categories_from_publications(PUBLICATIONS_FILE)
@@ -161,22 +195,32 @@ def _select_tasks(queue_manager: TaskQueueManager, count: int) -> list[Task]:
             if last_idx >= len(categories):
                 last_idx = -1
 
-        # Build per-category task lists, sorted by priority desc then FIFO
+        # Build per-category task lists.
+        # Sort: resumable first, then priority desc, then FIFO.
         by_category: dict[str, list[Task]] = {}
-        for task in pending:
+        for task in candidates:
             by_category.setdefault(task["category"], []).append(task)
         for tasks in by_category.values():
-            tasks.sort(key=lambda t: (-t.get("priority", 2), t.get("created_at", "")))
+            tasks.sort(
+                key=lambda t: (
+                    0 if t["id"] in resumable_ids else 1,
+                    -t.get("priority", 2),
+                    t.get("created_at", ""),
+                )
+            )
 
-        # Walk categories round-robin, picking one task per category per pass
+        # Walk categories round-robin, picking one task per category per pass.
+        # start_idx is fixed for the entire inner loop so that updating
+        # last_idx on selection doesn't shift the walk mid-iteration.
         selected: list[Task] = []
+        start_idx = last_idx + 1
         passes = 0
-        while len(selected) < count and passes < len(pending):
+        while len(selected) < count and passes < len(candidates):
             added_this_round = False
             for offset in range(len(categories)):
                 if len(selected) >= count:
                     break
-                cat_idx = (last_idx + 1 + offset + passes * len(categories)) % len(categories)
+                cat_idx = (start_idx + offset) % len(categories)
                 category = categories[cat_idx]
                 cat_tasks = by_category.get(category, [])
                 if cat_tasks:
@@ -185,21 +229,39 @@ def _select_tasks(queue_manager: TaskQueueManager, count: int) -> list[Task]:
                     added_this_round = True
             if not added_this_round:
                 break
+            start_idx = last_idx + 1
             passes += 1
 
         # Fallback: if categories don't cover all tasks (e.g. deprecated
         # category), fill remaining slots with highest-priority leftovers
         if len(selected) < count:
-            selected_ids = {t["id"] for t in selected}
-            leftovers = [t for t in pending if t["id"] not in selected_ids]
-            leftovers.sort(key=lambda t: (-t.get("priority", 2), t.get("created_at", "")))
+            selected_set = {t["id"] for t in selected}
+            leftovers = [t for t in candidates if t["id"] not in selected_set]
+            leftovers.sort(
+                key=lambda t: (
+                    0 if t["id"] in resumable_ids else 1,
+                    -t.get("priority", 2),
+                    t.get("created_at", ""),
+                )
+            )
             selected.extend(leftovers[: count - len(selected)])
 
-        # Persist category index and mark tasks as in-progress
+        # Reset unselected resumable tasks back to PENDING
+        selected_set = {t["id"] for t in selected}
+        for task in queue["topics"]:
+            if (
+                task["status"] == TaskStatus.IN_PROGRESS.value
+                and task["id"] not in selected_set
+            ):
+                task["status"] = TaskStatus.PENDING.value
+                task.pop("started_at", None)
+
+        # Persist category index and mark newly selected tasks as in-progress
         queue["last_category_index"] = last_idx
         now = datetime.now(timezone.utc).isoformat()
         for task in selected:
-            task["status"] = TaskStatus.IN_PROGRESS.value
-            task["started_at"] = now
+            if task["status"] == TaskStatus.PENDING.value:
+                task["status"] = TaskStatus.IN_PROGRESS.value
+                task["started_at"] = now
         queue_manager.persistence.write_queue(queue)
     return selected

@@ -133,8 +133,8 @@ class TestSelectTasks:
 
         assert selected[0]["id"] == "older"
 
-    def test_only_selects_pending(self):
-        """Ignores tasks already IN_PROGRESS or COMPLETED."""
+    def test_resets_orphaned_in_progress_and_selects_them(self):
+        """Orphaned IN_PROGRESS tasks (no checkpoint) are reset to PENDING and become selectable."""
         pending = _make_task(task_id="pending", status=TaskStatus.PENDING.value)
         in_progress = _make_task(task_id="running", status=TaskStatus.IN_PROGRESS.value)
         completed = _make_task(task_id="done", status=TaskStatus.COMPLETED.value)
@@ -143,8 +143,13 @@ class TestSelectTasks:
 
         selected = _select_tasks(qm, count=10)
 
-        assert len(selected) == 1
-        assert selected[0]["id"] == "pending"
+        # Orphaned in_progress was reset to PENDING, so both are selectable
+        assert len(selected) == 2
+        selected_ids = {t["id"] for t in selected}
+        assert "pending" in selected_ids
+        assert "running" in selected_ids
+        # COMPLETED task is still excluded
+        assert "done" not in selected_ids
 
     def test_writes_queue_after_selection(self):
         """write_queue is called to persist the status changes."""
@@ -154,6 +159,28 @@ class TestSelectTasks:
         _select_tasks(qm, count=1)
 
         qm.persistence.write_queue.assert_called_once()
+
+    @patch(
+        "core.task_queue.parallel.load_categories_from_publications",
+        return_value=["alpha", "beta", "gamma"],
+    )
+    def test_category_rotation_selects_from_different_categories(self, _mock_cats):
+        """Selecting 2 tasks should pick from 2 different categories, not the same one twice."""
+        t1 = _make_task(task_id="a1", topic="Alpha topic 1")
+        t1["category"] = "alpha"
+        t2 = _make_task(task_id="a2", topic="Alpha topic 2")
+        t2["category"] = "alpha"
+        t3 = _make_task(task_id="b1", topic="Beta topic 1")
+        t3["category"] = "beta"
+
+        qm = _mock_queue_manager([t1, t2, t3])
+
+        selected = _select_tasks(qm, count=2)
+
+        categories = [t["category"] for t in selected]
+        assert len(selected) == 2
+        assert "alpha" in categories
+        assert "beta" in categories
 
     def test_does_not_mutate_non_selected_tasks(self):
         """Tasks not selected keep their original PENDING status."""
@@ -181,10 +208,13 @@ class TestRunParallelTasks:
     @pytest.mark.asyncio
     async def test_empty_queue_returns_empty_list(self):
         """When no pending tasks, returns []."""
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
         with (
             patch("core.task_queue.parallel.get_shutdown_coordinator") as mock_coord_fn,
-            patch("core.task_queue.parallel.TaskQueueManager") as mock_qm_cls,
-            patch("core.task_queue.parallel.CheckpointManager"),
+            patch("core.task_queue.parallel.TaskQueueManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker"),
             patch("core.task_queue.parallel.asyncio.to_thread", return_value=[]),
         ):
@@ -210,10 +240,13 @@ class TestRunParallelTasks:
         budget = MagicMock()
         budget.should_proceed.return_value = (False, "over limit")
 
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
         with (
             patch("core.task_queue.parallel.get_shutdown_coordinator", return_value=coordinator),
             patch("core.task_queue.parallel.TaskQueueManager"),
-            patch("core.task_queue.parallel.CheckpointManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
             patch("core.task_queue.parallel.asyncio.to_thread", return_value=[task]),
             patch("core.task_queue.parallel.cleanup_supervisor_resources", new_callable=AsyncMock),
@@ -241,12 +274,15 @@ class TestRunParallelTasks:
         budget = MagicMock()
         budget.should_proceed.return_value = (True, "")
 
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
         mock_run_workflow = AsyncMock(return_value={"status": "completed"})
 
         with (
             patch("core.task_queue.parallel.get_shutdown_coordinator", return_value=coordinator),
             patch("core.task_queue.parallel.TaskQueueManager"),
-            patch("core.task_queue.parallel.CheckpointManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
             patch("core.task_queue.parallel.asyncio.to_thread", return_value=tasks),
             patch("core.task_queue.parallel.run_task_workflow", mock_run_workflow),
@@ -272,12 +308,15 @@ class TestRunParallelTasks:
         budget = MagicMock()
         budget.should_proceed.return_value = (True, "")
 
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
         mock_run_workflow = AsyncMock(side_effect=RuntimeError("workflow boom"))
 
         with (
             patch("core.task_queue.parallel.get_shutdown_coordinator", return_value=coordinator),
             patch("core.task_queue.parallel.TaskQueueManager"),
-            patch("core.task_queue.parallel.CheckpointManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
             patch("core.task_queue.parallel.asyncio.to_thread", return_value=[task]),
             patch("core.task_queue.parallel.run_task_workflow", mock_run_workflow),
@@ -288,3 +327,136 @@ class TestRunParallelTasks:
             assert len(results) == 1
             assert isinstance(results[0], RuntimeError)
             assert "workflow boom" in str(results[0])
+
+    @pytest.mark.asyncio
+    async def test_passes_resume_from_for_checkpointed_tasks(self):
+        """Resumable tasks pass their checkpoint as resume_from to run_task_workflow."""
+        task = _make_task(task_id="resume-task", status=TaskStatus.IN_PROGRESS.value)
+        checkpoint = {"task_id": "resume-task", "phase": "supervision", "phase_outputs": {}}
+
+        coordinator = MagicMock()
+        coordinator.install_signal_handlers = MagicMock()
+        coordinator.remove_signal_handlers = MagicMock()
+        coordinator.wait_or_shutdown = AsyncMock(return_value=False)
+
+        budget = MagicMock()
+        budget.should_proceed.return_value = (True, "")
+
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[checkpoint])
+
+        mock_run_workflow = AsyncMock(return_value={"status": "completed"})
+
+        with (
+            patch("core.task_queue.parallel.get_shutdown_coordinator", return_value=coordinator),
+            patch("core.task_queue.parallel.TaskQueueManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
+            patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
+            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[task]),
+            patch("core.task_queue.parallel.run_task_workflow", mock_run_workflow),
+            patch("core.task_queue.parallel.cleanup_supervisor_resources", new_callable=AsyncMock),
+        ):
+            await run_parallel_tasks(count=1, stagger_minutes=0)
+
+            mock_run_workflow.assert_called_once()
+            call_kwargs = mock_run_workflow.call_args
+            assert call_kwargs.kwargs.get("resume_from") == checkpoint
+
+
+# ---------------------------------------------------------------------------
+# _select_tasks — checkpoint-aware behaviour
+# ---------------------------------------------------------------------------
+
+class TestSelectTasksCheckpointAware:
+    """Tests for _select_tasks resumable/orphan handling."""
+
+    def test_prioritizes_resumable_over_pending(self):
+        """Resumable IN_PROGRESS tasks are selected before PENDING tasks."""
+        resumable = _make_task(task_id="r1", status=TaskStatus.IN_PROGRESS.value, priority=2)
+        pending_high = _make_task(task_id="p1", status=TaskStatus.PENDING.value, priority=4)
+        pending_low = _make_task(task_id="p2", status=TaskStatus.PENDING.value, priority=2)
+        qm = _mock_queue_manager([resumable, pending_high, pending_low])
+
+        selected = _select_tasks(qm, count=1, resumable_ids={"r1"})
+
+        assert len(selected) == 1
+        assert selected[0]["id"] == "r1"
+
+    def test_resets_orphaned_in_progress_without_checkpoint(self):
+        """IN_PROGRESS tasks without checkpoint IDs are reset to PENDING."""
+        orphan = _make_task(task_id="orphan", status=TaskStatus.IN_PROGRESS.value)
+        orphan["started_at"] = "2025-01-01T00:00:00+00:00"
+        resumable = _make_task(task_id="r1", status=TaskStatus.IN_PROGRESS.value)
+        qm = _mock_queue_manager([orphan, resumable])
+
+        _select_tasks(qm, count=2, resumable_ids={"r1"})
+
+        # Check the written queue state
+        written_queue = qm.persistence.write_queue.call_args[0][0]
+        orphan_task = next(t for t in written_queue["topics"] if t["id"] == "orphan")
+        # Orphan was reset then re-selected as PENDING → marked IN_PROGRESS
+        assert orphan_task["status"] == TaskStatus.IN_PROGRESS.value
+
+    def test_resets_unselected_resumable_to_pending(self):
+        """When more resumable tasks than count, unselected ones are reset to PENDING."""
+        r1 = _make_task(task_id="r1", status=TaskStatus.IN_PROGRESS.value, priority=3)
+        r2 = _make_task(task_id="r2", status=TaskStatus.IN_PROGRESS.value, priority=2)
+        r3 = _make_task(task_id="r3", status=TaskStatus.IN_PROGRESS.value, priority=1)
+        qm = _mock_queue_manager([r1, r2, r3])
+
+        selected = _select_tasks(qm, count=2, resumable_ids={"r1", "r2", "r3"})
+
+        assert len(selected) == 2
+        selected_ids = {t["id"] for t in selected}
+
+        # The unselected resumable task should be PENDING in written queue
+        written_queue = qm.persistence.write_queue.call_args[0][0]
+        for task in written_queue["topics"]:
+            if task["id"] not in selected_ids:
+                assert task["status"] == TaskStatus.PENDING.value
+
+    def test_fills_remaining_slots_from_pending(self):
+        """After picking resumable tasks, fills remaining slots from PENDING pool."""
+        resumable = _make_task(task_id="r1", status=TaskStatus.IN_PROGRESS.value)
+        p1 = _make_task(task_id="p1", status=TaskStatus.PENDING.value, priority=3)
+        p2 = _make_task(task_id="p2", status=TaskStatus.PENDING.value, priority=2)
+        qm = _mock_queue_manager([resumable, p1, p2])
+
+        selected = _select_tasks(qm, count=3, resumable_ids={"r1"})
+
+        assert len(selected) == 3
+        selected_ids = {t["id"] for t in selected}
+        assert "r1" in selected_ids
+        assert "p1" in selected_ids
+        assert "p2" in selected_ids
+
+    def test_no_resumable_ids_behaves_like_before(self):
+        """Without resumable_ids, all IN_PROGRESS tasks are reset and only PENDING selected."""
+        in_progress = _make_task(task_id="ip", status=TaskStatus.IN_PROGRESS.value)
+        pending = _make_task(task_id="p1", status=TaskStatus.PENDING.value)
+        qm = _mock_queue_manager([in_progress, pending])
+
+        selected = _select_tasks(qm, count=5)
+
+        # Both should be selected (orphan reset to PENDING, then selected)
+        assert len(selected) == 2
+
+    @patch(
+        "core.task_queue.parallel.load_categories_from_publications",
+        return_value=["alpha", "beta"],
+    )
+    def test_resumable_uses_category_rotation(self, _mock_cats):
+        """Resumable tasks from different categories are selected via round-robin."""
+        r1 = _make_task(task_id="r1", status=TaskStatus.IN_PROGRESS.value)
+        r1["category"] = "alpha"
+        r2 = _make_task(task_id="r2", status=TaskStatus.IN_PROGRESS.value)
+        r2["category"] = "beta"
+        r3 = _make_task(task_id="r3", status=TaskStatus.IN_PROGRESS.value)
+        r3["category"] = "alpha"
+        qm = _mock_queue_manager([r1, r2, r3])
+
+        selected = _select_tasks(qm, count=2, resumable_ids={"r1", "r2", "r3"})
+
+        categories = [t["category"] for t in selected]
+        assert "alpha" in categories
+        assert "beta" in categories
