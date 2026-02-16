@@ -6,18 +6,12 @@ import logging
 import httpx
 
 from .config import CapsolverConfig
+from .errors import CaptchaSolveError
 from .types import CaptchaType, DetectedCaptcha
 
+from collections.abc import Awaitable, Callable
+
 logger = logging.getLogger(__name__)
-
-
-class CaptchaSolveError(Exception):
-    """Captcha solve failed permanently."""
-
-    def __init__(self, error_code: str, error_description: str):
-        self.error_code = error_code
-        self.error_description = error_description
-        super().__init__(f"{error_code}: {error_description}")
 
 
 class CaptchaSolver:
@@ -32,8 +26,15 @@ class CaptchaSolver:
         if not self._config.available:
             raise ValueError("CAPSOLVER_API_KEY is not set")
         self._semaphore = asyncio.Semaphore(self._config.max_concurrent)
+        self._http_client: httpx.AsyncClient | None = None
 
-    async def _solve_with_retry(self, solve_fn) -> str:
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create a shared httpx client for CapSolver API calls."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=self._config.timeout)
+        return self._http_client
+
+    async def _solve_with_retry(self, solve_fn: Callable[[], Awaitable[dict]]) -> str:
         """Execute a solve function with semaphore and one retry on UNSOLVABLE."""
         async with self._semaphore:
             for attempt in range(2):
@@ -41,7 +42,10 @@ class CaptchaSolver:
                 if result.get("errorId", 0) == 0:
                     # Extract token — reCAPTCHA uses gRecaptchaResponse, others use token
                     solution = result.get("solution", {})
-                    return solution.get("gRecaptchaResponse") or solution.get("token") or ""
+                    token = solution.get("gRecaptchaResponse") or solution.get("token", "")
+                    if not token:
+                        raise CaptchaSolveError("ERROR_NO_TOKEN", "Solution contained no token")
+                    return token
 
                 error_code = result.get("errorCode", "UNKNOWN")
                 error_desc = result.get("errorDescription", "Unknown error")
@@ -55,7 +59,7 @@ class CaptchaSolver:
         # Unreachable, but satisfies type checker
         raise CaptchaSolveError("ERROR_RETRY_EXHAUSTED", "All attempts failed")
 
-    async def _solve_via_api(self, task_type: str, payload: dict) -> dict:
+    async def _solve_via_api(self, task_type: str, payload: dict[str, str]) -> dict:
         """Solve captcha via raw CapSolver API (createTask + poll getTaskResult).
 
         Used for captcha types not wrapped by python3-capsolver (e.g. hCaptcha).
@@ -63,41 +67,43 @@ class CaptchaSolver:
         """
         api_base = "https://api.capsolver.com"
         task = {"type": task_type, **payload}
+        client = self._get_http_client()
 
-        async with httpx.AsyncClient(timeout=self._config.timeout) as client:
-            # Create task
+        # Create task
+        resp = await client.post(
+            f"{api_base}/createTask",
+            json={"clientKey": self._config.api_key, "task": task},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("errorId", 0) != 0:
+            return data  # Let _solve_with_retry handle the error
+
+        task_id = data.get("taskId")
+        if not task_id:
+            return {"errorId": 1, "errorCode": "ERROR_NO_TASK_ID", "errorDescription": "No taskId returned"}
+
+        # Poll for result
+        poll_interval = 3.0
+        elapsed = 0.0
+        while elapsed < self._config.timeout:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
             resp = await client.post(
-                f"{api_base}/createTask",
-                json={"clientKey": self._config.api_key, "task": task},
+                f"{api_base}/getTaskResult",
+                json={"clientKey": self._config.api_key, "taskId": task_id},
             )
-            data = resp.json()
-            if data.get("errorId", 0) != 0:
-                return data  # Let _solve_with_retry handle the error
+            resp.raise_for_status()
+            result = resp.json()
 
-            task_id = data.get("taskId")
-            if not task_id:
-                return {"errorId": 1, "errorCode": "ERROR_NO_TASK_ID", "errorDescription": "No taskId returned"}
+            if result.get("errorId", 0) != 0:
+                return result
 
-            # Poll for result
-            poll_interval = 3.0
-            elapsed = 0.0
-            while elapsed < self._config.timeout:
-                await asyncio.sleep(poll_interval)
-                elapsed += poll_interval
+            if result.get("status") == "ready":
+                return result
 
-                resp = await client.post(
-                    f"{api_base}/getTaskResult",
-                    json={"clientKey": self._config.api_key, "taskId": task_id},
-                )
-                result = resp.json()
-
-                if result.get("errorId", 0) != 0:
-                    return result
-
-                if result.get("status") == "ready":
-                    return result
-
-            return {"errorId": 1, "errorCode": "ERROR_TASK_TIMEOUT", "errorDescription": "Polling timed out"}
+        return {"errorId": 1, "errorCode": "ERROR_TASK_TIMEOUT", "errorDescription": "Polling timed out"}
 
     async def solve_recaptcha_v2(self, website_url: str, website_key: str) -> str:
         """Solve reCAPTCHA v2 and return the response token."""
@@ -180,18 +186,16 @@ class CaptchaSolver:
 
     async def solve(self, detected: DetectedCaptcha) -> str:
         """Dispatch to the correct solver based on detected captcha type."""
-        dispatch = {
-            CaptchaType.RECAPTCHA_V2: lambda: self.solve_recaptcha_v2(detected.page_url, detected.site_key),
-            CaptchaType.RECAPTCHA_V3: lambda: self.solve_recaptcha_v3(
-                detected.page_url, detected.site_key, detected.action
-            ),
-            CaptchaType.HCAPTCHA: lambda: self.solve_hcaptcha(detected.page_url, detected.site_key),
-            CaptchaType.TURNSTILE: lambda: self.solve_turnstile(detected.page_url, detected.site_key),
-        }
-        solver_fn = dispatch.get(detected.captcha_type)
-        if solver_fn is None:
-            raise CaptchaSolveError(
-                "ERROR_UNSUPPORTED_TYPE",
-                f"Unsupported captcha type: {detected.captcha_type}",
-            )
-        return await solver_fn()
+        url, key = detected.page_url, detected.site_key
+        if detected.captcha_type == CaptchaType.RECAPTCHA_V2:
+            return await self.solve_recaptcha_v2(url, key)
+        if detected.captcha_type == CaptchaType.RECAPTCHA_V3:
+            return await self.solve_recaptcha_v3(url, key, detected.action)
+        if detected.captcha_type == CaptchaType.HCAPTCHA:
+            return await self.solve_hcaptcha(url, key)
+        if detected.captcha_type == CaptchaType.TURNSTILE:
+            return await self.solve_turnstile(url, key)
+        raise CaptchaSolveError(
+            "ERROR_UNSUPPORTED_TYPE",
+            f"Unsupported captcha type: {detected.captcha_type}",
+        )

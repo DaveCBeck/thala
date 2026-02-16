@@ -1,7 +1,8 @@
 """Captcha solving via CapSolver API."""
 
-from .config import CapsolverConfig
-from .solver import CaptchaSolveError, CaptchaSolver
+from .config import CapsolverConfig, get_capsolver_config
+from .errors import CaptchaSolveError
+from .solver import CaptchaSolver
 from .types import CaptchaType, DetectedCaptcha
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "CaptchaSolver",
     "CaptchaType",
     "DetectedCaptcha",
+    "get_capsolver_config",
 ]

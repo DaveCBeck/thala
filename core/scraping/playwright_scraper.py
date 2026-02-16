@@ -11,7 +11,9 @@ from typing import TYPE_CHECKING
 import html2text
 
 if TYPE_CHECKING:
-    from playwright.async_api import Browser, Playwright
+    from playwright.async_api import Browser, Page, Playwright
+
+    from core.captcha import CaptchaSolver
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,7 @@ class PlaywrightScraper:
         )
 
         self._last_request: float = 0
+        self._solver: "CaptchaSolver | None" = None
 
         # Configure html2text
         self._html2text = html2text.HTML2Text()
@@ -99,6 +102,17 @@ class PlaywrightScraper:
             logger.debug(f"Rate limiting: waiting {wait_time:.2f}s")
             await asyncio.sleep(wait_time)
         self._last_request = time.monotonic()
+
+    def _get_solver(self) -> "CaptchaSolver | None":
+        """Get or create a shared CaptchaSolver (lazy singleton)."""
+        if self._solver is None:
+            from core.captcha import CapsolverConfig, CaptchaSolver
+
+            config = CapsolverConfig()
+            if not config.available:
+                return None
+            self._solver = CaptchaSolver(config)
+        return self._solver
 
     async def scrape(self, url: str) -> str:
         """Scrape URL and return content as markdown.
@@ -178,14 +192,13 @@ class PlaywrightScraper:
             await page.close()
             await context.close()
 
-    async def _handle_captcha(self, page, url: str) -> None:
+    async def _handle_captcha(self, page: "Page", url: str) -> None:
         """Detect and solve captcha on the current page if CapSolver is configured."""
         from .captcha_detection import detect_captcha, inject_captcha_token
         from .errors import CaptchaSolveFailedError
-        from core.captcha import CapsolverConfig, CaptchaSolver
 
-        config = CapsolverConfig()
-        if not config.available:
+        solver = self._get_solver()
+        if solver is None:
             return
 
         detected = await detect_captcha(page)
@@ -194,21 +207,27 @@ class PlaywrightScraper:
 
         logger.info(f"Captcha detected ({detected.captcha_type.value}), solving via CapSolver")
         try:
-            solver = CaptchaSolver(config)
-            token = await solver.solve(detected)
-            await inject_captcha_token(page, detected, token)
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            async with asyncio.timeout(150):
+                token = await solver.solve(detected)
+                await inject_captcha_token(page, detected, token)
+                await page.wait_for_load_state("networkidle", timeout=15000)
 
-            # Re-check — some sites redirect after captcha
-            if await detect_captcha(page):
-                raise CaptchaSolveFailedError(
-                    message="Still blocked after captcha injection",
-                    url=url,
-                    provider="playwright",
-                )
+                # Re-check — some sites redirect after captcha
+                if await detect_captcha(page):
+                    raise CaptchaSolveFailedError(
+                        message="Still blocked after captcha injection",
+                        url=url,
+                        provider="playwright",
+                    )
             logger.info("Captcha solved and page loaded")
         except CaptchaSolveFailedError:
             raise
+        except TimeoutError:
+            raise CaptchaSolveFailedError(
+                message="Captcha solve+inject sequence timed out (150s)",
+                url=url,
+                provider="playwright",
+            )
         except Exception as e:
             raise CaptchaSolveFailedError(
                 message=f"Captcha solve failed: {e}",
@@ -216,7 +235,7 @@ class PlaywrightScraper:
                 provider="playwright",
             )
 
-    async def _navigate_with_download_detection(self, page, url: str) -> bytes | None:
+    async def _navigate_with_download_detection(self, page: "Page", url: str) -> bytes | None:
         """Navigate to URL and handle potential downloads.
 
         Uses expect_download() to properly wait for downloads when they occur.

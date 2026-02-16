@@ -1,8 +1,9 @@
 """Captcha type definitions shared across solver and detection."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class CaptchaType(str, Enum):
@@ -19,4 +20,4 @@ class DetectedCaptcha:
     captcha_type: CaptchaType
     site_key: str
     page_url: str
-    action: Optional[str] = None  # For Turnstile/reCAPTCHA v3
+    action: str | None = None  # For Turnstile/reCAPTCHA v3

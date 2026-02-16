@@ -127,6 +127,7 @@ class PublishSeriesWorkflow(BaseWorkflow):
                     audience=item.get("audience", "everyone"),
                 )
                 publisher = SubstackPublisher(item_config)
+                await publisher.ensure_authenticated()
 
                 # Create draft
                 result = publisher.create_draft(

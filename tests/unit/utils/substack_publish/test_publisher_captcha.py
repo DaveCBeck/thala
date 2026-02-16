@@ -22,7 +22,8 @@ def publisher(config):
 
 
 class TestLoginWithCaptcha:
-    def test_solves_captcha_on_captcha_error(self, publisher):
+    @pytest.mark.asyncio
+    async def test_solves_captcha_on_captcha_error(self, publisher):
         """When Api() raises a captcha error, solver is invoked and direct POST used."""
         mock_api = MagicMock()
         mock_api.base_url = "https://substack.com/api"
@@ -42,7 +43,7 @@ class TestLoginWithCaptcha:
         ):
             # First call raises captcha error, second creates unauthenticated Api
             MockApi.side_effect = [Exception("captcha required"), mock_api]
-            api = publisher._create_api()
+            api = await publisher._create_api()
 
         assert api is mock_api
         # Verify the direct POST was made with the captcha token
@@ -50,7 +51,8 @@ class TestLoginWithCaptcha:
         assert call_args[1]["json"]["captcha_response"] == "solved-token"
         assert call_args[1]["json"]["email"] == "test@example.com"
 
-    def test_falls_back_to_cookies_when_solver_fails(self, publisher, tmp_path):
+    @pytest.mark.asyncio
+    async def test_falls_back_to_cookies_when_solver_fails(self, publisher, tmp_path):
         """When captcha solve fails, falls back to cookie auth."""
         cookie_file = tmp_path / "cookies.json"
         cookie_file.write_text("{}")
@@ -75,12 +77,13 @@ class TestLoginWithCaptcha:
                 Exception("captcha required"),
                 mock_cookie_api,
             ]
-            api = publisher._create_api()
+            api = await publisher._create_api()
 
         # Should have fallen back to cookie auth
         assert api is mock_cookie_api
 
-    def test_skips_captcha_when_no_api_key(self, publisher, tmp_path):
+    @pytest.mark.asyncio
+    async def test_skips_captcha_when_no_api_key(self, publisher, tmp_path):
         """When CAPSOLVER_API_KEY is not set, captcha solving is skipped."""
         cookie_file = tmp_path / "cookies.json"
         cookie_file.write_text("{}")
@@ -100,11 +103,12 @@ class TestLoginWithCaptcha:
                 Exception("captcha required"),
                 mock_cookie_api,
             ]
-            api = publisher._create_api()
+            api = await publisher._create_api()
 
         assert api is mock_cookie_api
 
-    def test_non_captcha_error_falls_through(self, publisher, tmp_path):
+    @pytest.mark.asyncio
+    async def test_non_captcha_error_falls_through(self, publisher, tmp_path):
         """Non-captcha auth errors fall through without attempting solve."""
         cookie_file = tmp_path / "cookies.json"
         cookie_file.write_text("{}")
@@ -123,7 +127,7 @@ class TestLoginWithCaptcha:
                 Exception("invalid credentials"),
                 mock_cookie_api,
             ]
-            api = publisher._create_api()
+            api = await publisher._create_api()
 
         # Solver should NOT have been called for non-captcha errors
         mock_solve.assert_not_called()

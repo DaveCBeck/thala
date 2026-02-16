@@ -1,7 +1,7 @@
 """Tests for core.captcha.solver."""
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -199,3 +199,132 @@ class TestSemaphore:
         # With semaphore=1, they should serialize: start, end, start, end
         assert call_order == ["start", "end", "start", "end"]
         assert all(r == "test-token-123" for r in results)
+
+
+class TestSolveViaApi:
+    """Direct tests for _solve_via_api polling logic."""
+
+    @pytest.mark.asyncio
+    async def test_successful_solve(self, solver):
+        """Task created and result returned on first poll."""
+        create_resp = MagicMock()
+        create_resp.json.return_value = {"errorId": 0, "taskId": "task-123"}
+        create_resp.raise_for_status = MagicMock()
+
+        result_resp = MagicMock()
+        result_resp.json.return_value = {
+            "errorId": 0,
+            "status": "ready",
+            "solution": {"token": "solved-token"},
+        }
+        result_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=[create_resp, result_resp])
+        mock_client.is_closed = False
+
+        with patch.object(solver, "_get_http_client", return_value=mock_client):
+            result = await solver._solve_via_api("HCaptchaTaskProxyLess", {"websiteURL": "https://example.com", "websiteKey": "key"})
+
+        assert result["status"] == "ready"
+        assert result["solution"]["token"] == "solved-token"
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_polls_until_ready(self, solver):
+        """Polls multiple times when status is 'processing'."""
+        create_resp = MagicMock()
+        create_resp.json.return_value = {"errorId": 0, "taskId": "task-456"}
+        create_resp.raise_for_status = MagicMock()
+
+        processing_resp = MagicMock()
+        processing_resp.json.return_value = {"errorId": 0, "status": "processing"}
+        processing_resp.raise_for_status = MagicMock()
+
+        ready_resp = MagicMock()
+        ready_resp.json.return_value = {"errorId": 0, "status": "ready", "solution": {"token": "t"}}
+        ready_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=[create_resp, processing_resp, ready_resp])
+        mock_client.is_closed = False
+
+        with patch.object(solver, "_get_http_client", return_value=mock_client), \
+             patch("core.captcha.solver.asyncio.sleep", new_callable=AsyncMock):
+            result = await solver._solve_via_api("HCaptchaTaskProxyLess", {"websiteURL": "https://example.com", "websiteKey": "key"})
+
+        assert result["status"] == "ready"
+        assert mock_client.post.call_count == 3  # create + 2 polls
+
+    @pytest.mark.asyncio
+    async def test_returns_error_on_create_failure(self, solver):
+        """Returns error dict when createTask fails."""
+        create_resp = MagicMock()
+        create_resp.json.return_value = {"errorId": 1, "errorCode": "ERROR_KEY_DENIED", "errorDescription": "Bad key"}
+        create_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.is_closed = False
+
+        with patch.object(solver, "_get_http_client", return_value=mock_client):
+            result = await solver._solve_via_api("HCaptchaTaskProxyLess", {"websiteURL": "https://example.com", "websiteKey": "key"})
+
+        assert result["errorCode"] == "ERROR_KEY_DENIED"
+        assert mock_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_error_on_missing_task_id(self, solver):
+        """Returns error when createTask succeeds but no taskId is returned."""
+        create_resp = MagicMock()
+        create_resp.json.return_value = {"errorId": 0}  # No taskId
+        create_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.is_closed = False
+
+        with patch.object(solver, "_get_http_client", return_value=mock_client):
+            result = await solver._solve_via_api("HCaptchaTaskProxyLess", {"websiteURL": "https://example.com", "websiteKey": "key"})
+
+        assert result["errorCode"] == "ERROR_NO_TASK_ID"
+
+    @pytest.mark.asyncio
+    async def test_timeout_returns_error(self, solver):
+        """Returns timeout error when polling exceeds config timeout."""
+        # Config has timeout=10.0, poll_interval=3.0, so 3 polls max (3+3+3=9 < 10, 4th would be 12 > 10)
+        create_resp = MagicMock()
+        create_resp.json.return_value = {"errorId": 0, "taskId": "task-789"}
+        create_resp.raise_for_status = MagicMock()
+
+        processing_resp = MagicMock()
+        processing_resp.json.return_value = {"errorId": 0, "status": "processing"}
+        processing_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=[create_resp] + [processing_resp] * 10)
+        mock_client.is_closed = False
+
+        with patch.object(solver, "_get_http_client", return_value=mock_client), \
+             patch("core.captcha.solver.asyncio.sleep", new_callable=AsyncMock):
+            result = await solver._solve_via_api("HCaptchaTaskProxyLess", {"websiteURL": "https://example.com", "websiteKey": "key"})
+
+        assert result["errorCode"] == "ERROR_TASK_TIMEOUT"
+
+    @pytest.mark.asyncio
+    async def test_http_error_raises(self, solver):
+        """HTTP errors (500, 502) propagate as httpx.HTTPStatusError."""
+        import httpx as httpx_mod
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status.side_effect = httpx_mod.HTTPStatusError(
+            "Server Error", request=MagicMock(), response=MagicMock(status_code=500)
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.is_closed = False
+
+        with patch.object(solver, "_get_http_client", return_value=mock_client):
+            with pytest.raises(httpx_mod.HTTPStatusError):
+                await solver._solve_via_api("HCaptchaTaskProxyLess", {"websiteURL": "https://example.com", "websiteKey": "key"})

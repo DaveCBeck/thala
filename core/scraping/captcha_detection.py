@@ -29,7 +29,7 @@ _DETECT_JS = r"""
         const siteKey = recaptchaEl.getAttribute('data-sitekey');
         const size = recaptchaEl.getAttribute('data-size');
         return {
-            type: size === 'invisible' ? 'recaptcha_v2' : 'recaptcha_v2',
+            type: size === 'invisible' ? 'recaptcha_v3' : 'recaptcha_v2',
             siteKey: siteKey
         };
     }
@@ -127,15 +127,6 @@ _INJECT_HCAPTCHA = """
     const gTextarea = document.querySelector('[name="g-recaptcha-response"]');
     if (gTextarea) gTextarea.value = token;
     // Trigger callback
-    if (typeof window.hcaptcha !== 'undefined') {
-        try {
-            const iframe = document.querySelector('iframe[src*="hcaptcha"]');
-            if (iframe) {
-                const event = new CustomEvent('hcaptcha-response', { detail: token });
-                iframe.dispatchEvent(event);
-            }
-        } catch(e) {}
-    }
     const el = document.querySelector('[data-callback]');
     if (el) {
         const cbName = el.getAttribute('data-callback');

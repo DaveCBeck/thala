@@ -45,7 +45,7 @@ class SubstackPublisher:
         self.config = config
         self._api: Api | None = None
 
-    def _create_api(self) -> Api:
+    async def _create_api(self) -> Api:
         """Create API instance with authentication cascade.
 
         Priority:
@@ -75,7 +75,7 @@ class SubstackPublisher:
                     logger.warning(f"Email/password auth failed: {e}. Falling back to cookie authentication.")
                 else:
                     # Captcha required — try solving it
-                    api = self._login_with_captcha(email, password)
+                    api = await self._login_with_captcha(email, password)
                     if api is not None:
                         return api
 
@@ -95,7 +95,7 @@ class SubstackPublisher:
             "No valid Substack authentication. Set SUBSTACK_EMAIL/SUBSTACK_PASSWORD or provide cookies_path."
         )
 
-    def _login_with_captcha(self, email: str, password: str) -> Api | None:
+    async def _login_with_captcha(self, email: str, password: str) -> Api | None:
         """Solve reCAPTCHA and login to Substack directly.
 
         Returns an authenticated Api instance, or None if solving fails.
@@ -108,28 +108,38 @@ class SubstackPublisher:
             return None
 
         try:
-            site_key = _extract_substack_site_key() or "6LdYbsYZAAAAAIFIRh8X_16GoFRLIReh-e-q6qSa"
+            site_key = (
+                os.getenv("SUBSTACK_RECAPTCHA_SITE_KEY")
+                or _extract_substack_site_key()
+                or "6LdYbsYZAAAAAIFIRh8X_16GoFRLIReh-e-q6qSa"
+            )
+            if not os.getenv("SUBSTACK_RECAPTCHA_SITE_KEY") and not _extract_substack_site_key():
+                logger.warning("Using hardcoded reCAPTCHA site key — set SUBSTACK_RECAPTCHA_SITE_KEY if stale")
             solver = CaptchaSolver(config)
-            token = asyncio.run(
-                solver.solve_recaptcha_v2(
-                    website_url="https://substack.com/sign-in",
-                    website_key=site_key,
-                )
+            token = await solver.solve_recaptcha_v2(
+                website_url="https://substack.com/sign-in",
+                website_key=site_key,
             )
 
-            # Bypass Api.login() which hardcodes captcha_response: None
+            # FRAGILE: Bypasses Api.login() which hardcodes captcha_response: None.
+            # Coupled to python-substack internals (_session, base_url).
             api = Api()
-            resp = api._session.post(
-                f"{api.base_url}/api/v1/login",
-                json={
-                    "captcha_response": token,
-                    "email": email,
-                    "password": password,
-                    "for_pub": "",
-                    "redirect": "/",
-                },
-            )
-            resp.raise_for_status()
+            try:
+                resp = api._session.post(
+                    f"{api.base_url}/api/v1/login",
+                    json={
+                        "captcha_response": token,
+                        "email": email,
+                        "password": password,
+                        "for_pub": "",
+                        "redirect": "/",
+                    },
+                )
+                resp.raise_for_status()
+            except AttributeError as e:
+                raise RuntimeError(
+                    "python-substack internal API changed — captcha login needs updating"
+                ) from e
             self._set_publication(api)
             logger.info("Authenticated via captcha solve")
             return api
@@ -157,8 +167,22 @@ class SubstackPublisher:
     def api(self) -> Api:
         """Get or create API instance."""
         if self._api is None:
-            self._api = self._create_api()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                raise RuntimeError(
+                    "Cannot lazily create API from async context. "
+                    "Call 'await publisher.ensure_authenticated()' first."
+                )
+            self._api = asyncio.run(self._create_api())
         return self._api
+
+    async def ensure_authenticated(self) -> None:
+        """Pre-authenticate from async context (avoids asyncio.run inside running loop)."""
+        if self._api is None:
+            self._api = await self._create_api()
 
     @property
     def user_id(self) -> int:
