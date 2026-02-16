@@ -583,6 +583,7 @@ FIRECRAWL_SKIP_LOCAL=false                    # Set true to skip local tier
 
 ## Related Patterns
 
+- [CapSolver Captcha Solving Integration](./captcha-solving-integration.md) - Extends the Playwright tier with automated captcha detection and solving
 - [Citation Processing with Zotero Integration](./citation-processing-zotero-integration.md) - Uses this service for page content
 - [Centralized Environment Configuration](../stores/centralized-env-config.md) - Firecrawl API key configuration
 - [Deep Research Workflow Architecture](../langgraph/deep-research-workflow-architecture.md) - Uses scraping in researcher agents

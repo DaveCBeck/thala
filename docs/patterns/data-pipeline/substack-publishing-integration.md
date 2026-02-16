@@ -549,6 +549,7 @@ if __name__ == "__main__":
 
 ## Related Patterns
 
+- [CapSolver Captcha Solving Integration](./captcha-solving-integration.md) - Enables email/password authentication when Substack requires reCAPTCHA
 - [Citation Processing with Zotero Integration](./citation-processing-zotero-integration.md) - Upstream pattern that generates the `[@KEY]` citations
 - [Document Illustration Workflow](../langgraph/document-illustration-workflow.md) - Workflow that adds images before publishing
 
