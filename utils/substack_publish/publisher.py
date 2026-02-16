@@ -4,10 +4,13 @@ This module provides a high-level interface for publishing markdown documents
 to Substack, handling image uploads and footnote conversion.
 """
 
+import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 
+import httpx
 from substack import Api
 from substack.post import Post
 
@@ -46,8 +49,8 @@ class SubstackPublisher:
         """Create API instance with authentication cascade.
 
         Priority:
-        1. Email/password from config
-        2. Email/password from environment
+        1. Email/password from config (with captcha solving if needed)
+        2. Email/password from environment (with captcha solving if needed)
         3. Cookies from config
         4. Cookies from environment
 
@@ -68,10 +71,13 @@ class SubstackPublisher:
                 self._set_publication(api)
                 return api
             except Exception as e:
-                logger.warning(
-                    f"Email/password auth failed: {e}. "
-                    "Falling back to cookie authentication."
-                )
+                if "captcha" not in str(e).lower():
+                    logger.warning(f"Email/password auth failed: {e}. Falling back to cookie authentication.")
+                else:
+                    # Captcha required — try solving it
+                    api = self._login_with_captcha(email, password)
+                    if api is not None:
+                        return api
 
         # Fall back to cookies
         cookies_path = self.config.get("cookies_path") or os.getenv("SUBSTACK_COOKIES_PATH")
@@ -86,25 +92,61 @@ class SubstackPublisher:
                 logger.warning(f"Cookies file not found: {path}")
 
         raise ValueError(
-            "No valid Substack authentication. "
-            "Set SUBSTACK_EMAIL/SUBSTACK_PASSWORD or provide cookies_path."
+            "No valid Substack authentication. Set SUBSTACK_EMAIL/SUBSTACK_PASSWORD or provide cookies_path."
         )
+
+    def _login_with_captcha(self, email: str, password: str) -> Api | None:
+        """Solve reCAPTCHA and login to Substack directly.
+
+        Returns an authenticated Api instance, or None if solving fails.
+        """
+        from core.captcha import CapsolverConfig, CaptchaSolver
+
+        config = CapsolverConfig()
+        if not config.available:
+            logger.warning("Captcha required but CAPSOLVER_API_KEY not set. Falling back.")
+            return None
+
+        try:
+            site_key = _extract_substack_site_key() or "6LdYbsYZAAAAAIFIRh8X_16GoFRLIReh-e-q6qSa"
+            solver = CaptchaSolver(config)
+            token = asyncio.run(
+                solver.solve_recaptcha_v2(
+                    website_url="https://substack.com/sign-in",
+                    website_key=site_key,
+                )
+            )
+
+            # Bypass Api.login() which hardcodes captcha_response: None
+            api = Api()
+            resp = api._session.post(
+                f"{api.base_url}/api/v1/login",
+                json={
+                    "captcha_response": token,
+                    "email": email,
+                    "password": password,
+                    "for_pub": "",
+                    "redirect": "/",
+                },
+            )
+            resp.raise_for_status()
+            self._set_publication(api)
+            logger.info("Authenticated via captcha solve")
+            return api
+        except Exception as e:
+            logger.warning(f"Captcha solve failed: {e}. Falling back to cookies.")
+            return None
 
     def _set_publication(self, api: Api) -> None:
         """Set the target publication on the API instance."""
-        publication_url = self.config.get("publication_url") or os.getenv(
-            "SUBSTACK_PUBLICATION_URL"
-        )
+        publication_url = self.config.get("publication_url") or os.getenv("SUBSTACK_PUBLICATION_URL")
         if not publication_url:
             return
 
         pubs = api.get_user_publications()
         subdomain = publication_url.replace(".substack.com", "")
         for pub in pubs:
-            if (
-                pub.get("subdomain") == subdomain
-                or publication_url in pub.get("publication_url", "")
-            ):
+            if pub.get("subdomain") == subdomain or publication_url in pub.get("publication_url", ""):
                 api.change_publication(pub)
                 logger.info(f"Set publication: {pub.get('name', subdomain)}")
                 return
@@ -363,3 +405,25 @@ class SubstackPublisher:
                 publish_url=None,
                 error=str(e),
             )
+
+
+def _extract_substack_site_key() -> str | None:
+    """Fetch Substack sign-in page and extract reCAPTCHA site key.
+
+    Parses the captcha_site_key from the window._preloads JSON blob
+    embedded in the sign-in page HTML.
+    """
+    try:
+        resp = httpx.get("https://substack.com/sign-in", timeout=10, follow_redirects=True)
+        resp.raise_for_status()
+        # Look for captcha_site_key in the preloads JSON
+        match = re.search(r'"captcha_site_key"\s*:\s*"([^"]+)"', resp.text)
+        if match:
+            return match.group(1)
+        # Fallback: look for data-sitekey attribute
+        match = re.search(r'data-sitekey="([^"]+)"', resp.text)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        logger.debug(f"Failed to extract Substack site key: {e}")
+    return None

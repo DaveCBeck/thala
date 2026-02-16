@@ -55,16 +55,12 @@ class PlaywrightScraper:
         self._browser: "Browser | None" = None
 
         # Config from env or defaults
-        self._timeout = timeout or int(
-            os.environ.get("SCRAPER_PLAYWRIGHT_TIMEOUT", "60000")
-        )
+        self._timeout = timeout or int(os.environ.get("SCRAPER_PLAYWRIGHT_TIMEOUT", "60000"))
         self._delay = delay or float(os.environ.get("SCRAPER_PLAYWRIGHT_DELAY", "1.5"))
         self._headless = (
             headless
             if headless is not None
-            else (
-                os.environ.get("SCRAPER_PLAYWRIGHT_HEADLESS", "true").lower() == "true"
-            )
+            else (os.environ.get("SCRAPER_PLAYWRIGHT_HEADLESS", "true").lower() == "true")
         )
 
         self._last_request: float = 0
@@ -148,12 +144,13 @@ class PlaywrightScraper:
 
             # Wait for network to settle
             try:
-                await page.wait_for_load_state(
-                    "networkidle", timeout=self._timeout // 2
-                )
+                await page.wait_for_load_state("networkidle", timeout=self._timeout // 2)
             except Exception:
                 # If networkidle times out, proceed with what we have
                 logger.debug("networkidle timeout, proceeding with current content")
+
+            # Attempt captcha detection and solving (if CapSolver configured)
+            await self._handle_captcha(page, url)
 
             # Get page HTML
             html = await page.content()
@@ -181,9 +178,45 @@ class PlaywrightScraper:
             await page.close()
             await context.close()
 
-    async def _navigate_with_download_detection(
-        self, page, url: str
-    ) -> bytes | None:
+    async def _handle_captcha(self, page, url: str) -> None:
+        """Detect and solve captcha on the current page if CapSolver is configured."""
+        from .captcha_detection import detect_captcha, inject_captcha_token
+        from .errors import CaptchaSolveFailedError
+        from core.captcha import CapsolverConfig, CaptchaSolver
+
+        config = CapsolverConfig()
+        if not config.available:
+            return
+
+        detected = await detect_captcha(page)
+        if not detected:
+            return
+
+        logger.info(f"Captcha detected ({detected.captcha_type.value}), solving via CapSolver")
+        try:
+            solver = CaptchaSolver(config)
+            token = await solver.solve(detected)
+            await inject_captcha_token(page, detected, token)
+            await page.wait_for_load_state("networkidle", timeout=15000)
+
+            # Re-check — some sites redirect after captcha
+            if await detect_captcha(page):
+                raise CaptchaSolveFailedError(
+                    message="Still blocked after captcha injection",
+                    url=url,
+                    provider="playwright",
+                )
+            logger.info("Captcha solved and page loaded")
+        except CaptchaSolveFailedError:
+            raise
+        except Exception as e:
+            raise CaptchaSolveFailedError(
+                message=f"Captcha solve failed: {e}",
+                url=url,
+                provider="playwright",
+            )
+
+    async def _navigate_with_download_detection(self, page, url: str) -> bytes | None:
         """Navigate to URL and handle potential downloads.
 
         Uses expect_download() to properly wait for downloads when they occur.

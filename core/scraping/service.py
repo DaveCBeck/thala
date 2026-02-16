@@ -13,7 +13,12 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
-from .errors import LocalServiceUnavailableError, ScrapingError, SiteBlockedError
+from .errors import (
+    CaptchaSolveFailedError,
+    LocalServiceUnavailableError,
+    ScrapingError,
+    SiteBlockedError,
+)
 from .playwright_scraper import PDFDownloadDetected, PlaywrightScraper
 
 if TYPE_CHECKING:
@@ -111,10 +116,7 @@ async def _with_retry(func, *args, **kwargs):
 
             # Calculate exponential backoff delay
             delay = RETRY_INITIAL_DELAY * (2 ** (attempt - 1))
-            logger.debug(
-                f"Transient error on attempt {attempt}/{MAX_RETRY_ATTEMPTS}, "
-                f"retrying in {delay}s: {e}"
-            )
+            logger.debug(f"Transient error on attempt {attempt}/{MAX_RETRY_ATTEMPTS}, retrying in {delay}s: {e}")
             await asyncio.sleep(delay)
 
     # Should never reach here, but just in case
@@ -181,9 +183,7 @@ class ScraperService:
         markdown_lower = markdown.lower()
         return any(indicator in markdown_lower for indicator in blocking_indicators)
 
-    async def _scrape_local(
-        self, url: str, include_links: bool = False
-    ) -> ScrapeResult:
+    async def _scrape_local(self, url: str, include_links: bool = False) -> ScrapeResult:
         """Scrape using local (self-hosted) Firecrawl."""
         clients = self._get_firecrawl_clients()
         client = clients.local
@@ -229,14 +229,10 @@ class ScraperService:
         except (ConnectionError, OSError, asyncio.TimeoutError) as e:
             # Local service unavailable - wrap in our error type
             if _is_local_unavailable_error(e):
-                raise LocalServiceUnavailableError(
-                    str(e), url=url, provider="firecrawl-local"
-                )
+                raise LocalServiceUnavailableError(str(e), url=url, provider="firecrawl-local")
             raise
 
-    async def _scrape_cloud_stealth(
-        self, url: str, include_links: bool = False
-    ) -> ScrapeResult:
+    async def _scrape_cloud_stealth(self, url: str, include_links: bool = False) -> ScrapeResult:
         """Scrape using cloud Firecrawl with stealth proxy."""
         from firecrawl.v2.utils.error_handler import WebsiteNotSupportedError
 
@@ -244,9 +240,7 @@ class ScraperService:
         client = clients.cloud
 
         if client is None:
-            raise ValueError(
-                "Cloud Firecrawl not configured (FIRECRAWL_API_KEY required)"
-            )
+            raise ValueError("Cloud Firecrawl not configured (FIRECRAWL_API_KEY required)")
 
         formats = ["markdown"]
         if include_links:
@@ -283,9 +277,7 @@ class ScraperService:
             # Site is explicitly blocked by Firecrawl
             raise SiteBlockedError(str(e), url=url, provider="firecrawl-stealth")
 
-    async def _scrape_playwright(
-        self, url: str, include_links: bool = False
-    ) -> ScrapeResult:
+    async def _scrape_playwright(self, url: str, include_links: bool = False) -> ScrapeResult:
         """Scrape using Playwright fallback.
 
         If the URL triggers a PDF download, the PDF is converted to markdown
@@ -297,10 +289,7 @@ class ScraperService:
             markdown = await scraper.scrape(url)
         except PDFDownloadDetected as e:
             # URL was a PDF - convert via smart routing (CPU or GPU path)
-            logger.info(
-                f"Playwright detected PDF download ({len(e.content)} bytes), "
-                "routing via smart processing"
-            )
+            logger.info(f"Playwright detected PDF download ({len(e.content)} bytes), routing via smart processing")
             from .pdf import process_document_smart
 
             try:
@@ -356,9 +345,7 @@ class ScraperService:
         if clients.config.local_available:
             try:
                 logger.debug("Trying local Firecrawl")
-                return await _with_retry(
-                    self._scrape_local, url, include_links=include_links
-                )
+                return await _with_retry(self._scrape_local, url, include_links=include_links)
 
             except LocalServiceUnavailableError as e:
                 # Local service down - proceed to cloud (don't add to blocklist)
@@ -366,9 +353,7 @@ class ScraperService:
 
             except SiteBlockedError:
                 # Site blocked locally - try cloud stealth
-                logger.debug(
-                    "Local Firecrawl got blocked response, trying cloud stealth"
-                )
+                logger.debug("Local Firecrawl got blocked response, trying cloud stealth")
 
             except Exception as e:
                 logger.debug(f"Local Firecrawl failed: {e}")
@@ -377,15 +362,11 @@ class ScraperService:
         if clients.config.cloud_available:
             try:
                 logger.debug("Trying cloud Firecrawl stealth")
-                return await _with_retry(
-                    self._scrape_cloud_stealth, url, include_links=include_links
-                )
+                return await _with_retry(self._scrape_cloud_stealth, url, include_links=include_links)
 
             except SiteBlockedError:
                 # Site blocked even with stealth - add to blocklist
-                logger.info(
-                    f"Site {domain} blocked by cloud stealth, adding to blocklist"
-                )
+                logger.info(f"Site {domain} blocked by cloud stealth, adding to blocklist")
                 self._blocklist.add(domain)
 
             except Exception as e:
@@ -395,6 +376,10 @@ class ScraperService:
         logger.debug("Falling back to Playwright")
         try:
             return await _with_retry(self._scrape_playwright, url, include_links)
+        except CaptchaSolveFailedError as e:
+            # Don't blocklist — captcha solve failures may be transient
+            logger.warning(f"Captcha solve failed for {url}: {e}")
+            raise ScrapingError(str(e), url=url, provider="playwright")
         except Exception as e:
             logger.error(f"All scraping methods failed: {e}")
             raise ScrapingError(

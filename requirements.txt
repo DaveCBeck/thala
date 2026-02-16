@@ -23,3 +23,4 @@ mmdc>=0.4.1
 graphviz>=0.20
 python-substack>=1.0.0
 prometheus-client>=0.20.0
+python3-capsolver>=1.0.0

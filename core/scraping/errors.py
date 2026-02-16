@@ -27,3 +27,13 @@ class LocalServiceUnavailableError(ScrapingError):
     """Local Firecrawl service is unavailable (not running or unreachable)."""
 
     pass
+
+
+class CaptchaSolveFailedError(ScrapingError):
+    """Captcha was detected but solving/injection failed.
+
+    Distinct from SiteBlockedError to prevent incorrect domain blocklisting --
+    captcha solve failures may be transient (CapSolver downtime, balance).
+    """
+
+    pass
