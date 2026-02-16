@@ -4,8 +4,6 @@ import logging
 import uuid
 from typing import Any, Optional
 
-from langsmith import traceable
-
 from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.research.academic_lit_review.state import LitReviewInput
 from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
@@ -17,7 +15,6 @@ from .construction import academic_lit_review_graph
 logger = logging.getLogger(__name__)
 
 
-@traceable(run_type="chain", name="AcademicLitReview")
 async def academic_lit_review(
     topic: str,
     research_questions: list[str],

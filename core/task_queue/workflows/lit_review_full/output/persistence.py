@@ -72,24 +72,4 @@ def save_workflow_outputs(
         output_paths["lit_review"] = str(lit_review_path)
         logger.info(f"Saved lit review to {lit_review_path}")
 
-    # Save article series
-    series_result = result.get("series", {})
-    final_outputs = series_result.get("final_outputs", [])
-
-    if final_outputs:
-        series_dir = output_dir / f"series_{topic_slug}_{timestamp}"
-        series_dir.mkdir(exist_ok=True)
-        output_paths["series_dir"] = str(series_dir)
-
-        for output in final_outputs:
-            article_path = series_dir / f"{output['id']}.md"
-            with open(article_path, "w") as f:
-                f.write(f"# {output['title']}\n\n")
-                f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-                f.write("---\n\n")
-                f.write(output["content"])
-            output_paths[output["id"]] = str(article_path)
-
-        logger.info(f"Saved {len(final_outputs)} articles to {series_dir}")
-
     return output_paths

@@ -7,8 +7,6 @@ markdown report with theoretical depth (Loop 1) and literature expansion (Loop 2
 import logging
 from typing import Any, Literal
 
-from langsmith import traceable
-
 from core.task_queue.schemas import IncrementalCheckpointCallback
 from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.enhance.supervision.builder import create_enhancement_graph
@@ -18,7 +16,6 @@ from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESE
 logger = logging.getLogger(__name__)
 
 
-@traceable(run_type="chain", name="EnhanceReport")
 async def enhance_report(
     report: str,
     topic: str,

@@ -10,8 +10,6 @@ import logging
 import re
 from typing import Any, Callable, Literal
 
-from langsmith import traceable
-
 from workflows.enhance.editing import editing
 from workflows.enhance.fact_check import fact_check
 from workflows.enhance.supervision import (
@@ -82,7 +80,6 @@ __all__ = [
 ]
 
 
-@traceable(run_type="chain", name="EnhanceReportFull")
 async def enhance_report(
     report: str,
     topic: str,

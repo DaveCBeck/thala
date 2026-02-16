@@ -19,8 +19,6 @@ Usage:
 import re
 from typing import Any
 
-from langsmith import traceable
-
 from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 
 from .graph import evening_reads_graph, create_evening_reads_graph
@@ -47,7 +45,6 @@ def _extract_topic(literature_review: str) -> str:
     return "Untitled"
 
 
-@traceable(run_type="chain", name="EveningReads")
 async def evening_reads(
     literature_review: str,
     editorial_stance: str = "",

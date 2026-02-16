@@ -16,7 +16,7 @@ This workflow:
 
 import json
 import logging
-import shutil
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -161,8 +161,6 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         # Status determination
         all_done = all(i.get("draft_id") for i in items)
         if all_done:
-            # Clean up source directory on success
-            self._cleanup_source_dir(output_dir)
             return {"status": "success", "items": items}
 
         remaining_items = [i for i in items if not i.get("draft_id")]
@@ -265,21 +263,4 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         logger.info(f"Published draft: {item['title'][:50]} -> {result.get('draft_url')}")
         return result
 
-    def _cleanup_source_dir(self, output_dir: Path) -> None:
-        """Remove the unillustrated source directory after successful completion.
 
-        Safety: the ``"unillustrated_"`` substring check guards against
-        accidentally deleting directories that were not created by
-        ``save_and_spawn``.  The naming convention is enforced at
-        creation time in ``save_and_spawn.py`` which always uses the
-        ``unillustrated_<topic_slug>_<timestamp>`` pattern.  Because
-        this workflow only receives paths from that producer, a simple
-        name-based check is sufficient -- no secondary bookkeeping or
-        marker files are needed.
-        """
-        try:
-            if output_dir.exists() and "unillustrated_" in output_dir.name:
-                shutil.rmtree(output_dir)
-                logger.info(f"Cleaned up source directory: {output_dir}")
-        except Exception as e:
-            logger.warning(f"Failed to clean up {output_dir}: {e}")

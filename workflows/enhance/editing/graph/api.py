@@ -5,8 +5,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from langsmith import traceable
-
 from core.task_queue.task_context import get_trace_metadata, get_trace_tags
 from workflows.shared.quality_config import QualityTier
 
@@ -17,7 +15,6 @@ from .construction import editing_graph
 logger = logging.getLogger(__name__)
 
 
-@traceable(run_type="chain", name="EditingWorkflow")
 async def editing(
     document: str,
     topic: str,

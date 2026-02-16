@@ -466,6 +466,7 @@ class TestSelectTasksCheckpointAware:
         assert "beta" in categories
 
 
+
 # ---------------------------------------------------------------------------
 # _select_tasks — DEFERRED task handling
 # ---------------------------------------------------------------------------

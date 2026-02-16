@@ -34,7 +34,7 @@ class BudgetTracker:
         self.queue_dir.mkdir(parents=True, exist_ok=True)
 
         # Load configuration from environment
-        self.monthly_budget = float(os.getenv("THALA_MONTHLY_BUDGET", "100.0"))
+        self.monthly_budget = float(os.getenv("THALA_MONTHLY_BUDGET", "300.0"))
         self.budget_action = os.getenv("THALA_BUDGET_ACTION", "pause")
         # Use dedicated queue project for budget isolation from manual testing
         self.langsmith_project = os.getenv("THALA_QUEUE_PROJECT", "thala-queue")

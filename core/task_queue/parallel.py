@@ -203,9 +203,13 @@ def _select_tasks(
 
         # Build per-category task lists.
         # Sort: resumable first, then priority desc, then FIFO.
+        # Map task categories to their canonical form (title-case from publications.json)
+        # so round-robin lookup matches regardless of stored case.
+        cat_canonical = {c.lower(): c for c in categories}
         by_category: dict[str, list[Task]] = {}
         for task in candidates:
-            by_category.setdefault(task["category"], []).append(task)
+            canon = cat_canonical.get(task["category"].lower(), task["category"])
+            by_category.setdefault(canon, []).append(task)
         for tasks in by_category.values():
             tasks.sort(
                 key=lambda t: (

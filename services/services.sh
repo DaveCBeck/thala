@@ -15,7 +15,7 @@ RUNNING_MARKER="${SCRIPT_DIR}/.running"
 
 # Load THALA_MODE from .env if not already set
 if [[ -z "$THALA_MODE" && -f "${PROJECT_DIR}/.env" ]]; then
-    THALA_MODE=$(grep -E "^THALA_MODE=" "${PROJECT_DIR}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+    THALA_MODE=$(grep -E "^THALA_MODE=" "${PROJECT_DIR}/.env" 2>/dev/null | cut -d'=' -f2 | sed 's/#.*//' | tr -d '"' | tr -d "'" | xargs)
 fi
 
 # Use project venv Python if available, otherwise fall back to system python3
