@@ -51,6 +51,7 @@ class PaperProcessingState(TypedDict, total=False):
     fallback_queue: list[FallbackCandidate]  # Ordered by relevance (overflow first, then near-threshold)
     fallback_substitutions: list[FallbackSubstitution]  # Track all substitutions made
     fallback_exhausted: list[str]  # DOIs that failed with no fallback available
+    paper_corpus: dict[str, PaperMetadata]  # Full corpus including overflow/near-threshold metadata
 
     # Final outputs
     paper_summaries: dict[str, PaperSummary]

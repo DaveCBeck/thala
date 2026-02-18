@@ -19,6 +19,7 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
     input_data = state["input"]
     paper_corpus = state.get("paper_corpus", {})
     quality_settings = state["quality_settings"]
+    fallback_queue = state.get("fallback_queue", [])
 
     topic = input_data["topic"]
 
@@ -46,6 +47,8 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
         quality_settings=quality_settings,
         topic=topic,
         language_config=language_config,
+        fallback_queue=fallback_queue,
+        paper_corpus=paper_corpus,
     )
 
     paper_summaries = processing_result.get("paper_summaries", {})
@@ -53,6 +56,8 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
     es_ids = processing_result.get("elasticsearch_ids", {})
     processed = processing_result.get("processed_dois", [])
     failed = processing_result.get("failed_dois", [])
+    fallback_substitutions = processing_result.get("fallback_substitutions", [])
+    fallback_exhausted = processing_result.get("fallback_exhausted", [])
 
     logger.info(f"Processing complete: {len(processed)} successful, {len(failed)} failed")
 
@@ -62,6 +67,8 @@ async def processing_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
         "elasticsearch_ids": es_ids,
         "papers_processed": processed,
         "papers_failed": failed,
+        "fallback_substitutions": fallback_substitutions,
+        "fallback_exhausted": fallback_exhausted,
         "current_phase": "clustering",
         "current_status": f"Processing complete: {len(processed)} papers summarized",
     }

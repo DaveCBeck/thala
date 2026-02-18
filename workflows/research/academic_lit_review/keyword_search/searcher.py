@@ -245,7 +245,7 @@ async def filter_by_relevance_node(state: KeywordSearchState) -> dict[str, Any]:
     )
 
     return {
-        "discovered_papers": selected,
+        "discovered_papers": selected + overflow + fallback_candidates,
         "rejected_papers": rejected,
         "fallback_queue": fallback_queue,
         "keyword_dois": keyword_dois,

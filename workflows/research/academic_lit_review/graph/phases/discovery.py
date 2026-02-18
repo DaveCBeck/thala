@@ -42,6 +42,7 @@ async def discovery_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
     keyword_dois = keyword_result.get("keyword_dois", [])
     search_queries = keyword_result.get("search_queries", [])
     raw_results_count = keyword_result.get("raw_results_count", 0)
+    fallback_queue = keyword_result.get("fallback_queue", [])
 
     # Build initial paper corpus from keyword search
     paper_corpus = {}
@@ -85,6 +86,7 @@ async def discovery_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
         "paper_corpus": paper_corpus,
         "search_queries": search_queries,
         "raw_results_count": raw_results_count,
+        "fallback_queue": fallback_queue,
         "current_phase": "diffusion",
         "current_status": f"Discovery complete: {len(paper_corpus)} papers found",
     }

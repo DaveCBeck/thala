@@ -90,6 +90,7 @@ async def run_keyword_search(
         "keyword_dois": result.get("keyword_dois", []),
         "search_queries": result.get("search_queries", []),
         "raw_results_count": len(result.get("raw_results", [])),
+        "fallback_queue": result.get("fallback_queue", []),
     }
 
 

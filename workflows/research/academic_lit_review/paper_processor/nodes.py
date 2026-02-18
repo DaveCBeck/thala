@@ -98,14 +98,12 @@ async def acquire_and_process_papers_node(
     # Create FallbackManager if we have fallback candidates
     fallback_manager = None
     if fallback_queue:
-        # Build paper corpus from papers_to_process and any additional metadata
-        papers_by_doi = {p.get("doi"): p for p in papers}
+        # Start from full corpus (includes overflow/near-threshold metadata)
+        papers_by_doi = dict(state.get("paper_corpus", {}))
+        # Merge in papers_to_process entries (don't overwrite existing corpus entries)
+        for p in papers:
+            papers_by_doi.setdefault(p.get("doi"), p)
 
-        # For fallback candidates, we need their full metadata
-        # They may not be in papers_to_process, so we need to build a lookup
-        # from the rejected papers that were scored during discovery
-        # For now, we'll use the fallback_queue DOIs to look up in papers_by_doi
-        # If metadata isn't available, the FallbackManager will skip those candidates
         fallback_manager = FallbackManager(
             fallback_queue=fallback_queue,
             paper_corpus=papers_by_doi,

@@ -18,6 +18,8 @@ async def run_paper_processing(
     quality_settings: QualitySettings,
     topic: str,
     language_config: Optional[LanguageConfig] = None,
+    fallback_queue: Optional[list] = None,
+    paper_corpus: Optional[dict[str, PaperMetadata]] = None,
 ) -> dict[str, Any]:
     """Run paper processing as standalone operation.
 
@@ -28,6 +30,10 @@ async def run_paper_processing(
         language_config: Optional language configuration for verification.
             If provided and not English, papers will be verified to match
             the target language before extraction.
+        fallback_queue: Optional pre-sorted fallback candidates for substitution
+            when papers fail acquisition/processing.
+        paper_corpus: Optional full paper corpus (includes overflow/near-threshold
+            metadata) for FallbackManager lookups.
 
     Returns:
         Dict with paper_summaries, elasticsearch_ids, zotero_keys,
@@ -53,6 +59,10 @@ async def run_paper_processing(
         paper_summaries={},
         elasticsearch_ids={},
         zotero_keys={},
+        fallback_queue=fallback_queue or [],
+        fallback_substitutions=[],
+        fallback_exhausted=[],
+        paper_corpus=paper_corpus or {},
     )
 
     result = await paper_processing_subgraph.ainvoke(initial_state)
@@ -67,6 +77,9 @@ async def run_paper_processing(
         # Legacy keys for backwards compatibility
         "acquisition_failed": result.get("acquisition_failed", []),
         "processing_failed": result.get("processing_failed", []),
+        # Fallback results
+        "fallback_substitutions": result.get("fallback_substitutions", []),
+        "fallback_exhausted": result.get("fallback_exhausted", []),
     }
 
     # Include language verification stats if available
