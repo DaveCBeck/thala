@@ -23,10 +23,19 @@ from .workflow_executor import run_task_workflow
 logger = logging.getLogger(__name__)
 
 
+def _reset_task_to_pending(task: dict) -> None:
+    """Reset a task to PENDING, clearing all stale run metadata."""
+    task["status"] = TaskStatus.PENDING.value
+    task.pop("started_at", None)
+    task.pop("error_message", None)
+    task.pop("current_phase", None)
+
+
 async def run_parallel_tasks(
     count: int = 5,
     stagger_minutes: float = 3.0,
     queue_dir: Path | None = None,
+    _manage_signals: bool = True,
 ) -> list[dict | BaseException]:
     """Run multiple tasks concurrently via asyncio.gather().
 
@@ -34,12 +43,16 @@ async def run_parallel_tasks(
         count: Maximum number of tasks to run concurrently.
         stagger_minutes: Minutes between each workflow start.
         queue_dir: Override queue directory (for testing).
+        _manage_signals: Whether to install/remove signal handlers.
+            Set to False when called from run_daemon_loop(), which
+            manages signal handler lifecycle itself.
 
     Returns:
         List of workflow results or exceptions, one per task.
     """
     coordinator = get_shutdown_coordinator()
-    coordinator.install_signal_handlers()
+    if _manage_signals:
+        coordinator.install_signal_handlers()
     queue_manager = TaskQueueManager(queue_dir=queue_dir)
     checkpoint_mgr = CheckpointManager(queue_dir=queue_dir)
     budget_tracker = BudgetTracker(queue_dir=queue_dir)
@@ -55,7 +68,8 @@ async def run_parallel_tasks(
     tasks = await asyncio.to_thread(_select_tasks, queue_manager, count, resumable_ids)
     if not tasks:
         logger.info("No eligible tasks to run")
-        coordinator.remove_signal_handlers()
+        if _manage_signals:
+            coordinator.remove_signal_handlers()
         return []
 
     logger.info(f"Selected {len(tasks)} tasks for parallel execution")
@@ -78,7 +92,7 @@ async def run_parallel_tasks(
                     raise asyncio.CancelledError()
 
             # Check budget before launching workflow
-            should_proceed, reason = budget_tracker.should_proceed()
+            should_proceed, reason = await asyncio.to_thread(budget_tracker.should_proceed)
             if not should_proceed:
                 tid = task["id"][:8]
                 logger.warning(f"Task {tid}: skipped due to budget: {reason}")
@@ -111,10 +125,13 @@ async def run_parallel_tasks(
         return results
 
     finally:
-        coordinator.remove_signal_handlers()
+        if _manage_signals:
+            coordinator.remove_signal_handlers()
         await cleanup_supervisor_resources()
 
-        # Reset orphaned IN_PROGRESS tasks back to PENDING
+        # Reset orphaned IN_PROGRESS tasks back to PENDING.
+        # Uses persistence directly for atomic batch update (see _select_tasks
+        # docstring re: TODO #150 for rationale).
         try:
 
             def _reset_orphaned():
@@ -124,8 +141,7 @@ async def run_parallel_tasks(
                     for key in ("research_tasks", "publish_tasks"):
                         for task in queue[key]:
                             if task["id"] in selected_ids and task["status"] == TaskStatus.IN_PROGRESS.value:
-                                task["status"] = TaskStatus.PENDING.value
-                                task.pop("started_at", None)
+                                _reset_task_to_pending(task)
                                 reset_count += 1
                     if reset_count:
                         queue_manager.persistence.write_queue(queue)
@@ -163,6 +179,7 @@ async def run_daemon_loop(
                 count=count,
                 stagger_minutes=stagger_minutes,
                 queue_dir=queue_dir,
+                _manage_signals=False,
             )
 
             batches_run += 1
@@ -195,6 +212,25 @@ def _select_tasks(
     Selection order:
     1. Publish tasks (date-gated by not_before, DEFERRED by next_run_after)
     2. Research tasks (category round-robin, resumable first, then priority+FIFO)
+
+    NOTE -- Intentional persistence-layer bypass (see TODO #150):
+        This function accesses queue_manager.persistence (lock / read_queue /
+        write_queue) directly instead of going through TaskQueueManager's
+        public methods (add_task, mark_started, list_tasks, etc.).
+
+        The reason is atomicity: we must hold a single lock while reading the
+        full queue, evaluating eligibility across *both* task lists, resetting
+        orphaned tasks, marking multiple winners as IN_PROGRESS, updating the
+        category round-robin cursor, and writing everything back in one shot.
+
+        TaskQueueManager's API is designed for single-task CRUD -- each method
+        independently acquires the lock, reads, mutates one task, and writes.
+        Calling N separate methods here would mean N lock-acquire/release
+        cycles with no guarantee that the queue state is consistent between
+        them (another process could interleave).
+
+        The same pattern applies to _reset_orphaned() in the finally block of
+        run_parallel_tasks() for the same atomic-batch-update reason.
     """
     resumable_ids = resumable_ids or set()
 
@@ -206,8 +242,7 @@ def _select_tasks(
         for key in ("research_tasks", "publish_tasks"):
             for task in queue[key]:
                 if task["status"] == TaskStatus.IN_PROGRESS.value and task["id"] not in resumable_ids:
-                    task["status"] = TaskStatus.PENDING.value
-                    task.pop("started_at", None)
+                    _reset_task_to_pending(task)
 
         # Phase 1: select publish tasks
         selected = _select_publish_tasks(queue["publish_tasks"], count, now, resumable_ids)
@@ -236,6 +271,7 @@ def _select_tasks(
             queue["last_category_index"] = last_idx
 
         if not selected:
+            queue_manager.persistence.write_queue(queue)
             return []
 
         # Reset unselected resumable tasks back to PENDING
@@ -243,8 +279,7 @@ def _select_tasks(
         for key in ("research_tasks", "publish_tasks"):
             for task in queue[key]:
                 if task["status"] == TaskStatus.IN_PROGRESS.value and task["id"] not in selected_set:
-                    task["status"] = TaskStatus.PENDING.value
-                    task.pop("started_at", None)
+                    _reset_task_to_pending(task)
 
         # Mark selected tasks as in-progress
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -255,6 +290,15 @@ def _select_tasks(
 
         queue_manager.persistence.write_queue(queue)
     return selected
+
+
+def _task_sort_key(t: Task, resumable_ids: set[str]) -> tuple:
+    """Sort key: resumable first, then priority desc, then FIFO."""
+    return (
+        0 if t["id"] in resumable_ids else 1,
+        -t.get("priority", 2),
+        t.get("created_at", ""),
+    )
 
 
 def _select_publish_tasks(
@@ -285,13 +329,7 @@ def _select_publish_tasks(
                 candidates.append(t)
 
     # Sort: resumable first, then priority desc, then FIFO
-    candidates.sort(
-        key=lambda t: (
-            0 if t["id"] in resumable_ids else 1,
-            -t.get("priority", 2),
-            t.get("created_at", ""),
-        )
-    )
+    candidates.sort(key=lambda t: _task_sort_key(t, resumable_ids))
     return candidates[:count]
 
 
@@ -328,13 +366,7 @@ def _select_research_tasks(
         canon = cat_canonical.get(task["category"].lower(), task["category"])
         by_category.setdefault(canon, []).append(task)
     for tasks in by_category.values():
-        tasks.sort(
-            key=lambda t: (
-                0 if t["id"] in resumable_ids else 1,
-                -t.get("priority", 2),
-                t.get("created_at", ""),
-            )
-        )
+        tasks.sort(key=lambda t: _task_sort_key(t, resumable_ids))
 
     # Walk categories round-robin
     selected: list[Task] = []
@@ -361,13 +393,7 @@ def _select_research_tasks(
     if len(selected) < count:
         selected_set = {t["id"] for t in selected}
         leftovers = [t for t in candidates if t["id"] not in selected_set]
-        leftovers.sort(
-            key=lambda t: (
-                0 if t["id"] in resumable_ids else 1,
-                -t.get("priority", 2),
-                t.get("created_at", ""),
-            )
-        )
+        leftovers.sort(key=lambda t: _task_sort_key(t, resumable_ids))
         selected.extend(leftovers[: count - len(selected)])
 
     return selected, last_idx

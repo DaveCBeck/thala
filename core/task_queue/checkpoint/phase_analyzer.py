@@ -9,12 +9,10 @@ import logging
 import os
 
 from ..schemas import WorkflowCheckpoint
+from ..workflows import DEFAULT_WORKFLOW_TYPE
 from .storage import CheckpointStorage
 
 logger = logging.getLogger(__name__)
-
-# Default workflow type for backward compatibility
-DEFAULT_WORKFLOW_TYPE = "lit_review_full"
 
 
 def get_workflow_phases(task_type: str) -> list[str]:

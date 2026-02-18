@@ -12,7 +12,7 @@ from .schemas import TaskQueue
 logger = logging.getLogger(__name__)
 
 # Task types that belong in the publish queue
-_PUBLISH_TASK_TYPES = {"illustrate_and_publish"}
+PUBLISH_TASK_TYPES = {"illustrate_and_publish"}
 
 
 class QueuePersistence:
@@ -64,13 +64,7 @@ class QueuePersistence:
         temp_file = self.queue_file.with_suffix(".tmp")
         with open(temp_file, "w") as f:
             json.dump(queue, f, indent=2)
-        try:
-            temp_file.rename(self.queue_file)
-        except FileNotFoundError:
-            # Temp file may have been deleted by concurrent cleanup
-            logger.warning(f"Temp file {temp_file} disappeared before rename - retrying write")
-            with open(self.queue_file, "w") as f:
-                json.dump(queue, f, indent=2)
+        temp_file.rename(self.queue_file)
 
     @staticmethod
     def _migrate_v1_to_v2(data: dict) -> TaskQueue:
@@ -84,7 +78,7 @@ class QueuePersistence:
 
         for task in data.get("topics", []):
             task_type = task.get("task_type", "lit_review_full")
-            if task_type in _PUBLISH_TASK_TYPES:
+            if task_type in PUBLISH_TASK_TYPES:
                 publish_tasks.append(task)
             else:
                 research_tasks.append(task)

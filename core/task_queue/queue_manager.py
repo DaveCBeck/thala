@@ -7,15 +7,16 @@ Provides:
 - Two-queue model: research_tasks + publish_tasks
 """
 
+from __future__ import annotations
+
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from .categories import get_default_categories
 from .paths import PUBLICATIONS_FILE, QUEUE_DIR
-from .persistence import QueuePersistence, _PUBLISH_TASK_TYPES
+from .persistence import PUBLISH_TASK_TYPES, QueuePersistence
 from .schemas import (
     Task,
     TaskCategory,
@@ -23,11 +24,41 @@ from .schemas import (
     TaskQueue,
     TaskStatus,
 )
-
-# Default workflow type for backward compatibility
-DEFAULT_WORKFLOW_TYPE = "lit_review_full"
+from .workflows import DEFAULT_WORKFLOW_TYPE
 
 logger = logging.getLogger(__name__)
+
+# Fields that may be mutated via update_task().
+# Identity / creation-time fields (id, task_type, created_at) are excluded
+# so callers cannot accidentally overwrite them or inject arbitrary keys.
+_MUTABLE_TASK_FIELDS: frozenset[str] = frozenset({
+    # Lifecycle
+    "status",
+    "started_at",
+    "completed_at",
+    "error_message",
+    "current_phase",
+    "langsmith_run_id",
+    # Scheduling
+    "priority",
+    "quality",
+    "category",
+    "next_run_after",
+    "not_before",
+    # Content (editable before execution)
+    "topic",
+    "query",
+    "research_questions",
+    "language",
+    "date_range",
+    # Metadata
+    "notes",
+    "tags",
+    # Publish-task progress
+    "items",
+    "source_task_id",
+    "manifest_path",
+})
 
 
 def _find_task_in_queue(queue: TaskQueue, task_id: str) -> tuple[Task | None, str | None]:
@@ -47,7 +78,7 @@ def _find_task_in_queue(queue: TaskQueue, task_id: str) -> tuple[Task | None, st
 class TaskQueueManager:
     """Manages the task queue with safe concurrent access."""
 
-    def __init__(self, queue_dir: Optional[Path] = None):
+    def __init__(self, queue_dir: Path | None = None):
         """Initialize the queue manager.
 
         Args:
@@ -85,15 +116,15 @@ class TaskQueueManager:
         category: TaskCategory | str,
         priority: TaskPriority | int = TaskPriority.NORMAL,
         quality: str = "standard",
-        notes: Optional[str] = None,
-        tags: Optional[list[str]] = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
         task_type: str = DEFAULT_WORKFLOW_TYPE,
         # Type-specific fields (passed through)
-        topic: Optional[str] = None,  # lit_review_full
-        research_questions: Optional[list[str]] = None,  # lit_review_full
-        language: Optional[str] = None,  # both
-        date_range: Optional[tuple[int, int]] = None,  # lit_review_full
-        query: Optional[str] = None,  # web_research
+        topic: str | None = None,  # lit_review_full
+        research_questions: list[str] | None = None,  # lit_review_full
+        language: str | None = None,  # both
+        date_range: tuple[int, int] | None = None,  # lit_review_full
+        query: str | None = None,  # web_research
         **kwargs,  # Future extensibility
     ) -> str:
         """Add a task to the queue.
@@ -144,6 +175,17 @@ class TaskQueueManager:
                 "language": language,  # Optional for web research
             }
             identifier = query or ""
+        elif task_type == "illustrate_and_publish":
+            new_task: Task = {
+                **base_fields,
+                "topic": topic or "",
+                "source_task_id": kwargs.get("source_task_id", ""),
+                "manifest_path": kwargs.get("manifest_path", ""),
+                "items": kwargs.get("items", []),
+                "not_before": kwargs.get("not_before"),
+                "next_run_after": None,
+            }
+            identifier = topic or ""
         else:
             # Generic fallback - include all provided fields
             new_task: Task = {
@@ -156,7 +198,7 @@ class TaskQueueManager:
             identifier = topic or query or ""
 
         # Route to correct array
-        array_key = "publish_tasks" if task_type in _PUBLISH_TASK_TYPES else "research_tasks"
+        array_key = "publish_tasks" if task_type in PUBLISH_TASK_TYPES else "research_tasks"
 
         with self.persistence.lock():
             queue = self.persistence.read_queue()
@@ -166,7 +208,7 @@ class TaskQueueManager:
         logger.info(f"Added task {task_id} ({task_type}) to {array_key}: {identifier[:50]}...")
         return task_id
 
-    def get_task(self, task_id: str) -> Optional[Task]:
+    def get_task(self, task_id: str) -> Task | None:
         """Get a task by ID (searches both queues)."""
         with self.persistence.lock():
             queue = self.persistence.read_queue()
@@ -216,8 +258,8 @@ class TaskQueueManager:
 
     def list_tasks(
         self,
-        status: Optional[TaskStatus | str] = None,
-        category: Optional[TaskCategory | str] = None,
+        status: TaskStatus | str | None = None,
+        category: TaskCategory | str | None = None,
     ) -> list[Task]:
         """List tasks with optional filtering (searches both queues)."""
         # Normalize to values
@@ -297,12 +339,20 @@ class TaskQueueManager:
             }
 
     def update_task(self, task_id: str, **updates) -> bool:
-        """Update arbitrary fields on a task (searches both queues)."""
+        """Update mutable fields on a task (searches both queues).
+
+        Only fields listed in ``_MUTABLE_TASK_FIELDS`` are accepted.
+        Protected fields (id, task_type, created_at) and arbitrary keys
+        are silently dropped to prevent accidental overwrites or injection.
+        """
+        filtered = {k: v for k, v in updates.items() if k in _MUTABLE_TASK_FIELDS}
+        if not filtered:
+            return False
         with self.persistence.lock():
             queue = self.persistence.read_queue()
             task, _ = _find_task_in_queue(queue, task_id)
             if task:
-                task.update(updates)
+                task.update(filtered)
                 self.persistence.write_queue(queue)
                 return True
         return False

@@ -1,6 +1,6 @@
 """Task TypedDict schemas for the task queue system."""
 
-from typing import Optional, Union
+from __future__ import annotations
 
 from typing_extensions import TypedDict
 
@@ -15,26 +15,26 @@ class TopicTask(TypedDict):
     id: str  # UUID
     task_type: str  # "lit_review_full" (default for backward compat)
     topic: str  # Main topic text
-    research_questions: Optional[list[str]]  # Optional pre-defined questions
+    research_questions: list[str] | None  # Optional pre-defined questions
     category: str  # TaskCategory value
     priority: int  # TaskPriority value (1-4)
     status: str  # TaskStatus value
     quality: str  # "quick", "standard", etc.
     language: str  # ISO 639-1 code
-    date_range: Optional[tuple[int, int]]  # (start_year, end_year)
+    date_range: tuple[int, int] | None  # (start_year, end_year)
 
     # Timestamps (ISO format)
     created_at: str  # When added to queue
-    started_at: Optional[str]  # When workflow began
-    completed_at: Optional[str]  # When workflow finished
+    started_at: str | None  # When workflow began
+    completed_at: str | None  # When workflow finished
 
     # Workflow tracking
-    langsmith_run_id: Optional[str]  # For cost attribution and trace lookup
-    current_phase: Optional[str]  # Last checkpoint phase
-    error_message: Optional[str]  # If failed
+    langsmith_run_id: str | None  # For cost attribution and trace lookup
+    current_phase: str | None  # Last checkpoint phase
+    error_message: str | None  # If failed
 
     # Metadata for LLM editing
-    notes: Optional[str]  # User/LLM notes
+    notes: str | None  # User/LLM notes
     tags: list[str]  # Searchable tags
 
 
@@ -51,20 +51,20 @@ class WebResearchTask(TypedDict):
     priority: int  # TaskPriority value (1-4)
     status: str  # TaskStatus value
     quality: str  # "quick", "standard", etc.
-    language: Optional[str]  # ISO 639-1 code (optional for web research)
+    language: str | None  # ISO 639-1 code (optional for web research)
 
     # Timestamps (ISO format)
     created_at: str  # When added to queue
-    started_at: Optional[str]  # When workflow began
-    completed_at: Optional[str]  # When workflow finished
+    started_at: str | None  # When workflow began
+    completed_at: str | None  # When workflow finished
 
     # Workflow tracking
-    langsmith_run_id: Optional[str]  # For cost attribution and trace lookup
-    current_phase: Optional[str]  # Last checkpoint phase
-    error_message: Optional[str]  # If failed
+    langsmith_run_id: str | None  # For cost attribution and trace lookup
+    current_phase: str | None  # Last checkpoint phase
+    error_message: str | None  # If failed
 
     # Metadata for LLM editing
-    notes: Optional[str]  # User/LLM notes
+    notes: str | None  # User/LLM notes
     tags: list[str]  # Searchable tags
 
 
@@ -89,9 +89,9 @@ class IllustratePublishItem(TypedDict):
     title: str
     source_path: str  # Path to unillustrated markdown
     illustrated: bool  # Has illustration completed?
-    illustrated_path: Optional[str]  # Path to illustrated markdown (once done)
-    draft_id: Optional[str]  # Substack draft ID (once published)
-    draft_url: Optional[str]  # Substack draft URL (once published)
+    illustrated_path: str | None  # Path to illustrated markdown (once done)
+    draft_id: str | None  # Substack draft ID (once published)
+    draft_url: str | None  # Substack draft URL (once published)
 
 
 class IllustrateAndPublishTask(TypedDict):
@@ -111,23 +111,23 @@ class IllustrateAndPublishTask(TypedDict):
     topic: str
     manifest_path: str  # Path to manifest.json
     items: list[IllustratePublishItem]
-    not_before: Optional[str]  # ISO datetime — invisible to dispatcher until this time
-    next_run_after: Optional[str]  # ISO datetime for DEFERRED scheduling
+    not_before: str | None  # ISO datetime — invisible to dispatcher until this time
+    next_run_after: str | None  # ISO datetime for DEFERRED scheduling
 
     # Timestamps (ISO format)
     created_at: str
-    started_at: Optional[str]
-    completed_at: Optional[str]
+    started_at: str | None
+    completed_at: str | None
 
     # Workflow tracking
-    langsmith_run_id: Optional[str]
-    current_phase: Optional[str]
-    error_message: Optional[str]
+    langsmith_run_id: str | None
+    current_phase: str | None
+    error_message: str | None
 
     # Metadata
-    notes: Optional[str]
+    notes: str | None
     tags: list[str]
 
 
 # Union type for all task types
-Task = Union[TopicTask, WebResearchTask, IllustrateAndPublishTask]
+Task = TopicTask | WebResearchTask | IllustrateAndPublishTask

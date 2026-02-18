@@ -12,9 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.task_queue.parallel import (
+    _is_past,
     _select_publish_tasks,
     _select_research_tasks,
     _select_tasks,
+    run_daemon_loop,
     run_parallel_tasks,
 )
 from core.task_queue.schemas.enums import TaskStatus
@@ -88,6 +90,24 @@ def _make_publish_task(
         "not_before": not_before,
         "next_run_after": next_run_after,
     }
+
+
+def _fake_to_thread(select_result):
+    """Build a side_effect for asyncio.to_thread that dispatches by callable.
+
+    _select_tasks returns ``select_result``; all other callables (budget
+    should_proceed, _reset_orphaned, etc.) are invoked normally so their
+    mocked behaviour is preserved.
+    """
+
+    async def _side_effect(fn, *args, **kwargs):
+        if fn is _select_tasks:
+            return select_result
+        # For any other callable (budget_tracker.should_proceed, _reset_orphaned
+        # closures, etc.) just call through so the mock return values work.
+        return fn(*args, **kwargs)
+
+    return _side_effect
 
 
 def _mock_queue_manager(
@@ -205,11 +225,7 @@ class TestSelectPublishTasks:
 class TestSelectResearchTasks:
     """Tests for _select_research_tasks helper."""
 
-    @patch(
-        "core.task_queue.parallel.load_categories_from_publications",
-        return_value=["alpha", "beta", "gamma"],
-    )
-    def test_category_rotation(self, _mock_cats):
+    def test_category_rotation(self):
         """Selects from different categories via round-robin."""
         t1 = _make_research_task(task_id="a1", category="alpha")
         t2 = _make_research_task(task_id="a2", category="alpha")
@@ -471,7 +487,7 @@ class TestRunParallelTasks:
             patch("core.task_queue.parallel.TaskQueueManager"),
             patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
-            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[task]),
+            patch("core.task_queue.parallel.asyncio.to_thread", side_effect=_fake_to_thread([task])),
             patch("core.task_queue.parallel.cleanup_supervisor_resources", new_callable=AsyncMock),
         ):
             results = await run_parallel_tasks(count=1, stagger_minutes=0)
@@ -506,7 +522,7 @@ class TestRunParallelTasks:
             patch("core.task_queue.parallel.TaskQueueManager"),
             patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
-            patch("core.task_queue.parallel.asyncio.to_thread", return_value=tasks),
+            patch("core.task_queue.parallel.asyncio.to_thread", side_effect=_fake_to_thread(tasks)),
             patch("core.task_queue.parallel.run_task_workflow", mock_run_workflow),
             patch("core.task_queue.parallel.cleanup_supervisor_resources", new_callable=AsyncMock),
         ):
@@ -539,7 +555,7 @@ class TestRunParallelTasks:
             patch("core.task_queue.parallel.TaskQueueManager"),
             patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
-            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[task]),
+            patch("core.task_queue.parallel.asyncio.to_thread", side_effect=_fake_to_thread([task])),
             patch("core.task_queue.parallel.run_task_workflow", mock_run_workflow),
             patch("core.task_queue.parallel.cleanup_supervisor_resources", new_callable=AsyncMock),
         ):
@@ -573,7 +589,7 @@ class TestRunParallelTasks:
             patch("core.task_queue.parallel.TaskQueueManager"),
             patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
             patch("core.task_queue.parallel.BudgetTracker", return_value=budget),
-            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[task]),
+            patch("core.task_queue.parallel.asyncio.to_thread", side_effect=_fake_to_thread([task])),
             patch("core.task_queue.parallel.run_task_workflow", mock_run_workflow),
             patch("core.task_queue.parallel.cleanup_supervisor_resources", new_callable=AsyncMock),
         ):
@@ -582,3 +598,140 @@ class TestRunParallelTasks:
             mock_run_workflow.assert_called_once()
             call_kwargs = mock_run_workflow.call_args
             assert call_kwargs.kwargs.get("resume_from") == checkpoint
+
+    @pytest.mark.asyncio
+    async def test_manage_signals_false_skips_signal_handlers(self):
+        """When _manage_signals=False, signal handlers are not installed or removed."""
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
+        with (
+            patch("core.task_queue.parallel.get_shutdown_coordinator") as mock_coord_fn,
+            patch("core.task_queue.parallel.TaskQueueManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
+            patch("core.task_queue.parallel.BudgetTracker"),
+            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[]),
+        ):
+            coordinator = MagicMock()
+            coordinator.install_signal_handlers = MagicMock()
+            coordinator.remove_signal_handlers = MagicMock()
+            mock_coord_fn.return_value = coordinator
+
+            result = await run_parallel_tasks(count=5, _manage_signals=False)
+
+            assert result == []
+            coordinator.install_signal_handlers.assert_not_called()
+            coordinator.remove_signal_handlers.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# run_daemon_loop
+# ---------------------------------------------------------------------------
+
+
+class TestRunDaemonLoop:
+    """Tests for run_daemon_loop signal handler lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_signal_handlers_stay_active_between_batches(self):
+        """Signal handlers installed by daemon loop are never removed by run_parallel_tasks.
+
+        This is the core fix for TODO #135: previously, run_parallel_tasks removed
+        signal handlers in its finally block, leaving the daemon loop unprotected
+        during idle waits between batches.
+        """
+        coordinator = MagicMock()
+        coordinator.install_signal_handlers = MagicMock()
+        coordinator.remove_signal_handlers = MagicMock()
+        coordinator.shutdown_requested = False
+        coordinator.wait_or_shutdown = AsyncMock(return_value=False)
+
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
+        with (
+            patch("core.task_queue.parallel.get_shutdown_coordinator", return_value=coordinator),
+            patch("core.task_queue.parallel.TaskQueueManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
+            patch("core.task_queue.parallel.BudgetTracker"),
+            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[]),
+        ):
+            await run_daemon_loop(count=5, max_batches=2, check_interval=0)
+
+            # Signal handlers installed once at daemon level
+            coordinator.install_signal_handlers.assert_called_once()
+            # Removed once in daemon finally block, never by run_parallel_tasks
+            coordinator.remove_signal_handlers.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_during_idle_wait_triggers_graceful_exit(self):
+        """SIGTERM during idle wait between batches triggers graceful shutdown.
+
+        Because daemon loop owns signal handlers, they remain active during
+        the wait_or_shutdown call between batches.
+        """
+        coordinator = MagicMock()
+        coordinator.install_signal_handlers = MagicMock()
+        coordinator.remove_signal_handlers = MagicMock()
+        coordinator.shutdown_requested = False
+
+        # First call from run_parallel_tasks (no tasks) returns quickly,
+        # second call is the idle wait -- simulate shutdown signal
+        coordinator.wait_or_shutdown = AsyncMock(side_effect=[True])
+
+        checkpoint_mgr = MagicMock()
+        checkpoint_mgr.get_incomplete_work = AsyncMock(return_value=[])
+
+        with (
+            patch("core.task_queue.parallel.get_shutdown_coordinator", return_value=coordinator),
+            patch("core.task_queue.parallel.TaskQueueManager"),
+            patch("core.task_queue.parallel.CheckpointManager", return_value=checkpoint_mgr),
+            patch("core.task_queue.parallel.BudgetTracker"),
+            patch("core.task_queue.parallel.asyncio.to_thread", return_value=[]),
+        ):
+            await run_daemon_loop(count=5, max_batches=10, check_interval=300)
+
+            # Should have exited after first batch due to shutdown during idle wait
+            # Signal handlers should still be cleaned up in finally
+            coordinator.remove_signal_handlers.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _is_past edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestIsPast:
+    """Tests for _is_past datetime parsing helper."""
+
+    def test_valid_past_datetime_returns_true(self):
+        """A datetime in the past returns True."""
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        now = datetime.now(timezone.utc)
+        assert _is_past(past, now) is True
+
+    def test_valid_future_datetime_returns_false(self):
+        """A datetime in the future returns False."""
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        now = datetime.now(timezone.utc)
+        assert _is_past(future, now) is False
+
+    def test_none_input_returns_true(self):
+        """None input is treated as eligible (returns True)."""
+        now = datetime.now(timezone.utc)
+        assert _is_past(None, now) is True
+
+    def test_empty_string_returns_true(self):
+        """Empty string is malformed and treated as eligible (returns True)."""
+        now = datetime.now(timezone.utc)
+        assert _is_past("", now) is True
+
+    def test_malformed_datetime_string_returns_true(self):
+        """Malformed datetime string is treated as eligible (returns True)."""
+        now = datetime.now(timezone.utc)
+        assert _is_past("not-a-date", now) is True
+
+    def test_exact_now_returns_true(self):
+        """When iso_str equals now exactly, now >= iso_str is True."""
+        now = datetime.now(timezone.utc)
+        assert _is_past(now.isoformat(), now) is True
