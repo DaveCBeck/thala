@@ -274,8 +274,9 @@ async def test_phase_outputs_persistence_across_phases():
         # Verify outputs were saved
         checkpoint = await manager.get_checkpoint(task_id)
         assert checkpoint is not None
-        assert "lit_result" in checkpoint.get("phase_outputs", {}), \
+        assert "lit_result" in checkpoint.get("phase_outputs", {}), (
             f"lit_result should be in phase_outputs, got: {checkpoint.get('phase_outputs', {}).keys()}"
+        )
         logger.info("Verified lit_result in phase_outputs ✓")
 
         # Step 4: Third checkpoint call (start of supervision phase, no outputs)
@@ -287,10 +288,12 @@ async def test_phase_outputs_persistence_across_phases():
         checkpoint = await manager.get_checkpoint(task_id)
         assert checkpoint is not None
         assert checkpoint["phase"] == "supervision", f"Phase should be supervision, got: {checkpoint['phase']}"
-        assert "lit_result" in checkpoint.get("phase_outputs", {}), \
+        assert "lit_result" in checkpoint.get("phase_outputs", {}), (
             f"lit_result should STILL be in phase_outputs after supervision checkpoint! Got: {checkpoint.get('phase_outputs', {}).keys()}"
-        assert checkpoint["phase_outputs"]["lit_result"]["final_report"] == mock_lit_result["final_report"], \
+        )
+        assert checkpoint["phase_outputs"]["lit_result"]["final_report"] == mock_lit_result["final_report"], (
             "lit_result content should be preserved"
+        )
         logger.info("Verified lit_result STILL in phase_outputs after supervision ✓")
 
         # Cleanup
@@ -339,8 +342,9 @@ async def test_phase_outputs_with_concurrent_writes():
         # The phase could be any of the three (depends on write order with threading lock)
         # But phase_outputs should contain lit_result regardless of phase
         phase_outputs = checkpoint.get("phase_outputs", {})
-        assert "lit_result" in phase_outputs, \
+        assert "lit_result" in phase_outputs, (
             f"lit_result should be in phase_outputs even with concurrent writes! Got: {phase_outputs.keys()}"
+        )
         logger.info(f"Final phase: {checkpoint['phase']}, phase_outputs keys: {list(phase_outputs.keys())} ✓")
 
         # Cleanup
@@ -365,5 +369,3 @@ async def test_checkpoint_update_fails_for_missing_task():
             logger.info(f"Got expected error: {e} ✓")
 
         logger.info("Missing task error test PASSED")
-
-

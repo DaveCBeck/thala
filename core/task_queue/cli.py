@@ -16,7 +16,6 @@ Usage:
     python -m core.task_queue.cli run [-y]
     python -m core.task_queue.cli start      # Start daemon
     python -m core.task_queue.cli stop       # Stop daemon
-    python -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
     python -m core.task_queue.cli reorder --export
 """
 # ruff: noqa: E402  # Module imports after sys.path modification
@@ -35,7 +34,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 from core.config import configure_logging  # noqa: E402
 
-from .commands import cmd_add, cmd_config, cmd_list, cmd_parallel, cmd_reorder, cmd_run, cmd_status  # noqa: E402
+from .commands import cmd_add, cmd_list, cmd_parallel, cmd_reorder, cmd_run, cmd_status  # noqa: E402
 from .daemon import cmd_daemon, cmd_start, cmd_stop  # noqa: E402
 from .workflows import DEFAULT_WORKFLOW_TYPE, get_available_types  # noqa: E402
 
@@ -97,13 +96,6 @@ def main():
     reorder_parser.add_argument("--input", "-i", help="Import new order from JSON file")
     reorder_parser.set_defaults(func=cmd_reorder)
 
-    # config command
-    config_parser = subparsers.add_parser("config", help="Configure concurrency")
-    config_parser.add_argument("--mode", "-m", choices=["max_concurrent", "stagger_hours"], help="Concurrency mode")
-    config_parser.add_argument("--max-concurrent", type=int, help="Max concurrent tasks (for max_concurrent mode)")
-    config_parser.add_argument("--stagger-hours", type=float, help="Hours between task starts (for stagger_hours mode)")
-    config_parser.set_defaults(func=cmd_config)
-
     # start command
     start_parser = subparsers.add_parser("start", help="Start queue daemon")
     start_parser.set_defaults(func=cmd_start)
@@ -114,10 +106,11 @@ def main():
 
     # daemon command (internal)
     daemon_parser = subparsers.add_parser("daemon", help="Run as daemon (internal)")
-    daemon_parser.add_argument("--max-tasks", type=int, help="Max tasks to process before stopping")
+    daemon_parser.add_argument("--max-tasks", type=int, help="Max batches to process before stopping")
     daemon_parser.add_argument(
         "--check-interval", type=float, default=300.0, help="Seconds between queue checks (default: 300)"
     )
+    daemon_parser.add_argument("--count", "-n", type=int, default=5, help="Tasks per batch (default: 5)")
     daemon_parser.set_defaults(func=cmd_daemon)
 
     # parallel command

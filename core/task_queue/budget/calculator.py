@@ -111,52 +111,6 @@ class BudgetCalculator:
 
         return True, "ok"
 
-    def get_adaptive_stagger_hours(self, base_hours: float = 36.0) -> float:
-        """Calculate adaptive stagger hours based on budget consumption.
-
-        If under budget pace, can speed up. If over pace, slow down.
-
-        Args:
-            base_hours: Base stagger time in hours
-
-        Returns:
-            Adjusted stagger hours
-        """
-        status = self.get_budget_status()
-
-        # Expected percent used based on day of month
-        from datetime import timezone
-
-        day_of_month = datetime.now(timezone.utc).day
-        days_in_month = 30  # Approximation
-        expected_percent = (day_of_month / days_in_month) * 100
-
-        # Ratio of actual to expected usage
-        if expected_percent > 0:
-            usage_ratio = status["percent_used"] / expected_percent
-        else:
-            usage_ratio = 1.0
-
-        # Adjust stagger hours based on ratio
-        # Under budget (ratio < 1): can speed up (reduce stagger)
-        # Over budget (ratio > 1): slow down (increase stagger)
-
-        if usage_ratio < 0.5:
-            # Way under budget - can run faster
-            return base_hours * 0.5
-        elif usage_ratio < 0.8:
-            # Slightly under budget
-            return base_hours * 0.75
-        elif usage_ratio <= 1.2:
-            # On track
-            return base_hours
-        elif usage_ratio <= 1.5:
-            # Slightly over pace
-            return base_hours * 1.5
-        else:
-            # Way over pace
-            return base_hours * 2.0
-
     def get_cost_breakdown(self) -> dict[str, float]:
         """Get cost breakdown by model for current month.
 

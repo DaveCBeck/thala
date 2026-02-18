@@ -3,13 +3,10 @@ Task queue infrastructure for managing long-running workflows.
 
 Provides:
 - Persistent JSON-based task queue (LLM-editable)
-- Flexible concurrency control (max concurrent or stagger-based)
+- Two-queue model: research (round-robin) + publish (date-gated priority)
 - Checkpoint/resume capability
 - Budget awareness via LangSmith cost aggregation
-- Category-based round-robin scheduling
-
-Currently supports "topic" tasks (literature review workflows).
-Designed to be extensible for other task types.
+- Category-based round-robin scheduling for research tasks
 """
 
 from .schemas import (
@@ -18,7 +15,6 @@ from .schemas import (
     TaskPriority,
     TopicTask,
     TaskQueue,
-    ConcurrencyConfig,
     WorkflowCheckpoint,
     CurrentWork,
     CostEntry,
@@ -35,7 +31,6 @@ __all__ = [
     "TaskPriority",
     "TopicTask",
     "TaskQueue",
-    "ConcurrencyConfig",
     "WorkflowCheckpoint",
     "CurrentWork",
     "CostEntry",

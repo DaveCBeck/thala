@@ -173,4 +173,5 @@ async def _spawn_illustrate_task(
         source_task_id=task["id"],
         manifest_path=manifest_path,
         items=items,
+        not_before=None,  # Immediately eligible
     )

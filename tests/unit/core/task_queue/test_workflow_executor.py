@@ -1,6 +1,6 @@
 """Tests for workflow_executor.py status handling.
 
-Covers DEFERRED and "waiting" result status handling.
+Covers DEFERRED result status handling.
 """
 
 from datetime import datetime, timezone
@@ -103,31 +103,3 @@ async def test_deferred_status_updates_task_and_clears_checkpoint(mock_deps):
     # Checkpoint cleared (not failed)
     checkpoint_mgr.complete_work.assert_called_once_with(task["id"])
     checkpoint_mgr.fail_work.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_waiting_status_does_not_mark_failed(mock_deps):
-    """When workflow returns 'waiting', task is NOT marked as failed."""
-    queue_manager, checkpoint_mgr, budget_tracker = mock_deps
-    task = _make_task()
-    workflow = _mock_workflow({"status": "waiting", "next_publish": "2026-03-01"})
-
-    with (
-        patch("core.task_queue.workflow_executor.get_workflow", return_value=workflow),
-        patch("core.task_queue.workflow_executor.start_run"),
-        patch("core.task_queue.workflow_executor.end_run"),
-        patch("core.task_queue.workflow_executor.set_task_context"),
-        patch("core.task_queue.workflow_executor.clear_task_context"),
-    ):
-        from core.task_queue.workflow_executor import run_task_workflow
-
-        result = await run_task_workflow(task, queue_manager, checkpoint_mgr, budget_tracker)
-
-    assert result["status"] == "waiting"
-
-    # Should NOT be marked as failed
-    queue_manager.mark_failed.assert_not_called()
-    checkpoint_mgr.fail_work.assert_not_called()
-
-    # Should NOT be marked as completed either
-    queue_manager.mark_completed.assert_not_called()

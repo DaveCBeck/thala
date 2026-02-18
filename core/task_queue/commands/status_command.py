@@ -5,12 +5,12 @@ import asyncio
 from ..budget_tracker import BudgetTracker
 from ..checkpoint import CheckpointManager
 from ..pricing import format_cost
-from ..queue_manager import TaskPriority, TaskQueueManager, TaskStatus
+from ..queue_manager import TaskQueueManager, TaskStatus
 from ..workflows import DEFAULT_WORKFLOW_TYPE
 
 
 def cmd_status(args):
-    """Show current status: work, budget, next scheduled."""
+    """Show current status: work, budget, queue summary."""
     manager = TaskQueueManager()
     checkpoint_mgr = CheckpointManager()
     budget_tracker = BudgetTracker()
@@ -31,7 +31,6 @@ def cmd_status(args):
         import traceback
 
         traceback.print_exc()
-        status = None
 
     # Current work
     print("\n=== CURRENT WORK ===")
@@ -64,30 +63,8 @@ def cmd_status(args):
     # Queue summary
     print("\n=== QUEUE SUMMARY ===")
     stats = manager.get_queue_stats()
+    print(f"  Research tasks: {stats['research_count']}")
+    print(f"  Publish tasks: {stats['publish_count']}")
     for status_name, count in stats["by_status"].items():
         print(f"  {status_name}: {count}")
     print(f"  Total: {stats['total']}")
-
-    # Concurrency config
-    config = stats["concurrency"]
-    print(f"\n  Concurrency mode: {config['mode']}")
-    if config["mode"] == "stagger_hours":
-        print(f"  Stagger: {config['stagger_hours']} hours")
-        if status:
-            adaptive = budget_tracker.get_adaptive_stagger_hours(config["stagger_hours"])
-            if adaptive != config["stagger_hours"]:
-                print(f"  Adaptive stagger: {adaptive:.1f} hours")
-    else:
-        print(f"  Max concurrent: {config['max_concurrent']}")
-
-    # Next eligible
-    print("\n=== NEXT ELIGIBLE ===")
-    next_task = manager.get_next_eligible_task()
-    if next_task:
-        task_type = next_task.get("task_type", DEFAULT_WORKFLOW_TYPE)
-        task_identifier = next_task.get("topic") or next_task.get("query", "unknown")
-        print(f"  [{next_task['id'][:8]}] ({task_type}) {task_identifier[:40]}...")
-        print(f"           Category: {next_task['category']}")
-        print(f"           Priority: {TaskPriority(next_task['priority']).name}")
-    else:
-        print("  No tasks eligible (check concurrency constraints)")

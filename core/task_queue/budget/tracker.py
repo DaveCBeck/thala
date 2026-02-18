@@ -99,17 +99,6 @@ class BudgetTracker:
         """
         return self.calculator.should_proceed()
 
-    def get_adaptive_stagger_hours(self, base_hours: float = 36.0) -> float:
-        """Calculate adaptive stagger hours based on budget consumption.
-
-        Args:
-            base_hours: Base stagger time in hours
-
-        Returns:
-            Adjusted stagger hours
-        """
-        return self.calculator.get_adaptive_stagger_hours(base_hours=base_hours)
-
     def get_cost_breakdown(self) -> dict[str, float]:
         """Get cost breakdown by model for current month.
 

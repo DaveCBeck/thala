@@ -26,13 +26,11 @@ if TYPE_CHECKING:
 # Import workflow implementations
 from .illustrate_and_publish import IllustrateAndPublishWorkflow
 from .lit_review_full import LitReviewFullWorkflow
-from .publish_series import PublishSeriesWorkflow
 from .web_research import WebResearchWorkflow
 
 # Registry mapping task_type -> workflow class
 WORKFLOW_REGISTRY: dict[str, type[BaseWorkflow]] = {
     "lit_review_full": LitReviewFullWorkflow,
-    "publish_series": PublishSeriesWorkflow,
     "web_research": WebResearchWorkflow,
     "illustrate_and_publish": IllustrateAndPublishWorkflow,
 }
@@ -60,23 +58,12 @@ def get_workflow(task_type: str) -> BaseWorkflow:
 
 
 def get_phases(task_type: str) -> list[str]:
-    """Get checkpoint phases for a workflow type.
-
-    Args:
-        task_type: The workflow type identifier
-
-    Returns:
-        Ordered list of phase names for checkpointing
-    """
+    """Get checkpoint phases for a workflow type."""
     return get_workflow(task_type).phases
 
 
 def get_available_types() -> list[str]:
-    """Get list of available workflow types.
-
-    Returns:
-        List of registered task type identifiers
-    """
+    """Get list of available workflow types."""
     return list(WORKFLOW_REGISTRY.keys())
 
 
@@ -89,6 +76,5 @@ __all__ = [
     "get_available_types",
     "IllustrateAndPublishWorkflow",
     "LitReviewFullWorkflow",
-    "PublishSeriesWorkflow",
     "WebResearchWorkflow",
 ]

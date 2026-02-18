@@ -4,6 +4,7 @@ TypedDict schemas for the task queue system.
 Supports multiple task types via discriminated union pattern:
 - TopicTask (task_type="lit_review_full"): Academic literature review workflow
 - WebResearchTask (task_type="web_research"): Web research workflow
+- IllustrateAndPublishTask (task_type="illustrate_and_publish"): Illustration + draft publishing
 
 To add a new task type:
 1. Create a new TypedDict here with required fields
@@ -14,15 +15,13 @@ To add a new task type:
 # Re-export all public symbols for backward compatibility
 from .callbacks import IncrementalCheckpointCallback, PhaseCheckpointCallback
 from .checkpoints import CurrentWork, WorkflowCheckpoint
-from .config import ConcurrencyConfig, TaskQueue
+from .config import TaskQueue
 from .cost import CostCache, CostEntry, IncrementalState
 from .enums import TaskCategory, TaskPriority, TaskStatus, TaskType
 from .tasks import (
     IllustrateAndPublishTask,
     IllustratePublishItem,
     IllustratePublishManifest,
-    PublishItem,
-    PublishSeriesTask,
     Task,
     TopicTask,
     WebResearchTask,
@@ -40,14 +39,11 @@ __all__ = [
     # Tasks
     "TopicTask",
     "WebResearchTask",
-    "PublishItem",
-    "PublishSeriesTask",
     "IllustratePublishManifest",
     "IllustratePublishItem",
     "IllustrateAndPublishTask",
     "Task",
     # Config
-    "ConcurrencyConfig",
     "TaskQueue",
     # Checkpoints
     "WorkflowCheckpoint",
