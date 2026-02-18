@@ -167,6 +167,12 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     incremental_state=supervision_incremental_state,
                 )
 
+                # Append editorial transparency to methodology section
+                if final_report and enhance_result:
+                    from .phases.methodology import append_editorial_summary
+
+                    final_report = append_editorial_summary(final_report, enhance_result)
+
                 if enhance_result.get("errors"):
                     errors.extend(enhance_result["errors"])
 
