@@ -68,53 +68,6 @@ class WebResearchTask(TypedDict):
     tags: list[str]  # Searchable tags
 
 
-class PublishItem(TypedDict):
-    """A single item in a publish series."""
-
-    id: str  # "overview", "lit_review", "deep_dive_1", etc.
-    title: str  # Article title
-    path: str  # Path to illustrated markdown file
-    day_offset: int  # Days from base_date to publish
-    audience: str  # "everyone" or "only_paid"
-    published: bool  # Has this item been published?
-    draft_id: Optional[str]  # Substack draft ID once created
-    draft_url: Optional[str]  # URL to draft in Substack
-
-
-class PublishSeriesTask(TypedDict):
-    """A publish series task in the queue.
-
-    Schedule-aware draft publishing via Substack API.
-    Spawned by lit_review_full after illustration completes.
-    """
-
-    id: str  # UUID
-    task_type: str  # "publish_series"
-    category: str  # For publication routing
-    priority: int  # TaskPriority value (1-4)
-    status: str  # TaskStatus value
-    quality: str  # Inherited from parent task
-
-    # Publish-specific fields
-    base_date: str  # ISO datetime (Monday 3pm local)
-    items: list[PublishItem]  # The 5 items to publish
-    source_task_id: str  # ID of lit_review_full task that spawned this
-
-    # Timestamps (ISO format)
-    created_at: str  # When added to queue
-    started_at: Optional[str]  # When workflow began
-    completed_at: Optional[str]  # When workflow finished
-
-    # Workflow tracking
-    langsmith_run_id: Optional[str]  # For cost attribution and trace lookup
-    current_phase: Optional[str]  # Last checkpoint phase
-    error_message: Optional[str]  # If failed
-
-    # Metadata for LLM editing
-    notes: Optional[str]  # User/LLM notes
-    tags: list[str]  # Searchable tags
-
-
 class IllustratePublishManifest(TypedDict):
     """Schema for the manifest.json written by lit_review_full save_and_spawn phase.
 
@@ -158,6 +111,7 @@ class IllustrateAndPublishTask(TypedDict):
     topic: str
     manifest_path: str  # Path to manifest.json
     items: list[IllustratePublishItem]
+    not_before: Optional[str]  # ISO datetime — invisible to dispatcher until this time
     next_run_after: Optional[str]  # ISO datetime for DEFERRED scheduling
 
     # Timestamps (ISO format)
@@ -176,4 +130,4 @@ class IllustrateAndPublishTask(TypedDict):
 
 
 # Union type for all task types
-Task = Union[TopicTask, WebResearchTask, PublishSeriesTask, IllustrateAndPublishTask]
+Task = Union[TopicTask, WebResearchTask, IllustrateAndPublishTask]

@@ -67,8 +67,8 @@ def cmd_stop(args):
 def cmd_daemon(args):
     """Run as daemon (internal use).
 
-    Signal handlers for graceful shutdown are installed by run_queue_loop()
-    using asyncio-native loop.add_signal_handler() for proper integration.
+    Wraps the parallel dispatcher in a continuous loop.
+    Signal handlers for graceful shutdown are installed by run_daemon_loop().
     """
     # Write PID file
     DAEMON_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -76,15 +76,14 @@ def cmd_daemon(args):
 
     print(f"Daemon started (PID {os.getpid()})")
 
-    # Import runner and start loop
-    # Signal handlers are installed inside run_queue_loop() for proper asyncio integration
-    from ..runner import run_queue_loop
+    from ..parallel import run_daemon_loop
 
     try:
         asyncio.run(
-            run_queue_loop(
-                max_tasks=args.max_tasks,
+            run_daemon_loop(
+                count=getattr(args, "count", 5),
                 check_interval=args.check_interval,
+                max_batches=args.max_tasks,
             )
         )
     finally:

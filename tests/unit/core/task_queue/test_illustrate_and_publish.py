@@ -286,6 +286,4 @@ class TestIllustrateAndPublishWorkflow:
 
     def test_properties(self, workflow):
         assert workflow.task_type == "illustrate_and_publish"
-        assert workflow.is_zero_cost is False
-        assert workflow.bypass_concurrency is True
         assert workflow.phases == ["processing", "complete"]

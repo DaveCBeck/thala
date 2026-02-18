@@ -47,16 +47,6 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
     def phases(self) -> list[str]:
         return ["processing", "complete"]
 
-    @property
-    def is_zero_cost(self) -> bool:
-        """Uses Sonnet for prompt generation and vision comparison."""
-        return False
-
-    @property
-    def bypass_concurrency(self) -> bool:
-        """Manages own scheduling via DEFERRED status."""
-        return True
-
     def get_task_identifier(self, task: dict[str, Any]) -> str:
         source_id = task.get("source_task_id", "unknown")[:8]
         topic = task.get("topic", "unknown")[:40]
@@ -133,7 +123,10 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
                 try:
                     config = IllustrateConfig(visual_identity_override=cached_vi) if cached_vi else None
                     illustrated_path, article_result = await self._illustrate_article(
-                        item, output_dir, illustrate_graph, config=config,
+                        item,
+                        output_dir,
+                        illustrate_graph,
+                        config=config,
                     )
                     item["illustrated"] = True
                     item["illustrated_path"] = str(illustrated_path)
@@ -291,5 +284,3 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
 
         logger.info(f"Published draft: {item['title'][:50]} -> {result.get('draft_url')}")
         return result
-
-

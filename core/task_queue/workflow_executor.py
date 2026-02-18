@@ -122,12 +122,6 @@ async def run_task_workflow(
             checkpoint_task = asyncio.create_task(_update())
             pending_checkpoint_tasks.append(checkpoint_task)
 
-            # Check budget between phases
-            should_proceed, reason = budget_tracker.should_proceed()
-            if not should_proceed:
-                logger.warning(f"Budget limit reached during {phase}: {reason}")
-                # Don't raise - let the current phase complete
-
             # Check for shutdown request
             if shutdown_coordinator and shutdown_coordinator.shutdown_requested:
                 logger.info(f"Shutdown requested during phase {phase}")
@@ -190,10 +184,6 @@ async def run_task_workflow(
             # get_incomplete_work() in addition to DEFERRED status selection.
             await checkpoint_mgr.complete_work(task_id)
             logger.info(f"Task {task_id[:8]} deferred until {next_run}")
-        elif result_status == "waiting":
-            # publish_series returns "waiting" when items aren't due yet.
-            # Don't mark as failed — task will be retried on next run.
-            logger.info(f"Task {task_id[:8]} waiting — no items due")
         else:
             error = str(result.get("errors", "Unknown error"))
             await asyncio.to_thread(queue_manager.mark_failed, task_id, error)

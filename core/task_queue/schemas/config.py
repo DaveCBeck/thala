@@ -1,30 +1,21 @@
 """Configuration TypedDict schemas for the task queue system."""
 
-from typing import Literal
-
 from typing_extensions import TypedDict
 
 from .tasks import Task
 
 
-class ConcurrencyConfig(TypedDict):
-    """Concurrency control configuration."""
-
-    mode: Literal["max_concurrent", "stagger_hours"]
-    max_concurrent: int  # Max simultaneous tasks (mode: max_concurrent)
-    stagger_hours: float  # Hours between starts (mode: stagger_hours)
-
-
 class TaskQueue(TypedDict):
     """Root queue structure (queue.json).
 
-    The 'topics' field name is kept for backward compatibility but
-    can contain any task type (TopicTask, WebResearchTask, etc.).
+    Version 2.0: Two separate arrays for research and publish tasks.
+    Research tasks use category round-robin selection.
+    Publish tasks use date-gated priority selection.
     """
 
-    version: str  # Schema version
-    concurrency: ConcurrencyConfig
-    categories: list[str]  # Category names for round-robin
+    version: str  # Schema version ("2.0")
+    categories: list[str]  # Category names for research round-robin
     last_category_index: int  # For round-robin tracking
-    topics: list[Task]  # Tasks in queue (any type)
+    research_tasks: list[Task]  # lit_review_full, web_research
+    publish_tasks: list[Task]  # illustrate_and_publish
     last_updated: str  # ISO datetime

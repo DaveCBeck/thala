@@ -5,7 +5,6 @@ Provides:
 - Print current queue statistics
 - Print budget status
 - Print active work
-- Print next eligible task
 """
 
 import asyncio
@@ -37,6 +36,8 @@ async def print_status_async():
     # Queue status
     print("\n=== QUEUE ===")
     stats = queue_manager.get_queue_stats()
+    print(f"  Research tasks: {stats['research_count']}")
+    print(f"  Publish tasks: {stats['publish_count']}")
     for status_name, count in stats["by_status"].items():
         print(f"  {status_name}: {count}")
 
@@ -48,14 +49,6 @@ async def print_status_async():
             task_id = cp.get("task_id") or cp.get("topic_id", "unknown")
             task_type = cp.get("task_type", DEFAULT_WORKFLOW_TYPE)
             print(f"  {task_id[:8]} ({task_type}): {cp['phase']}")
-
-    # Next eligible
-    next_task = queue_manager.get_next_eligible_task()
-    if next_task:
-        print("\n=== NEXT ===")
-        task_type = next_task.get("task_type", DEFAULT_WORKFLOW_TYPE)
-        task_identifier = next_task.get("topic") or next_task.get("query", "unknown")
-        print(f"  [{task_type}] {task_identifier[:50]}...")
 
 
 def print_status():

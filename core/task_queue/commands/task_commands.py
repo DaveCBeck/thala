@@ -141,7 +141,7 @@ def cmd_list(args):
         by_status[status].append(task)
 
     # Print in status order
-    status_order = ["in_progress", "pending", "paused", "completed", "failed"]
+    status_order = ["in_progress", "pending", "deferred", "completed", "failed"]
     for status in status_order:
         if status not in by_status:
             continue
@@ -217,27 +217,3 @@ def cmd_reorder(args):
         print(f"  {i}. [{task['id'][:8]}] {task['topic'][:40]}... ({priority})")
 
     print("\nUse --export to export for editing, --input FILE to import new order")
-
-
-def cmd_config(args):
-    """Configure concurrency settings."""
-    manager = TaskQueueManager()
-
-    if args.mode:
-        manager.set_concurrency(
-            mode=args.mode,
-            max_concurrent=args.max_concurrent or 1,
-            stagger_hours=args.stagger_hours or 36.0,
-        )
-        print(f"Set concurrency mode: {args.mode}")
-        if args.mode == "stagger_hours":
-            print(f"  Stagger: {args.stagger_hours or 36.0} hours")
-        else:
-            print(f"  Max concurrent: {args.max_concurrent or 1}")
-    else:
-        # Show current config
-        config = manager.get_concurrency_config()
-        print("Current concurrency config:")
-        print(f"  Mode: {config['mode']}")
-        print(f"  Max concurrent: {config['max_concurrent']}")
-        print(f"  Stagger hours: {config['stagger_hours']}")

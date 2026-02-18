@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 async def cleanup_supervisor_resources() -> None:
     """Clean up shared resources owned by the supervisor (broker, HTTP clients, rate limiters).
 
-    Called from the finally block of both parallel.py and queue_loop.py.
+    Called from the finally block of parallel.py.
     """
     if is_broker_enabled():
         try:
