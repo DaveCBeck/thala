@@ -78,11 +78,20 @@ def _make_task(tmp_path: Path, manifest_path: Path, num_articles: int = 2) -> di
 
 
 def _mock_illustrate_graph():
-    """Mock illustrate_graph.ainvoke that returns illustrated content."""
+    """Mock illustrate_graph.ainvoke that returns illustrated content + visual_identity."""
+    from workflows.output.illustrate.schemas import VisualIdentity
+
+    vi = VisualIdentity(
+        primary_style="editorial watercolor",
+        color_palette=["warm amber", "deep teal"],
+        mood="contemplative",
+        lighting="soft diffused",
+        avoid=["neon colors"],
+    )
 
     async def mock_ainvoke(input_dict):
         content = input_dict["input"]["markdown_document"]
-        return {"illustrated_document": f"[ILLUSTRATED]\n{content}"}
+        return {"illustrated_document": f"[ILLUSTRATED]\n{content}", "visual_identity": vi}
 
     graph = MagicMock()
     graph.ainvoke = mock_ainvoke
@@ -234,6 +243,46 @@ class TestIllustrateAndPublishWorkflow:
         )
 
         assert result["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_caches_vi_from_first_article(self, workflow, tmp_path):
+        """First article has no VI override; second article gets cached VI."""
+        manifest_path = _make_manifest(tmp_path)
+        task = _make_task(tmp_path, manifest_path)
+        tracker = _mock_daily_tracker(remaining=10)
+
+        # Track configs passed to _illustrate_article
+        configs_seen = []
+        original_illustrate = workflow._illustrate_article.__func__
+
+        async def spy_illustrate(self_, item, output_dir, graph, config=None):
+            configs_seen.append(config)
+            return await original_illustrate(self_, item, output_dir, graph, config=config)
+
+        async def mock_publish(item, category):
+            return {"post_id": f"draft-{item['id']}", "draft_url": f"https://example.com/{item['id']}"}
+
+        with (
+            patch("core.task_queue.rate_limits.get_imagen_daily_tracker", return_value=tracker),
+            patch("workflows.output.illustrate.illustrate_graph", _mock_illustrate_graph()),
+            patch.object(type(workflow), "_illustrate_article", spy_illustrate),
+        ):
+            workflow._publish_draft = mock_publish
+            result = await workflow.run(
+                task,
+                checkpoint_callback=MagicMock(),
+                resume_from=None,
+                flush_checkpoints=AsyncMock(),
+                update_items_callback=AsyncMock(),
+            )
+
+        assert result["status"] == "success"
+        # First article: no config (no cached VI yet)
+        assert configs_seen[0] is None
+        # Second article: config with cached VI override
+        assert configs_seen[1] is not None
+        assert configs_seen[1].visual_identity_override is not None
+        assert configs_seen[1].visual_identity_override.primary_style == "editorial watercolor"
 
     def test_properties(self, workflow):
         assert workflow.task_type == "illustrate_and_publish"

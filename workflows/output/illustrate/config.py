@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .schemas import VisualIdentity
+
 
 class IllustrateConfig(BaseModel):
     """Configuration for document illustration.
@@ -69,6 +71,12 @@ class IllustrateConfig(BaseModel):
         ge=0,
         le=3,
         description="Max retry rounds for locations where both candidates fail",
+    )
+
+    # Visual identity caching (series reuse)
+    visual_identity_override: VisualIdentity | None = Field(
+        default=None,
+        description="Pre-established visual identity to reuse across a series",
     )
 
     # Output settings

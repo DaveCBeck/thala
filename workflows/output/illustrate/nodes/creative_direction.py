@@ -12,6 +12,7 @@ from ..config import IllustrateConfig
 from ..prompts import (
     CREATIVE_DIRECTION_SYSTEM,
     CREATIVE_DIRECTION_USER,
+    CREATIVE_DIRECTION_USER_WITH_VI_OVERRIDE,
     resolve_palette_hex,
 )
 from ..schemas import CreativeDirectionResult
@@ -56,23 +57,41 @@ async def creative_direction_node(state: IllustrateState) -> dict:
     target_image_count = (1 if config.generate_header_image else 0) + config.additional_image_count
     extra_opportunity_count = target_image_count + 2
 
+    vi_override = config.visual_identity_override
+
     try:
-        result = await invoke(
-            tier=ModelTier.SONNET,
-            system=CREATIVE_DIRECTION_SYSTEM,
-            user=CREATIVE_DIRECTION_USER.format(
+        if vi_override:
+            user_prompt = CREATIVE_DIRECTION_USER_WITH_VI_OVERRIDE.format(
                 title=title,
                 document=document,
                 target_image_count=target_image_count,
                 extra_opportunity_count=extra_opportunity_count,
                 generate_header=config.generate_header_image,
-            ),
+                vi_primary_style=vi_override.primary_style,
+                vi_color_palette=", ".join(vi_override.color_palette),
+                vi_mood=vi_override.mood,
+                vi_lighting=vi_override.lighting,
+                vi_avoid=", ".join(vi_override.avoid),
+            )
+        else:
+            user_prompt = CREATIVE_DIRECTION_USER.format(
+                title=title,
+                document=document,
+                target_image_count=target_image_count,
+                extra_opportunity_count=extra_opportunity_count,
+                generate_header=config.generate_header_image,
+            )
+
+        result = await invoke(
+            tier=ModelTier.SONNET,
+            system=CREATIVE_DIRECTION_SYSTEM,
+            user=user_prompt,
             schema=CreativeDirectionResult,
             config=InvokeConfig(max_tokens=4000, batch_policy=BatchPolicy.PREFER_BALANCE),
         )
 
-        # Resolve hex colors for diagram injection
-        vi = result.visual_identity
+        # Use override VI verbatim to prevent LLM paraphrasing drift
+        vi = vi_override if vi_override else result.visual_identity
         vi.palette_hex = resolve_palette_hex(vi.color_palette)
 
         logger.info(

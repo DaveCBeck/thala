@@ -14,14 +14,19 @@ This workflow:
 4. Completes when all articles are illustrated and drafted
 """
 
+from __future__ import annotations
+
 import json
 import logging
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from langsmith import traceable
+
+if TYPE_CHECKING:
+    from workflows.output.illustrate.config import IllustrateConfig
 
 from .base import BaseWorkflow
 
@@ -81,6 +86,7 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         """
         from core.task_queue.rate_limits import get_imagen_daily_tracker
         from workflows.output.illustrate import illustrate_graph
+        from workflows.output.illustrate.config import IllustrateConfig
 
         checkpoint_callback("processing")
 
@@ -108,6 +114,7 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         # Per-article loop: illustrate → publish → checkpoint
         errors = []
         progress_made = False
+        cached_vi = None
 
         for item in items:
             # Skip fully completed items
@@ -124,10 +131,19 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
                     break
 
                 try:
-                    illustrated_path = await self._illustrate_article(item, output_dir, illustrate_graph)
+                    config = IllustrateConfig(visual_identity_override=cached_vi) if cached_vi else None
+                    illustrated_path, article_result = await self._illustrate_article(
+                        item, output_dir, illustrate_graph, config=config,
+                    )
                     item["illustrated"] = True
                     item["illustrated_path"] = str(illustrated_path)
                     progress_made = True
+
+                    if cached_vi is None:
+                        vi = article_result.get("visual_identity")
+                        if vi:
+                            cached_vi = vi
+                            logger.info(f"Cached visual identity: style='{vi.primary_style}'")
                 except Exception as e:
                     logger.error(f"Failed to illustrate {item['id']}: {e}")
                     errors.append({"item": item["id"], "error": str(e)})
@@ -195,14 +211,26 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
             logger.error(f"Failed to load manifest: {e}")
             return None
 
-    async def _illustrate_article(self, item: dict, output_dir: Path, illustrate_graph: Any) -> Path:
+    async def _illustrate_article(
+        self,
+        item: dict,
+        output_dir: Path,
+        illustrate_graph: Any,
+        config: IllustrateConfig | None = None,
+    ) -> tuple[Path, dict]:
         """Illustrate a single article and save to disk.
 
         Args:
             item: Article metadata dict with source_path, title, id.
             output_dir: Directory to write illustrated output into.
             illustrate_graph: LangGraph CompiledGraph for illustration pipeline.
+            config: Optional illustration config (carries visual_identity_override).
+
+        Returns:
+            Tuple of (illustrated_path, graph_result_dict).
         """
+        from workflows.output.illustrate.config import IllustrateConfig as _IC
+
         source_path = Path(item["source_path"])
         content = source_path.read_text()
 
@@ -212,7 +240,8 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
                     "markdown_document": content,
                     "title": item["title"],
                     "output_dir": str(output_dir / f"{item['id']}_images"),
-                }
+                },
+                "config": config or _IC(),
             }
         )
 
@@ -221,7 +250,7 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         illustrated_path.write_text(illustrated_content)
 
         logger.info(f"Illustrated article: {item['title'][:50]}")
-        return illustrated_path
+        return illustrated_path, article_result
 
     async def _publish_draft(self, item: dict, category: str) -> dict:
         """Publish an illustrated article as a Substack draft."""

@@ -182,6 +182,108 @@ class TestCreativeDirectionNode:
 
 
 @pytest.mark.asyncio
+class TestCreativeDirectionNodeWithOverride:
+    """Test creative_direction_node with visual_identity_override."""
+
+    def _make_vi_override(self):
+        return VisualIdentity(
+            primary_style="watercolor botanical",
+            color_palette=["sage", "cream", "forest green"],
+            mood="serene and scholarly",
+            lighting="soft natural",
+            avoid=["photorealistic faces", "neon"],
+        )
+
+    async def test_override_vi_returned_when_set(self):
+        """When override is set, the returned VI is the override, not the LLM's."""
+        override = self._make_vi_override()
+        state = {
+            "input": {
+                "markdown_document": "# Test\nContent here",
+                "title": None,
+                "output_dir": None,
+            },
+            "config": IllustrateConfig(visual_identity_override=override),
+        }
+
+        with patch(
+            "workflows.output.illustrate.nodes.creative_direction.invoke",
+            new_callable=AsyncMock,
+            return_value=_make_creative_direction_result(),
+        ):
+            result = await creative_direction_node(state)
+
+        # VI should be the override, not the LLM's "editorial watercolor"
+        assert result["visual_identity"].primary_style == "watercolor botanical"
+        assert result["visual_identity"].mood == "serene and scholarly"
+        assert len(result["visual_identity"].palette_hex) > 0
+
+    async def test_fresh_vi_when_no_override(self):
+        """When no override is set, the LLM's VI is used."""
+        state = {
+            "input": {
+                "markdown_document": "# Test\nContent here",
+                "title": None,
+                "output_dir": None,
+            },
+            "config": IllustrateConfig(),
+        }
+
+        with patch(
+            "workflows.output.illustrate.nodes.creative_direction.invoke",
+            new_callable=AsyncMock,
+            return_value=_make_creative_direction_result(),
+        ):
+            result = await creative_direction_node(state)
+
+        assert result["visual_identity"].primary_style == "editorial watercolor"
+
+    async def test_opportunities_still_generated_with_override(self):
+        """Override VI doesn't suppress image opportunity generation."""
+        override = self._make_vi_override()
+        state = {
+            "input": {
+                "markdown_document": "# Test\nContent here",
+                "title": None,
+                "output_dir": None,
+            },
+            "config": IllustrateConfig(visual_identity_override=override),
+        }
+
+        with patch(
+            "workflows.output.illustrate.nodes.creative_direction.invoke",
+            new_callable=AsyncMock,
+            return_value=_make_creative_direction_result(),
+        ):
+            result = await creative_direction_node(state)
+
+        assert len(result["image_opportunities"]) == 5
+
+    async def test_override_uses_correct_prompt_template(self):
+        """When override is set, the VI override prompt template is used."""
+        override = self._make_vi_override()
+        state = {
+            "input": {
+                "markdown_document": "# Test\nContent",
+                "title": "Test Title",
+                "output_dir": None,
+            },
+            "config": IllustrateConfig(visual_identity_override=override),
+        }
+
+        mock_invoke = AsyncMock(return_value=_make_creative_direction_result())
+        with patch(
+            "workflows.output.illustrate.nodes.creative_direction.invoke",
+            mock_invoke,
+        ):
+            await creative_direction_node(state)
+
+        call_kwargs = mock_invoke.call_args.kwargs
+        assert "Pre-established Visual Identity" in call_kwargs["user"]
+        assert "watercolor botanical" in call_kwargs["user"]
+
+
+@pytest.mark.asyncio
 class TestPlanBriefsNode:
     """Test plan_briefs_node with mocked invoke."""
 

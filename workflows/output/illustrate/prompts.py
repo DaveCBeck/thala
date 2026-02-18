@@ -133,6 +133,28 @@ Identify {extra_opportunity_count} image opportunities (target + 2 extras).
 
 **Generate header image:** {generate_header}"""
 
+CREATIVE_DIRECTION_USER_WITH_VI_OVERRIDE = """Plan image opportunities for this article using the pre-established visual identity below.
+
+**Document Title:** {title}
+
+<document>
+{document}
+</document>
+
+## Pre-established Visual Identity (use verbatim — do NOT modify)
+- **Primary style:** {vi_primary_style}
+- **Color palette:** {vi_color_palette}
+- **Mood:** {vi_mood}
+- **Lighting:** {vi_lighting}
+- **Avoid:** {vi_avoid}
+
+Copy this visual identity exactly into your response. Focus your creative energy on the image opportunity map — identify the best locations, purposes, and types for THIS specific article.
+
+**Target image count:** {target_image_count} images total (including header if applicable).
+Identify {extra_opportunity_count} image opportunities (target + 2 extras).
+
+**Generate header image:** {generate_header}"""
+
 PLAN_BRIEFS_SYSTEM = """You are writing detailed image briefs for a pre-planned set of article illustrations.
 
 You have already received:
