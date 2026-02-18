@@ -8,6 +8,7 @@ from workflows.output.illustrate.config import IllustrateConfig
 from workflows.output.illustrate.graph import (
     _FALLBACK_IMAGE_TYPE,
     route_after_analysis,
+    route_after_assembly,
     route_after_selection,
     route_to_selection,
     sync_after_selection,
@@ -762,3 +763,70 @@ class TestSyncAfterSelectionClearsBytes:
         assert gen_results[0]["image_bytes"] is None
         # Winner preserved
         assert gen_results[1]["image_bytes"] == b"WINNER"
+
+
+# ---------------------------------------------------------------------------
+# Surplus routing: overgeneration_surplus controls editorial review gating
+# ---------------------------------------------------------------------------
+
+
+class TestSurplusRouting:
+    def test_surplus_0_skips_editorial_review(self):
+        """With surplus=0, route_after_assembly should skip editorial review."""
+        config = IllustrateConfig.quick()  # surplus=0, editorial=False
+        state = {"config": config}
+        assert route_after_assembly(state) == "finalize"
+
+    def test_surplus_0_select_count_equals_target(self):
+        """With surplus=0, plan_briefs should select exactly target_count opportunities."""
+        from workflows.output.illustrate.nodes.plan_briefs import _select_opportunities
+
+        config = IllustrateConfig.quick()
+        # target_count = 1 (header) + 3 (additional) = 4, surplus=0 → select_count=4
+        target_count = (1 if config.generate_header_image else 0) + config.additional_image_count
+        select_count = target_count + config.overgeneration_surplus
+        assert select_count == target_count
+
+        # Verify _select_opportunities respects the count
+        opps = [
+            _make_opportunity(location_id="header", purpose="header"),
+            *[_make_opportunity(location_id=f"s{i}") for i in range(6)],
+        ]
+        selected = _select_opportunities(opps, select_count, config)
+        assert len(selected) == select_count
+
+    def test_surplus_1_enables_editorial_review(self):
+        """With surplus=1 (balanced), editorial review should run."""
+        config = IllustrateConfig.balanced()  # surplus=1, editorial=True
+        state = {"config": config}
+        assert route_after_assembly(state) == "editorial_review"
+
+    def test_surplus_1_select_count_is_target_plus_1(self):
+        """With surplus=1, select_count should be target + 1."""
+        config = IllustrateConfig.balanced()
+        target_count = (1 if config.generate_header_image else 0) + config.additional_image_count
+        select_count = target_count + config.overgeneration_surplus
+        assert select_count == target_count + 1
+
+    def test_default_surplus_enables_editorial_review(self):
+        """Default config (surplus=2) should enable editorial review."""
+        state = {"config": IllustrateConfig()}
+        assert route_after_assembly(state) == "editorial_review"
+
+
+# ---------------------------------------------------------------------------
+# Vision comparison: default tier is HAIKU
+# ---------------------------------------------------------------------------
+
+
+class TestVisionDefaultTier:
+    def test_default_model_tier_is_haiku(self):
+        """vision_pair_select should default to HAIKU for cost efficiency."""
+        import inspect
+
+        from workflows.shared.vision_comparison import vision_pair_select
+
+        sig = inspect.signature(vision_pair_select)
+        from workflows.shared.llm_utils import ModelTier
+
+        assert sig.parameters["model_tier"].default == ModelTier.HAIKU

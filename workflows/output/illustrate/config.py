@@ -1,5 +1,7 @@
 """Configuration for document illustration workflow."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +21,20 @@ class IllustrateConfig(BaseModel):
         ge=0,
         le=5,
         description="Number of additional images beyond header (default 3)",
+    )
+
+    # Cost control
+    imagen_sample_count: int = Field(
+        default=2,
+        ge=1,
+        le=4,
+        description="Number of Imagen candidates per generation call",
+    )
+    overgeneration_surplus: int = Field(
+        default=2,
+        ge=0,
+        le=2,
+        description="Extra image locations beyond target for editorial curation",
     )
 
     # Header image preference
@@ -78,3 +94,39 @@ class IllustrateConfig(BaseModel):
         le=5,
         description="Maximum refinement iterations for diagrams",
     )
+
+    # --- Presets -------------------------------------------------------
+
+    @classmethod
+    def quick(cls, **overrides) -> IllustrateConfig:
+        """Minimal cost: no surplus, no editorial review, no retries."""
+        defaults = dict(
+            overgeneration_surplus=0,
+            enable_editorial_review=False,
+            max_retries=0,
+            imagen_sample_count=1,
+        )
+        defaults.update(overrides)
+        return cls(**defaults)
+
+    @classmethod
+    def balanced(cls, **overrides) -> IllustrateConfig:
+        """Moderate cost: surplus=1, single retry, 2 Imagen samples."""
+        defaults = dict(
+            overgeneration_surplus=1,
+            enable_editorial_review=True,
+            max_retries=1,
+            imagen_sample_count=2,
+        )
+        defaults.update(overrides)
+        return cls(**defaults)
+
+    @classmethod
+    def quality(cls, **overrides) -> IllustrateConfig:
+        """Full quality (current defaults): surplus=2, 2 Imagen samples."""
+        defaults = dict(
+            overgeneration_surplus=2,
+            imagen_sample_count=2,
+        )
+        defaults.update(overrides)
+        return cls(**defaults)

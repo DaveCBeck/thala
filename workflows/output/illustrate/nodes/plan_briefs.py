@@ -118,8 +118,8 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
     editorial_notes = state.get("editorial_notes", "")
 
     target_count = (1 if config.generate_header_image else 0) + config.additional_image_count
-    # Select N+2 to maintain over-generation surplus through to editorial review
-    select_count = target_count + 2
+    # Over-generation surplus feeds the editorial review curation step
+    select_count = target_count + config.overgeneration_surplus
     selected = _select_opportunities(opportunities, select_count, config)
 
     try:

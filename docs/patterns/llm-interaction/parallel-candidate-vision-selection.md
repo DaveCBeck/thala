@@ -599,7 +599,7 @@ The original multi-image comparison (show all candidates to one LLM call) has be
 async def vision_pair_select(
     candidates: list[bytes],
     selection_criteria: str,
-    model_tier: ModelTier = ModelTier.SONNET,
+    model_tier: ModelTier = ModelTier.HAIKU,
 ) -> int:
     """Tournament: compare sequentially, winner advances."""
     current_best_idx = 0

@@ -60,7 +60,7 @@ Image A and Image B are attached. Respond with ONLY "A" or "B"."""
 async def vision_pair_select(
     candidates: list[bytes],
     selection_criteria: str,
-    model_tier: ModelTier = ModelTier.SONNET,
+    model_tier: ModelTier = ModelTier.HAIKU,
 ) -> int:
     """Select the best candidate image via vision-based pair comparison.
 

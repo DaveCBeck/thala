@@ -263,6 +263,7 @@ async def _generate_imagen(
         content="",
         custom_prompt=imagen_brief,
         aspect_ratio=config.imagen_aspect_ratio,
+        sample_count=config.imagen_sample_count,
     )
 
     if image_bytes:

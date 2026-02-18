@@ -104,6 +104,8 @@ Each image location gets 2 candidates generated in parallel (~12 total tasks for
 |---------|---------|-------------|
 | `generate_header_image` | `True` | Whether to create a header image |
 | `additional_image_count` | `3` | Number of additional images (0-5) |
+| `imagen_sample_count` | `2` | Imagen candidates per call (1-4) |
+| `overgeneration_surplus` | `2` | Extra locations beyond target for editorial curation (0-2) |
 | `header_prefer_public_domain` | `True` | Try public domain for header first |
 | `imagen_aspect_ratio` | `"16:9"` | Aspect ratio for generated images |
 | `diagram_width` | `900` | SVG diagram width in pixels |
@@ -119,24 +121,23 @@ Each image location gets 2 candidates generated in parallel (~12 total tasks for
 | `diagram_max_refinement_iterations` | `3` | Max refinement rounds (legacy SVG pipeline) |
 | `enable_editorial_review` | `True` | Enable vision-based editorial curation of surplus images |
 
+### Presets
+
+| Preset | Surplus | Imagen Samples | Editorial Review | Retries |
+|--------|---------|----------------|------------------|---------|
+| `quick()` | 0 | 1 | Off | 0 |
+| `balanced()` | 1 | 2 | On | 1 |
+| `quality()` | 2 | 2 | On | 1 |
+
 ```python
 from workflows.output.illustrate import IllustrateConfig
 
-# Minimal configuration (use defaults)
-config = IllustrateConfig()
+config = IllustrateConfig.quick()       # ~$0.30/article
+config = IllustrateConfig.balanced()    # ~$0.80/article
+config = IllustrateConfig.quality()     # ~$1.50/article
 
-# Header only, no retries
-config = IllustrateConfig(
-    additional_image_count=0,
-    max_retries=0,
-)
-
-# Maximum images with high-quality diagrams
-config = IllustrateConfig(
-    additional_image_count=5,
-    diagram_quality_threshold=4.9,
-    diagram_max_refinement_iterations=5,
-)
+# Presets accept overrides
+config = IllustrateConfig.quick(additional_image_count=1)
 ```
 
 ## Environment Variables
