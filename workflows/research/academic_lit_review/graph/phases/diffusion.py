@@ -44,6 +44,7 @@ async def diffusion_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
                 total_papers_discovered=0,
                 total_papers_relevant=0,
                 total_papers_rejected=0,
+                saturation_reason="no_seeds",
             ),
             "current_phase": "processing",
             "current_status": "Diffusion skipped (no seeds)",
@@ -70,6 +71,10 @@ async def diffusion_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
         f"Diffusion complete: {len(final_corpus_dois)} papers selected from "
         f"{len(final_corpus)} discovered. Reason: {saturation_reason}"
     )
+
+    # Store saturation_reason in diffusion state for transparency reporting
+    if isinstance(diffusion_state, dict) and "saturation_reason" not in diffusion_state:
+        diffusion_state["saturation_reason"] = saturation_reason
 
     return {
         "paper_corpus": final_corpus,

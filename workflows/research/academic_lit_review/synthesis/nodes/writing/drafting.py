@@ -8,6 +8,7 @@ from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 from workflows.shared.language import get_translated_prompt
 from ...types import SynthesisState
+from ...transparency import render_transparency_for_prompt
 from .prompts import (
     get_introduction_system_prompt,
     INTRODUCTION_USER_TEMPLATE,
@@ -85,21 +86,21 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         date_range=actual_range,
     )
 
-    total_papers = len(paper_summaries)
-
-    method_prompt = method_user_template.format(
-        topic=topic,
-        keyword_count=total_papers // 4,
-        citation_count=total_papers * 3 // 4,
-        total_papers=total_papers,
-        processed_count=total_papers,
-        max_stages=quality_settings.get("max_stages", 5),
-        saturation_threshold=quality_settings.get("saturation_threshold", 0.1),
-        min_citations=quality_settings.get("min_citations_filter", 10),
-        date_range=actual_range,
-        final_corpus_size=total_papers,
-        cluster_count=len(clusters),
-    )
+    # Build methodology prompt from real transparency data
+    transparency_report = state.get("transparency_report")
+    if transparency_report:
+        prompt_vars = render_transparency_for_prompt(transparency_report)
+        prompt_vars["topic"] = topic
+        method_prompt = method_user_template.format(**prompt_vars)
+    else:
+        # Backwards-compatible fallback when transparency_report is not available
+        total_papers = len(paper_summaries)
+        logger.warning("No transparency_report in state, using basic methodology prompt")
+        method_prompt = (
+            f"Document the methodology for this literature review on: {topic}\n\n"
+            f"Total corpus: {total_papers} papers organized into {len(clusters)} themes.\n"
+            f"Date range: {actual_range}"
+        )
 
     intro_coro = invoke(
         tier=ModelTier.SONNET,

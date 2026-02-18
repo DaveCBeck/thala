@@ -8,6 +8,9 @@ from workflows.research.academic_lit_review.state import AcademicLitReviewState
 from workflows.research.academic_lit_review.synthesis import (
     run_synthesis,
 )
+from workflows.research.academic_lit_review.synthesis.transparency import (
+    collect_transparency_report,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,14 @@ async def synthesis_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
             "completed_at": datetime.now(timezone.utc),
         }
 
+    # Collect transparency data from the full workflow state
+    transparency_report = collect_transparency_report(state)
+    logger.info(
+        f"Transparency report: {transparency_report.get('total_corpus_size', 0)} papers, "
+        f"{len(transparency_report.get('search_queries', []))} queries, "
+        f"{len(transparency_report.get('diffusion_stages', []))} diffusion stages"
+    )
+
     synthesis_result = await run_synthesis(
         paper_summaries=paper_summaries,
         clusters=clusters,
@@ -48,6 +59,7 @@ async def synthesis_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
         research_questions=research_questions,
         quality_settings=quality_settings,
         zotero_keys=zotero_keys,
+        transparency_report=transparency_report,
     )
 
     final_review = synthesis_result.get("final_review", "")

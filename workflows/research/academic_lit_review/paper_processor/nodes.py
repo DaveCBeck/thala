@@ -211,6 +211,8 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
         if short_summary:
             existing_short_summaries[doi] = short_summary
 
+    metadata_only_dois: list[str] = []
+
     if papers_needing_fallback:
         failed_dois = [p.get("doi", "unknown") for p in papers_needing_fallback]
         logger.warning(
@@ -231,6 +233,7 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
 
         summaries.update(metadata_summaries)
         zotero_keys.update(paper_zotero_keys)
+        metadata_only_dois = [p.get("doi") for p in papers_needing_fallback if p.get("doi")]
 
         logger.info(
             f"Metadata-only fallback complete: {len(metadata_summaries)} summaries, "
@@ -246,6 +249,7 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
         "paper_summaries": summaries,
         "elasticsearch_ids": es_ids,
         "zotero_keys": zotero_keys,
+        "metadata_only_dois": metadata_only_dois,
     }
 
 
