@@ -109,14 +109,14 @@ def _should_batch(
     self,
     policy: BatchPolicy,
     model: ModelTier,
-    thinking_budget: int | None,
+    effort: str | None,
 ) -> bool:
     """2D routing matrix: policy + mode → sync or batch."""
 
     # Hard constraints (never batch)
     if is_deepseek_tier(model):  # DeepSeek has no batch API
         return False
-    if thinking_budget:  # Extended thinking incompatible
+    if effort:  # Adaptive thinking incompatible with batch
         return False
 
     # Policy evaluation
@@ -156,7 +156,7 @@ async def request(
     future: asyncio.Future[LLMResponse] = asyncio.get_running_loop().create_future()
     self._pending_futures[request.request_id] = future
 
-    if self._should_batch(policy, model, kwargs.get("thinking_budget")):
+    if self._should_batch(policy, model, kwargs.get("effort")):
         await self._queue_for_batch(request)
     else:
         self._spawn_sync_task(request)

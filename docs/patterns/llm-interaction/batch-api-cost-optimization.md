@@ -113,7 +113,7 @@ class BatchProcessor:
         model: ModelTier = ModelTier.SONNET,
         max_tokens: int = 4096,
         system: Optional[str] = None,
-        thinking_budget: Optional[int] = None,
+        effort: Optional[str] = None,
         tools: Optional[list[dict]] = None,
         tool_choice: Optional[dict] = None,
     ) -> None:
@@ -125,7 +125,7 @@ class BatchProcessor:
                 model=model,
                 max_tokens=max_tokens,
                 system=system,
-                thinking_budget=thinking_budget,
+                effort=effort,
                 tools=tools,
                 tool_choice=tool_choice,
             )
@@ -210,7 +210,7 @@ class BatchRequest:
     model: any  # ModelTier
     max_tokens: int = 4096
     system: Optional[str] = None
-    thinking_budget: Optional[int] = None
+    effort: Optional[str] = None
     tools: Optional[list[dict]] = None
     tool_choice: Optional[dict] = None
 
@@ -359,7 +359,7 @@ for i, problem in enumerate(complex_problems):
         prompt=problem,
         model=ModelTier.SONNET,
         max_tokens=8000,
-        thinking_budget=4000,  # Enable extended thinking
+        effort="high",  # Enable extended thinking
     )
 
 results = await processor.execute_batch()
@@ -448,7 +448,7 @@ for custom_id, result in results.items():
 - **50% cost reduction**: Direct savings on LLM token costs
 - **Simplified concurrency**: No semaphore management for large batches
 - **LangSmith integration**: Batch execution traced with aggregated usage
-- **Extended thinking support**: Works with thinking budget
+- **Extended thinking support**: Works with effort-based adaptive thinking
 - **1M context support**: Beta API for large context windows
 
 ### Trade-offs

@@ -69,7 +69,7 @@ Factory automatically provides:
 1. Current model versions via `ModelTier` enum
 2. `max_retries=3` for transient error handling
 3. LangSmith metadata for cost attribution
-4. Extended thinking support when needed
+4. Adaptive thinking support when needed
 5. Multi-provider support (Claude and DeepSeek)
 
 ## Applicability
@@ -124,7 +124,7 @@ class ModelTier(Enum):
         HAIKU: Quick tasks, simple text generation
         SONNET: Standard tasks, summarization, metadata extraction (200k context)
         SONNET_1M: Same as SONNET but with 1M token context window (Tier 4+)
-        OPUS: Complex tasks requiring deep analysis (supports extended thinking)
+        OPUS: Complex tasks requiring deep analysis (supports adaptive thinking)
 
     DeepSeek tiers (10-15x cheaper than Claude, OpenAI-compatible API):
         DEEPSEEK_V3: High-volume simple tasks (classification, filtering)
@@ -168,7 +168,7 @@ def is_deepseek_tier(tier: ModelTier) -> bool:
 
 def get_llm(
     tier: ModelTier = ModelTier.SONNET,
-    thinking_budget: Optional[int] = None,
+    effort: Optional[str] = None,
     max_tokens: int = 4096,
 ) -> BaseChatModel:
     """
@@ -176,12 +176,11 @@ def get_llm(
 
     Args:
         tier: Model tier selection (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
-        thinking_budget: Token budget for extended thinking (enables if set).
-                        Recommended: 8000-16000 for complex tasks.
-                        Supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
-                        For DEEPSEEK_R1, thinking is always enabled (explicit mode).
-                        Ignored for DEEPSEEK_V3.
-        max_tokens: Maximum output tokens (must be > thinking_budget if set)
+        effort: Thinking effort level for adaptive thinking ("low", "medium", "high", "max").
+                Supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
+                For DEEPSEEK_R1, thinking is always enabled (explicit mode).
+                Ignored for DEEPSEEK_V3.
+        max_tokens: Maximum output tokens
 
     Returns:
         BaseChatModel instance configured for the specified tier
@@ -193,8 +192,8 @@ def get_llm(
         # Large document processing with 1M context
         llm = get_llm(ModelTier.SONNET_1M)
 
-        # Complex analysis with Opus and extended thinking
-        llm = get_llm(ModelTier.OPUS, thinking_budget=8000, max_tokens=16000)
+        # Complex analysis with Opus and adaptive thinking
+        llm = get_llm(ModelTier.OPUS, effort="high")
 
         # Cost-effective task with DeepSeek
         llm = get_llm(ModelTier.DEEPSEEK_V3)
@@ -214,10 +213,10 @@ def get_llm(
             kwargs["max_tokens"] = max(max_tokens, 16384)
             # R1 supports tool calling but NOT tool_choice parameter
             kwargs["disabled_params"] = {"tool_choice": None}
-        elif thinking_budget is not None:
+        elif effort is not None:
             import logging
             logging.getLogger(__name__).warning(
-                f"thinking_budget ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
+                f"effort ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
             )
 
         return ChatDeepSeek(**kwargs)
@@ -243,14 +242,10 @@ def get_llm(
     if tier == ModelTier.SONNET_1M:
         kwargs["betas"] = [CONTEXT_1M_BETA]
 
-    if thinking_budget is not None:
-        if thinking_budget >= max_tokens:
-            raise ValueError(
-                f"thinking_budget ({thinking_budget}) must be less than max_tokens ({max_tokens})"
-            )
+    if effort is not None:
         kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": thinking_budget,
+            "type": "adaptive",
+            "effort": effort,
         }
 
     return ChatAnthropic(**kwargs)
@@ -374,7 +369,7 @@ Result: 11 insertions, 34 deletions (net reduction of 23 lines).
 - **LangSmith cost attribution**: `ls_provider` and `ls_model_name` metadata enables cost tracking per model
 - **Consistent configuration**: No more forgotten settings in individual files
 - **Multi-provider support**: Same interface for Claude and DeepSeek
-- **Extended thinking ready**: `thinking_budget` parameter when needed
+- **Adaptive thinking ready**: `effort` parameter for tasks requiring deeper reasoning
 - **1M context support**: `SONNET_1M` tier enables large document processing
 
 ### Trade-offs

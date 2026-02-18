@@ -131,7 +131,7 @@ async def _invoke_direct(
     user_prompts: list[str],
     config: InvokeConfig,
 ) -> list[AIMessage]:
-    llm = get_llm(tier=tier, thinking_budget=config.thinking_budget)
+    llm = get_llm(tier=tier, effort=config.effort)
 
     results = []
     for user_prompt in user_prompts:  # Sequential!
@@ -156,7 +156,7 @@ async def _invoke_direct(
 ) -> list[AIMessage]:
     llm = get_llm(
         tier=tier,
-        thinking_budget=config.thinking_budget,
+        effort=config.effort,
         max_tokens=config.max_tokens,
     )
 

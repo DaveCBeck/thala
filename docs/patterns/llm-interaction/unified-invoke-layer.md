@@ -111,7 +111,6 @@ Use this pattern when:
 - Want automatic broker routing based on batch policy
 - Processing batch inputs with rate limiting
 - Supporting multiple LLM providers (Anthropic + DeepSeek)
-- Require tier-aware validation (e.g., cache + thinking constraints)
 
 Do NOT use this pattern when:
 - Need specialized LangChain chains or advanced features
@@ -149,7 +148,7 @@ workflows/document_processing/
 
 ### invoke()
 Main entry point that routes requests based on tier and configuration:
-- Validates tier-specific constraints (cache + thinking)
+- Validates tier-specific constraints
 - Normalizes single/batch input
 - Routes to direct or broker path
 - Returns single response or list based on input
@@ -159,7 +158,7 @@ Configuration dataclass controlling invocation behavior:
 - `cache`: Enable prompt caching (default: True)
 - `cache_ttl`: Cache time-to-live ("5m" or "1h")
 - `batch_policy`: When set, routes through broker
-- `thinking_budget`: Token budget for extended thinking
+- `effort`: Adaptive thinking effort level ("low", "medium", "high", "max")
 - `tools`/`tool_choice`: Tool use configuration
 - `max_tokens`: Maximum output tokens
 - `max_concurrent`: Rate limit for direct invocation
@@ -206,7 +205,7 @@ class InvokeConfig:
         cache: Enable prompt caching (default: True)
         cache_ttl: Cache time-to-live ("5m" default, "1h" for long workflows)
         batch_policy: When set, routes requests through broker for cost optimization
-        thinking_budget: Token budget for extended thinking (Anthropic only)
+        effort: Adaptive thinking effort level ("low", "medium", "high", "max")
         tools: Tool definitions for tool use
         tool_choice: Tool choice configuration
         metadata: Additional metadata for tracking
@@ -216,7 +215,7 @@ class InvokeConfig:
     cache: bool = True
     cache_ttl: Literal["5m", "1h"] = "5m"
     batch_policy: "BatchPolicy | None" = None
-    thinking_budget: int | None = None
+    effort: Literal["low", "medium", "high", "max"] | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -257,13 +256,6 @@ async def invoke(
         ValueError: If config has invalid constraint combinations
     """
     config = config or InvokeConfig()
-
-    # Validate tier-specific constraints
-    if config.cache and config.thinking_budget and not is_deepseek_tier(tier):
-        raise ValueError(
-            "Cannot use cache with extended thinking on Anthropic. "
-            "Set cache=False when using thinking_budget."
-        )
 
     # Normalize to list for internal processing
     is_batch = isinstance(user, list)
@@ -311,7 +303,7 @@ async def _invoke_direct(
     """
     llm = get_llm(
         tier=tier,
-        thinking_budget=config.thinking_budget,
+        effort=config.effort,
         max_tokens=config.max_tokens,
     )
 
@@ -368,7 +360,7 @@ async def _invoke_via_broker(
                 policy=config.batch_policy,
                 max_tokens=config.max_tokens,
                 system=system,
-                thinking_budget=config.thinking_budget,
+                effort=config.effort,
                 tools=config.tools,
                 tool_choice=config.tool_choice,
                 metadata=config.metadata,
@@ -531,7 +523,7 @@ async def detect_chapters(chunks: list[str]) -> list[ChapterInfo]:
     return [parse_chapter(r) for r in responses]
 ```
 
-### Example 4: Extended Thinking (Cache Disabled)
+### Example 4: Adaptive Thinking
 
 ```python
 # workflows/research/methodology_extraction/nodes/extract.py
@@ -544,8 +536,7 @@ async def extract_methodology(paper: Paper) -> Methodology:
         system=METHODOLOGY_SYSTEM,
         user=paper.full_text,
         config=InvokeConfig(
-            thinking_budget=8000,
-            cache=False,  # Required when using thinking_budget
+            effort="high",
             max_tokens=16000,
         ),
     )
@@ -614,7 +605,7 @@ async def filter_papers(papers: list[Paper]) -> list[Paper]:
 2. `batch_policy=None` always routes direct with caching
 3. `batch_policy` set + broker enabled → broker path
 4. `batch_policy` set + broker disabled → direct fallback
-5. Extended thinking (`thinking_budget`) forces direct path
+5. Adaptive thinking (`effort`) is compatible with all routes
 
 ## Consequences
 

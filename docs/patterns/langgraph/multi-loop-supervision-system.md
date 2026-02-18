@@ -160,7 +160,7 @@ async def run_loop2_literature_base(state: OrchestrationState) -> dict:
     existing_corpus = state["paper_corpus"]
 
     # Analyze for missing perspectives
-    llm = get_llm(ModelTier.OPUS, thinking_budget=4000, max_tokens=8000)
+    llm = get_llm(ModelTier.OPUS, effort="high", max_tokens=8000)
     analysis = await analyze_missing_perspectives(current_review, existing_corpus, llm)
 
     if not analysis.missing_perspectives:
@@ -202,7 +202,7 @@ async def run_loop3_structure(state: OrchestrationState) -> dict:
     current_review = state["current_review"]
 
     # Agent 1: Structural analysis
-    analyzer_llm = get_llm(ModelTier.OPUS, thinking_budget=8000)
+    analyzer_llm = get_llm(ModelTier.OPUS, effort="high")
     analysis = await analyze_structure(current_review, analyzer_llm)
 
     if not analysis.issues:
@@ -252,7 +252,7 @@ async def run_loop4_section_editing(state: OrchestrationState) -> dict:
     ])
 
     # Holistic review
-    holistic_llm = get_llm(ModelTier.OPUS, thinking_budget=4000)
+    holistic_llm = get_llm(ModelTier.OPUS, effort="high")
     coherence_edits = await review_coherence(edited_sections, holistic_llm)
 
     # Apply coherence edits and reassemble

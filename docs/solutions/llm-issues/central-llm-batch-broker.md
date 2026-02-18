@@ -109,7 +109,7 @@ def _should_batch(
     self,
     policy: BatchPolicy,
     model: ModelTier,
-    thinking_budget: int | None,
+    effort: str | None,
 ) -> bool:
     """Determine if a request should be batched based on policy + mode."""
 
@@ -118,7 +118,7 @@ def _should_batch(
         return False
 
     # Extended thinking incompatible with batch
-    if thinking_budget:
+    if effort:
         return False
 
     # Policy + Mode routing matrix

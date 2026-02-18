@@ -145,7 +145,7 @@ def add_request(
     model: ModelTier = ModelTier.SONNET,
     max_tokens: int = 4096,
     system: Optional[str] = None,
-    thinking_budget: Optional[int] = None,
+    effort: Optional[str] = None,        # "low", "medium", "high", "max"
     tools: Optional[list[dict]] = None,       # Tool definitions
     tool_choice: Optional[dict] = None,       # Force specific tool
 ) -> None:

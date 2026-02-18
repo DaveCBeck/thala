@@ -132,7 +132,7 @@ class ModelTier(str, Enum):
 def get_llm(
     tier: ModelTier = ModelTier.SONNET,
     max_tokens: int = 4096,
-    thinking_budget: Optional[int] = None,
+    effort: Optional[str] = None,  # "low", "medium", "high", "max"
 ) -> ChatAnthropic | ChatOpenAI:
     """Factory function for LLM instances."""
     # Implementation...

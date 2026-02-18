@@ -117,7 +117,7 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
         ),
         system_prompt=V2_GLOBAL_ANALYSIS_SYSTEM,
         tier=ModelTier.OPUS,
-        thinking_budget=6000,  # Extended thinking for quality
+        effort="high",  # Extended thinking for quality
         use_json_schema_method=True,
     )
 

@@ -107,7 +107,7 @@ result = await get_structured_output(
     # Model configuration
     tier=ModelTier.SONNET,
     max_tokens=4096,
-    thinking_budget=8000,  # Extended thinking (Opus recommended)
+    effort="high",  # Adaptive thinking: "low", "medium", "high", "max" (Opus recommended)
 
     # Strategy hints
     use_json_schema_method=True,  # Stricter schema validation
@@ -130,7 +130,7 @@ For complex scenarios, use `StructuredOutputConfig`:
 config = StructuredOutputConfig(
     tier=ModelTier.OPUS,
     max_tokens=8192,
-    thinking_budget=8000,
+    effort="high",  # "low", "medium", "high", or "max"
     use_json_schema_method=True,
     max_retries=3,
     enable_prompt_cache=True,

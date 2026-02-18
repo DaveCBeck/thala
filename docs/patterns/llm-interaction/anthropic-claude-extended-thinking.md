@@ -1,6 +1,6 @@
 ---
 name: anthropic-claude-extended-thinking
-title: "Anthropic Claude Integration with Extended Thinking"
+title: "Anthropic Claude Integration with Adaptive Thinking"
 date: 2025-12-17
 category: llm-interaction
 applicability:
@@ -11,14 +11,14 @@ components: [llm_call, structured_output, async_task]
 complexity: moderate
 verified_in_production: true
 related_solutions: []
-tags: [anthropic, claude, extended-thinking, batch-api, model-tier, langchain]
+tags: [anthropic, claude, extended-thinking, adaptive-thinking, batch-api, model-tier, langchain]
 ---
 
-# Anthropic Claude Integration with Extended Thinking
+# Anthropic Claude Integration with Adaptive Thinking
 
 ## Intent
 
-Provide a tiered model selection system with extended thinking support for complex reasoning tasks, and batch processing capability for 50% cost reduction on bulk LLM operations.
+Provide a tiered model selection system with adaptive thinking support for complex reasoning tasks, and batch processing capability for 50% cost reduction on bulk LLM operations.
 
 ## Motivation
 
@@ -30,7 +30,7 @@ Document processing workflows require different LLM capabilities at different st
 
 This pattern establishes:
 1. **ModelTier enum** for consistent model selection across the codebase
-2. **Extended thinking** for complex reasoning that benefits from step-by-step analysis
+2. **Adaptive thinking** for complex reasoning that benefits from step-by-step analysis
 3. **Batch API integration** for 50% cost reduction on asynchronous processing
 
 ## Applicability
@@ -79,23 +79,23 @@ class ModelTier(Enum):
 
     HAIKU: Quick tasks, simple text generation
     SONNET: Standard tasks, summarization, metadata extraction
-    OPUS: Complex tasks requiring deep analysis (supports extended thinking)
+    OPUS: Complex tasks requiring deep analysis (supports adaptive thinking)
     """
     HAIKU = "claude-haiku-4-5-20251001"
     SONNET = "claude-sonnet-4-5-20250929"
     OPUS = "claude-opus-4-5-20251101"
 ```
 
-### Step 2: LLM Factory with Extended Thinking
+### Step 2: LLM Factory with Adaptive Thinking
 
-Create a factory function that configures Claude with optional extended thinking:
+Create a factory function that configures Claude with optional adaptive thinking:
 
 ```python
 from langchain_anthropic import ChatAnthropic
 
 def get_llm(
     tier: ModelTier = ModelTier.SONNET,
-    thinking_budget: Optional[int] = None,
+    effort: Optional[str] = None,
     max_tokens: int = 4096,
 ) -> ChatAnthropic:
     """
@@ -103,9 +103,9 @@ def get_llm(
 
     Args:
         tier: Model tier selection (HAIKU, SONNET, OPUS)
-        thinking_budget: Token budget for extended thinking (enables if set).
-                        Recommended: 8000-16000 for complex tasks.
-        max_tokens: Maximum output tokens (must be > thinking_budget if set)
+        effort: Thinking effort level ("low", "medium", "high", "max").
+                Enables adaptive thinking when set.
+        max_tokens: Maximum output tokens
 
     Returns:
         ChatAnthropic instance configured for the specified tier
@@ -120,20 +120,14 @@ def get_llm(
         "max_tokens": max_tokens,
     }
 
-    if thinking_budget is not None:
-        if thinking_budget >= max_tokens:
-            raise ValueError(
-                f"thinking_budget ({thinking_budget}) must be less than max_tokens"
-            )
-        kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": thinking_budget,
-        }
+    if effort is not None:
+        kwargs["thinking"] = {"type": "adaptive"}
+        kwargs["effort"] = effort
 
     return ChatAnthropic(**kwargs)
 ```
 
-### Step 3: Extended Thinking Helper
+### Step 3: Adaptive Thinking Helper
 
 Provide a convenience function for complex analysis:
 
@@ -141,25 +135,25 @@ Provide a convenience function for complex analysis:
 async def analyze_with_thinking(
     text: str,
     prompt: str,
-    thinking_budget: int = 8000,
+    effort: str = "high",
     tier: ModelTier = ModelTier.OPUS,
 ) -> tuple[str, Optional[str]]:
     """
-    Perform complex analysis using extended thinking.
+    Perform complex analysis using adaptive thinking.
 
-    Extended thinking allows Claude to reason step-by-step before
+    Adaptive thinking allows Claude to reason step-by-step before
     providing a final answer, improving quality for complex tasks.
 
     Args:
         text: Text to analyze
         prompt: Analysis instructions
-        thinking_budget: Token budget for reasoning (default: 8000)
+        effort: Thinking effort level (default: "high")
         tier: Model tier (default: OPUS for complex analysis)
 
     Returns:
         Tuple of (final_response, thinking_summary)
     """
-    llm = get_llm(tier=tier, thinking_budget=thinking_budget, max_tokens=thinking_budget + 4096)
+    llm = get_llm(tier=tier, effort=effort)
 
     full_prompt = f"{prompt}\n\nText:\n{text}"
     response = await llm.ainvoke([HumanMessage(content=full_prompt)])
@@ -181,7 +175,7 @@ async def analyze_with_thinking(
     return text_content, thinking_content
 ```
 
-### Step 4: Using Extended Thinking in Workflows
+### Step 4: Using Adaptive Thinking in Workflows
 
 Apply to complex analysis nodes:
 
@@ -190,9 +184,9 @@ Apply to complex analysis nodes:
 
 async def summarize_chapter(state: ChapterSummaryState) -> dict:
     """
-    Summarize a chapter using Opus with extended thinking.
+    Summarize a chapter using Opus with adaptive thinking.
 
-    Extended thinking enables deeper analysis of chapter structure,
+    Adaptive thinking enables deeper analysis of chapter structure,
     arguments, and contributions to the broader work.
     """
     chapter = state["chapter"]
@@ -214,11 +208,11 @@ Focus on:
 - How this chapter contributes to the broader work
 - Any significant conclusions or implications"""
 
-    # Use Opus with extended thinking for deep analysis
+    # Use Opus with adaptive thinking for deep analysis
     summary, thinking = await analyze_with_thinking(
         text=chapter_content,
         prompt=prompt,
-        thinking_budget=8000,
+        effort="high",
         tier=ModelTier.OPUS,
     )
 
@@ -256,7 +250,7 @@ class BatchProcessor:
         prompt: str,
         model: ModelTier = ModelTier.SONNET,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
+        effort: Optional[str] = None,
     ) -> None:
         """Add a request to the pending batch."""
         self.pending_requests.append(BatchRequest(
@@ -264,7 +258,7 @@ class BatchProcessor:
             prompt=prompt,
             model=model,
             max_tokens=max_tokens,
-            thinking_budget=thinking_budget,
+            effort=effort,
         ))
 
     async def execute_batch(self) -> dict[str, BatchResult]:
@@ -314,16 +308,15 @@ for doc_id, result in results.items():
 ### Benefits
 
 - **Task-appropriate models**: Use cheaper models for simple tasks, powerful models for complex ones
-- **Extended thinking**: Improved quality for complex reasoning without prompt engineering
+- **Adaptive thinking**: Improved quality for complex reasoning without prompt engineering
 - **50% cost reduction**: Batch API significantly reduces costs for bulk processing
 - **Consistent interface**: Same `get_llm()` pattern throughout codebase
 
 ### Trade-offs
 
-- **Thinking token overhead**: Extended thinking adds tokens to responses
+- **Thinking token overhead**: Adaptive thinking adds tokens to responses
 - **Batch latency**: Batch API is asynchronous (typically 1 hour completion)
 - **Claude-specific**: Pattern tied to Anthropic's API features
-- **max_tokens constraint**: Must be greater than thinking_budget
 
 ### Alternatives
 

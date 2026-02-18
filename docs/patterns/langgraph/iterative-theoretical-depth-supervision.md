@@ -137,7 +137,7 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
     # Use Opus with extended thinking for deep analysis
     llm = get_llm(
         tier=ModelTier.OPUS,
-        thinking_budget=8000,
+        effort="high",
         max_tokens=12096,
     )
 

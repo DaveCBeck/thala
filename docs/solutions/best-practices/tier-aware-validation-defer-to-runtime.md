@@ -22,25 +22,25 @@ Config validation in `__post_init__` rejected valid configurations because it la
 
 ### Symptom
 
-`InvokeConfig.__post_init__` rejected `cache=True` with `thinking_budget` for ALL models:
+`InvokeConfig.__post_init__` rejected `cache=True` with `effort` for ALL models:
 
 ```python
 # BAD: Too strict - doesn't know the model tier
 @dataclass
 class InvokeConfig:
     cache: bool = True
-    thinking_budget: int | None = None
+    effort: str | None = None
 
     def __post_init__(self) -> None:
-        if self.cache and self.thinking_budget:
+        if self.cache and self.effort:
             raise ValueError(
-                "Cannot use cache with extended thinking. "
-                "Extended thinking responses change on every call, "
+                "Cannot use cache with thinking. "
+                "Thinking responses change on every call, "
                 "making caching ineffective."
             )
 ```
 
-**The issue:** This validation is correct for Anthropic models (Sonnet, Opus) but WRONG for DeepSeek R1.
+**The issue:** This validation is WRONG for DeepSeek R1, which supports caching independently of thinking.
 
 ### Why This Is Wrong
 
@@ -50,7 +50,7 @@ DeepSeek R1 has different behavior than Anthropic:
 - Cache stores the prompt, thinking is generated fresh each time
 - Caching is highly effective and recommended for R1
 
-So blocking `cache=True` with `thinking_budget` prevents valid DeepSeek R1 usage.
+So blocking `cache=True` with `effort` prevents valid DeepSeek R1 usage.
 
 ### Root Cause
 
@@ -80,20 +80,20 @@ class InvokeConfig:
         cache: Enable prompt caching (default: True). For Anthropic, uses
             ephemeral cache_control blocks. For DeepSeek, uses automatic
             prefix-based caching.
-        thinking_budget: Token budget for extended thinking (Anthropic only).
-            Recommended: 8000-16000 for complex tasks. Cannot be used with
-            cache=True on Anthropic models.
+        effort: Thinking effort level for adaptive thinking (Anthropic only).
+            One of "low", "medium", "high", "max". Compatible with cache=True
+            on Anthropic models.
         ...
     """
     cache: bool = True
-    thinking_budget: int | None = None
+    effort: str | None = None
 
     def __post_init__(self) -> None:
         """Validate constraint combinations.
 
-        Note: Cache + thinking_budget validation is deferred to invoke()
-        where we know the model tier. DeepSeek R1 allows this combination
-        since it has automatic prefix caching independent of thinking.
+        Note: Tier-specific validation is deferred to invoke()
+        where we know the model tier. DeepSeek R1 has its own thinking
+        mode independent of the effort parameter.
         """
         pass  # Validation deferred to invoke()
 ```
@@ -116,10 +116,10 @@ async def invoke(
     config = config or InvokeConfig()
 
     # Validate tier-specific constraints
-    if config.cache and config.thinking_budget and not is_deepseek_tier(tier):
+    if config.effort and is_deepseek_tier(tier):
         raise ValueError(
-            "Cannot use cache with extended thinking on Anthropic. "
-            "Set cache=False when using thinking_budget."
+            "effort is not supported for DeepSeek R1. "
+            "R1 always uses its native reasoning mode."
         )
 
     # Continue with invocation...
@@ -142,18 +142,18 @@ async def invoke(
 
 **Anthropic (Sonnet, Opus):**
 ```python
-# Cannot combine cache + thinking_budget
-config = InvokeConfig(cache=True, thinking_budget=8000)
+# effort is compatible with cache=True
+config = InvokeConfig(effort="high")
 await invoke(tier=ModelTier.OPUS, config=config, ...)
-# ❌ Raises: "Cannot use cache with extended thinking on Anthropic..."
+# ✅ Works: adaptive thinking with prompt caching
 ```
 
 **DeepSeek R1:**
 ```python
-# Can combine cache + thinking_budget (automatic prefix caching)
-config = InvokeConfig(cache=True, thinking_budget=8000)
+# Can combine cache=True with R1's native thinking (effort not used)
+config = InvokeConfig(cache=True)
 await invoke(tier=ModelTier.DEEPSEEK_R1, config=config, ...)
-# ✅ Works: Caches prompts, generates fresh thinking
+# ✅ Works: caches prompts, generates fresh thinking natively
 ```
 
 ## Key Insight

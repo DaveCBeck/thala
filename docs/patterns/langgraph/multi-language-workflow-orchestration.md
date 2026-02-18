@@ -439,7 +439,7 @@ async def run_opus_integration(state: MultiLangState) -> dict[str, Any]:
         if not lang_result:
             continue
 
-        llm = get_llm(ModelTier.OPUS, max_tokens=16000, thinking_budget=8000)
+        llm = get_llm(ModelTier.OPUS, max_tokens=16000, effort="high")
 
         prompt = INTEGRATION_PROMPT.format(
             language_name=lang_result["language_name"],
