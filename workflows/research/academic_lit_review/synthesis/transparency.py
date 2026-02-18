@@ -30,6 +30,13 @@ _ACCESS_LIMITATION_NOTE = (
 logger = logging.getLogger(__name__)
 
 
+def _sanitise_for_template(value: str) -> str:
+    """Escape curly braces and XML closing tags in LLM-derived content."""
+    value = value.replace("{", "{{").replace("}", "}}")
+    value = value.replace("</transparency_data>", "&lt;/transparency_data&gt;")
+    return value
+
+
 def collect_transparency_report(state: AcademicLitReviewState) -> TransparencyReport:
     """Aggregate transparency data from workflow state into a structured report.
 
@@ -78,7 +85,7 @@ def collect_transparency_report(state: AcademicLitReviewState) -> TransparencyRe
 
     return TransparencyReport(
         # Discovery
-        search_queries=state.get("search_queries", []),
+        search_queries=list(dict.fromkeys(state.get("search_queries", []))),
         keyword_paper_count=keyword_paper_count,
         citation_paper_count=citation_paper_count,
         expert_paper_count=expert_paper_count,
@@ -128,16 +135,10 @@ def render_transparency_for_prompt(report: TransparencyReport) -> dict[str, str]
     # Diffusion stages
     diffusion_stages_formatted = _format_diffusion_stages(report.get("diffusion_stages", []))
 
-    # Saturation reason — human-readable
-    saturation_map = {
-        "max_stages": "Maximum diffusion stages reached",
-        "collection_target": "Collection target reached",
-        "low_coverage": "Coverage saturation (diminishing returns from citation expansion)",
-        "no_seeds": "No seed papers available for citation expansion",
-        "unknown": "Not recorded",
-    }
+    # Saturation reason — pass through raw reason from the diffusion engine.
+    # The engine already produces human-readable strings (e.g. "Reached maximum stages (3)").
     raw_reason = report.get("saturation_reason", "unknown")
-    saturation_reason_formatted = saturation_map.get(raw_reason, raw_reason)
+    saturation_reason_formatted = raw_reason if raw_reason != "unknown" else "Not recorded"
 
     # Expert papers — conditionally include only if non-zero
     expert_count = report.get("expert_paper_count", 0)
@@ -146,7 +147,13 @@ def render_transparency_for_prompt(report: TransparencyReport) -> dict[str, str]
     # Full-text count = processed - metadata_only
     metadata_only_count = report.get("metadata_only_count", 0)
     papers_processed = report.get("papers_processed_count", 0)
-    full_text_count = papers_processed - metadata_only_count
+    raw_full_text = papers_processed - metadata_only_count
+    if raw_full_text < 0:
+        logger.warning(
+            "metadata_only_count (%d) exceeds papers_processed (%d); clamping full_text_count to 0",
+            metadata_only_count, papers_processed,
+        )
+    full_text_count = max(0, raw_full_text)
 
     # Fallback note
     fallback_summary = report.get("fallback_substitutions_summary", "")
@@ -155,29 +162,27 @@ def render_transparency_for_prompt(report: TransparencyReport) -> dict[str, str]
     if fallback_summary:
         fallback_parts.append(fallback_summary)
     if exhausted:
-        fallback_parts.append(
-            f"{exhausted} additional papers could not be retrieved and had no viable fallback."
-        )
+        fallback_parts.append(f"{exhausted} additional papers could not be retrieved and had no viable fallback.")
     fallback_note = "\n".join(fallback_parts)
 
     return {
-        "search_queries_formatted": search_queries_formatted,
+        "search_queries_formatted": _sanitise_for_template(search_queries_formatted),
         "keyword_paper_count": str(report.get("keyword_paper_count", 0)),
         "citation_paper_count": str(report.get("citation_paper_count", 0)),
         "expert_papers_line": expert_papers_line,
         "raw_results_count": str(report.get("raw_results_count", 0)),
         "relevance_threshold": str(report.get("relevance_threshold", 0.6)),
         "diffusion_stages_formatted": diffusion_stages_formatted,
-        "saturation_reason_formatted": saturation_reason_formatted,
+        "saturation_reason_formatted": _sanitise_for_template(saturation_reason_formatted),
         "min_citations_filter": str(report.get("min_citations_filter", 0)),
         "recency_years": str(report.get("recency_years", 3)),
         "recency_quota_pct": str(int(report.get("recency_quota", 0.25) * 100)),
         "full_text_count": str(full_text_count),
         "metadata_only_count": str(metadata_only_count),
         "papers_failed_count": str(report.get("papers_failed_count", 0)),
-        "fallback_note": fallback_note,
-        "clustering_method": report.get("clustering_method", "unknown"),
-        "clustering_rationale": report.get("clustering_rationale", "Not recorded"),
+        "fallback_note": _sanitise_for_template(fallback_note),
+        "clustering_method": _sanitise_for_template(report.get("clustering_method", "unknown")),
+        "clustering_rationale": _sanitise_for_template(report.get("clustering_rationale", "Not recorded")),
         "cluster_count": str(report.get("cluster_count", 0)),
         "date_range": report.get("date_range", "Not available"),
         "total_corpus_size": str(report.get("total_corpus_size", 0)),

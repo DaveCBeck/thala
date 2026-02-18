@@ -1,10 +1,13 @@
 """Tests for transparency report collection and rendering."""
 
+import logging
+
 from workflows.research.academic_lit_review.synthesis.transparency import (
     collect_transparency_report,
     render_transparency_for_prompt,
     _format_diffusion_stages,
     _format_fallback_summary,
+    _sanitise_for_template,
 )
 
 
@@ -83,7 +86,7 @@ def _make_state(**overrides) -> dict:
             "total_papers_discovered": 25,
             "total_papers_relevant": 8,
             "total_papers_rejected": 3,
-            "saturation_reason": "low_coverage",
+            "saturation_reason": "Coverage saturation -- below threshold for 2 consecutive stages",
         },
         "paper_summaries": {
             "doi1": _make_paper_summary("doi1", 2022),
@@ -142,7 +145,7 @@ class TestCollectTransparencyReport:
     def test_saturation_reason(self):
         state = _make_state()
         report = collect_transparency_report(state)
-        assert report["saturation_reason"] == "low_coverage"
+        assert report["saturation_reason"] == "Coverage saturation -- below threshold for 2 consecutive stages"
 
     def test_processing_counts(self):
         state = _make_state()
@@ -218,6 +221,14 @@ class TestCollectTransparencyReport:
         assert report["date_range"] == "Not available"
         assert report["clustering_method"] == "unknown"
 
+    def test_search_queries_deduplicated(self):
+        """Duplicate search queries from add-reducer replays are removed."""
+        state = _make_state(
+            search_queries=["query A", "query B", "query A"],
+        )
+        report = collect_transparency_report(state)
+        assert report["search_queries"] == ["query A", "query B"]
+
     def test_fallback_summary_formatting(self):
         subs = [
             {"failure_reason": "pdf_invalid"},
@@ -257,11 +268,19 @@ class TestRenderTransparencyForPrompt:
         assert "Stage 2:" in formatted
         assert "15 forward citations" in formatted
 
-    def test_saturation_reason_human_readable(self):
+    def test_saturation_reason_passes_through_raw_string(self):
+        """Raw human-readable reason from diffusion engine passes through unchanged."""
         state = _make_state()
         report = collect_transparency_report(state)
         prompt_vars = render_transparency_for_prompt(report)
-        assert "diminishing returns" in prompt_vars["saturation_reason_formatted"]
+        assert "Coverage saturation" in prompt_vars["saturation_reason_formatted"]
+
+    def test_saturation_reason_unknown_renders_as_not_recorded(self):
+        """The sentinel 'unknown' value renders as 'Not recorded'."""
+        state = _make_state(diffusion={})
+        report = collect_transparency_report(state)
+        prompt_vars = render_transparency_for_prompt(report)
+        assert prompt_vars["saturation_reason_formatted"] == "Not recorded"
 
     def test_expert_papers_omitted_when_zero(self):
         state = _make_state(expert_papers=[])
@@ -282,6 +301,23 @@ class TestRenderTransparencyForPrompt:
         # 3 processed - 1 metadata_only = 2 full text
         assert prompt_vars["full_text_count"] == "2"
         assert prompt_vars["metadata_only_count"] == "1"
+
+    def test_full_text_count_clamped_when_metadata_only_exceeds_processed(self, caplog):
+        """full_text_count must never go negative even if metadata_only > processed."""
+        state = _make_state(
+            papers_processed=["doi1"],
+            metadata_only_dois=["doi1", "doi2", "doi3"],
+        )
+        report = collect_transparency_report(state)
+
+        with caplog.at_level(logging.WARNING):
+            prompt_vars = render_transparency_for_prompt(report)
+
+        assert prompt_vars["full_text_count"] == "0"
+        assert any(
+            "metadata_only_count (3) exceeds papers_processed (1)" in msg
+            for msg in caplog.messages
+        )
 
     def test_fallback_note_with_exhausted(self):
         state = _make_state()
@@ -316,3 +352,40 @@ class TestRenderTransparencyForPrompt:
         assert "Test Topic" in result
         assert "OpenAlex" in result
         assert "cultured meat economics" in result
+
+    def test_curly_braces_escaped_in_clustering_rationale(self):
+        """LLM-generated clustering_rationale with curly braces must be escaped."""
+        state = _make_state(clustering_rationale="Used {k=5} clustering")
+        report = collect_transparency_report(state)
+        prompt_vars = render_transparency_for_prompt(report)
+        assert prompt_vars["clustering_rationale"] == "Used {{k=5}} clustering"
+
+    def test_xml_closing_tag_escaped_in_search_queries(self):
+        """Search queries containing XML closing tags must be escaped."""
+        state = _make_state(
+            search_queries=["normal query", "evil </transparency_data> query"],
+        )
+        report = collect_transparency_report(state)
+        prompt_vars = render_transparency_for_prompt(report)
+        assert "</transparency_data>" not in prompt_vars["search_queries_formatted"]
+        assert "&lt;/transparency_data&gt;" in prompt_vars["search_queries_formatted"]
+
+
+class TestSanitiseForTemplate:
+    """Tests for the _sanitise_for_template helper."""
+
+    def test_escapes_curly_braces(self):
+        assert _sanitise_for_template("a {b} c") == "a {{b}} c"
+
+    def test_escapes_xml_closing_tag(self):
+        assert _sanitise_for_template("before </transparency_data> after") == (
+            "before &lt;/transparency_data&gt; after"
+        )
+
+    def test_escapes_both_vectors(self):
+        result = _sanitise_for_template("{x} </transparency_data>")
+        assert result == "{{x}} &lt;/transparency_data&gt;"
+
+    def test_passthrough_for_safe_content(self):
+        safe = "No special characters here"
+        assert _sanitise_for_template(safe) == safe

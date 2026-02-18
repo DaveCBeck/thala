@@ -192,7 +192,7 @@ class LitReviewDiffusionState(TypedDict):
     total_papers_discovered: int
     total_papers_relevant: int
     total_papers_rejected: int
-    saturation_reason: Optional[str]  # "max_stages", "collection_target", "low_coverage"
+    saturation_reason: Optional[str]  # human-readable string from diffusion engine
 
 
 # =============================================================================
