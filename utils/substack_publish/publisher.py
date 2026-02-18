@@ -100,6 +100,8 @@ class SubstackPublisher:
 
         Returns an authenticated Api instance, or None if solving fails.
         """
+        import requests as req
+
         from core.captcha import CapsolverConfig, CaptchaSolver
 
         config = CapsolverConfig()
@@ -121,25 +123,25 @@ class SubstackPublisher:
                 website_key=site_key,
             )
 
-            # FRAGILE: Bypasses Api.login() which hardcodes captcha_response: None.
-            # Coupled to python-substack internals (_session, base_url).
-            api = Api()
-            try:
-                resp = api._session.post(
-                    f"{api.base_url}/api/v1/login",
-                    json={
-                        "captcha_response": token,
-                        "email": email,
-                        "password": password,
-                        "for_pub": "",
-                        "redirect": "/",
-                    },
-                )
-                resp.raise_for_status()
-            except AttributeError as e:
-                raise RuntimeError(
-                    "python-substack internal API changed — captcha login needs updating"
-                ) from e
+            # Login with captcha token using a raw session, then wrap in Api.
+            # Api.login() hardcodes captcha_response: None and Api() with no
+            # args raises ValueError (python-substack >=0.1.17).
+            session = req.Session()
+            resp = session.post(
+                "https://substack.com/api/v1/login",
+                json={
+                    "captcha_response": token,
+                    "email": email,
+                    "password": password,
+                    "for_pub": "",
+                    "redirect": "/",
+                },
+            )
+            resp.raise_for_status()
+
+            # Build Api from the authenticated cookies
+            cookies_str = "; ".join(f"{k}={v}" for k, v in session.cookies.items())
+            api = Api(cookies_string=cookies_str)
             self._set_publication(api)
             logger.info("Authenticated via captcha solve")
             return api

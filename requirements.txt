@@ -21,6 +21,6 @@ cairosvg>=2.7.0
 lxml>=4.9.0
 mmdc>=0.4.1
 graphviz>=0.20
-python-substack>=1.0.0
+python-substack==0.1.17
 prometheus-client>=0.20.0
 python3-capsolver>=1.0.0

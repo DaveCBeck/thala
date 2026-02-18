@@ -26,8 +26,9 @@ class TestLoginWithCaptcha:
     async def test_solves_captcha_on_captcha_error(self, publisher):
         """When Api() raises a captcha error, solver is invoked and direct POST used."""
         mock_api = MagicMock()
-        mock_api.base_url = "https://substack.com/api"
-        mock_api._session.post.return_value = MagicMock(status_code=200)
+        mock_session = MagicMock()
+        mock_session.post.return_value = MagicMock(status_code=200)
+        mock_session.cookies.items.return_value = [("substack.sid", "abc123")]
 
         with (
             patch("utils.substack_publish.publisher.Api") as MockApi,
@@ -40,16 +41,20 @@ class TestLoginWithCaptcha:
                 "utils.substack_publish.publisher._extract_substack_site_key",
                 return_value=None,
             ),
+            patch("requests.Session", return_value=mock_session),
         ):
-            # First call raises captcha error, second creates unauthenticated Api
+            # First call (email/password) raises captcha error,
+            # second call (cookies_string from solved session) returns mock_api
             MockApi.side_effect = [Exception("captcha required"), mock_api]
             api = await publisher._create_api()
 
         assert api is mock_api
-        # Verify the direct POST was made with the captcha token
-        call_args = mock_api._session.post.call_args
+        # Verify the raw session POST was made with the captcha token
+        call_args = mock_session.post.call_args
         assert call_args[1]["json"]["captcha_response"] == "solved-token"
         assert call_args[1]["json"]["email"] == "test@example.com"
+        # Verify Api was constructed with cookies from the solved session
+        assert MockApi.call_args_list[1] == ((), {"cookies_string": "substack.sid=abc123"})
 
     @pytest.mark.asyncio
     async def test_falls_back_to_cookies_when_solver_fails(self, publisher, tmp_path):
