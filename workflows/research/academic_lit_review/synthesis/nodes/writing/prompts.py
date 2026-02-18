@@ -87,39 +87,70 @@ Date range of literature: {date_range}"""
 
 
 def get_methodology_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> str:
-    """Generate methodology system prompt with appropriate word target."""
+    """Generate methodology system prompt with anti-hallucination constraints."""
     word_target = int(target_words * SECTION_PROPORTIONS["methodology"])
     return f"""You are documenting the methodology for a systematic literature review.
 
-Write a methodology section covering:
-1. Search Strategy: Databases searched, query terms used
-2. Selection Criteria: How papers were included/excluded
-3. Data Extraction: What information was extracted from papers
-4. Synthesis Approach: How findings were organized and synthesized
+Write a methodology section using ONLY the factual data provided in the user message.
+
+STRICT CONSTRAINTS:
+- Never mention databases that are not listed in the data (no Web of Science, Scopus, PubMed, Google Scholar unless explicitly provided)
+- Never invent Boolean search queries, supplementary searches, or screening processes not described in the data
+- Never claim PRISMA compliance or any framework compliance unless explicitly stated
+- Every number you write must come directly from the provided data — do not estimate, round, or extrapolate
+- If a pipeline stage is missing from the data, omit it — do not fabricate what happened
 
 Target length: {_word_range(word_target)} words
-Style: Precise, replicable, following PRISMA guidelines
-Include: Specific numbers where relevant"""
+Style: Precise, process-honest, AI-neutral academic tone
+Structure: Search strategy, selection and filtering, processing, thematic organisation"""
 
 
-METHODOLOGY_USER_TEMPLATE = """Document the methodology for this literature review:
+METHODOLOGY_USER_TEMPLATE = """<instructions>
+Write a methodology section for the literature review on the topic below.
+Use ONLY the data provided in the <transparency_data> section.
+Convert the structured data into fluent academic prose.
+Do not add information beyond what is provided.
+</instructions>
 
-Topic: {topic}
+<transparency_data>
+TOPIC: {topic}
 
-Search Process:
-- Initial papers from keyword search: {keyword_count}
-- Papers from citation network expansion: {citation_count}
-- Total papers after deduplication: {total_papers}
-- Papers processed for full-text analysis: {processed_count}
+SOURCE DATABASE: OpenAlex
 
-Quality Settings Used:
-- Maximum diffusion stages: {max_stages}
-- Saturation threshold: {saturation_threshold}
-- Minimum citations filter: {min_citations}
+SEARCH QUERIES USED:
+{search_queries_formatted}
 
-Date Range: {date_range}
+DISCOVERY:
+- Keyword search results: {keyword_paper_count} papers (from {raw_results_count} candidates, filtered by relevance scoring with threshold >= {relevance_threshold})
+- Citation network expansion: {citation_paper_count} papers
+{expert_papers_line}
+CITATION EXPANSION STAGES:
+{diffusion_stages_formatted}
+Termination reason: {saturation_reason_formatted}
 
-Final corpus: {final_corpus_size} papers organized into {cluster_count} themes"""
+QUALITY FILTERS APPLIED:
+- Minimum citations for older papers: {min_citations_filter}
+- Recency window: {recency_years} years
+- Recency quota: {recency_quota_pct}%
+- Relevance threshold: {relevance_threshold}
+
+PROCESSING OUTCOMES:
+- Full-text analysis: {full_text_count} papers
+- Metadata-only analysis: {metadata_only_count} papers (analysed from abstracts and OpenAlex metadata; full text was not retrievable)
+- Failed retrieval: {papers_failed_count} papers
+{fallback_note}
+THEMATIC ORGANISATION:
+- Method: {clustering_method}
+- Clusters: {cluster_count}
+- Rationale: {clustering_rationale}
+
+CORPUS:
+- Date range: {date_range}
+- Final size: {total_corpus_size} papers
+
+ACCESS LIMITATIONS:
+{access_limitation_note}
+</transparency_data>"""
 
 
 def get_thematic_section_system_prompt(

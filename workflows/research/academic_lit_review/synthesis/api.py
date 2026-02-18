@@ -10,7 +10,7 @@ from workflows.research.academic_lit_review.state import (
 )
 from workflows.research.academic_lit_review.clustering import ClusterAnalysis
 
-from .types import SynthesisState
+from .types import SynthesisState, TransparencyReport
 from .graph import synthesis_subgraph
 
 
@@ -22,6 +22,7 @@ async def run_synthesis(
     research_questions: list[str],
     quality_settings: QualitySettings,
     zotero_keys: Optional[dict[str, str]] = None,
+    transparency_report: Optional[TransparencyReport] = None,
 ) -> dict[str, Any]:
     """Run synthesis/writing as a standalone operation.
 
@@ -63,6 +64,7 @@ async def run_synthesis(
         clusters=clusters,
         cluster_analyses=cluster_analyses,
         zotero_keys=zotero_keys,
+        transparency_report=transparency_report,
         introduction_draft="",
         methodology_draft="",
         thematic_section_drafts={},

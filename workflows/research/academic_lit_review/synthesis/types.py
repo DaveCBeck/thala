@@ -18,6 +18,65 @@ TARGET_SECTION_WORDS = 1500
 MIN_CITATIONS_PER_SECTION = 5
 
 
+class DiffusionStageReport(TypedDict):
+    """Per-stage diffusion metrics for transparency reporting."""
+
+    stage_number: int
+    forward_found: int
+    backward_found: int
+    new_relevant: int
+    new_rejected: int
+    coverage_delta: float
+
+
+class TransparencyReport(TypedDict, total=False):
+    """Aggregated transparency data for honest methodology writing.
+
+    All fields are optional (total=False) to handle older workflow states
+    that may be loaded from checkpoints before these fields existed.
+    """
+
+    # Discovery
+    search_queries: list[str]
+    keyword_paper_count: int
+    citation_paper_count: int
+    expert_paper_count: int
+    raw_results_count: int
+
+    # Diffusion
+    diffusion_stages: list[DiffusionStageReport]
+    total_discovered: int
+    total_rejected: int
+    saturation_reason: str
+
+    # Quality filters applied
+    min_citations_filter: int
+    recency_years: int
+    recency_quota: float
+    # TODO: extract from QualitySettings when relevance_threshold is added there
+    relevance_threshold: float
+
+    # Processing
+    papers_processed_count: int
+    papers_failed_count: int
+    metadata_only_count: int
+    fallback_substitutions_count: int
+    fallback_substitutions_summary: str
+    fallback_exhausted_count: int
+
+    # Clustering
+    clustering_method: str
+    clustering_rationale: str
+    cluster_count: int
+
+    # Corpus composition
+    date_range: str
+    total_corpus_size: int
+
+    # Access limitations
+    access_limitation_note: str
+
+
 class QualityMetrics(TypedDict):
     """Quality metrics for the literature review."""
 
@@ -40,6 +99,7 @@ class SynthesisState(TypedDict):
     clusters: list[ThematicCluster]
     cluster_analyses: list[ClusterAnalysis]
     zotero_keys: dict[str, str]
+    transparency_report: Optional[TransparencyReport]
     introduction_draft: str
     methodology_draft: str
     thematic_section_drafts: dict[str, str]

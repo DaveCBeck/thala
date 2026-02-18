@@ -7,37 +7,72 @@ from ..types import SynthesisState
 
 
 async def generate_prisma_docs_node(state: SynthesisState) -> dict[str, Any]:
-    """Generate PRISMA-style documentation of the search process."""
+    """Generate PRISMA-style documentation of the search process.
+
+    Uses real counts from TransparencyReport when available,
+    with fallback to basic counts from state.
+    """
     input_data = state.get("input", {})
     paper_summaries = state.get("paper_summaries", {})
     clusters = state.get("clusters", [])
+    report = state.get("transparency_report")
 
     topic = input_data.get("topic", "Unknown")
     total_papers = len(paper_summaries)
 
-    prisma_doc = f"""# PRISMA Documentation
+    if report:
+        keyword_count = report.get("keyword_paper_count", 0)
+        citation_count = report.get("citation_paper_count", 0)
+        raw_results = report.get("raw_results_count", 0)
+        total_rejected = report.get("total_rejected", 0)
+        papers_failed = report.get("papers_failed_count", 0)
+        metadata_only = report.get("metadata_only_count", 0)
+        full_text_count = report.get("papers_processed_count", 0) - metadata_only
+
+        prisma_doc = f"""# PRISMA Documentation
 
 ## Search Information
 
 **Topic**: {topic}
 **Date of Search**: {datetime.now(timezone.utc).strftime("%Y-%m-%d")}
-**Databases Searched**: OpenAlex
+**Database Searched**: OpenAlex
 
 ## Identification
 
-- Records identified through database searching: ~{total_papers * 2}
-- Additional records through citation network: ~{total_papers * 3}
-- Records after duplicates removed: ~{total_papers + total_papers // 2}
+- Records identified through OpenAlex keyword search: {raw_results}
+- Records passing relevance threshold (>= {report.get("relevance_threshold", 0.6)}): {keyword_count}
+- Additional records through citation network expansion: {citation_count}
 
 ## Screening
 
-- Records screened: ~{total_papers + total_papers // 2}
-- Records excluded (not relevant): ~{total_papers // 2}
+- Records screened for relevance: {raw_results}
+- Records excluded (below relevance threshold): {raw_results - keyword_count}
+- Records excluded during diffusion (not relevant): {total_rejected}
 
 ## Eligibility
 
-- Full-text articles assessed for eligibility: {total_papers}
-- Full-text articles excluded: 0
+- Papers assessed for full-text retrieval: {total_papers + papers_failed}
+- Papers where full text was not retrievable: {papers_failed}
+
+## Included
+
+- Studies included in qualitative synthesis: {total_papers}
+  - Full-text analysis: {full_text_count}
+  - Metadata-only analysis: {metadata_only}
+- Studies organized into thematic clusters: {len(clusters)}
+
+## Thematic Distribution
+
+"""
+    else:
+        # Backwards-compatible fallback without transparency report
+        prisma_doc = f"""# PRISMA Documentation
+
+## Search Information
+
+**Topic**: {topic}
+**Date of Search**: {datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+**Database Searched**: OpenAlex
 
 ## Included
 
@@ -47,6 +82,7 @@ async def generate_prisma_docs_node(state: SynthesisState) -> dict[str, Any]:
 ## Thematic Distribution
 
 """
+
     for cluster in clusters:
         prisma_doc += f"- {cluster['label']}: {len(cluster['paper_dois'])} papers\n"
 
