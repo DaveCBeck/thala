@@ -61,4 +61,6 @@ async def run_clustering(
         "llm_topic_schema": result.get("llm_topic_schema"),
         "bertopic_error": result.get("bertopic_error"),
         "llm_error": result.get("llm_error"),
+        "clustering_method": result.get("clustering_method"),
+        "clustering_rationale": result.get("clustering_rationale"),
     }

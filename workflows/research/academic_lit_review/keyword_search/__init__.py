@@ -88,6 +88,8 @@ async def run_keyword_search(
         "discovered_papers": result.get("discovered_papers", []),
         "rejected_papers": result.get("rejected_papers", []),
         "keyword_dois": result.get("keyword_dois", []),
+        "search_queries": result.get("search_queries", []),
+        "raw_results_count": len(result.get("raw_results", [])),
     }
 
 

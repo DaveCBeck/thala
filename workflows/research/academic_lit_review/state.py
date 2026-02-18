@@ -192,6 +192,7 @@ class LitReviewDiffusionState(TypedDict):
     total_papers_discovered: int
     total_papers_relevant: int
     total_papers_rejected: int
+    saturation_reason: Optional[str]  # "max_stages", "collection_target", "low_coverage"
 
 
 # =============================================================================
@@ -319,6 +320,8 @@ class AcademicLitReviewState(TypedDict):
     citation_papers: Annotated[list[str], add]  # DOIs from citation search
     expert_papers: Annotated[list[str], add]  # DOIs from expert identification
     book_dois: Annotated[list[str], add]  # DOIs for books found
+    search_queries: Annotated[list[str], add]  # Actual search queries used
+    raw_results_count: Optional[int]  # Total OpenAlex results before relevance filtering
 
     # Diffusion tracking
     diffusion: LitReviewDiffusionState
@@ -343,6 +346,11 @@ class AcademicLitReviewState(TypedDict):
     bertopic_clusters: Optional[list[BERTopicCluster]]
     llm_topic_schema: Optional[LLMTopicSchema]
     clusters: list[ThematicCluster]
+    clustering_rationale: Optional[str]  # Why this clustering method was chosen
+    clustering_method: Optional[str]  # "opus_synthesis", "llm", "bertopic"
+
+    # Processing transparency
+    metadata_only_dois: Annotated[list[str], add]  # DOIs processed from metadata only (no full text)
 
     # Synthesis outputs
     section_drafts: dict[str, str]  # Section name -> draft text

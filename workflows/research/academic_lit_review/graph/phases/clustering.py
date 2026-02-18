@@ -53,6 +53,8 @@ async def clustering_phase_node(state: AcademicLitReviewState) -> dict[str, Any]
         "llm_topic_schema": llm_schema,
         # Store cluster analyses in state for synthesis
         "_cluster_analyses": cluster_analyses,
+        "clustering_method": clustering_result.get("clustering_method"),
+        "clustering_rationale": clustering_result.get("clustering_rationale"),
         "current_phase": "synthesis",
         "current_status": f"Clustering complete: {len(clusters)} themes identified",
     }

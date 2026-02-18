@@ -36,6 +36,8 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
         return {
             "final_clusters": [],
             "cluster_labels": {},
+            "clustering_method": None,
+            "clustering_rationale": "Both clustering methods failed",
         }
 
     # Evaluate BERTopic quality
@@ -47,22 +49,34 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
     if not bertopic_clusters:
         # Use LLM clusters directly (BERTopic either failed or was skipped for small corpus)
         logger.info("Using LLM clusters only (BERTopic unavailable)")
-        return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
+        result = _convert_llm_to_final_clusters(llm_schema, paper_summaries)
+        result["clustering_method"] = "llm"
+        result["clustering_rationale"] = llm_schema.get("reasoning", "LLM clustering used (BERTopic unavailable)")
+        return result
 
     if not llm_schema:
         # BERTopic only available
         if bertopic_good:
             logger.info("Using BERTopic clusters only (LLM failed)")
-            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+            result = _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+            result["clustering_method"] = "bertopic"
+            result["clustering_rationale"] = "BERTopic statistical clustering used (LLM clustering failed)"
+            return result
         else:
             # BERTopic is poor quality and LLM failed - return what we have with warning
             logger.warning(f"Using poor-quality BERTopic clusters (LLM failed). Reason: {bertopic_reason}")
-            return _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+            result = _convert_bertopic_to_final_clusters(bertopic_clusters, paper_summaries)
+            result["clustering_method"] = "bertopic"
+            result["clustering_rationale"] = f"Poor-quality BERTopic clusters used as fallback (LLM failed). Issue: {bertopic_reason}"
+            return result
 
     # Both succeeded - check if we should skip synthesis and use LLM directly
     if not bertopic_good:
         logger.info(f"Preferring LLM clusters over poor BERTopic results. BERTopic issue: {bertopic_reason}")
-        return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
+        result = _convert_llm_to_final_clusters(llm_schema, paper_summaries)
+        result["clustering_method"] = "llm"
+        result["clustering_rationale"] = f"LLM clustering preferred over poor BERTopic results. BERTopic issue: {bertopic_reason}"
+        return result
 
     # Both succeeded - use Opus to synthesize
     try:
@@ -156,11 +170,16 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
         return {
             "final_clusters": final_clusters,
             "cluster_labels": cluster_labels,
+            "clustering_method": "opus_synthesis",
+            "clustering_rationale": result.reasoning,
         }
 
     except Exception as e:
         logger.error(f"Opus synthesis failed: {e}, falling back to LLM clusters")
-        return _convert_llm_to_final_clusters(llm_schema, paper_summaries)
+        result = _convert_llm_to_final_clusters(llm_schema, paper_summaries)
+        result["clustering_method"] = "llm"
+        result["clustering_rationale"] = f"LLM clustering used as fallback (Opus synthesis failed: {e})"
+        return result
 
 
 def _convert_llm_to_final_clusters(
