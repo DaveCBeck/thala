@@ -61,6 +61,8 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncIterator, Type, TypeVar, Union, overload
 
 from langchain_core.messages import AIMessage
+from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 from pydantic import BaseModel
 
 from .config import InvokeConfig
@@ -74,8 +76,59 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+# Anthropic Batch API pricing (50% of standard) — (input, output) per million tokens
+_BATCH_PRICING: dict[str, tuple[float, float]] = {
+    "claude-opus-4-6": (2.50, 12.50),
+    "claude-sonnet-4-5-20250929": (1.50, 7.50),
+    "claude-haiku-4-5-20251001": (0.50, 2.50),
+}
+
 # Type alias for multimodal content (list of content blocks)
 MultimodalContent = list[dict[str, Any]]
+
+
+@traceable(run_type="llm", name="anthropic_batch")
+async def _trace_batch_llm_result(
+    model: str,
+    usage: dict[str, int],
+) -> dict[str, Any]:
+    """Create a LangSmith LLM run for an Anthropic Batch API result.
+
+    wrap_anthropic() only instruments messages.create()/stream(), not the
+    batch API. This creates a synthetic LLM run so LangSmith can track
+    tokens and costs. Batch pricing is 50% of standard API rates.
+    """
+    rt = get_current_run_tree()
+    if rt:
+        rt.extra = rt.extra or {}
+        rt.extra.setdefault("metadata", {})
+        rt.extra["metadata"]["ls_provider"] = "anthropic"
+        rt.extra["metadata"]["ls_model_name"] = model
+
+        input_t = usage.get("input_tokens", 0)
+        output_t = usage.get("output_tokens", 0)
+        usage_meta: dict[str, Any] = {
+            "input_tokens": input_t,
+            "output_tokens": output_t,
+            "total_tokens": input_t + output_t,
+        }
+
+        if "cache_read_input_tokens" in usage:
+            usage_meta["input_token_details"] = {
+                "cache_read": usage.get("cache_read_input_tokens", 0),
+                "cache_creation": usage.get("cache_creation_input_tokens", 0),
+            }
+
+        pricing = _BATCH_PRICING.get(model)
+        if pricing:
+            input_rate, output_rate = pricing
+            usage_meta["input_cost"] = input_t * input_rate / 1_000_000
+            usage_meta["output_cost"] = output_t * output_rate / 1_000_000
+            usage_meta["total_cost"] = usage_meta["input_cost"] + usage_meta["output_cost"]
+
+        rt.set(usage_metadata=usage_meta)
+
+    return {"model": model, "usage": usage}
 
 
 def _is_multimodal_content(user: Any) -> bool:
@@ -158,7 +211,7 @@ async def _invoke_direct(
     """
     llm = get_llm(
         tier=tier,
-        thinking_budget=config.thinking_budget,
+        effort=config.effort,
         max_tokens=config.max_tokens,
     )
 
@@ -219,19 +272,24 @@ async def _invoke_via_broker(
                 policy=config.batch_policy,
                 max_tokens=config.max_tokens,
                 system=system,
-                thinking_budget=config.thinking_budget,
+                effort=config.effort,
                 tools=config.tools,
                 tool_choice=config.tool_choice,
                 metadata=config.metadata,
             )
             futures.append(future)
 
-    # Collect results
+    # Collect results, creating LangSmith LLM traces for batch responses
     results: list[AIMessage] = []
     for future in futures:
         response = await future
         if not response.success:
             raise RuntimeError(f"Broker request failed: {response.error}")
+        if response.batched and response.usage:
+            await _trace_batch_llm_result(
+                model=response.model or tier.value,
+                usage=response.usage,
+            )
         results.append(_broker_response_to_message(response))
 
     return results
@@ -369,12 +427,6 @@ async def invoke(
     """
     config = config or InvokeConfig()
 
-    # Validate tier-specific constraints
-    if config.cache and config.thinking_budget and not is_deepseek_tier(tier):
-        raise ValueError(
-            "Cannot use cache with extended thinking on Anthropic. Set cache=False when using thinking_budget."
-        )
-
     # Route to structured output path if schema provided
     if schema is not None:
         return await _invoke_structured(tier, system, user, config, schema)
@@ -406,6 +458,61 @@ async def invoke(
         results = await _invoke_direct(tier, system, user_prompts, config)
 
     return results if is_batch else results[0]
+
+
+async def _invoke_structured_via_broker(
+    tier: "ModelTier",
+    system: str,
+    user_prompt: str,
+    config: "InvokeConfig",
+    schema: Type[T],
+) -> T:
+    """Invoke structured output through broker using tool_use pattern.
+
+    Converts the Pydantic schema to an Anthropic tool definition,
+    forces tool_choice, and parses the broker response back to a
+    validated Pydantic model.
+    """
+    import json as json_mod
+
+    from core.llm_broker import get_broker
+    from .structured.executors.base import coerce_to_schema
+
+    broker = get_broker()
+
+    schema_name = schema.__name__
+    tool_def = {
+        "name": schema_name,
+        "description": f"Return the {schema_name} result.",
+        "input_schema": schema.model_json_schema(),
+    }
+
+    async with broker.batch_group():
+        future = await broker.request(
+            prompt=user_prompt,
+            model=tier,
+            policy=config.batch_policy,
+            max_tokens=config.max_tokens,
+            system=system,
+            effort=config.effort,
+            tools=[tool_def],
+            tool_choice={"type": "tool", "name": schema_name},
+            metadata=config.metadata,
+        )
+
+    response = await future
+    if not response.success:
+        raise RuntimeError(f"Broker structured request failed: {response.error}")
+
+    if response.batched and response.usage:
+        await _trace_batch_llm_result(
+            model=response.model or tier.value,
+            usage=response.usage,
+        )
+
+    raw_data = json_mod.loads(response.content)
+    coerced = coerce_to_schema(raw_data, schema)
+    return schema.model_validate(coerced)
 
 
 async def _invoke_structured(
@@ -454,13 +561,42 @@ async def _invoke_structured(
     else:
         selected_strategy = StructuredOutputStrategy.LANGCHAIN_STRUCTURED
 
-    logger.debug(f"Structured output strategy: {selected_strategy.name}")
+    logger.info(
+        f"_invoke_structured: strategy={selected_strategy.name}, "
+        f"tier={tier}, has_tools={bool(config.tools)}, "
+        f"batch_policy={config.batch_policy}"
+    )
+
+    # Broker-routed structured output (no tools, batch_policy set)
+    if (
+        config.batch_policy is not None
+        and selected_strategy == StructuredOutputStrategy.LANGCHAIN_STRUCTURED
+        and not is_multimodal
+        and not is_deepseek_tier(tier)
+    ):
+        from core.llm_broker import is_broker_enabled
+
+        if is_broker_enabled():
+            logger.debug(f"Routing structured output through broker (policy: {config.batch_policy.name})")
+
+            if len(user_prompts) == 1:
+                result = await _invoke_structured_via_broker(tier, system, user_prompts[0], config, schema)
+                return result if not is_batch else [result]
+            else:
+                semaphore = asyncio.Semaphore(10)
+
+                async def _broker_one(prompt: str) -> T:
+                    async with semaphore:
+                        return await _invoke_structured_via_broker(tier, system, prompt, config, schema)
+
+                results = await asyncio.gather(*[_broker_one(p) for p in user_prompts])
+                return list(results)
 
     # Build StructuredOutputConfig from InvokeConfig
     output_config = StructuredOutputConfig(
         tier=tier,
         max_tokens=config.max_tokens,
-        thinking_budget=config.thinking_budget,
+        effort=config.effort,
         strategy=selected_strategy,
         use_json_schema_method=config.use_json_schema_method,
         batch_policy=config.batch_policy,
@@ -580,7 +716,7 @@ class InvokeBatch:
                 policy=policy,
                 max_tokens=config.max_tokens,
                 system=system,
-                thinking_budget=config.thinking_budget,
+                effort=config.effort,
                 tools=config.tools,
                 tool_choice=config.tool_choice,
                 metadata=config.metadata,

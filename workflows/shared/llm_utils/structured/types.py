@@ -38,7 +38,7 @@ class StructuredOutputConfig:
     Args:
         tier: Model tier (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
         max_tokens: Maximum output tokens
-        thinking_budget: Token budget for extended thinking (Opus)
+        effort: Adaptive thinking effort level ("low", "medium", "high", "max")
 
         strategy: Force a specific strategy (default: AUTO)
         use_json_schema_method: Use method="json_schema" for stricter validation
@@ -59,7 +59,7 @@ class StructuredOutputConfig:
     # Model configuration
     tier: ModelTier = ModelTier.SONNET
     max_tokens: int = 4096
-    thinking_budget: Optional[int] = None
+    effort: Optional[str] = None
 
     # Strategy selection
     strategy: StructuredOutputStrategy = StructuredOutputStrategy.AUTO

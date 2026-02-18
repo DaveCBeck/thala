@@ -13,7 +13,7 @@ def should_batch(
     mode: UserMode,
     policy: BatchPolicy,
     model: ModelTier,
-    thinking_budget: int | None,
+    effort: str | None,
 ) -> bool:
     """Determine if a request should be batched.
 
@@ -21,7 +21,7 @@ def should_batch(
         mode: Current user mode
         policy: Call-site batch policy
         model: Model tier
-        thinking_budget: Extended thinking budget
+        effort: Adaptive thinking effort level
 
     Returns:
         True if request should be queued for batching

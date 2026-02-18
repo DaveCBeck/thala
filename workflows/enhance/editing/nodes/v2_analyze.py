@@ -79,7 +79,7 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
 
     # Determine model tier from quality settings
     use_opus = quality_settings.get("use_opus_for_analysis", True)
-    thinking_budget = quality_settings.get("analysis_thinking_budget", 6000)
+    analysis_effort = quality_settings.get("analysis_effort", "high")
 
     # Call LLM for analysis
     try:
@@ -90,8 +90,8 @@ async def v2_analyze_node(state: dict) -> dict[str, Any]:
             schema=GlobalAnalysisResult,
             config=InvokeConfig(
                 max_tokens=8000,
-                thinking_budget=thinking_budget if use_opus else None,
-                cache=False if thinking_budget else True,
+                effort=analysis_effort if use_opus else None,
+                cache=False,
                 batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )

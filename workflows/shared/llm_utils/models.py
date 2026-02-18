@@ -29,7 +29,7 @@ CONTEXT_1M_BETA = "context-1m-2025-08-07"
 
 def get_llm(
     tier: ModelTier = ModelTier.SONNET,
-    thinking_budget: Optional[int] = None,
+    effort: Optional[str] = None,
     max_tokens: int = 4096,
 ) -> BaseChatModel:
     """
@@ -41,12 +41,10 @@ def get_llm(
 
     Args:
         tier: Model tier selection (HAIKU, SONNET, SONNET_1M, OPUS, DEEPSEEK_V3, DEEPSEEK_R1)
-        thinking_budget: Token budget for extended thinking (enables if set).
-                        Recommended: 8000-16000 for complex tasks.
-                        Supported on Claude models (Sonnet 4.5, Haiku 4.5, Opus 4.5).
-                        For DEEPSEEK_R1, thinking is always enabled (explicit mode).
-                        Ignored for DEEPSEEK_V3.
-        max_tokens: Maximum output tokens (must be > thinking_budget if set)
+        effort: Adaptive thinking effort level ("low", "medium", "high", "max").
+                For DEEPSEEK_R1, thinking is always enabled (explicit mode).
+                Ignored for DEEPSEEK_V3.
+        max_tokens: Maximum output tokens
 
     Returns:
         BaseChatModel instance configured for the specified tier
@@ -74,11 +72,11 @@ def get_llm(
             kwargs["max_tokens"] = max(max_tokens, 16384)
             # R1 supports tool calling but NOT tool_choice parameter
             kwargs["disabled_params"] = {"tool_choice": None}
-        elif thinking_budget is not None:
+        elif effort is not None:
             import logging
 
             logging.getLogger(__name__).warning(
-                f"thinking_budget ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
+                f"effort ignored for DeepSeek tier {tier.name} (only R1 supports reasoning)"
             )
 
         return ChatDeepSeek(**kwargs)
@@ -104,12 +102,8 @@ def get_llm(
     if tier == ModelTier.SONNET_1M:
         kwargs["betas"] = [CONTEXT_1M_BETA]
 
-    if thinking_budget is not None:
-        if thinking_budget >= max_tokens:
-            raise ValueError(f"thinking_budget ({thinking_budget}) must be less than max_tokens ({max_tokens})")
-        kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": thinking_budget,
-        }
+    if effort is not None:
+        kwargs["thinking"] = {"type": "adaptive"}
+        kwargs["effort"] = effort
 
     return ChatAnthropic(**kwargs)

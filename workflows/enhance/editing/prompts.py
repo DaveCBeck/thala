@@ -405,10 +405,11 @@ Your role is to strengthen abstracts by:
 3. Improving clarity and precision of language
 4. Maintaining appropriate academic tone
 
-You have access to paper search and content retrieval tools. Use them to:
-- Verify claims are supported by cited papers
-- Find additional supporting evidence if needed
-- Ensure citation accuracy
+You have access to paper search and content retrieval tools. Use them STRATEGICALLY:
+- You have a LIMITED tool call budget, so plan your searches carefully
+- Prioritize claims that currently LACK citations over already-cited claims
+- Use broad, well-chosen queries that cover multiple claims per search
+- Search results include curated metadata (titles, abstracts, key findings) — this is often sufficient without retrieving full paper content
 
 Do NOT change the fundamental meaning or argument. Focus on strengthening what's there."""
 
@@ -416,6 +417,8 @@ ENHANCE_ABSTRACT_USER = """{section_content}
 
 ---
 Task: Enhance this abstract (section: "{section_heading}") for the document on "{topic}".
+
+Tool budget: You have {max_tool_calls} tool calls total. Plan your searches to maximize coverage.
 
 Use the available tools to:
 1. Verify existing citations support their claims
@@ -436,10 +439,11 @@ Your role is to STRENGTHEN existing framing by adding citations. You must:
 CRITICAL: This is an enhancement task, NOT a rewrite. Keep the original structure and all content.
 CRITICAL: NEVER invent citations - only cite papers you find via the search_papers tool.
 
-You have access to paper search and content retrieval tools. Use them to:
-- Find supporting literature for key claims
-- Verify existing citations are appropriate
-- Add citations using exact zotero keys from tool responses
+You have access to paper search and content retrieval tools. Use them STRATEGICALLY:
+- You have a LIMITED tool call budget, so plan your searches carefully
+- Prioritize UNCITED claims
+- Use broad, well-chosen queries that cover multiple related claims per search
+- Search results include curated metadata (titles, abstracts, key findings) — this is often sufficient without retrieving full paper content
 
 Focus on strengthening scholarly grounding without changing the core argument."""
 
@@ -449,6 +453,7 @@ ENHANCE_FRAMING_USER = """{section_content}
 Task: Enhance this {section_type} section (heading: "{section_heading}") for the document on "{topic}".
 
 Original word count: {original_word_count} words
+Tool budget: You have {max_tool_calls} tool calls total. Prioritize uncited claims and use broad queries.
 
 CRITICAL REQUIREMENTS:
 - Preserve ALL existing content - do not summarize or shorten
@@ -456,11 +461,6 @@ CRITICAL REQUIREMENTS:
 - Add citations ONLY using exact zotero keys from search_papers tool results
 - Citation format: [@zotero_key] where zotero_key is the 8-character key (e.g., [@ABC12345])
 - NEVER invent citations - only cite papers you found via the tools
-
-Use the available tools to:
-1. Search for papers supporting key claims
-2. Add citations using the exact zotero keys returned by the tools
-3. Verify existing citations are accurate
 
 Output the COMPLETE enhanced content with added citations.
 The output must be similar in length to the input - this is enhancement, not summarization."""
@@ -471,20 +471,17 @@ Your role is to STRENGTHEN existing content by adding citations and evidence. Yo
 1. PRESERVE all existing content - do not summarize or significantly shorten
 2. Add citations to support claims using [@KEY] format
 3. Improve clarity and precision where needed
-4. Maintain word count within ±20% of original
 
-CRITICAL: This is an enhancement task, NOT a rewrite. Keep the original structure and all content. Only add citations and make minor clarifications.
+CRITICAL: This is an enhancement task, NOT a rewrite. Keep the original structure and all content. Only add precise factual information, citations, and make minor clarifications.
 
-You have access to paper search and content retrieval tools. Use them to:
-- Search for relevant papers on specific topics
-- Retrieve paper content to verify claims match citations
-- Find additional supporting evidence
+You have access to paper search and content retrieval tools. Use them STRATEGICALLY:
+- You have a LIMITED tool call budget, so plan your searches carefully
+- Before searching, identify 2-3 claims which would benefit from more precise factual information, and the 2-3 most important UNCITED claims in the section
+- Search results include curated metadata (titles, abstracts, key findings) — this is often sufficient without retrieving full paper content
 
 Guidelines:
-- Every factual claim should have a citation
 - CRITICAL: Use ONLY citation keys returned by the search_papers tool
 - Citation format is [@zotero_key] where zotero_key is the exact 8-character key from search results
-- Example: if search returns a paper with key "ABC12345", cite it as [@ABC12345]
 - NEVER invent or guess citation keys - only use keys that appear in tool responses
 - Maintain academic tone
 - Do NOT remove content unless it is factually wrong"""
@@ -495,21 +492,23 @@ ENHANCE_CONTENT_USER = """{section_content}
 Task: Enhance this content section (heading: "{section_heading}") for the document on "{topic}".
 
 Original word count: {original_word_count} words
+Tool budget: You have {max_tool_calls} tool calls total. Prioritize uncited claims and use broad queries.
 
 CRITICAL REQUIREMENTS:
-- Preserve ALL existing content - do not summarize or shorten
 - Stay within ±{tolerance_percent}% of original word count
+- Never remove information. Compression through better writing is fine; loss of information-transmission is not.
 - Add citations ONLY using exact zotero keys from search_papers tool results
 - Citation format: [@zotero_key] where zotero_key is the 8-character key (e.g., [@ABC12345])
 - NEVER invent citations - only cite papers you found via the tools
 
-Use the available tools to:
+Use the available tools STRATEGICALLY to:
 1. Search for papers supporting claims that lack citations
-2. Retrieve paper content to verify claims are accurate
-3. Add citations using the exact zotero keys returned by the tools
+2. Search for papers which would provide specific quantitative and qualitative information in relation to the claims, and add this information to the section
+3. If you think it would add value, use your final tool call to retrieve paper content for more detailed additions
+4. Add citations using the exact zotero keys returned by the tools
 
 Output the COMPLETE enhanced content with added citations.
-The output must be similar in length to the input - this is enhancement, not summarization."""
+The output must be within ±{tolerance_percent}% of the input - this is enhancement, not summarization or rewriting."""
 
 ENHANCE_COHERENCE_REVIEW_SYSTEM = """You are an expert document reviewer evaluating coherence after an enhancement pass.
 

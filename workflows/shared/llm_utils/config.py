@@ -25,8 +25,8 @@ class InvokeConfig:
         batch_policy: When set and broker is enabled, routes requests through
             the central LLM broker for cost optimization. Use BatchPolicy enum
             values (FORCE_BATCH, PREFER_BALANCE, PREFER_SPEED, REQUIRE_SYNC).
-        thinking_budget: Token budget for extended thinking (Anthropic only).
-            Recommended: 8000-16000 for complex tasks. Cannot be used with cache=True.
+        effort: Adaptive thinking effort level ("low", "medium", "high", "max").
+            Anthropic only. Higher effort = more thinking tokens.
         tools: Tool definitions for tool use. List of tool dicts or LangChain tools.
         tool_choice: Tool choice configuration (e.g., {"type": "auto"}).
         metadata: Additional metadata for tracking and observability.
@@ -47,8 +47,8 @@ class InvokeConfig:
         # With batching
         config = InvokeConfig(batch_policy=BatchPolicy.PREFER_BALANCE)
 
-        # Extended thinking (cache must be disabled)
-        config = InvokeConfig(thinking_budget=8000, cache=False)
+        # Adaptive thinking
+        config = InvokeConfig(effort="high", cache=False)
 
         # With tools
         config = InvokeConfig(tools=[my_tool], tool_choice={"type": "auto"})
@@ -64,8 +64,8 @@ class InvokeConfig:
     # Batching
     batch_policy: "BatchPolicy | None" = None
 
-    # Extended thinking (Anthropic models only)
-    thinking_budget: int | None = None
+    # Adaptive thinking (Anthropic models only)
+    effort: str | None = None
 
     # Tools (for both text and structured output)
     tools: list[BaseTool] | list[dict[str, Any]] | None = None
@@ -91,8 +91,7 @@ class InvokeConfig:
     def __post_init__(self) -> None:
         """Validate constraint combinations.
 
-        Note: Cache + thinking_budget validation is deferred to invoke()
-        where we know the model tier. DeepSeek R1 allows this combination
-        since it has automatic prefix caching independent of thinking.
+        Note: No constraint validation needed — adaptive thinking is compatible
+        with prompt caching on Anthropic.
         """
         pass

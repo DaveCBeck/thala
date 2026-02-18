@@ -68,7 +68,7 @@ class BatchProcessor:
         model: ModelTier = ModelTier.SONNET,
         max_tokens: int = 4096,
         system: Optional[str] = None,
-        thinking_budget: Optional[int] = None,
+        effort: Optional[str] = None,
         tools: Optional[list[dict]] = None,
         tool_choice: Optional[dict] = None,
     ) -> None:
@@ -81,7 +81,7 @@ class BatchProcessor:
             model: Model tier to use (default: SONNET)
             max_tokens: Maximum output tokens
             system: Optional system prompt
-            thinking_budget: Optional token budget for extended thinking
+            effort: Optional adaptive thinking effort level
             tools: Optional list of tool definitions for structured output
             tool_choice: Optional tool choice config (e.g., {"type": "tool", "name": "..."})
         """
@@ -92,7 +92,7 @@ class BatchProcessor:
                 model=model,
                 max_tokens=max_tokens,
                 system=system,
-                thinking_budget=thinking_budget,
+                effort=effort,
                 tools=tools,
                 tool_choice=tool_choice,
             )

@@ -324,7 +324,7 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
                         tier=ModelTier.SONNET,
                         system="Merge these two sections into one cohesive section. Eliminate redundancy while preserving all important information.",
                         user=f"PRIMARY SECTION:\n{primary_content}\n\nSECONDARY SECTION:\n{secondary_content}\n\nMerge strategy: {edit_data['merge_strategy']}\n\nCreate a single cohesive section.",
-                        config=InvokeConfig(max_tokens=4000),
+                        config=InvokeConfig(max_tokens=4000, batch_policy=BatchPolicy.PREFER_SPEED),
                     )
 
                     results.append(
@@ -368,7 +368,7 @@ async def execute_structure_edits_worker(state: dict) -> dict[str, Any]:
                         tier=ModelTier.SONNET,
                         system=CONSOLIDATE_CONTENT_SYSTEM,
                         user=user_prompt,
-                        config=InvokeConfig(max_tokens=3000),
+                        config=InvokeConfig(max_tokens=3000, batch_policy=BatchPolicy.PREFER_SPEED),
                     )
                     consolidated = _strip_generated_header(response.content.strip(), edit_type)
 

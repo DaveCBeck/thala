@@ -16,6 +16,7 @@ from workflows.enhance.editing.prompts import (
     COHERENCE_COMPARISON_SYSTEM,
     COHERENCE_COMPARISON_USER,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ async def _check_coherence_regression(
             system=COHERENCE_COMPARISON_SYSTEM,
             user=user_prompt,
             schema=CoherenceComparisonResult,
-            config=InvokeConfig(max_tokens=2000, cache=False),
+            config=InvokeConfig(max_tokens=2000, cache=False, batch_policy=BatchPolicy.PREFER_SPEED),
         )
         logger.info(
             f"Coherence comparison: preferred={result.preferred_version}, "

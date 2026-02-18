@@ -52,7 +52,7 @@ class BrokerConfig:
 
     # Polling and concurrency
     poll_interval_seconds: int = 60
-    flush_interval_seconds: int = 600
+    flush_interval_seconds: int = 120
     max_concurrent_sync: int = 5
 
     # Persistence

@@ -70,7 +70,7 @@ async def with_retries(
                 upgraded_config = StructuredOutputConfig(
                     tier=ModelTier.SONNET_1M,
                     max_tokens=config.max_tokens,
-                    thinking_budget=config.thinking_budget,
+                    effort=config.effort,
                     strategy=config.strategy,
                     use_json_schema_method=config.use_json_schema_method,
                     max_retries=config.max_retries,

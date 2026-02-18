@@ -24,7 +24,7 @@ class BatchRequest:
     model: any  # ModelTier
     max_tokens: int = 4096
     system: Optional[str] = None
-    thinking_budget: Optional[int] = None
+    effort: Optional[str] = None
     tools: Optional[list[dict]] = None
     tool_choice: Optional[dict] = None
 

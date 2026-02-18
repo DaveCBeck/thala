@@ -14,7 +14,7 @@ from core.llm_broker import BatchPolicy
 from workflows.document_processing.state import DocumentProcessingState
 from workflows.shared.llm_utils import ModelTier, invoke, invoke_batch, InvokeConfig
 from workflows.shared.retry_utils import with_retry
-from workflows.shared.token_utils import HAIKU_SAFE_LIMIT, count_tokens_accurate
+from workflows.shared.token_utils import SONNET_SAFE_LIMIT, count_tokens_accurate
 
 from .chunking import MAX_CHAPTER_CHARS, chunk_large_content
 from .prompts import CHAPTER_SUMMARIZATION_SYSTEM, TRANSLATION_SYSTEM
@@ -51,15 +51,14 @@ Content:
     # Use SONNET_1M for large content to avoid token limit errors
     estimated_tokens = count_tokens_accurate(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
 
-    if estimated_tokens > HAIKU_SAFE_LIMIT:
+    if estimated_tokens > SONNET_SAFE_LIMIT:
         logger.info(
-            f"Content exceeds Haiku safe limit ({estimated_tokens:,} > {HAIKU_SAFE_LIMIT:,} tokens), using SONNET_1M"
+            f"Content exceeds Sonnet safe limit ({estimated_tokens:,} > {SONNET_SAFE_LIMIT:,} tokens), using SONNET_1M"
         )
         model_tier = ModelTier.SONNET_1M
     else:
-        model_tier = ModelTier.HAIKU
+        model_tier = ModelTier.SONNET
 
-    # TODO: Upgrade to ModelTier.OPUS before production
     try:
         response = await invoke(
             tier=model_tier,
@@ -67,9 +66,9 @@ Content:
             user=user_prompt,
             config=InvokeConfig(
                 batch_policy=BatchPolicy.PREFER_BALANCE,
-                max_tokens=8000 + 4096,
-                thinking_budget=8000,
-                cache=False,  # Required when using thinking_budget
+                max_tokens=12096,
+                effort="high",
+                cache=False,
             ),
         )
         return response.content
@@ -219,27 +218,26 @@ Chapter content:
                 # Check token count
                 estimated_tokens = count_tokens_accurate(user_prompt + CHAPTER_SUMMARIZATION_SYSTEM)
 
-                if estimated_tokens > HAIKU_SAFE_LIMIT:
-                    # Too many tokens for Haiku - process individually with SONNET_1M
+                if estimated_tokens > SONNET_SAFE_LIMIT:
+                    # Too many tokens for Sonnet - process individually with SONNET_1M
                     large_chapter_indices.add(i)
                     logger.info(
-                        f"Chapter '{chapter['title']}' exceeds Haiku token limit "
-                        f"({estimated_tokens:,} > {HAIKU_SAFE_LIMIT:,} tokens), "
+                        f"Chapter '{chapter['title']}' exceeds Sonnet token limit "
+                        f"({estimated_tokens:,} > {SONNET_SAFE_LIMIT:,} tokens), "
                         "will process individually with SONNET_1M"
                     )
                     continue
 
                 # Normal chapter - add to batch
-                # TODO: Upgrade to ModelTier.OPUS before production
                 batch.add(
-                    tier=ModelTier.HAIKU,
+                    tier=ModelTier.SONNET,
                     system=CHAPTER_SUMMARIZATION_SYSTEM,
                     user=user_prompt,
                     config=InvokeConfig(
                         batch_policy=BatchPolicy.PREFER_BALANCE,
-                        max_tokens=8000 + 4096,
-                        thinking_budget=8000,
-                        cache=False,  # Required when using thinking_budget
+                        max_tokens=12096,
+                        effort="high",
+                        cache=False,
                     ),
                 )
                 batch_chapter_info.append((i, chapter))

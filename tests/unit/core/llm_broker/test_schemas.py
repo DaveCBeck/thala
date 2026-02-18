@@ -61,7 +61,7 @@ class TestLLMRequest:
         assert request.state == RequestState.QUEUED
         assert request.max_tokens == 4096
         assert request.system is None
-        assert request.thinking_budget is None
+        assert request.effort is None
         assert request.tools is None
         assert request.tool_choice is None
         assert request.batch_id is None
@@ -80,7 +80,7 @@ class TestLLMRequest:
             policy=BatchPolicy.FORCE_BATCH,
             max_tokens=8192,
             system="System prompt",
-            thinking_budget=4000,
+            effort="medium",
             tools=tools,
             tool_choice=tool_choice,
             metadata=metadata,
@@ -89,7 +89,7 @@ class TestLLMRequest:
         assert request.policy == BatchPolicy.FORCE_BATCH
         assert request.max_tokens == 8192
         assert request.system == "System prompt"
-        assert request.thinking_budget == 4000
+        assert request.effort == "medium"
         assert request.tools == tools
         assert request.tool_choice == tool_choice
         assert request.metadata == metadata

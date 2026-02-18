@@ -239,14 +239,14 @@ class TestRoutingLogic:
         assert broker._should_batch(BatchPolicy.PREFER_BALANCE, ModelTier.DEEPSEEK_R1, None) is False
 
     @pytest.mark.asyncio
-    async def test_extended_thinking_can_batch(self, test_config):
-        """Test extended thinking requests can batch (Batch API supports thinking)."""
+    async def test_adaptive_thinking_can_batch(self, test_config):
+        """Test adaptive thinking requests can batch (Batch API supports thinking)."""
         broker = LLMBroker(config=test_config, mode=UserMode.ECONOMICAL)
 
-        # With thinking_budget set, batching should still follow policy+mode rules
-        assert broker._should_batch(BatchPolicy.PREFER_BALANCE, ModelTier.SONNET, thinking_budget=4000) is True
+        # With effort set, batching should still follow policy+mode rules
+        assert broker._should_batch(BatchPolicy.PREFER_BALANCE, ModelTier.SONNET, effort="high") is True
         # DeepSeek still can't batch regardless of thinking
-        assert broker._should_batch(BatchPolicy.PREFER_BALANCE, ModelTier.DEEPSEEK_V3, thinking_budget=4000) is False
+        assert broker._should_batch(BatchPolicy.PREFER_BALANCE, ModelTier.DEEPSEEK_V3, effort="high") is False
 
 
 class TestBatchGroup:

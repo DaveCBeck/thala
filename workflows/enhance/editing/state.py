@@ -1,10 +1,17 @@
 """State definitions for the editing workflow."""
 
+import re
 from datetime import datetime, timezone
 from operator import add
 from typing import Annotated, Any, Literal, Optional
 
 from typing_extensions import TypedDict
+
+# Pattern to match the References/Bibliography section at the end of a document
+_REFERENCES_SECTION_RE = re.compile(
+    r"^#{1,2}\s+(?:References|Bibliography|Works Cited)\b.*",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 class EditingInput(TypedDict):
@@ -88,6 +95,10 @@ def build_initial_state(
         Initialized EditingState
     """
     max_enhance_iterations = quality_settings.get("max_enhance_iterations", 3)
+
+    # Strip References/Bibliography section — it's regenerated downstream
+    # by enhance_report() and just wastes tokens during editing
+    document = _REFERENCES_SECTION_RE.sub("", document).rstrip()
 
     return EditingState(
         input=EditingInput(document=document, topic=topic),

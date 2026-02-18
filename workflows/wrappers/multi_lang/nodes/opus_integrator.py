@@ -93,7 +93,6 @@ async def _integrate_language(
         language_findings=language_findings,
     )
 
-    # Note: thinking_budget cannot be used with batch API + tool_choice
     result: IntegrationOutput = await invoke(
         tier=ModelTier.OPUS,
         system=system_prompt,

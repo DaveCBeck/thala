@@ -30,14 +30,9 @@ class RequestBuilder:
             if req.system:
                 params["system"] = req.system
 
-            if req.thinking_budget:
-                params["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": req.thinking_budget,
-                }
-                # Ensure max_tokens > thinking_budget
-                if req.max_tokens <= req.thinking_budget:
-                    params["max_tokens"] = req.thinking_budget + 4096
+            if req.effort:
+                params["thinking"] = {"type": "adaptive"}
+                params["output_config"] = {"effort": req.effort}
 
             if req.tools:
                 params["tools"] = req.tools

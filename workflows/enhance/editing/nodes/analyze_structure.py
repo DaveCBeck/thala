@@ -39,7 +39,7 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
     # Get quality settings
     quality_settings = state.get("quality_settings", {})
     use_opus = quality_settings.get("use_opus_for_analysis", True)
-    thinking_budget = quality_settings.get("analysis_thinking_budget", 6000)
+    analysis_effort = quality_settings.get("analysis_effort", "high")
 
     # Render document for analysis (with stable IDs)
     document_xml = document_model.render_for_analysis()
@@ -73,8 +73,8 @@ async def analyze_structure_node(state: dict) -> dict[str, Any]:
             schema=StructuralAnalysis,
             config=InvokeConfig(
                 max_tokens=8000,
-                thinking_budget=thinking_budget if use_opus else None,
-                cache=False if thinking_budget else True,
+                effort=analysis_effort if use_opus else None,
+                cache=False,
                 batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )

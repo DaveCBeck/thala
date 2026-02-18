@@ -32,7 +32,7 @@ from .exceptions import (
 from .message_params import (
     CONTEXT_1M_BETA,
     build_message_params,
-    parse_response_content,
+    parse_response_content_with_blocks,
     sanitize_custom_id,
 )
 from .metrics import BrokerMetrics
@@ -286,10 +286,11 @@ class LLMBroker:
         policy: BatchPolicy = BatchPolicy.PREFER_SPEED,
         max_tokens: int = 4096,
         system: str | None = None,
-        thinking_budget: int | None = None,
+        effort: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> asyncio.Future[LLMResponse]:
         """Submit a request to the broker.
 
@@ -302,10 +303,11 @@ class LLMBroker:
             policy: Batch policy for this request
             max_tokens: Maximum output tokens
             system: Optional system prompt
-            thinking_budget: Optional extended thinking budget
+            effort: Optional adaptive thinking effort level
             tools: Optional tool definitions
             tool_choice: Optional tool choice config
             metadata: Optional request metadata
+            messages: Optional pre-built messages list (overrides prompt)
 
         Returns:
             Future that resolves to LLMResponse
@@ -323,10 +325,11 @@ class LLMBroker:
             policy=policy,
             max_tokens=max_tokens,
             system=system,
-            thinking_budget=thinking_budget,
+            effort=effort,
             tools=tools,
             tool_choice=tool_choice,
             metadata=metadata or {},
+            messages=messages,
         )
 
         # Create future for this request
@@ -335,7 +338,7 @@ class LLMBroker:
         self._pending_futures[request.request_id] = future
 
         # Determine routing
-        if should_batch(self._mode, policy, model, thinking_budget):
+        if should_batch(self._mode, policy, model, effort):
             await self._queue_for_batch(request)
             if self._metrics:
                 self._metrics.record_request(batched=True)
@@ -351,14 +354,14 @@ class LLMBroker:
         self,
         policy: BatchPolicy,
         model: ModelTier,
-        thinking_budget: int | None,
+        effort: str | None,
     ) -> bool:
         """Determine if a request should be batched.
 
         Delegates to routing.should_batch() but preserves the instance method
         interface for test compatibility.
         """
-        return should_batch(self._mode, policy, model, thinking_budget)
+        return should_batch(self._mode, policy, model, effort)
 
     # Queue management
 
@@ -549,7 +552,16 @@ class LLMBroker:
                     async with self._async_client.messages.stream(**kwargs) as stream:
                         response = await stream.get_final_message()
 
-                content, thinking = parse_response_content(response)
+                content, thinking, content_blocks = parse_response_content_with_blocks(response)
+
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                }
+                if getattr(response.usage, "cache_creation_input_tokens", None):
+                    usage["cache_creation_input_tokens"] = response.usage.cache_creation_input_tokens
+                if getattr(response.usage, "cache_read_input_tokens", None):
+                    usage["cache_read_input_tokens"] = response.usage.cache_read_input_tokens
 
                 self._resolve_future(
                     request.request_id,
@@ -557,13 +569,11 @@ class LLMBroker:
                         request_id=request.request_id,
                         content=content,
                         success=True,
-                        usage={
-                            "input_tokens": response.usage.input_tokens,
-                            "output_tokens": response.usage.output_tokens,
-                        },
+                        usage=usage,
                         model=response.model,
                         stop_reason=response.stop_reason,
                         thinking=thinking,
+                        content_blocks=content_blocks,
                     ),
                 )
 
@@ -697,6 +707,8 @@ class LLMBroker:
                     model=result.get("model"),
                     stop_reason=result.get("stop_reason"),
                     thinking=result.get("thinking"),
+                    content_blocks=result.get("content_blocks"),
+                    batched=True,
                 ),
             )
 

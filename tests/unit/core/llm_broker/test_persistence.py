@@ -247,6 +247,52 @@ class TestBrokerPersistence:
         assert len(queue["requests"]) == 10
 
 
+class TestConcurrentPersistenceAccess:
+    """Tests for concurrent access that would deadlock without asyncio.Lock gating."""
+
+    @pytest.mark.asyncio
+    async def test_30_concurrent_add_requests_no_deadlock(self, persistence):
+        """30 concurrent add_request calls must complete without deadlock.
+
+        Without the asyncio.Lock in lock(), this deadlocks via thread pool
+        starvation: all threads block on fcntl.flock while the flock holder
+        can't get a thread to read/write/release.
+        """
+        await persistence.initialize()
+
+        async def add_request(i: int):
+            request = LLMRequest.create(prompt=f"Prompt {i}", model="model")
+            await persistence.add_request(request)
+
+        # 30 concurrent requests exceeds default thread pool (~12 threads).
+        # Without the fix, this deadlocks. 5s timeout catches hangs.
+        await asyncio.wait_for(
+            asyncio.gather(*[add_request(i) for i in range(30)]),
+            timeout=5.0,
+        )
+
+        queue = await persistence.read_queue()
+        assert len(queue["requests"]) == 30
+
+    @pytest.mark.asyncio
+    async def test_interleaved_add_and_read_no_deadlock(self, persistence):
+        """Mixed add_request and get_queue_size calls don't deadlock."""
+        await persistence.initialize()
+
+        async def add_and_check(i: int):
+            request = LLMRequest.create(prompt=f"Prompt {i}", model="model")
+            await persistence.add_request(request)
+            await persistence.get_queue_size()
+
+        await asyncio.wait_for(
+            asyncio.gather(*[add_and_check(i) for i in range(30)]),
+            timeout=5.0,
+        )
+
+        queue = await persistence.read_queue()
+        assert len(queue["requests"]) == 30
+
+
 class TestBrokerPersistenceLocking:
     """Tests for file locking behavior."""
 

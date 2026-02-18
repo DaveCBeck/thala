@@ -37,6 +37,11 @@ class BrokerPersistence:
         self.queue_dir = Path(queue_dir)
         self.queue_file = self.queue_dir / "queue.json"
         self.lock_file = self.queue_dir / "queue.lock"
+        # Gate file lock access to prevent thread pool starvation.
+        # Without this, many concurrent coroutines submit blocking
+        # fcntl.flock() to the thread pool simultaneously, exhausting
+        # all threads and deadlocking the flock holder.
+        self._async_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Initialize the queue directory and files.
@@ -56,17 +61,20 @@ class BrokerPersistence:
     async def lock(self) -> AsyncIterator[None]:
         """Acquire exclusive lock WITHOUT blocking event loop.
 
-        Uses asyncio.to_thread() to run blocking fcntl.flock() in
-        a thread pool, allowing other async tasks to proceed.
+        Uses an asyncio.Lock to gate access, ensuring only one coroutine
+        at a time submits blocking fcntl.flock() to the thread pool.
+        This prevents thread pool starvation when many coroutines
+        contend simultaneously (e.g., 25+ parallel LangGraph nodes).
 
         Yields:
             None (context manager)
         """
-        lock_fd = await asyncio.to_thread(self._acquire_lock)
-        try:
-            yield
-        finally:
-            await asyncio.to_thread(self._release_lock, lock_fd)
+        async with self._async_lock:
+            lock_fd = await asyncio.to_thread(self._acquire_lock)
+            try:
+                yield
+            finally:
+                await asyncio.to_thread(self._release_lock, lock_fd)
 
     def _acquire_lock(self) -> Any:
         """Sync helper - runs in thread pool."""
@@ -187,11 +195,21 @@ class BrokerPersistence:
                     request["submitted_at"] = now
                     request["batch_id"] = batch_id
 
-            # Track batch
+            # Track batch — carry forward retry_count from requests so
+            # timeout logic sees the correct attempt number
+            max_retry = max(
+                (
+                    r.get("retry_count", 0)
+                    for r in queue["requests"]
+                    if r["request_id"] in request_ids
+                ),
+                default=0,
+            )
             queue["batches"][batch_id] = {
                 "request_ids": request_ids,
                 "submitted_at": now,
                 "status": "submitted",
+                "retry_count": max_retry,
             }
 
             await self.write_queue(queue)

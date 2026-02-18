@@ -84,6 +84,7 @@ async def fetch_batch_results(
 
             if result["type"] == "succeeded":
                 message = result["message"]
+                raw_blocks = message.get("content", [])
                 content = None
                 thinking = None
 
@@ -105,6 +106,7 @@ async def fetch_batch_results(
                     "usage": message.get("usage"),
                     "model": message.get("model"),
                     "stop_reason": message.get("stop_reason"),
+                    "content_blocks": raw_blocks,
                 }
 
             elif result["type"] == "errored":

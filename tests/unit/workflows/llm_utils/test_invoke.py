@@ -36,51 +36,19 @@ class TestInvokeConfig:
         assert config.cache is True
         assert config.cache_ttl == "5m"
         assert config.batch_policy is None
-        assert config.thinking_budget is None
+        assert config.effort is None
         assert config.max_tokens == 4096
 
-    def test_cache_with_thinking_budget_allowed_in_config(self):
-        """InvokeConfig allows cache+thinking_budget; validation deferred to invoke().
+    def test_effort_config(self):
+        """effort can be set on InvokeConfig."""
+        config = InvokeConfig(effort="high")
+        assert config.effort == "high"
 
-        This is because DeepSeek R1 supports cache+thinking (automatic prefix caching
-        is independent of thinking). The validation is tier-specific in invoke().
-        """
-        config = InvokeConfig(cache=True, thinking_budget=8000)
+    def test_effort_with_cache_ok(self):
+        """Adaptive thinking is compatible with caching."""
+        config = InvokeConfig(cache=True, effort="high")
         assert config.cache is True
-        assert config.thinking_budget == 8000
-
-    @pytest.mark.asyncio
-    async def test_anthropic_cache_with_thinking_budget_raises_in_invoke(self):
-        """For Anthropic models, cache+thinking_budget raises ValueError in invoke()."""
-        with pytest.raises(ValueError, match="Cannot use cache with extended thinking"):
-            await invoke(
-                tier=ModelTier.OPUS,
-                system="Test",
-                user="Test",
-                config=InvokeConfig(cache=True, thinking_budget=8000),
-            )
-
-    @pytest.mark.asyncio
-    async def test_deepseek_cache_with_thinking_budget_allowed(self):
-        """DeepSeek allows cache+thinking_budget (automatic prefix caching)."""
-        mock_llm = AsyncMock()
-        mock_llm.ainvoke.return_value = AIMessage(content="Response")
-
-        with patch("workflows.shared.llm_utils.invoke.get_llm", return_value=mock_llm):
-            # Should NOT raise - DeepSeek supports this combination
-            result = await invoke(
-                tier=ModelTier.DEEPSEEK_R1,
-                system="Test",
-                user="Test",
-                config=InvokeConfig(cache=True, thinking_budget=8000),
-            )
-            assert result.content == "Response"
-
-    def test_thinking_budget_without_cache_ok(self):
-        """thinking_budget with cache=False is valid."""
-        config = InvokeConfig(cache=False, thinking_budget=8000)
-        assert config.thinking_budget == 8000
-        assert config.cache is False
+        assert config.effort == "high"
 
     def test_batch_policy_accepted(self):
         """batch_policy can be set."""

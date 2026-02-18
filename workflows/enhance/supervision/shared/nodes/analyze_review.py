@@ -89,7 +89,7 @@ async def analyze_review_node(state: dict[str, Any]) -> dict[str, Any]:
             user=user_prompt,
             schema=SupervisorDecision,
             config=InvokeConfig(
-                thinking_budget=8000,
+                effort="high",
                 max_tokens=12096,
                 cache=False,
                 batch_policy=BatchPolicy.PREFER_BALANCE,

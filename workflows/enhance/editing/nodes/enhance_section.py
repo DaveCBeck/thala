@@ -16,6 +16,7 @@ from workflows.enhance.editing.prompts import (
     ENHANCE_CONTENT_SYSTEM,
     ENHANCE_CONTENT_USER,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,7 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
             section_heading=section_heading,
             section_content=section_content,
             topic=topic,
+            max_tool_calls=max_tool_calls,
         )
         max_tokens = 2000
     elif section_type in ("introduction", "conclusion"):
@@ -186,6 +188,7 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
             topic=topic,
             original_word_count=original_word_count,
             tolerance_percent=int(tolerance * 100),
+            max_tool_calls=max_tool_calls,
         )
         max_tokens = 4000
     else:
@@ -196,10 +199,12 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
             topic=topic,
             original_word_count=original_word_count,
             tolerance_percent=int(tolerance * 100),
+            max_tool_calls=max_tool_calls,
         )
         max_tokens = 8000
 
     try:
+        logger.info(f"[DIAG] enhance_section_worker calling invoke() for '{section_heading}'")
         result = await invoke(
             tier=ModelTier.OPUS if use_opus else ModelTier.SONNET,
             system=system_prompt,
@@ -209,8 +214,10 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
                 tools=tools,
                 max_tokens=max_tokens,
                 max_tool_calls=max_tool_calls,
+                batch_policy=BatchPolicy.PREFER_SPEED,
             ),
         )
+        logger.info(f"[DIAG] enhance_section_worker invoke() returned for '{section_heading}'")
 
         # Validate word count
         enhanced_word_count = count_words(result.enhanced_content)

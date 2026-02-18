@@ -55,7 +55,7 @@ class LLMRequest:
         state: Current lifecycle state
         max_tokens: Maximum output tokens
         system: Optional system prompt
-        thinking_budget: Optional token budget for extended thinking
+        effort: Optional adaptive thinking effort level ("low", "medium", "high", "max")
         tools: Optional tool definitions for structured output
         tool_choice: Optional tool choice configuration
         created_at: When the request was created
@@ -72,9 +72,10 @@ class LLMRequest:
     state: RequestState = RequestState.QUEUED
     max_tokens: int = 4096
     system: str | None = None
-    thinking_budget: int | None = None
+    effort: str | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: dict[str, Any] | None = None
+    messages: list[dict[str, Any]] | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     submitted_at: datetime | None = None
     batch_id: str | None = None
@@ -108,9 +109,10 @@ class LLMRequest:
             "state": self.state.value,
             "max_tokens": self.max_tokens,
             "system": self.system,
-            "thinking_budget": self.thinking_budget,
+            "effort": self.effort,
             "tools": self.tools,
             "tool_choice": self.tool_choice,
+            "messages": self.messages,
             "created_at": self.created_at.isoformat(),
             "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
             "batch_id": self.batch_id,
@@ -135,9 +137,10 @@ class LLMRequest:
                 state=RequestState(data["state"]),
                 max_tokens=data.get("max_tokens", 4096),
                 system=data.get("system"),
-                thinking_budget=data.get("thinking_budget"),
+                effort=data.get("effort"),
                 tools=data.get("tools"),
                 tool_choice=data.get("tool_choice"),
+                messages=data.get("messages"),
                 created_at=datetime.fromisoformat(data["created_at"]),
                 submitted_at=(datetime.fromisoformat(data["submitted_at"]) if data.get("submitted_at") else None),
                 batch_id=data.get("batch_id"),
@@ -171,6 +174,8 @@ class LLMResponse:
     model: str | None = None
     stop_reason: str | None = None
     thinking: str | None = None
+    content_blocks: list[dict[str, Any]] | None = None
+    batched: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize response for logging/storage."""
@@ -183,4 +188,6 @@ class LLMResponse:
             "model": self.model,
             "stop_reason": self.stop_reason,
             "thinking": self.thinking,
+            "content_blocks": self.content_blocks,
+            "batched": self.batched,
         }

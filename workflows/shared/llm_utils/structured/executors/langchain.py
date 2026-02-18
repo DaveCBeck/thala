@@ -37,7 +37,7 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
         llm = get_llm(
             tier=output_config.tier,
             max_tokens=output_config.max_tokens,
-            thinking_budget=output_config.thinking_budget,
+            effort=output_config.effort,
         )
 
         # Select structured output method based on model and config:
@@ -48,7 +48,7 @@ class LangChainStructuredExecutor(StrategyExecutor[T]):
         if is_deepseek_tier(output_config.tier):
             # DeepSeek doesn't support json_schema response_format, use function calling
             structured_llm = llm.with_structured_output(output_schema, method="function_calling")
-        elif output_config.use_json_schema_method and not output_config.thinking_budget:
+        elif output_config.use_json_schema_method and not output_config.effort:
             structured_llm = llm.with_structured_output(output_schema, method="json_schema")
         else:
             structured_llm = llm.with_structured_output(output_schema)

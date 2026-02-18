@@ -13,6 +13,7 @@ from workflows.enhance.editing.prompts import (
     POLISH_SECTION_SYSTEM,
     POLISH_SECTION_USER,
 )
+from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ async def _screen_sections_for_polish(
                 sections_summary=sections_summary,
             ),
             schema=PolishScreeningResult,
-            config=InvokeConfig(max_tokens=2000, cache=False),
+            config=InvokeConfig(max_tokens=2000, cache=False, batch_policy=BatchPolicy.PREFER_SPEED),
         )
 
         sections_to_polish = result.sections_to_polish[:max_sections]

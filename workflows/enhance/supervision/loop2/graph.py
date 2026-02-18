@@ -283,7 +283,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             system=LOOP2_INTEGRATOR_SYSTEM,
             user=user_prompt,
             config=InvokeConfig(
-                thinking_budget=8000,
+                effort="high",
                 max_tokens=32000,
                 cache=False,
                 batch_policy=BatchPolicy.PREFER_SPEED,

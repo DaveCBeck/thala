@@ -102,7 +102,7 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
             system=INTEGRATOR_SYSTEM,
             user=user_prompt,
             config=InvokeConfig(
-                thinking_budget=8000,
+                effort="high",
                 max_tokens=32000,
                 cache=False,
                 batch_policy=BatchPolicy.PREFER_BALANCE,
