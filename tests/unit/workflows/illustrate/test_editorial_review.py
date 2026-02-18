@@ -1,6 +1,6 @@
 """Tests for editorial review: assemble_document, editorial_review, finalize filtering."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -313,12 +313,6 @@ class TestEditorialReviewNode:
             editorial_summary="Cut two weakest",
         )
 
-        mock_structured_llm = AsyncMock()
-        mock_structured_llm.ainvoke.return_value = mock_result
-
-        mock_base_llm = MagicMock()
-        mock_base_llm.with_structured_output.return_value = mock_structured_llm
-
         state = {
             "assembled_images": non_header,
             "image_opportunities": opportunities,
@@ -326,8 +320,8 @@ class TestEditorialReviewNode:
         }
 
         with patch(
-            "workflows.output.illustrate.nodes.editorial_review.get_llm",
-            return_value=mock_base_llm,
+            "workflows.output.illustrate.nodes.editorial_review.invoke",
+            return_value=mock_result,
         ):
             result = await editorial_review_node(state)
 
@@ -353,11 +347,6 @@ class TestEditorialReviewNode:
             editorial_summary="Tried to cut header",
         )
 
-        mock_structured_llm = AsyncMock()
-        mock_structured_llm.ainvoke.return_value = mock_result
-        mock_base_llm = MagicMock()
-        mock_base_llm.with_structured_output.return_value = mock_structured_llm
-
         state = {
             "assembled_images": all_images,
             "image_opportunities": opportunities,
@@ -365,8 +354,8 @@ class TestEditorialReviewNode:
         }
 
         with patch(
-            "workflows.output.illustrate.nodes.editorial_review.get_llm",
-            return_value=mock_base_llm,
+            "workflows.output.illustrate.nodes.editorial_review.invoke",
+            return_value=mock_result,
         ):
             result = await editorial_review_node(state)
 
@@ -385,11 +374,6 @@ class TestEditorialReviewNode:
             _make_opportunity(location_id="header", purpose="header"),
         ] + [_make_opportunity(location_id=f"s{i}") for i in range(6)]
 
-        mock_structured_llm = AsyncMock()
-        mock_structured_llm.ainvoke.side_effect = Exception("API error")
-        mock_base_llm = MagicMock()
-        mock_base_llm.with_structured_output.return_value = mock_structured_llm
-
         state = {
             "assembled_images": non_header,
             "image_opportunities": opportunities,
@@ -397,8 +381,8 @@ class TestEditorialReviewNode:
         }
 
         with patch(
-            "workflows.output.illustrate.nodes.editorial_review.get_llm",
-            return_value=mock_base_llm,
+            "workflows.output.illustrate.nodes.editorial_review.invoke",
+            side_effect=Exception("API error"),
         ):
             result = await editorial_review_node(state)
 
@@ -409,12 +393,6 @@ class TestEditorialReviewNode:
         non_header = [
             _make_assembled_image(location_id=f"s{i}", image_bytes=b"\x89PNG\r\n\x1a\nDATA") for i in range(6)
         ]
-        opportunities = [
-            _make_opportunity(location_id="header", purpose="header"),
-        ] + [_make_opportunity(location_id=f"s{i}") for i in range(8)]
-        # Target = 8 - 2 = 6, surplus = 6 - 6 = 0... wait, need more images
-        # Let's fix: 10 opps → target = 8, but 6 surviving → surplus = 0. Not helpful.
-        # For surplus=2: need non_header_opps - 2 < len(non_header)
         # 6 non-header opps, 6 surviving → target=4, surplus=2
         opportunities = [
             _make_opportunity(location_id="header", purpose="header"),
@@ -426,11 +404,6 @@ class TestEditorialReviewNode:
             editorial_summary="Over-cut",
         )
 
-        mock_structured_llm = AsyncMock()
-        mock_structured_llm.ainvoke.return_value = mock_result
-        mock_base_llm = MagicMock()
-        mock_base_llm.with_structured_output.return_value = mock_structured_llm
-
         state = {
             "assembled_images": non_header,
             "image_opportunities": opportunities,
@@ -438,8 +411,8 @@ class TestEditorialReviewNode:
         }
 
         with patch(
-            "workflows.output.illustrate.nodes.editorial_review.get_llm",
-            return_value=mock_base_llm,
+            "workflows.output.illustrate.nodes.editorial_review.invoke",
+            return_value=mock_result,
         ):
             result = await editorial_review_node(state)
 
@@ -470,11 +443,6 @@ class TestEditorialReviewNode:
             editorial_summary="Cut two weakest",
         )
 
-        mock_structured_llm = AsyncMock()
-        mock_structured_llm.ainvoke.return_value = mock_result
-        mock_base_llm = MagicMock()
-        mock_base_llm.with_structured_output.return_value = mock_structured_llm
-
         state = {
             "assembled_images": non_header,
             "image_opportunities": opportunities,
@@ -482,15 +450,14 @@ class TestEditorialReviewNode:
         }
 
         with patch(
-            "workflows.output.illustrate.nodes.editorial_review.get_llm",
-            return_value=mock_base_llm,
-        ):
+            "workflows.output.illustrate.nodes.editorial_review.invoke",
+            return_value=mock_result,
+        ) as mock_invoke:
             result = await editorial_review_node(state)
 
-        # Verify the LLM was called
-        mock_structured_llm.ainvoke.assert_called_once()
-        call_args = mock_structured_llm.ainvoke.call_args[0][0]
-        user_content = call_args[1]["content"]
+        # Verify invoke was called
+        mock_invoke.assert_called_once()
+        user_content = mock_invoke.call_args.kwargs["user"]
 
         # Count image parts -- oversized s1 should be excluded
         image_parts = [p for p in user_content if p.get("type") == "image"]

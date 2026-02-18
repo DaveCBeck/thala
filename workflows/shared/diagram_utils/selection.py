@@ -17,6 +17,8 @@ from .schemas import DiagramAnalysis, DiagramCandidate, DiagramConfig
 
 logger = logging.getLogger(__name__)
 
+MAX_DIAGRAM_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB per image
+
 
 async def generate_candidates(
     analysis: DiagramAnalysis,
@@ -152,6 +154,16 @@ async def select_and_improve(
         content_parts = []
 
         for candidate in candidates:
+            # Skip oversized images
+            if len(candidate.png_bytes) > MAX_DIAGRAM_IMAGE_SIZE:
+                logger.warning(
+                    "Candidate %d image too large (%d bytes, limit %d), skipping",
+                    candidate.candidate_id,
+                    len(candidate.png_bytes),
+                    MAX_DIAGRAM_IMAGE_SIZE,
+                )
+                continue
+
             overlap_desc = "No overlaps detected"
             if candidate.overlap_check.has_overlaps:
                 pairs = candidate.overlap_check.overlap_pairs[:3]  # Limit to 3 for brevity
@@ -184,16 +196,13 @@ async def select_and_improve(
             "text": "Which candidate is best? State your choice (1, 2, or 3) and explain briefly why.",
         })
 
-        # Phase 1: Selection with images
-        # Note: This uses multimodal content, which invoke() doesn't support yet.
-        # For now, we use the low-level langchain call for this special case.
-        from workflows.shared.llm_utils import get_llm
-        llm = get_llm(tier=ModelTier.OPUS, max_tokens=8000)
-
-        selection_response = await llm.ainvoke([
-            {"role": "system", "content": SVG_SELECTION_SYSTEM},
-            {"role": "user", "content": content_parts},
-        ])
+        # Phase 1: Selection with images (multimodal invoke)
+        selection_response = await invoke(
+            tier=ModelTier.OPUS,
+            system=SVG_SELECTION_SYSTEM,
+            user=content_parts,
+            config=InvokeConfig(max_tokens=8000, cache=False),
+        )
 
         selection_text = (
             selection_response.content

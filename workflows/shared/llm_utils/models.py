@@ -36,7 +36,7 @@ def get_llm(
     Get a configured LLM instance (Claude or DeepSeek).
 
     DEPRECATED: Use invoke() instead for all LLM calls. This function is
-    retained for internal use and special cases (e.g., multimodal content).
+    retained for internal use by invoke() and structured output executors.
     New code should always use invoke() from workflows.shared.llm_utils.
 
     Args:

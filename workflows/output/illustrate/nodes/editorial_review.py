@@ -9,7 +9,7 @@ import logging
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 from ..schemas import EditorialReviewResult, ImageOpportunity
 from ..state import AssembledImage, IllustrateState
@@ -141,12 +141,12 @@ async def editorial_review_node(state: IllustrateState) -> dict:
         )
 
     try:
-        llm = get_llm(tier=ModelTier.SONNET).with_structured_output(EditorialReviewResult)
-        response = await llm.ainvoke(
-            [
-                {"role": "system", "content": EDITORIAL_SYSTEM},
-                {"role": "user", "content": content_parts},
-            ]
+        response = await invoke(
+            tier=ModelTier.SONNET,
+            system=EDITORIAL_SYSTEM,
+            user=content_parts,
+            schema=EditorialReviewResult,
+            config=InvokeConfig(cache=False),
         )
 
         # Validate cut count doesn't exceed requested

@@ -14,7 +14,7 @@ import logging
 
 from langsmith import traceable
 
-from workflows.shared.llm_utils import ModelTier, get_llm
+from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -114,13 +114,6 @@ async def _compare_pair(
     model_tier: ModelTier,
 ) -> str:
     """Compare two images, return 'A' or 'B'."""
-    # NOTE: Using get_llm() directly instead of invoke() because vision comparison
-    # requires raw multimodal message construction with base64-encoded images.
-    # This bypasses broker routing and rate limiting. Consider migrating to invoke()
-    # if its multimodal support is confirmed to handle raw image bytes.
-    # See also: selection.py which uses the same pattern for similar reasons.
-    llm = get_llm(tier=model_tier, max_tokens=16)
-
     for label, img_bytes in [("A", image_a), ("B", image_b)]:
         if len(img_bytes) > MAX_IMAGE_SIZE:
             raise ValueError(
@@ -155,11 +148,11 @@ async def _compare_pair(
         },
     ]
 
-    response = await llm.ainvoke(
-        [
-            {"role": "system", "content": PAIR_COMPARISON_SYSTEM},
-            {"role": "user", "content": content_parts},
-        ]
+    response = await invoke(
+        tier=model_tier,
+        system=PAIR_COMPARISON_SYSTEM,
+        user=content_parts,
+        config=InvokeConfig(max_tokens=16, cache=False),
     )
 
     answer = (response.content if isinstance(response.content, str) else str(response.content)).strip().upper()

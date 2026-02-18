@@ -192,7 +192,7 @@ def _broker_response_to_message(response: "LLMResponse") -> AIMessage:
 async def _invoke_direct(
     tier: ModelTier,
     system: str,
-    user_prompts: list[str],
+    user_prompts: list[str | MultimodalContent],
     config: InvokeConfig,
 ) -> list[AIMessage]:
     """Invoke LLM directly without broker.
@@ -203,7 +203,7 @@ async def _invoke_direct(
     Args:
         tier: Model tier to use
         system: System prompt
-        user_prompts: List of user prompts
+        user_prompts: List of user prompts (text or multimodal content blocks)
         config: Invocation configuration
 
     Returns:
@@ -218,10 +218,10 @@ async def _invoke_direct(
     # Rate limiting semaphore
     semaphore = asyncio.Semaphore(config.max_concurrent)
 
-    async def invoke_one(user_prompt: str) -> AIMessage:
+    async def invoke_one(user_prompt: str | MultimodalContent) -> AIMessage:
         async with semaphore:
-            # Build messages with caching for Anthropic
-            if not is_deepseek_tier(tier) and config.cache:
+            if not isinstance(user_prompt, list) and not is_deepseek_tier(tier) and config.cache:
+                # Anthropic prompt caching
                 messages = create_cached_messages(
                     system_content=system,
                     user_content=user_prompt,
@@ -229,6 +229,7 @@ async def _invoke_direct(
                     cache_ttl=config.cache_ttl,
                 )
             else:
+                # Standard messages (text or multimodal)
                 messages = [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user_prompt},
@@ -241,7 +242,7 @@ async def _invoke_direct(
 async def _invoke_via_broker(
     tier: ModelTier,
     system: str,
-    user_prompts: list[str],
+    user_prompts: list[str | MultimodalContent],
     config: InvokeConfig,
 ) -> list[AIMessage]:
     """Invoke LLM through the central broker.
@@ -251,7 +252,7 @@ async def _invoke_via_broker(
     Args:
         tier: Model tier to use
         system: System prompt
-        user_prompts: List of user prompts
+        user_prompts: List of user prompts (text or multimodal content blocks)
         config: Invocation configuration
 
     Returns:
@@ -264,19 +265,34 @@ async def _invoke_via_broker(
     # Submit all requests within a batch group for proper batching
     futures: list[asyncio.Future] = []
 
+    # Guard: multimodal + tools not supported via broker
+    has_multimodal = any(isinstance(p, list) for p in user_prompts)
+    if has_multimodal and config.tools:
+        raise ValueError(
+            "Multimodal content with tools is not supported via the broker path. "
+            "Use invoke() without tools for multimodal content."
+        )
+
     async with broker.batch_group():
         for user_prompt in user_prompts:
-            future = await broker.request(
-                prompt=user_prompt,
+            kwargs = dict(
                 model=tier,
                 policy=config.batch_policy,
                 max_tokens=config.max_tokens,
                 system=system,
                 effort=config.effort,
-                tools=config.tools,
-                tool_choice=config.tool_choice,
                 metadata=config.metadata,
             )
+            if isinstance(user_prompt, list):
+                # Multimodal: pass pre-built messages
+                kwargs["prompt"] = ""  # unused when messages= is set
+                kwargs["messages"] = [{"role": "user", "content": user_prompt}]
+            else:
+                kwargs["prompt"] = user_prompt
+                kwargs["tools"] = config.tools
+                kwargs["tool_choice"] = config.tool_choice
+
+            future = await broker.request(**kwargs)
             futures.append(future)
 
     # Collect results, creating LangSmith LLM traces for batch responses
@@ -346,11 +362,35 @@ async def invoke(
 ) -> list[T]: ...
 
 
+# Multimodal input, no schema -> AIMessage
+@overload
 async def invoke(
     *,
     tier: ModelTier,
     system: str,
-    user: str | list[str],
+    user: MultimodalContent,
+    config: InvokeConfig | None = None,
+    schema: None = None,
+) -> AIMessage: ...
+
+
+# Multimodal input with schema -> T
+@overload
+async def invoke(
+    *,
+    tier: ModelTier,
+    system: str,
+    user: MultimodalContent,
+    config: InvokeConfig | None = None,
+    schema: Type[T],
+) -> T: ...
+
+
+async def invoke(
+    *,
+    tier: ModelTier,
+    system: str,
+    user: str | list[str] | MultimodalContent,
     config: InvokeConfig | None = None,
     schema: Type[T] | None = None,
 ) -> Union[AIMessage, T, list[AIMessage], list[T]]:
@@ -433,7 +473,8 @@ async def invoke(
 
     # Text output path
     # Normalize to list for internal processing
-    is_batch = isinstance(user, list)
+    is_multimodal = _is_multimodal_content(user)
+    is_batch = isinstance(user, list) and not is_multimodal
     user_prompts = user if is_batch else [user]
 
     # Route based on tier and config
@@ -518,7 +559,7 @@ async def _invoke_structured_via_broker(
 async def _invoke_structured(
     tier: ModelTier,
     system: str,
-    user: str | list[str],
+    user: str | list[str] | MultimodalContent,
     config: InvokeConfig,
     schema: Type[T],
 ) -> T | list[T]:
@@ -531,7 +572,7 @@ async def _invoke_structured(
     Args:
         tier: Model tier to use
         system: System prompt
-        user: User prompt (single or list)
+        user: User prompt (single, list, or multimodal content blocks)
         config: Invocation configuration
         schema: Pydantic model class for output
 

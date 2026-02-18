@@ -603,3 +603,163 @@ class TestInvokeBatchContextManager:
             results = await batch.results()
 
         assert results == []
+
+
+class TestInvokeMultimodal:
+    """Tests for invoke() multimodal content support."""
+
+    @pytest.fixture
+    def mock_llm(self):
+        """Create a mock LLM that returns AIMessage."""
+        mock = AsyncMock()
+        mock.ainvoke.return_value = AIMessage(content="A")
+        return mock
+
+    @pytest.fixture
+    def multimodal_content(self):
+        """Sample multimodal content (text + image)."""
+        return [
+            {"type": "text", "text": "Which is better?"},
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": "abc123"},
+            },
+        ]
+
+    @pytest.mark.asyncio
+    async def test_multimodal_routes_as_single_not_batch(self, mock_llm, multimodal_content):
+        """Multimodal content should be treated as single prompt, not batch."""
+        with patch("workflows.shared.llm_utils.invoke.get_llm", return_value=mock_llm):
+            result = await invoke(
+                tier=ModelTier.HAIKU,
+                system="Compare images.",
+                user=multimodal_content,
+            )
+
+        # Should return single AIMessage, not a list
+        assert isinstance(result, AIMessage)
+        assert result.content == "A"
+
+    @pytest.mark.asyncio
+    async def test_multimodal_skips_caching(self, mock_llm, multimodal_content):
+        """Multimodal content should skip prompt caching."""
+        with (
+            patch("workflows.shared.llm_utils.invoke.get_llm", return_value=mock_llm),
+            patch("workflows.shared.llm_utils.invoke.create_cached_messages") as mock_cache,
+        ):
+            await invoke(
+                tier=ModelTier.SONNET,
+                system="Analyze.",
+                user=multimodal_content,
+            )
+
+        mock_cache.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multimodal_builds_raw_messages(self, mock_llm, multimodal_content):
+        """Multimodal should build raw messages with system + user content blocks."""
+        with patch("workflows.shared.llm_utils.invoke.get_llm", return_value=mock_llm):
+            await invoke(
+                tier=ModelTier.HAIKU,
+                system="Compare.",
+                user=multimodal_content,
+            )
+
+        call_args = mock_llm.ainvoke.call_args[0][0]
+        assert call_args[0] == {"role": "system", "content": "Compare."}
+        assert call_args[1]["role"] == "user"
+        assert call_args[1]["content"] == multimodal_content
+
+    @pytest.mark.asyncio
+    async def test_multimodal_via_broker(self, multimodal_content):
+        """Multimodal content should work through broker path."""
+        from core.llm_broker import BatchPolicy, LLMResponse
+
+        mock_future = asyncio.Future()
+        mock_future.set_result(
+            LLMResponse(
+                request_id="test",
+                content="B",
+                success=True,
+                usage={"input_tokens": 100, "output_tokens": 1},
+            )
+        )
+
+        mock_broker = MagicMock()
+        mock_broker.batch_group.return_value.__aenter__ = AsyncMock()
+        mock_broker.batch_group.return_value.__aexit__ = AsyncMock()
+        mock_broker.request = AsyncMock(return_value=mock_future)
+
+        with (
+            patch("core.llm_broker.is_broker_enabled", return_value=True),
+            patch("core.llm_broker.get_broker", return_value=mock_broker),
+        ):
+            result = await invoke(
+                tier=ModelTier.HAIKU,
+                system="Compare.",
+                user=multimodal_content,
+                config=InvokeConfig(batch_policy=BatchPolicy.PREFER_BALANCE),
+            )
+
+        assert result.content == "B"
+        # Verify broker was called with messages= parameter
+        broker_call = mock_broker.request.call_args
+        assert broker_call.kwargs["messages"] == [
+            {"role": "user", "content": multimodal_content},
+        ]
+        assert broker_call.kwargs["system"] == "Compare."
+
+    @pytest.mark.asyncio
+    async def test_multimodal_with_structured_output(self, multimodal_content):
+        """Multimodal content with schema should return a validated Pydantic model."""
+        from pydantic import BaseModel
+        from workflows.shared.llm_utils.structured.types import StructuredOutputResult
+
+        class SimpleResult(BaseModel):
+            answer: str
+
+        mock_result = StructuredOutputResult.ok(
+            value=SimpleResult(answer="The first image is better"),
+            strategy=MagicMock(),
+        )
+
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            patch("workflows.shared.llm_utils.structured.executors.get_executor", return_value=mock_executor),
+            patch("workflows.shared.llm_utils.structured.retry.with_retries", return_value=mock_result),
+        ):
+            result = await invoke(
+                tier=ModelTier.HAIKU,
+                system="Compare the images.",
+                user=multimodal_content,
+                schema=SimpleResult,
+            )
+
+        assert isinstance(result, SimpleResult)
+        assert result.answer == "The first image is better"
+
+    @pytest.mark.asyncio
+    async def test_multimodal_with_tools_raises_via_broker(self, multimodal_content):
+        """Multimodal + tools should raise ValueError via broker path."""
+        from core.llm_broker import BatchPolicy
+
+        mock_broker = MagicMock()
+        mock_broker.batch_group.return_value.__aenter__ = AsyncMock()
+        mock_broker.batch_group.return_value.__aexit__ = AsyncMock()
+
+        with (
+            patch("core.llm_broker.is_broker_enabled", return_value=True),
+            patch("core.llm_broker.get_broker", return_value=mock_broker),
+        ):
+            with pytest.raises(ValueError, match="Multimodal content with tools is not supported"):
+                await invoke(
+                    tier=ModelTier.HAIKU,
+                    system="Compare.",
+                    user=multimodal_content,
+                    config=InvokeConfig(
+                        batch_policy=BatchPolicy.PREFER_BALANCE,
+                        tools=[{"name": "search", "type": "function"}],
+                    ),
+                )

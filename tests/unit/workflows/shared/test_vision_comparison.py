@@ -1,8 +1,9 @@
 """Tests for shared vision pair comparison utility."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from workflows.shared.vision_comparison import vision_pair_select, _compare_pair
 
@@ -72,13 +73,9 @@ class TestComparePair:
     """Test individual pair comparison."""
 
     @pytest.mark.asyncio
-    @patch("workflows.shared.vision_comparison.get_llm")
-    async def test_returns_a(self, mock_get_llm):
-        mock_llm = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.content = "A"
-        mock_llm.ainvoke.return_value = mock_response
-        mock_get_llm.return_value = mock_llm
+    @patch("workflows.shared.vision_comparison.invoke")
+    async def test_returns_a(self, mock_invoke):
+        mock_invoke.return_value = AIMessage(content="A")
 
         from workflows.shared.llm_utils import ModelTier
 
@@ -86,13 +83,9 @@ class TestComparePair:
         assert result == "A"
 
     @pytest.mark.asyncio
-    @patch("workflows.shared.vision_comparison.get_llm")
-    async def test_returns_b(self, mock_get_llm):
-        mock_llm = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.content = "B"
-        mock_llm.ainvoke.return_value = mock_response
-        mock_get_llm.return_value = mock_llm
+    @patch("workflows.shared.vision_comparison.invoke")
+    async def test_returns_b(self, mock_invoke):
+        mock_invoke.return_value = AIMessage(content="B")
 
         from workflows.shared.llm_utils import ModelTier
 
@@ -100,13 +93,9 @@ class TestComparePair:
         assert result == "B"
 
     @pytest.mark.asyncio
-    @patch("workflows.shared.vision_comparison.get_llm")
-    async def test_ambiguous_response_defaults_to_a(self, mock_get_llm):
-        mock_llm = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.content = "I think image 1 is better"
-        mock_llm.ainvoke.return_value = mock_response
-        mock_get_llm.return_value = mock_llm
+    @patch("workflows.shared.vision_comparison.invoke")
+    async def test_ambiguous_response_defaults_to_a(self, mock_invoke):
+        mock_invoke.return_value = AIMessage(content="I think image 1 is better")
 
         from workflows.shared.llm_utils import ModelTier
 

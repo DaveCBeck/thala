@@ -90,7 +90,7 @@ __all__ = [
     "BatchPolicy",
     # Model utilities
     "ModelTier",
-    "get_llm",  # DEPRECATED: Use invoke() instead. Kept for internal/multimodal use.
+    "get_llm",  # DEPRECATED: Use invoke() instead. Retained for internal use by invoke/structured executors.
     # Structured output types (for type annotations)
     "StructuredOutputStrategy",
     "StructuredOutputConfig",
