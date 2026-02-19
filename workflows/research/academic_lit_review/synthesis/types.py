@@ -73,9 +73,6 @@ class TransparencyReport(TypedDict, total=False):
     date_range: str
     total_corpus_size: int
 
-    # Access limitations
-    access_limitation_note: str
-
 
 class QualityMetrics(TypedDict):
     """Quality metrics for the literature review."""

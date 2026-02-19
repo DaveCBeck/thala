@@ -19,13 +19,6 @@ _RELEVANCE_THRESHOLD = 0.6
 
 _CLUSTERING_RATIONALE_MAX_LEN = 300
 
-_ACCESS_LIMITATION_NOTE = (
-    "This review used OpenAlex as its sole discovery database. "
-    "Papers not indexed by OpenAlex, or lacking open-access full text, "
-    "may be underrepresented. Full-text analysis was limited to papers "
-    "retrievable via open-access URLs; remaining papers were analysed "
-    "from abstracts and metadata only."
-)
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +107,6 @@ def collect_transparency_report(state: AcademicLitReviewState) -> TransparencyRe
         # Corpus
         date_range=date_range,
         total_corpus_size=len(paper_summaries),
-        # Access limitations
-        access_limitation_note=_ACCESS_LIMITATION_NOTE,
     )
 
 
@@ -186,7 +177,6 @@ def render_transparency_for_prompt(report: TransparencyReport) -> dict[str, str]
         "cluster_count": str(report.get("cluster_count", 0)),
         "date_range": report.get("date_range", "Not available"),
         "total_corpus_size": str(report.get("total_corpus_size", 0)),
-        "access_limitation_note": report.get("access_limitation_note", ""),
     }
 
 
