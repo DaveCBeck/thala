@@ -31,7 +31,15 @@ def load_publication_config(category: str) -> dict:
             pubs = json.load(f)
         if category in pubs:
             return pubs[category]
+        # Case-insensitive fallback (task categories are often lowercased)
+        cat_lower = category.lower()
+        for key, value in pubs.items():
+            if key.lower() == cat_lower:
+                return value
         if pubs:
+            logger.warning(
+                "No publication found for category %r, using first entry", category
+            )
             return next(iter(pubs.values()))
     except Exception:
         logger.warning("Failed to load publication config from %s", PUBLICATIONS_FILE, exc_info=True)
