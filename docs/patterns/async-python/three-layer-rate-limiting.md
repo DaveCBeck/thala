@@ -49,14 +49,14 @@ Request → [Daily budget] → [RPM token bucket] → [Concurrency semaphore] �
 Atomic check-and-decrement under `flock` prevents TOCTOU races between OS processes.
 
 ```python
-def _try_acquire_sync(self) -> bool:
+def _try_acquire_sync(self, count: int = 1) -> bool:
     with self._file_lock():          # fcntl.flock(LOCK_EX)
         data = self._read_state()    # {"date": "2026-02-15", "count": 7}
         if data["date"] != _today_str():
             data = {"date": _today_str(), "count": 0}
-        if data["count"] >= self._limit:
+        if data["count"] + count > self._limit:
             return False             # budget exhausted -- caller defers
-        data["count"] += 1
+        data["count"] += count
         write_json_atomic(self._state_file, data)
         return True
 ```
@@ -66,14 +66,14 @@ def _try_acquire_sync(self) -> bool:
 Refills tokens proportionally to elapsed time. Sleeps the caller when empty rather than rejecting.
 
 ```python
-async def acquire(self) -> None:
+async def acquire(self, cost: int = 1) -> None:
     while True:
         async with self._lock:
             elapsed = now - self._last_refill
             self._tokens = min(float(self._rpm),
                                self._tokens + elapsed * (self._rpm / 60.0))
-            if self._tokens >= 1.0:
-                self._tokens -= 1.0
+            if self._tokens >= cost:
+                self._tokens -= cost
                 return
         await asyncio.sleep(60.0 / self._rpm)   # yield, then retry
 ```
@@ -85,17 +85,19 @@ Standard `asyncio.Semaphore` caps in-flight API calls to prevent socket/memory e
 ### Composition
 
 ```python
-if not await daily_tracker.try_acquire():       # Layer 1: cheapest check
-    return None, prompt                          # DEFERRED -- no API call
+if not await daily_tracker.try_acquire(sample_count):  # Layer 1: cheapest check
+    return None, prompt                                 # DEFERRED -- no API call
 
-await rpm_limiter.acquire()                      # Layer 2: may sleep
+await rpm_limiter.acquire(sample_count)                 # Layer 2: may sleep
 
-async with get_imagen_semaphore():               # Layer 3: cap concurrency
+async with get_imagen_semaphore():                      # Layer 3: cap concurrency
     response = await asyncio.wait_for(
         client.aio.models.generate_images(...),
         timeout=GOOGLE_API_TIMEOUT,
     )
 ```
+
+Both `THALA_IMAGEN_DAILY_LIMIT` and `THALA_IMAGEN_RPM_LIMIT` are expressed in **images** (not requests). A single API call with `sample_count=4` consumes 4 from each budget.
 
 ## Consequences
 

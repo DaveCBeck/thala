@@ -194,11 +194,11 @@ async def generate_article_header(
         daily_tracker = get_imagen_daily_tracker()
         rpm_limiter = get_imagen_rpm_limiter()
 
-        if not await daily_tracker.try_acquire():
+        if not await daily_tracker.try_acquire(sample_count):
             logger.warning(f"Imagen daily budget exhausted, skipping image for '{title}'")
             return None, prompt
 
-        await rpm_limiter.acquire()
+        await rpm_limiter.acquire(sample_count)
 
         # Wall-clock time including semaphore wait
         t0 = time.monotonic()

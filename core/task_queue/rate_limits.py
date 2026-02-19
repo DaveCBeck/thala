@@ -86,24 +86,28 @@ class ImagenDailyTracker:
         self._state_file = self._state_dir / "imagen_daily_usage.json"
         self._lock_file = self._state_dir / "imagen_daily.lock"
 
-    async def try_acquire(self) -> bool:
-        """Atomically check budget and reserve a slot. Returns True if acquired."""
-        return await asyncio.to_thread(self._try_acquire_sync)
+    async def try_acquire(self, count: int = 1) -> bool:
+        """Atomically check budget and reserve *count* image slots.
+
+        Args:
+            count: Number of images to reserve (e.g. sample_count per API call).
+        """
+        return await asyncio.to_thread(self._try_acquire_sync, count)
 
     async def remaining(self) -> int:
         """Non-atomic read of remaining budget (for fast-fail checks)."""
         return await asyncio.to_thread(self._remaining_sync)
 
-    def _try_acquire_sync(self) -> bool:
+    def _try_acquire_sync(self, count: int = 1) -> bool:
         """Single flock acquisition: read, check, increment, write."""
         self._state_dir.mkdir(parents=True, exist_ok=True)
         with self._file_lock():
             data = self._read_state()
             if data["date"] != _today_str():
                 data = {"date": _today_str(), "count": 0}
-            if data["count"] >= self._limit:
+            if data["count"] + count > self._limit:
                 return False
-            data["count"] += 1
+            data["count"] += count
             write_json_atomic(self._state_file, data)
             return True
 
@@ -171,8 +175,12 @@ class ImagenRPMLimiter:
         self._last_refill: float = 0.0
         self._lock = asyncio.Lock()
 
-    async def acquire(self) -> None:
-        """Wait until a token is available, then consume it."""
+    async def acquire(self, cost: int = 1) -> None:
+        """Wait until *cost* image tokens are available, then consume them.
+
+        Args:
+            cost: Number of image tokens to consume (e.g. sample_count).
+        """
         while True:
             async with self._lock:
                 now = asyncio.get_running_loop().time()
@@ -184,8 +192,8 @@ class ImagenRPMLimiter:
                     self._tokens + elapsed * (self._rpm / 60.0),
                 )
                 self._last_refill = now
-                if self._tokens >= 1.0:
-                    self._tokens -= 1.0
+                if self._tokens >= cost:
+                    self._tokens -= cost
                     return
             await asyncio.sleep(60.0 / self._rpm)
 
