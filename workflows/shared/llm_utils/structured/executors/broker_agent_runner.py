@@ -267,13 +267,15 @@ async def run_tool_agent_via_broker(
     if cache_ttl:
         final_tools[-1]["cache_control"] = _build_cache_control(cache_ttl)
 
+    # Final extraction: thinking already happened in the agent loop rounds,
+    # so omit effort here.  Forced tool_choice is incompatible with thinking
+    # and the extraction step doesn't benefit from it anyway.
     future = await broker.request(
         prompt="",
         model=tier,
         policy=policy,
         max_tokens=max_tokens,
         system=system_prompt,
-        effort=effort,
         tools=final_tools,
         tool_choice={"type": "tool", "name": output_schema.__name__},
         messages=messages,

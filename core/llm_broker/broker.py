@@ -604,6 +604,13 @@ class LLMBroker:
             request_id: ID of the request
             response: The response to resolve with
         """
+        if response.success and response.stop_reason == "max_tokens":
+            output_tokens = (response.usage or {}).get("output_tokens", "?")
+            logger.warning(
+                f"Response truncated due to max_tokens limit for {request_id} "
+                f"(output_tokens={output_tokens})"
+            )
+
         future = self._pending_futures.pop(request_id, None)
         if future and not future.done():
             future.set_result(response)

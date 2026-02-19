@@ -5,10 +5,13 @@ and parsing response content. Used by both sync and batch execution paths.
 """
 
 import json
+import logging
 import re
 from typing import Any
 
 from .schemas import LLMRequest
+
+logger = logging.getLogger(__name__)
 
 # Beta header for 1M context window
 CONTEXT_1M_BETA = "context-1m-2025-08-07"
@@ -48,6 +51,19 @@ def build_message_params(request: LLMRequest) -> dict[str, Any]:
     if request.tools:
         params["tools"] = request.tools
     if request.tool_choice:
+        # Guard: thinking is incompatible with forced tool_choice.
+        # The Anthropic API rejects requests that combine thinking with
+        # tool_choice type "any" or "tool".  If both are set, drop thinking
+        # so the request doesn't fail outright.
+        forced = request.tool_choice.get("type") in ("any", "tool")
+        if forced and "thinking" in params:
+            logger.warning(
+                "Stripped thinking from request: thinking is incompatible "
+                "with forced tool_choice (%s). Fix the call site to avoid this.",
+                request.tool_choice,
+            )
+            params.pop("thinking", None)
+            params.pop("output_config", None)
         params["tool_choice"] = request.tool_choice
 
     return params

@@ -513,8 +513,14 @@ async def _invoke_structured_via_broker(
     Converts the Pydantic schema to an Anthropic tool definition,
     forces tool_choice, and parses the broker response back to a
     validated Pydantic model.
+
+    When thinking (effort) is enabled, tool_choice must be "auto" instead
+    of forced.  If the model returns text instead of a tool call, we retry
+    once with forced tool_choice and no thinking as a fallback.
     """
     import json as json_mod
+
+    from pydantic import ValidationError
 
     from core.llm_broker import get_broker
     from .structured.executors.base import coerce_to_schema
@@ -528,6 +534,16 @@ async def _invoke_structured_via_broker(
         "input_schema": schema.model_json_schema(),
     }
 
+    forced_tool_choice = {"type": "tool", "name": schema_name}
+
+    # When thinking (effort) is enabled, we cannot force tool_choice — the
+    # Anthropic API rejects that combination.  Use tool_choice "auto" instead;
+    # the model reliably picks the only available tool.
+    if config.effort:
+        tool_choice = {"type": "auto"}
+    else:
+        tool_choice = forced_tool_choice
+
     async with broker.batch_group():
         future = await broker.request(
             prompt=user_prompt,
@@ -537,7 +553,7 @@ async def _invoke_structured_via_broker(
             system=system,
             effort=config.effort,
             tools=[tool_def],
-            tool_choice={"type": "tool", "name": schema_name},
+            tool_choice=tool_choice,
             metadata=config.metadata,
         )
 
@@ -551,9 +567,50 @@ async def _invoke_structured_via_broker(
             usage=response.usage,
         )
 
-    raw_data = json_mod.loads(response.content)
-    coerced = coerce_to_schema(raw_data, schema)
-    return schema.model_validate(coerced)
+    try:
+        raw_data = json_mod.loads(response.content)
+        coerced = coerce_to_schema(raw_data, schema)
+        return schema.model_validate(coerced)
+    except (json_mod.JSONDecodeError, ValidationError, TypeError) as exc:
+        if not config.effort:
+            raise  # forced tool_choice was used; nothing else to try
+
+        logger.warning(
+            "Structured broker response did not match schema %s "
+            "(tool_choice was 'auto' due to thinking). Retrying with "
+            "forced tool_choice and no thinking. Parse error: %s",
+            schema_name,
+            exc,
+        )
+
+        # Retry: drop thinking so we can force the tool call.
+        async with broker.batch_group():
+            future = await broker.request(
+                prompt=user_prompt,
+                model=tier,
+                policy=config.batch_policy,
+                max_tokens=config.max_tokens,
+                system=system,
+                tools=[tool_def],
+                tool_choice=forced_tool_choice,
+                metadata=config.metadata,
+            )
+
+        response = await future
+        if not response.success:
+            raise RuntimeError(
+                f"Broker structured request failed on retry: {response.error}"
+            )
+
+        if response.batched and response.usage:
+            await _trace_batch_llm_result(
+                model=response.model or tier.value,
+                usage=response.usage,
+            )
+
+        raw_data = json_mod.loads(response.content)
+        coerced = coerce_to_schema(raw_data, schema)
+        return schema.model_validate(coerced)
 
 
 async def _invoke_structured(
