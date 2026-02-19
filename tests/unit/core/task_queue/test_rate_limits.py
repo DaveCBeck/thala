@@ -94,6 +94,20 @@ class TestImagenDailyTracker:
         assert await tracker.try_acquire() is False
 
     @pytest.mark.asyncio
+    async def test_try_acquire_with_count(self, tmp_path):
+        """Acquiring multiple images at once decrements by count."""
+        tracker = ImagenDailyTracker(state_dir=tmp_path, limit=10)
+        assert await tracker.try_acquire(4) is True
+        assert await tracker.remaining() == 6
+        assert await tracker.try_acquire(4) is True
+        assert await tracker.remaining() == 2
+        # 4 would exceed remaining 2
+        assert await tracker.try_acquire(4) is False
+        # But 2 still fits
+        assert await tracker.try_acquire(2) is True
+        assert await tracker.remaining() == 0
+
+    @pytest.mark.asyncio
     async def test_remaining_reflects_usage(self, tmp_path):
         tracker = ImagenDailyTracker(state_dir=tmp_path, limit=5)
         assert await tracker.remaining() == 5
@@ -178,6 +192,19 @@ class TestImagenRPMLimiter:
         # Third acquire should block since no tokens remain
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(limiter.acquire(), timeout=0.1)
+
+    @pytest.mark.asyncio
+    async def test_acquire_with_cost(self):
+        """Acquiring with cost>1 consumes multiple tokens at once."""
+        limiter = ImagenRPMLimiter(rpm=10)
+        # Cost 4 twice = 8 tokens, leaving 2
+        await asyncio.wait_for(limiter.acquire(cost=4), timeout=1.0)
+        await asyncio.wait_for(limiter.acquire(cost=4), timeout=1.0)
+        # Only 2 left — cost=4 should block
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(limiter.acquire(cost=4), timeout=0.1)
+        # But cost=2 fits
+        await asyncio.wait_for(limiter.acquire(cost=2), timeout=1.0)
 
     @pytest.mark.asyncio
     async def test_tokens_refill_over_time(self):
