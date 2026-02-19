@@ -100,6 +100,13 @@ STRICT CONSTRAINTS:
 - Every number you write must come directly from the provided data — do not estimate, round, or extrapolate
 - If a pipeline stage is missing from the data, omit it — do not fabricate what happened
 
+PROSE QUALITY:
+- Write fluent, readable academic prose — not a mechanical enumeration of pipeline statistics
+- Foreground the search logic and rationale; weave numbers in naturally as supporting detail
+- You do not need to include every number from the data — omit figures that add no analytical value
+- Vary sentence structure; avoid listing every query or parameter in a single run-on sentence
+- The methodology should read as though written by the paper's author, not generated from a template
+
 Target length: {_word_range(word_target)} words
 Style: Precise, process-honest, AI-neutral academic tone
 Structure: Search strategy, selection and filtering, processing, thematic organisation"""
@@ -147,9 +154,6 @@ THEMATIC ORGANISATION:
 CORPUS:
 - Date range: {date_range}
 - Final size: {total_corpus_size} papers
-
-ACCESS LIMITATIONS:
-{access_limitation_note}
 </transparency_data>"""
 
 
