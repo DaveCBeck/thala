@@ -131,9 +131,14 @@ _DEEP_DIVE_STYLE = """
 - One idea per paragraph; let paragraphs breathe
 - Avoid: "In this essay...", "It is important to note...", "As we have seen..."
 - Embrace: "Here's the thing:", "The problem is:", "This matters because:"
+- Keep scientific vocabulary (ectomycorrhizal, hysteresis, saprotrophic) but simplify the verbs and qualifiers around it. Prefer "is" over "represents", "shows" over "demonstrates", "buffer" over "attenuate the negative impacts of", "depends on" over "is highly contingent upon". The technical nouns earn their place; Latinate verbs and hedging adverbs usually don't.
+- Do not lightly paraphrase source abstracts—rewrite claims in your own voice. If a sentence could appear in a journal abstract unchanged, it needs rewriting.
+- Cut adverbs that don't sharpen meaning: "genuinely", "substantially", "fundamentally", "predominantly" are often padding. Use them only when they mark a real contrast (e.g., "fundamentally different" when distinguishing two things that look similar).
+- Watch for stacking difficulty: specialist terms, notation/shorthand, and implicit domain logic are each fine alone, but layered together in the same passage they create cumulative fatigue. When a passage demands all three, add an analogy or plain-language bridge for whichever layer is least familiar to a non-specialist. One hard thing at a time.
+- Use identifiers (gene names, species names, model acronyms, chemical formulas) for specificity on first mention, then refer to them by function. If the reader doesn't need to track which shorthand maps to which role, describe the role instead of repeating the shorthand.
 
 ## Tone
-Curious, direct, intellectually honest. You're thinking through material with the reader, not lecturing. Acknowledge uncertainty where it exists. Get excited about what's genuinely interesting.
+Curious, direct, intellectually honest. You're thinking through material with the reader, not lecturing. Acknowledge uncertainty where it exists. Get excited about what's genuinely interesting. Precision comes from choosing the right word, not the longest one.
 """
 
 
@@ -256,9 +261,14 @@ Target: 2,000-3,000 words
 - Acknowledge complexity and uncertainty
 - Avoid: "This essay will...", academic hedging, false balance
 - Embrace: Direct claims with explicit uncertainty, genuine curiosity
+- Keep scientific vocabulary but simplify the verbs and qualifiers around it. Prefer "is" over "represents", "shows" over "demonstrates", "buffer" over "attenuate the negative impacts of", "depends on" over "is highly contingent upon". The technical nouns earn their place; Latinate verbs and hedging adverbs usually don't.
+- Do not lightly paraphrase source abstracts—rewrite claims in your own voice. If a sentence could appear in a journal abstract unchanged, it needs rewriting.
+- Cut adverbs that don't sharpen meaning: "genuinely", "substantially", "fundamentally", "predominantly" are often padding. Use them only when they mark a real contrast.
+- Watch for stacking difficulty: specialist terms, notation/shorthand, and implicit domain logic are each fine alone, but layered together in the same passage they create cumulative fatigue. When a passage demands all three, add an analogy or plain-language bridge for whichever layer is least familiar to a non-specialist. One hard thing at a time.
+- Use identifiers (gene names, species names, model acronyms, chemical formulas) for specificity on first mention, then refer to them by function. If the reader doesn't need to track which shorthand maps to which role, describe the role instead of repeating the shorthand.
 
 ## Tone
-Inviting but substantive. You're orienting readers to a complex topic and showing them why it's worth their attention. Not a summary—a synthesis.
+Inviting but substantive. You're orienting readers to a complex topic and showing them why it's worth their attention. Not a summary—a synthesis. Precision comes from choosing the right word, not the longest one.
 """
 
 OVERVIEW_USER_TEMPLATE = """## Literature Review:
