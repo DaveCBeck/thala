@@ -1,7 +1,6 @@
 """Save-and-spawn phase: save unillustrated articles, publish lit review, spawn illustrate_and_publish task."""
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,10 +107,9 @@ async def _publish_lit_review_draft(content: str, topic: str, category: str) -> 
         logger.warning("publications.json not found, skipping lit review draft")
         return None
 
-    with open(PUBLICATIONS_FILE) as f:
-        pubs = json.load(f)
+    from core.task_queue.workflows.shared.publication_config import load_publication_config
 
-    pub_config = pubs.get(category) or (next(iter(pubs.values())) if pubs else {})
+    pub_config = load_publication_config(category)
 
     config = SubstackConfig(
         cookies_path=str(SUBSTACK_COOKIES_FILE),
