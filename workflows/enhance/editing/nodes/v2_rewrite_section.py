@@ -278,7 +278,7 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
             system=V2_SECTION_REWRITE_SYSTEM,
             user=user_prompt,
             config=InvokeConfig(
-                max_tokens=8000,
+                max_tokens=32000,
                 batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
         )
