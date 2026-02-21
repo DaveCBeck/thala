@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
     """Execute searches against OpenAlex with recency-aware citation thresholds.
 
-    Uses two-phase search to ensure emerging work isn't filtered out:
-    - Recent papers (past N years): No citation threshold
-    - Older papers: Normal citation threshold from quality settings
+    Uses a three-phase search with fallback to ensure emerging work isn't filtered out:
+    - Phase 1: Primary recent (past recency_years): No citation threshold
+    - Phase 1b: Fallback recent (recency_years to recency_years_fallback): No citation
+      threshold, only triggered if Phase 1 yields too few results for the recency quota
+    - Phase 2: Older papers: Normal citation threshold from quality settings
 
     Other filters applied:
     - Date range (if specified in input)
@@ -38,13 +40,17 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
     language_config = state.get("language_config")
 
     min_citations = quality_settings.get("min_citations_filter", 10)
-    recency_years = quality_settings.get("recency_years", 3)
+    recency_years = quality_settings.get("recency_years", 1)
+    recency_years_fallback = quality_settings.get("recency_years_fallback", 2)
+    recency_quota = quality_settings.get("recency_quota", 0.35)
+    max_papers = quality_settings.get("max_papers", 100)
     date_range = input_data.get("date_range")
     language_code = language_config["code"] if language_config else None
 
-    # Calculate recency cutoff
+    # Calculate cutoffs
     current_year = datetime.now(timezone.utc).year
     recent_cutoff = current_year - recency_years
+    fallback_cutoff = current_year - recency_years_fallback
 
     # Handle user-specified date range constraints
     user_from_year = date_range[0] if date_range else None
@@ -52,70 +58,74 @@ async def search_openalex_node(state: KeywordSearchState) -> dict[str, Any]:
 
     all_results: list[OpenAlexWork] = []
 
-    async def search_single_query(query: str) -> list[OpenAlexWork]:
-        """Search OpenAlex for a single query with two-phase approach."""
-        works = []
-
+    async def _search(query: str, from_year: int | None, to_year: int | None, min_cites: int) -> list[OpenAlexWork]:
+        """Search OpenAlex for a single query within a year range."""
         try:
-            # Phase 1: Recent papers with relaxed citation threshold
-            recent_from = max(recent_cutoff, user_from_year) if user_from_year else recent_cutoff
-            recent_to = user_to_year  # Respect user's upper bound
-
-            # Only search recent if the date range allows it
-            if recent_to is None or recent_to >= recent_cutoff:
-                recent_result = await openalex_search.ainvoke(
-                    {
-                        "query": query,
-                        "limit": MAX_RESULTS_PER_QUERY,
-                        "min_citations": 0,  # No citation requirement for recent
-                        "from_year": recent_from,
-                        "to_year": recent_to,
-                        "language": language_code,
-                    }
-                )
-                for r in recent_result.get("results", []):
-                    works.append(r)
-                logger.debug(f"Query '{query[:40]}...' recent phase: {len(recent_result.get('results', []))} results")
-
-            # Phase 2: Older papers with normal citation threshold
-            older_to = min(recent_cutoff - 1, user_to_year) if user_to_year else recent_cutoff - 1
-            older_from = user_from_year  # Respect user's lower bound
-
-            # Only search older if the date range allows it
-            if older_from is None or older_from < recent_cutoff:
-                older_result = await openalex_search.ainvoke(
-                    {
-                        "query": query,
-                        "limit": MAX_RESULTS_PER_QUERY,
-                        "min_citations": min_citations,
-                        "from_year": older_from,
-                        "to_year": older_to,
-                        "language": language_code,
-                    }
-                )
-                for r in older_result.get("results", []):
-                    works.append(r)
-                logger.debug(f"Query '{query[:40]}...' older phase: {len(older_result.get('results', []))} results")
-
-            logger.debug(f"Query '{query[:40]}...' total: {len(works)} results")
+            result = await openalex_search.ainvoke(
+                {
+                    "query": query,
+                    "limit": MAX_RESULTS_PER_QUERY,
+                    "min_citations": min_cites,
+                    "from_year": from_year,
+                    "to_year": to_year,
+                    "language": language_code,
+                }
+            )
+            works = result.get("results", [])
+            logger.debug(f"Query '{query[:40]}...' [{from_year}-{to_year}] min_cites={min_cites}: {len(works)} results")
             return works
-
         except Exception as e:
             logger.warning(f"OpenAlex search failed for '{query}': {e}")
             return []
 
-    search_tasks = [search_single_query(q) for q in queries]
-    results_lists = await asyncio.gather(*search_tasks, return_exceptions=True)
+    async def _gather(tasks: list) -> list[OpenAlexWork]:
+        results: list[OpenAlexWork] = []
+        for result in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(result, Exception):
+                logger.error(f"Search task failed: {result}")
+            else:
+                results.extend(result)
+        return results
 
-    for result in results_lists:
-        if isinstance(result, Exception):
-            logger.error(f"Search task failed: {result}")
-            continue
-        all_results.extend(result)
+    # Phase 1: Primary recent window (no citation threshold)
+    recent_from = max(recent_cutoff, user_from_year) if user_from_year else recent_cutoff
+    recent_to = user_to_year
+
+    if recent_to is None or recent_to >= recent_cutoff:
+        phase1 = await _gather([_search(q, recent_from, recent_to, 0) for q in queries])
+        all_results.extend(phase1)
+        logger.info(f"Phase 1 (primary recent >= {recent_cutoff}): {len(phase1)} results")
+
+    # Phase 1b: Fallback band if primary recent yielded too few for the quota
+    effective_recent_cutoff = recent_cutoff
+    target_recent = int(max_papers * recency_quota)
+
+    if len(all_results) < target_recent and fallback_cutoff < recent_cutoff:
+        fb_from = max(fallback_cutoff, user_from_year) if user_from_year else fallback_cutoff
+        fb_to = min(recent_cutoff - 1, user_to_year) if user_to_year else recent_cutoff - 1
+
+        if fb_from <= fb_to:
+            logger.info(
+                f"Recency fallback: {len(all_results)} primary recent < target {target_recent}, "
+                f"widening to {fb_from}-{fb_to}"
+            )
+            phase1b = await _gather([_search(q, fb_from, fb_to, 0) for q in queries])
+            all_results.extend(phase1b)
+            effective_recent_cutoff = fallback_cutoff
+            logger.info(f"Phase 1b (fallback {fb_from}-{fb_to}): {len(phase1b)} results")
+
+    # Phase 2: Older papers with citation threshold
+    older_to = min(effective_recent_cutoff - 1, user_to_year) if user_to_year else effective_recent_cutoff - 1
+    older_from = user_from_year
+
+    if older_from is None or older_from < effective_recent_cutoff:
+        phase2 = await _gather([_search(q, older_from, older_to, min_citations) for q in queries])
+        all_results.extend(phase2)
+        logger.info(f"Phase 2 (older < {effective_recent_cutoff}, min_cites={min_citations}): {len(phase2)} results")
 
     logger.info(
         f"OpenAlex keyword search: {len(all_results)} raw results from {len(queries)} queries "
-        f"(two-phase: recent>={recent_cutoff} no citation filter, older<{recent_cutoff} min_citations={min_citations})"
+        f"(recent>={effective_recent_cutoff} no citation filter, older<{effective_recent_cutoff} min_citations={min_citations})"
     )
 
     return {"raw_results": all_results}

@@ -60,89 +60,70 @@ def get_context_window(sections: list[TopLevelSection], index: int, position: st
 def validate_rewrite(
     original: TopLevelSection,
     rewritten_content: str,
-    instruction_type: str = "rewrite",
-    length_tolerance: float = 0.3,
+    target_min: int,
+    target_max: int,
 ) -> SectionValidation:
-    """Validate a rewritten section.
+    """Validate a rewritten section against target word-count bounds.
 
-    Checks:
-    - Length within tolerance of original (adjusted by instruction type)
-    - All original citations preserved
+    Fails validation when the output deviates drastically from the
+    targets given to the LLM (below 50% of target_min or above 150%
+    of target_max). Smaller deviations are acceptable — the targets
+    are advisory and some drift is normal.
+
+    Also checks that all original citations are preserved.
 
     Args:
         original: Original section
         rewritten_content: Rewritten content
-        instruction_type: Type of edit (rewrite, expand, condense, merge_into)
-        length_tolerance: Base allowed length deviation (0.3 = ±30%)
+        target_min: Minimum word count given to the LLM
+        target_max: Maximum word count given to the LLM
 
     Returns:
         SectionValidation with results
     """
-    original_words = original.word_count
     rewritten_words = len(rewritten_content.split())
 
     original_citations = original.citations
     rewritten_citations = extract_v2_citations(rewritten_content)
 
-    # Adjust tolerance based on instruction type
-    # Warning thresholds (soft limits - just log a warning)
-    # Failure thresholds (hard limits - fail validation)
-    if instruction_type == "expand":
-        # Allow up to 100% expansion (2x original) and 10% reduction
-        warn_min_ratio = 0.9
-        warn_max_ratio = 2.0
-        fail_max_ratio = 3.0  # Only fail if > 3x expansion
-    elif instruction_type == "condense":
-        # Condense: allow any reduction, warn if very aggressive
-        warn_min_ratio = 0.4  # Warn below 40%
-        warn_max_ratio = 1.1
-        fail_max_ratio = 1.5  # Fail if it expands instead of condensing
-    elif instruction_type == "merge_into":
-        # For merges, allow significant reduction (consolidation)
-        warn_min_ratio = 0.4
-        warn_max_ratio = 1.1
-        fail_max_ratio = 1.5
-    else:
-        # Standard rewrite: use default tolerance
-        warn_min_ratio = 1 - length_tolerance
-        warn_max_ratio = 1 + length_tolerance
-        fail_max_ratio = 2.0
+    # Hard bounds: 50% of target_min floor, 150% of target_max ceiling
+    hard_floor = int(target_min * 0.5)
+    hard_ceiling = int(target_max * 1.5)
 
-    # Calculate ratio
-    ratio = rewritten_words / original_words if original_words > 0 else 1.0
-
-    # Check for warnings (soft limits)
-    length_warning = None
-    if original_words > 0:
-        if ratio < warn_min_ratio:
-            length_warning = f"Aggressive reduction: {rewritten_words} words ({ratio:.1%} of original {original_words})"
-        elif ratio > warn_max_ratio:
-            length_warning = (
-                f"Significant expansion: {rewritten_words} words ({ratio:.1%} of original {original_words})"
-            )
-
-    # Check for failures (hard limits) - only fail on extreme expansion
-    length_ok = ratio <= fail_max_ratio
-
-    # Check citations preserved
+    length_ok = hard_floor <= rewritten_words <= hard_ceiling
     citations_ok = set(original_citations).issubset(set(rewritten_citations))
 
-    # Determine validation result
     passes = length_ok and citations_ok
     rejection_reason = None
+    length_warning = None
 
     if not length_ok:
-        rejection_reason = (
-            f"Extreme length change: {rewritten_words} words "
-            f"({ratio:.1%} of original {original_words}, "
-            f"max allowed {fail_max_ratio:.0%})"
-        )
+        if rewritten_words < hard_floor:
+            rejection_reason = (
+                f"Extreme reduction: {rewritten_words} words "
+                f"(target_min was {target_min}, hard floor {hard_floor})"
+            )
+        else:
+            rejection_reason = (
+                f"Extreme expansion: {rewritten_words} words "
+                f"(target_max was {target_max}, hard ceiling {hard_ceiling})"
+            )
     elif not citations_ok:
         missing = set(original_citations) - set(rewritten_citations)
         rejection_reason = f"Missing citations: {', '.join(missing)}"
 
+    # Advisory warning for outputs outside the target range but within hard bounds
+    if length_ok and rewritten_words < target_min:
+        length_warning = (
+            f"Below target: {rewritten_words} words (target_min {target_min})"
+        )
+    elif length_ok and rewritten_words > target_max:
+        length_warning = (
+            f"Above target: {rewritten_words} words (target_max {target_max})"
+        )
+
     return SectionValidation(
-        original_word_count=original_words,
+        original_word_count=original.word_count,
         rewritten_word_count=rewritten_words,
         original_citations=original_citations,
         rewritten_citations=rewritten_citations,
@@ -229,6 +210,9 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
         combined_words = section.word_count + source_section.word_count
         all_citations = list(set(section.citations + source_section.citations))
 
+        target_min = int(combined_words * 0.7)
+        target_max = int(combined_words * 1.1)
+
         user_prompt = V2_SECTION_MERGE_USER.format(
             topic=topic,
             prev_section_context=prev_context,
@@ -238,8 +222,8 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
             merge_content=source_section.full_content,
             next_section_context=next_context,
             instruction_details=instruction.details,
-            target_min=int(combined_words * 0.7),
-            target_max=int(combined_words * 1.1),
+            target_min=target_min,
+            target_max=target_max,
             combined_word_count=combined_words,
             all_citations=", ".join(all_citations) if all_citations else "none",
         )
@@ -271,47 +255,84 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
     use_opus = quality_settings.get("use_opus_for_generation", False)
     tier = ModelTier.OPUS if use_opus else ModelTier.SONNET
 
-    # Call LLM for rewriting
-    try:
-        response = await invoke(
-            tier=tier,
-            system=V2_SECTION_REWRITE_SYSTEM,
-            user=user_prompt,
-            config=InvokeConfig(
-                max_tokens=32000,
-                batch_policy=BatchPolicy.PREFER_BALANCE,
-            ),
+    # Attempt rewrite with one retry on validation failure
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = await invoke(
+                tier=tier,
+                system=V2_SECTION_REWRITE_SYSTEM,
+                user=user_prompt,
+                config=InvokeConfig(
+                    max_tokens=32000,
+                    batch_policy=BatchPolicy.PREFER_BALANCE,
+                ),
+            )
+            rewritten_content = response.content.strip()
+        except Exception as e:
+            logger.error(f"Rewrite LLM call failed for section [{section_index}]: {e}")
+            return {
+                "rewritten_sections": [],
+                "errors": [
+                    {
+                        "phase": "rewrite",
+                        "section_index": section_index,
+                        "error": str(e),
+                    }
+                ],
+            }
+
+        validation = validate_rewrite(
+            validation_original,
+            rewritten_content,
+            target_min=target_min,
+            target_max=target_max,
         )
-        rewritten_content = response.content.strip()
-    except Exception as e:
-        logger.error(f"Rewrite LLM call failed for section [{section_index}]: {e}")
-        return {
-            "rewritten_sections": [],
-            "errors": [
-                {
-                    "phase": "rewrite",
-                    "section_index": section_index,
-                    "error": str(e),
-                }
-            ],
-        }
 
-    # Validate the rewrite
-    validation = validate_rewrite(
-        validation_original,
-        rewritten_content,
-        instruction_type=instruction.instruction_type,
-        length_tolerance=tolerance,
-    )
+        logger.info(
+            f"Section [{section_index}] rewrite attempt {attempt}: "
+            f"{validation.original_word_count} -> {validation.rewritten_word_count} words, "
+            f"validation={'passed' if validation.passes_validation else 'FAILED'}"
+            f"{f' ({validation.length_warning})' if validation.length_warning else ''}"
+        )
 
+        if validation.passes_validation:
+            break
+
+        logger.warning(
+            f"Section [{section_index}] rewrite failed validation: "
+            f"{validation.rejection_reason}"
+        )
+
+        if attempt < max_attempts:
+            logger.info(f"Section [{section_index}] retrying rewrite (attempt {attempt + 1})")
+
+    # If validation still fails after retry, fall back to original section
     if not validation.passes_validation:
-        logger.warning(f"Section [{section_index}] rewrite failed validation: {validation.rejection_reason}")
-        # Still return the result, but flag it as failed validation
-        # The reassemble phase will decide what to do
+        logger.warning(
+            f"Section [{section_index}] '{section.heading}': rewrite failed validation "
+            f"after {max_attempts} attempts, keeping original section"
+        )
+        result = RewrittenSection(
+            section_index=section_index,
+            instruction_type=instruction.instruction_type,
+            original_heading=section.heading,
+            new_content=section.full_content,
+            validation=SectionValidation(
+                original_word_count=section.word_count,
+                rewritten_word_count=section.word_count,
+                original_citations=section.citations,
+                rewritten_citations=section.citations,
+                passes_validation=True,
+                rejection_reason=None,
+                length_warning=f"Fell back to original after failed rewrite: {validation.rejection_reason}",
+            ),
+            merge_source_index=instruction.merge_source_index,
+        )
+        return {"rewritten_sections": [result.model_dump()]}
 
-    # Log length warnings (soft limits - for review but doesn't fail)
     if validation.length_warning:
-        logger.warning(f"Section [{section_index}] '{section.heading}': {validation.length_warning}")
+        logger.info(f"Section [{section_index}] '{section.heading}': {validation.length_warning}")
 
     result = RewrittenSection(
         section_index=section_index,
@@ -321,23 +342,5 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
         validation=validation,
         merge_source_index=instruction.merge_source_index,
     )
-
-    logger.info(
-        f"Section [{section_index}] rewritten: "
-        f"{validation.original_word_count} -> {validation.rewritten_word_count} words, "
-        f"validation={'passed' if validation.passes_validation else 'FAILED'}"
-        f"{' (with warning)' if validation.length_warning else ''}"
-    )
-
-    # Log full content for expand instructions to monitor synthesis quality
-    if instruction.instruction_type == "expand":
-        added_words = validation.rewritten_word_count - validation.original_word_count
-        logger.debug(
-            f"EXPAND content for section [{section_index}] '{section.heading}' "
-            f"(+{added_words} words):\n"
-            f"{'=' * 60}\n"
-            f"{rewritten_content}\n"
-            f"{'=' * 60}"
-        )
 
     return {"rewritten_sections": [result.model_dump()]}

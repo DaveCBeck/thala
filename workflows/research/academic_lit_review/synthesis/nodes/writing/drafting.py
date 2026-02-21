@@ -95,7 +95,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     else:
         # Backwards-compatible fallback when transparency_report is not available
         total_papers = len(paper_summaries)
-        logger.warning("No transparency_report in state, using basic methodology prompt")
+        logger.debug("No transparency_report in state, using basic methodology prompt")
         method_prompt = (
             f"Document the methodology for this literature review on: {topic}\n\n"
             f"Total corpus: {total_papers} papers organized into {len(clusters)} themes.\n"

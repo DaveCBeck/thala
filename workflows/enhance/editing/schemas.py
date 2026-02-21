@@ -495,9 +495,8 @@ class SectionValidation(BaseModel):
     """Validation result for a rewritten section.
 
     Checks:
-    - Length within tolerance (warnings for aggressive changes, failures only for extreme cases)
-    - All citations preserved
-    - No hallucinated citations added
+    - Length within hard bounds (fails below 50% of target_min or above 150% of target_max)
+    - All original citations preserved
     """
 
     original_word_count: int
@@ -600,18 +599,36 @@ def _parse_sections_at_level(document: str, level: int) -> list[TopLevelSection]
     return sections
 
 
-def parse_sections(document: str, min_sections: int = 3) -> list[TopLevelSection]:
+def _has_dominant_section(
+    sections: list[TopLevelSection],
+    max_share: float = 0.4,
+) -> bool:
+    """Check whether any single section holds a disproportionate share of words.
+
+    Returns True if any section contains more than `max_share` of the total
+    document word count — a signal that the heading split is too coarse and
+    a finer-grained split should be tried.
+    """
+    total_words = sum(s.word_count for s in sections)
+    if total_words == 0:
+        return False
+    return any(s.word_count / total_words > max_share for s in sections)
+
+
+def parse_sections(document: str, min_sections: int = 5) -> list[TopLevelSection]:
     """Parse a markdown document into top-level sections.
 
-    First attempts to split on H1 (`# `). If fewer than min_sections H1
-    sections are found, falls back to H2 (`## `) - useful for documents
-    that use H1 for title only with H2 for substantive sections.
+    First attempts to split on H1 (`# `). Falls back to H2 (`## `) when:
+    - Fewer than min_sections H1 headings are found, OR
+    - A single H1 section contains >40% of the document's total words
+      (indicating that the H1 split lumped substantive body content
+      into one mega-section).
 
     Content before the first heading is included as "Preamble".
 
     Args:
         document: Full markdown document
-        min_sections: Minimum sections needed before falling back to H2
+        min_sections: Minimum H1 sections needed before trusting the H1 split
 
     Returns:
         List of TopLevelSection objects
@@ -622,7 +639,12 @@ def parse_sections(document: str, min_sections: int = 3) -> list[TopLevelSection
     # Count substantive sections (excluding preamble)
     substantive_h1 = [s for s in sections if s.heading != "Preamble"]
 
-    if len(substantive_h1) < min_sections:
+    needs_fallback = (
+        len(substantive_h1) < min_sections
+        or _has_dominant_section(substantive_h1)
+    )
+
+    if needs_fallback:
         # Fall back to H2 sections
         h2_sections = _parse_sections_at_level(document, level=2)
         substantive_h2 = [s for s in h2_sections if s.heading != "Preamble"]

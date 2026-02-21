@@ -81,14 +81,6 @@ class FinalOutput(TypedDict):
     word_count: int
 
 
-class ImageOutput(TypedDict):
-    """Generated header image for an article."""
-
-    article_id: Literal["overview", "deep_dive_1", "deep_dive_2", "deep_dive_3"]
-    image_bytes: bytes
-    prompt_used: str
-
-
 class EveningReadsState(TypedDict):
     """Main workflow state for lit review to evening reads series."""
 
@@ -118,9 +110,6 @@ class EveningReadsState(TypedDict):
 
     # Final output
     final_outputs: list[FinalOutput]  # All 4 articles with references
-
-    # Image generation
-    image_outputs: Annotated[list[ImageOutput], add]
 
     # Workflow metadata
     status: Optional[Literal["completed", "partial", "failed"]]

@@ -90,8 +90,8 @@ def collect_transparency_report(state: AcademicLitReviewState) -> TransparencyRe
         saturation_reason=diffusion.get("saturation_reason") or "unknown",
         # Quality filters
         min_citations_filter=quality_settings.get("min_citations_filter", 0),
-        recency_years=quality_settings.get("recency_years", 3),
-        recency_quota=quality_settings.get("recency_quota", 0.25),
+        recency_years=quality_settings.get("recency_years_fallback", quality_settings.get("recency_years", 2)),
+        recency_quota=quality_settings.get("recency_quota", 0.35),
         relevance_threshold=_RELEVANCE_THRESHOLD,
         # Processing
         papers_processed_count=len(state.get("papers_processed", [])),

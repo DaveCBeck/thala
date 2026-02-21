@@ -82,7 +82,7 @@ class ImagenDailyTracker:
 
     def __init__(self, state_dir: Path | None = None, limit: int | None = None):
         self._state_dir = state_dir or STATE_DIR
-        self._limit = limit or int(os.environ.get("THALA_IMAGEN_DAILY_LIMIT", "30"))
+        self._limit = limit or int(os.environ.get("THALA_IMAGEN_DAILY_LIMIT", "70"))
         self._state_file = self._state_dir / "imagen_daily_usage.json"
         self._lock_file = self._state_dir / "imagen_daily.lock"
 

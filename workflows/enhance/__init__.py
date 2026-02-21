@@ -23,6 +23,57 @@ from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESE
 logger = logging.getLogger(__name__)
 
 
+async def _condense_abstract(document: str, topic: str) -> str:
+    """Condense the abstract and place it as an italic lede below the title.
+
+    Removes the ## Abstract heading entirely and places the condensed text
+    in italics immediately after the document's main heading.
+    """
+    from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
+
+    # Extract abstract section
+    abstract_match = re.search(
+        r"## Abstract\n(.*?)(\n## )", document, flags=re.DOTALL
+    )
+    if not abstract_match:
+        logger.info("No abstract section found, skipping condensation")
+        return document
+
+    existing_abstract = abstract_match.group(1).strip()
+    if not existing_abstract:
+        return document
+
+    response = await invoke(
+        tier=ModelTier.DEEPSEEK_V3,
+        system=(
+            "You condense academic abstracts into short paragraphs. "
+            "Output ONLY the condensed abstract, no preamble or word count."
+        ),
+        user=(
+            f"Condense this abstract for a literature review on \"{topic}\" "
+            f"into a 150-word paragraph (6-8 sentences). "
+            f"Do not write fewer than 140 words.\n\n{existing_abstract}"
+        ),
+        config=InvokeConfig(max_tokens=400),
+    )
+    condensed = response.content.strip()
+
+    # Remove the ## Abstract section (heading + content)
+    document = document[: abstract_match.start()] + abstract_match.group(2) + document[abstract_match.end() :]
+
+    # Insert italic lede immediately after the main heading (# Title)
+    title_match = re.search(r"(# .+\n)", document)
+    if title_match:
+        insert_pos = title_match.end()
+        document = (
+            document[:insert_pos]
+            + "\n*" + condensed + "*\n"
+            + document[insert_pos:]
+        )
+
+    return document
+
+
 async def _regenerate_references(document: str) -> str:
     """Regenerate References section based on citations in document.
 
@@ -302,6 +353,15 @@ async def enhance_report(
             logger.error(f"Reference regeneration failed: {e}", exc_info=True)
             errors.append({"phase": "references", "error": str(e)})
             # Continue without regenerated references
+
+    # Phase 5: Condense abstract to a single sentence
+    if current_report:
+        try:
+            current_report = await _condense_abstract(current_report, topic)
+            logger.info("Abstract condensed to single sentence")
+        except Exception as e:
+            logger.error(f"Abstract condensation failed: {e}", exc_info=True)
+            errors.append({"phase": "abstract_condense", "error": str(e)})
 
     # Determine overall status
     if not current_report:

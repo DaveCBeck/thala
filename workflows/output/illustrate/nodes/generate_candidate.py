@@ -64,6 +64,13 @@ async def generate_candidate_node(state: dict) -> dict:
         elif image_type == "generated" or is_artistic_override:
             if is_artistic_override:
                 logger.info(f"Routing custom_artistic diagram {location_id} to Imagen")
+            # Apply header-specific overrides when this is the header image
+            header_kwargs = {}
+            if plan.purpose == "header":
+                if config.header_imagen_model:
+                    header_kwargs["model"] = config.header_imagen_model
+                if config.header_imagen_sample_count is not None:
+                    header_kwargs["sample_count"] = config.header_imagen_sample_count
             result = await _generate_imagen(
                 location_id=location_id,
                 plan=plan,
@@ -71,6 +78,7 @@ async def generate_candidate_node(state: dict) -> dict:
                 config=config,
                 visual_identity=visual_identity,
                 brief_id=brief_id,
+                **header_kwargs,
             )
         else:
             logger.error(f"Unknown image type: {image_type}")
