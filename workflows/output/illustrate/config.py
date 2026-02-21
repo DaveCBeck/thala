@@ -27,7 +27,7 @@ class IllustrateConfig(BaseModel):
 
     # Cost control
     imagen_sample_count: int = Field(
-        default=2,
+        default=1,
         ge=1,
         le=4,
         description="Number of Imagen candidates per generation call",
@@ -119,19 +119,18 @@ class IllustrateConfig(BaseModel):
 
     @classmethod
     def balanced(cls, **overrides) -> IllustrateConfig:
-        """Moderate cost: surplus=1, single retry, 2 Imagen samples."""
+        """Moderate cost: surplus=1, single retry."""
         defaults = dict(
             overgeneration_surplus=1,
             enable_editorial_review=True,
             max_retries=1,
-            imagen_sample_count=2,
         )
         defaults.update(overrides)
         return cls(**defaults)
 
     @classmethod
     def quality(cls, **overrides) -> IllustrateConfig:
-        """Full quality (current defaults): surplus=2, 2 Imagen samples."""
+        """Full quality: surplus=2, 2 Imagen samples."""
         defaults = dict(
             overgeneration_surplus=2,
             imagen_sample_count=2,
