@@ -14,7 +14,7 @@ from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 logger = logging.getLogger(__name__)
 
 # Image generation models
-IMAGEN_MODEL = "imagen-4.0-ultra-generate-001"
+IMAGEN_MODEL = "imagen-4.0-generate-001"
 GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview"
 
 # Conservative timeout for Google genai API calls (seconds).

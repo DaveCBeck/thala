@@ -69,7 +69,8 @@ Target length: {_word_range(word_target)} words
 Style: Academic, third-person, objective tone
 Include: Brief preview of each major theme that will be covered
 
-Do NOT include citations in the introduction - it should frame the review."""
+Do NOT include citations in the introduction - it should frame the review.
+Do NOT include markdown headings — your output is section body text only. Use `###` for any sub-structure."""
 
 
 INTRODUCTION_USER_TEMPLATE = """Write an introduction for a literature review on:
@@ -109,7 +110,8 @@ PROSE QUALITY:
 
 Target length: {_word_range(word_target)} words
 Style: Precise, process-honest, AI-neutral academic tone
-Structure: Search strategy, selection and filtering, processing, thematic organisation"""
+Structure: Search strategy, selection and filtering, processing, thematic organisation
+Do NOT include top-level markdown headings (`#` or `##`) — your output is section body text only. Use `###` for any sub-structure."""
 
 
 METHODOLOGY_USER_TEMPLATE = """<instructions>
@@ -187,7 +189,10 @@ IMPORTANT CITATION FORMAT:
 - Example: "Recent studies [@ABC123] have shown..."
 - For multiple citations: "Several authors [@ABC123; @DEF456] argue..."
 
-Every factual claim must have a citation. Do not make claims without support."""
+Every factual claim must have a citation. Do not make claims without support.
+
+HEADING FORMAT: Do NOT use `#` or `##` headings — the section header is added automatically.
+Use `###` for sub-sections within your theme."""
 
 
 THEMATIC_SECTION_USER_TEMPLATE = """Write a section on the theme: {theme_name}
@@ -223,7 +228,8 @@ The discussion should:
 
 Target length: {_word_range(word_target)} words
 Style: Analytical, forward-looking
-Focus: Integration and implications, NOT summary"""
+Focus: Integration and implications, NOT summary
+Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
 DISCUSSION_USER_TEMPLATE = """Write a discussion section that synthesizes across these themes:
@@ -256,7 +262,8 @@ The conclusions should:
 
 Target length: {_word_range(word_target)} words
 Style: Clear, definitive, impactful
-Avoid: Introducing new information or hedging excessively"""
+Avoid: Introducing new information or hedging excessively
+Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
 CONCLUSIONS_USER_TEMPLATE = """Write conclusions for this literature review:
