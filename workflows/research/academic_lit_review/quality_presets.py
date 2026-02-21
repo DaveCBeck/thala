@@ -12,8 +12,9 @@ class QualitySettings(TypedDict):
     min_citations_filter: int  # Minimum citations for discovery
     saturation_threshold: float  # Coverage delta threshold
     supervision_loops: str  # Which supervision loops to run: "none", "one", "two", "three", "four", "all"
-    recency_years: int  # Years to consider "recent" (default: 3)
-    recency_quota: float  # Target fraction of recent papers (default: 0.25)
+    recency_years: int  # Primary recent window in years (default: 1 → 2025+)
+    recency_years_fallback: int  # Fallback if primary yields too few (default: 2 → 2024+)
+    recency_quota: float  # Target fraction of recent papers (default: 0.35)
 
 
 QUALITY_PRESETS: dict[str, QualitySettings] = {
@@ -23,8 +24,9 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=2000,
         min_citations_filter=0,
         saturation_threshold=0.25,
-        supervision_loops="none",  # All loops with minimal iterations
-        recency_years=3,
+        supervision_loops="none",
+        recency_years=1,
+        recency_years_fallback=2,
         recency_quota=0.0,  # Skip recency quota for test tier
     ),
     "quick": QualitySettings(
@@ -33,9 +35,10 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=9000,
         min_citations_filter=5,
         saturation_threshold=0.15,
-        supervision_loops="all",  # All loops with minimal iterations
-        recency_years=3,
-        recency_quota=0.25,
+        supervision_loops="all",
+        recency_years=1,
+        recency_years_fallback=2,
+        recency_quota=0.35,
     ),
     "standard": QualitySettings(
         max_stages=3,
@@ -43,9 +46,10 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=12000,
         min_citations_filter=10,
         saturation_threshold=0.12,
-        supervision_loops="all",  # Full multi-loop supervision
-        recency_years=3,
-        recency_quota=0.25,
+        supervision_loops="all",
+        recency_years=1,
+        recency_years_fallback=2,
+        recency_quota=0.35,
     ),
     "comprehensive": QualitySettings(
         max_stages=4,
@@ -53,9 +57,10 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=17500,
         min_citations_filter=10,
         saturation_threshold=0.10,
-        supervision_loops="all",  # Full multi-loop supervision
-        recency_years=3,
-        recency_quota=0.25,
+        supervision_loops="all",
+        recency_years=1,
+        recency_years_fallback=2,
+        recency_quota=0.35,
     ),
     "high_quality": QualitySettings(
         max_stages=5,
@@ -63,8 +68,9 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         target_word_count=22000,
         min_citations_filter=10,
         saturation_threshold=0.10,
-        supervision_loops="all",  # Full multi-loop supervision
-        recency_years=3,
-        recency_quota=0.25,
+        supervision_loops="all",
+        recency_years=1,
+        recency_years_fallback=2,
+        recency_quota=0.35,
     ),
 }

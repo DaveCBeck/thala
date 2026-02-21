@@ -252,6 +252,8 @@ async def _generate_imagen(
     config: IllustrateConfig,
     visual_identity: VisualIdentity | None = None,
     brief_id: str = "",
+    model: str | None = None,
+    sample_count: int | None = None,
 ) -> dict:
     """Generate using Imagen."""
     # Inject visual identity (for_imagen=True omits avoid list)
@@ -263,7 +265,8 @@ async def _generate_imagen(
         content="",
         custom_prompt=imagen_brief,
         aspect_ratio=config.imagen_aspect_ratio,
-        sample_count=config.imagen_sample_count,
+        sample_count=sample_count or config.imagen_sample_count,
+        model=model,
     )
 
     if image_bytes:

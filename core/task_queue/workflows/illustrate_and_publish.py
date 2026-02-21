@@ -101,6 +101,14 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
                 logger.info(f"No daily budget remaining, deferring {len(unillustrated)} articles")
                 return {"status": "deferred", "next_run_after": next_run}
 
+        # Select config factory based on task quality
+        quality = task.get("quality", "standard")
+        _config_factories = {
+            "quick": IllustrateConfig.quick,
+            "quality": IllustrateConfig.quality,
+        }
+        config_factory = _config_factories.get(quality)
+
         # Per-article loop: illustrate → publish → checkpoint
         errors = []
         progress_made = False
@@ -121,7 +129,10 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
                     break
 
                 try:
-                    config = IllustrateConfig(visual_identity_override=cached_vi) if cached_vi else None
+                    vi_kwarg = {"visual_identity_override": cached_vi} if cached_vi else {}
+                    config = config_factory(**vi_kwarg) if config_factory else (
+                        IllustrateConfig(**vi_kwarg) if vi_kwarg else None
+                    )
                     illustrated_path, article_result = await self._illustrate_article(
                         item,
                         output_dir,

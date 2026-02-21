@@ -121,7 +121,7 @@ async def _publish_lit_review_draft(content: str, topic: str, category: str) -> 
     result = await asyncio.to_thread(
         publisher.create_draft,
         markdown=content,
-        title=f"Research Deep-Dive: {topic}",
+        title=f"Literature Review: {topic}",
     )
 
     if result.get("success"):

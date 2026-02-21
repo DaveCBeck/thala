@@ -32,6 +32,18 @@ class IllustrateConfig(BaseModel):
         le=4,
         description="Number of Imagen candidates per generation call",
     )
+
+    # Header image overrides
+    header_imagen_model: str | None = Field(
+        default="imagen-4.0-ultra-generate-001",
+        description="Imagen model override for the header image",
+    )
+    header_imagen_sample_count: int | None = Field(
+        default=2,
+        ge=1,
+        le=4,
+        description="Sample count override for header image. Falls back to imagen_sample_count.",
+    )
     overgeneration_surplus: int = Field(
         default=2,
         ge=0,
@@ -107,11 +119,11 @@ class IllustrateConfig(BaseModel):
 
     @classmethod
     def quick(cls, **overrides) -> IllustrateConfig:
-        """Minimal cost: no surplus, no editorial review, no retries."""
+        """Low cost: small surplus, single retry, no editorial review."""
         defaults = dict(
-            overgeneration_surplus=0,
+            overgeneration_surplus=1,
             enable_editorial_review=False,
-            max_retries=0,
+            max_retries=1,
             imagen_sample_count=1,
         )
         defaults.update(overrides)

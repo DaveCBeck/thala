@@ -144,7 +144,8 @@ async def run_citation_expansion_node(state: DiffusionEngineState) -> dict[str, 
         }
 
     min_citations = quality_settings.get("min_citations_filter", 10)
-    recency_years = quality_settings.get("recency_years", 3)
+    # Use the fallback window for citation expansion so 2024+ papers are discoverable
+    recency_years = quality_settings.get("recency_years_fallback", quality_settings.get("recency_years", 2))
 
     # Fetch all citations with recency-aware thresholds
     raw_results, citation_edges = await fetch_citations_raw(

@@ -142,6 +142,7 @@ async def generate_article_header(
     custom_prompt: str | None = None,
     aspect_ratio: str = "16:9",
     sample_count: int = 4,
+    model: str | None = None,
 ) -> tuple[bytes | None, str | None]:
     """Generate an article header image using LLM-generated prompt + Imagen.
 
@@ -205,7 +206,7 @@ async def generate_article_header(
         async with get_imagen_semaphore():
             response = await asyncio.wait_for(
                 client.aio.models.generate_images(
-                    model=IMAGEN_MODEL,
+                    model=model or IMAGEN_MODEL,
                     prompt=prompt,
                     config=types.GenerateImagesConfig(
                         number_of_images=sample_count,
@@ -225,7 +226,7 @@ async def generate_article_header(
         if rt:
             rt.metadata.update(
                 {
-                    "model": IMAGEN_MODEL,
+                    "model": model or IMAGEN_MODEL,
                     "prompt": prompt[:500],
                     "image_count": len(candidates),
                     "aspect_ratio": aspect_ratio,

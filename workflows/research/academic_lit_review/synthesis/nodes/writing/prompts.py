@@ -64,10 +64,12 @@ Write a compelling introduction that:
 3. States the research questions being addressed
 4. Outlines the scope and boundaries of the review
 5. Previews the thematic structure
+6. Conveys where the field stands right now — what makes this moment in the literature distinctive or consequential
 
 Target length: {_word_range(word_target)} words
 Style: Academic, third-person, objective tone
 Include: Brief preview of each major theme that will be covered
+Framing: Orient the reader to the current state of understanding. The introduction should make clear why a review at this point in time is warranted — what has recently shifted, emerged, or been called into question.
 
 Do NOT include citations in the introduction - it should frame the review.
 Do NOT include markdown headings — your output is section body text only. Use `###` for any sub-structure."""
@@ -175,11 +177,17 @@ def get_thematic_section_system_prompt(
 
 Guidelines:
 1. Start with an overview paragraph introducing the theme
-2. Organize discussion by sub-themes or chronologically
+2. Trace how understanding has evolved: what early work established, how subsequent studies complicated or refined the picture, and what the most recent work (2025-2026) has changed or revealed
 3. Compare and contrast findings across papers
-4. Note agreements, disagreements, and debates
+4. Note agreements, disagreements, and debates — especially where recent evidence has shifted the consensus
 5. Identify gaps and limitations
 6. Use inline citations: [@CITATION_KEY] format
+
+TEMPORAL NARRATIVE:
+- Organise with a temporal spine: signal when findings emerged and how later work built on, revised, or overturned earlier conclusions
+- Use temporal markers naturally: "early work suggested…", "by the early 2020s…", "more recent evidence indicates…"
+- Foreground 2025-2026 publications — these represent the current frontier and should anchor the section's conclusions where available
+- Do not relegate recent work to a "recent developments" paragraph at the end; weave it throughout as the evolving thread of the narrative
 
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
@@ -221,14 +229,15 @@ def get_discussion_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> st
 
 The discussion should:
 1. Synthesize findings ACROSS all themes (not repeat them)
-2. Identify overarching patterns and trends
-3. Discuss implications for theory and practice
-4. Acknowledge limitations of this review
-5. Suggest future research directions
+2. Anchor in the current state of the field — what do we now understand that we didn't 2-3 years ago?
+3. Identify where recent work (2025-2026) has shifted the consensus, opened new questions, or closed old ones
+4. Discuss implications for theory and practice
+5. Acknowledge limitations of this review
+6. Suggest future research directions grounded in the trajectory of recent findings
 
 Target length: {_word_range(word_target)} words
-Style: Analytical, forward-looking
-Focus: Integration and implications, NOT summary
+Style: Analytical, forward-looking, anchored in the present moment
+Focus: Integration and implications, NOT summary. The reader should leave with a clear sense of where understanding stands right now and where it is heading.
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 

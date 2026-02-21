@@ -12,6 +12,7 @@ Consider:
 1. Supportive literature: Fields that would provide additional evidence or theoretical grounding
 2. Challenging literature: Fields that might offer counter-arguments or alternative interpretations
 3. Analogous literature: Related domains that have addressed similar questions
+4. Temporal gaps: Areas where the review relies on pre-2024 work but recent publications (2025-2026) have meaningfully updated, challenged, or extended the argument — flag these as needing fresh literature
 
 Only identify a literature base if:
 - It represents a substantial body of work (not just a few papers)
