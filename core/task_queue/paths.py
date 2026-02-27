@@ -37,6 +37,9 @@ EDITORIAL_STANCES_DIR = THALA_DIR / "editorial_stances"
 # Substack cookies (was: .substack-cookies.json at root)
 SUBSTACK_COOKIES_FILE = THALA_DIR / ".substack-cookies.json"
 
+# Quartz site content directory
+QUARTZ_CONTENT_DIR = PROJECT_ROOT / ".context" / "libs" / "thala-dev" / "content"
+
 
 def ensure_directories() -> None:
     """Create .thala directory structure if it doesn't exist."""

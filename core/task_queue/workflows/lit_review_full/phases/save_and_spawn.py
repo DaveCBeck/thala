@@ -82,6 +82,21 @@ async def run_save_and_spawn_phase(
     except Exception as e:
         logger.error(f"Failed to publish lit review draft: {e}")
 
+    # Export full review to Quartz site
+    quartz_path = None
+    try:
+        from core.task_queue.workflows.shared.quartz_export import export_lit_review_to_quartz
+
+        quartz_path = await export_lit_review_to_quartz(
+            content=final_report,
+            topic=topic,
+            category=category,
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            quality=quality,
+        )
+    except Exception as e:
+        logger.error(f"Failed to export lit review to Quartz: {e}")
+
     # Spawn illustrate_and_publish task
     illustrate_task_id = await _spawn_illustrate_task(
         task=task,
@@ -94,6 +109,7 @@ async def run_save_and_spawn_phase(
     return {
         "illustrate_task_id": illustrate_task_id,
         "lit_review_draft_url": lit_review_draft_url,
+        "quartz_path": str(quartz_path) if quartz_path else None,
         "output_dir": str(unillust_dir),
     }
 
