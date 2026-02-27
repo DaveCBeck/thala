@@ -9,6 +9,7 @@ from typing import Any
 from core.llm_broker import BatchPolicy
 from workflows.shared.language import get_translated_prompt
 from workflows.shared.llm_utils import ModelTier, invoke_batch, InvokeConfig
+from workflows.shared.llm_utils.response_parsing import extract_response_content
 
 from ...citation_utils import format_papers_with_keys
 from ...types import SynthesisState
@@ -101,7 +102,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
     for i, label in enumerate(cluster_labels):
         try:
             response = batch_results[i]
-            section_drafts[label] = response.content
+            section_drafts[label] = extract_response_content(response)
         except Exception as e:
             logger.error(f"Failed to write section for {label}: {e}")
             section_drafts[label] = f"[Section generation failed: {e}]"

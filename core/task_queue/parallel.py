@@ -7,6 +7,7 @@ remaining slots filled by research tasks (category round-robin).
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,10 @@ from .shutdown import get_shutdown_coordinator
 from .workflow_executor import run_task_workflow
 
 logger = logging.getLogger(__name__)
+
+# Max publish tasks (illustrate_and_publish) per parallel run.
+# Limits Imagen spend so a failed pipeline doesn't waste downstream tokens.
+MAX_PUBLISH_TASKS = int(os.environ.get("THALA_MAX_PUBLISH_TASKS", "1"))
 
 
 def _reset_task_to_pending(task: dict) -> None:
@@ -244,8 +249,9 @@ def _select_tasks(
                 if task["status"] == TaskStatus.IN_PROGRESS.value and task["id"] not in resumable_ids:
                     _reset_task_to_pending(task)
 
-        # Phase 1: select publish tasks
-        selected = _select_publish_tasks(queue["publish_tasks"], count, now, resumable_ids)
+        # Phase 1: select publish tasks (capped by MAX_PUBLISH_TASKS)
+        publish_cap = min(count, MAX_PUBLISH_TASKS)
+        selected = _select_publish_tasks(queue["publish_tasks"], publish_cap, now, resumable_ids)
 
         # Phase 2: fill remaining slots with research tasks
         remaining = count - len(selected)

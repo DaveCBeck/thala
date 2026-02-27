@@ -88,7 +88,10 @@ For each deep-dive, select the narrative approach that best fits its content:
 - **finding**: Leads with a striking quantitative result, explores implications. Best for: data-driven topics, dramatic numbers, surprising comparisons.
 - **contrarian**: Steelmans a comfortable assumption, then complicates it with evidence. Best for: overturning conventional wisdom, revealing hidden complexity.
 
-**Important**: Aim for variety across the 3 deep-dives. If you use "puzzle" for one, try "finding" or "contrarian" for another. The approaches should feel natural for each topic—don't force a fit."""
+**Important**: Aim for variety across the 3 deep-dives. If you use "puzzle" for one, try "finding" or "contrarian" for another. The approaches should feel natural for each topic—don't force a fit.
+
+## Temporal Orientation
+If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work. For publications that prioritise the right-now, choose topics where 2026 findings (or '25 if that's not possible) drive the story, and select recent papers as anchors. For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance."""
 
 PLANNING_USER_TEMPLATE = """## Literature Review to Plan From:
 
@@ -247,10 +250,13 @@ Write an overview that:
 Target: 2,000-3,000 words
 
 1. **Opening** (2-3 paragraphs): Set up the central question or puzzle
-2. **Lay of the land** (several paragraphs): What do we know? What's the state of understanding?
+2. **Lay of the land** (several paragraphs): What do we know? What's the state of understanding? Where was this field recently, and where is it now?
 3. **Key tensions or questions** (several paragraphs): What's interesting, contested, or surprising?
 4. **Pointers to depth** (woven throughout): Reference the deep-dives naturally
 5. **So what?** (1-2 paragraphs): Why does this matter? What should the reader take away?
+
+## Temporal Orientation
+If an editorial stance is provided, pay close attention to its guidance on recency. Some publications prioritise the current frontier; others value durable foundational work. Let the stance calibrate how much weight you give to what's new versus what's established. This should shape both which findings you foreground and how you frame the "lay of the land" — whether as a fast-moving field where the latest results are the story, or as a slower conversation where recent work extends a longer arc.
 
 ## Style Guidelines
 - Write in first person where natural

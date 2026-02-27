@@ -76,16 +76,16 @@ async def check_saturation_node(state: DiffusionEngineState) -> dict[str, Any]:
 async def finalize_diffusion(state: DiffusionEngineState) -> dict[str, Any]:
     """Finalize diffusion and filter to top papers with recency quota.
 
-    Ensures ~25% of papers come from the past 3 years (if available) to
-    balance seminal works with recent research.
+    Uses recency_years_fallback (the wider window) for quota enforcement,
+    so papers from the full recent window (e.g. 2024+) count toward the target.
     """
     paper_corpus = state.get("paper_corpus", {})
     saturation_reason = state.get("saturation_reason", "Unknown")
     quality_settings = state["quality_settings"]
     max_papers = _get_effective_max_papers(state)
 
-    recency_years = quality_settings.get("recency_years", 3)
-    recency_quota = quality_settings.get("recency_quota", 0.25)
+    recency_years = quality_settings.get("recency_years_fallback", quality_settings.get("recency_years", 2))
+    recency_quota = quality_settings.get("recency_quota", 0.35)
 
     # If corpus is small enough, no filtering needed
     if len(paper_corpus) <= max_papers:

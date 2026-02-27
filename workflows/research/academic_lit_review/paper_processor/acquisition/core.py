@@ -390,6 +390,7 @@ async def run_paper_pipeline(
                 # Collect retrieve-academic jobs for polling
                 # (OA successes already pushed to queue in try_acquire_single)
                 valid_jobs = []
+                source_blocked_seen = False
                 for i, result in enumerate(submit_results):
                     if isinstance(result, Exception):
                         doi = papers_to_acquire[i].get("doi")
@@ -437,6 +438,13 @@ async def run_paper_pipeline(
                         timeout=ACQUISITION_TIMEOUT,
                     ):
                         if isinstance(result, Exception):
+                            error_str = str(result)
+                            if "SOURCE_BLOCKED" in error_str and not source_blocked_seen:
+                                source_blocked_seen = True
+                                logger.warning(
+                                    "retrieve-academic: source is returning 403 Forbidden for all requests. "
+                                    "The VPN IP is likely blocked — try switching VPN server."
+                                )
                             logger.debug(f"Acquisition failed for {doi}: {result}")
 
                             # Try to get a fallback paper

@@ -8,6 +8,8 @@ Transforms academic literature reviews into a 4-part series:
 4. Parallel deep-dive writing (3x)
 5. Overview writing
 6. Reference formatting
+
+Illustration is handled separately by the illustrate_and_publish task queue workflow.
 """
 
 from typing import Any
@@ -22,7 +24,6 @@ from .nodes import (
     fetch_content_node,
     write_deep_dive_node,
     write_overview_node,
-    generate_images_node,
     format_references_node,
 )
 
@@ -143,7 +144,6 @@ def create_evening_reads_graph() -> StateGraph:
               -> sync_before_write (barrier)
               -> [3 parallel write_deep_dive via Send()]
               -> write_overview
-              -> generate_images (parallel image generation for all 4 articles)
               -> format_references
               -> END
 
@@ -153,6 +153,9 @@ def create_evening_reads_graph() -> StateGraph:
 
     The sync_before_write node acts as a barrier between the two
     parallel phases, ensuring all fetches complete before writes begin.
+
+    Illustration is handled by the illustrate_and_publish task queue workflow,
+    spawned by the save_and_spawn phase after this graph completes.
     """
     builder = StateGraph(EveningReadsState)
 
@@ -163,7 +166,6 @@ def create_evening_reads_graph() -> StateGraph:
     builder.add_node("sync_before_write", sync_before_write_node)
     builder.add_node("write_deep_dive", write_deep_dive_node)
     builder.add_node("write_overview", write_overview_node)
-    builder.add_node("generate_images", generate_images_node)
     builder.add_node("format_references", format_references_node)
 
     # Entry point
@@ -196,9 +198,8 @@ def create_evening_reads_graph() -> StateGraph:
     # All write_deep_dive nodes converge to write_overview
     builder.add_edge("write_deep_dive", "write_overview")
 
-    # Linear flow after overview: overview -> images -> references -> END
-    builder.add_edge("write_overview", "generate_images")
-    builder.add_edge("generate_images", "format_references")
+    # Linear flow after overview: overview -> references -> END
+    builder.add_edge("write_overview", "format_references")
     builder.add_edge("format_references", END)
 
     return builder.compile()

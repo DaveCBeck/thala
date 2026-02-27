@@ -49,8 +49,9 @@ def _make_state(**overrides) -> dict:
             "min_citations_filter": 10,
             "saturation_threshold": 0.12,
             "supervision_loops": "all",
-            "recency_years": 3,
-            "recency_quota": 0.25,
+            "recency_years": 1,
+            "recency_years_fallback": 2,
+            "recency_quota": 0.35,
         },
         "keyword_papers": ["doi1", "doi2", "doi3"],
         "citation_papers": ["doi4", "doi5"],
@@ -170,8 +171,8 @@ class TestCollectTransparencyReport:
         report = collect_transparency_report(state)
 
         assert report["min_citations_filter"] == 10
-        assert report["recency_years"] == 3
-        assert report["recency_quota"] == 0.25
+        assert report["recency_years"] == 2  # Uses fallback window for reporting
+        assert report["recency_quota"] == 0.35
         assert report["relevance_threshold"] == 0.6
 
     def test_corpus_info(self):
@@ -334,7 +335,7 @@ class TestRenderTransparencyForPrompt:
         state = _make_state()
         report = collect_transparency_report(state)
         prompt_vars = render_transparency_for_prompt(report)
-        assert prompt_vars["recency_quota_pct"] == "25"
+        assert prompt_vars["recency_quota_pct"] == "35"
 
     def test_template_substitution_works(self):
         """Verify all prompt_vars can substitute into METHODOLOGY_USER_TEMPLATE."""

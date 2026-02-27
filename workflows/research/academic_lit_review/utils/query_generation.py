@@ -5,6 +5,7 @@ Contains:
 """
 
 import logging
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
@@ -14,7 +15,8 @@ from workflows.shared.language import LanguageConfig, get_translated_prompt, tra
 logger = logging.getLogger(__name__)
 
 
-GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM = """You are an expert academic researcher generating search queries for OpenAlex.
+_GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM = """You are an expert academic researcher generating search queries for OpenAlex.
+The current year is {current_year}.
 
 Generate 3-5 search queries optimized for finding relevant academic literature on the given topic.
 
@@ -23,7 +25,7 @@ Query strategies to use:
 2. Broader field + specific concepts (e.g., "computer vision neural networks review")
 3. Related terminology / synonyms (e.g., "convolutional networks visual recognition")
 4. Historical framing for seminal works (e.g., "artificial neural networks early foundations")
-5. Recent framing for current research (e.g., "transformer architecture vision 2023")
+5. Recent framing for current research (e.g., "transformer architecture vision {current_year}")
 
 Guidelines:
 - Use academic/scholarly terminology
@@ -31,11 +33,25 @@ Guidelines:
 - Mix broad and specific queries
 - Consider field-specific vocabulary
 - Aim for queries that would find peer-reviewed literature
+- At least one query should target very recent work ({recent_years} and later)
 
 Output a JSON object:
-{
+{{
   "queries": ["query1", "query2", "query3", ...]
-}"""
+}}"""
+
+
+def _get_query_gen_system_prompt() -> str:
+    """Build the system prompt with the current year baked in."""
+    current_year = datetime.now(timezone.utc).year
+    return _GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM.format(
+        current_year=current_year,
+        recent_years=current_year - 1,
+    )
+
+
+# Keep module-level name for backwards compat (evaluated lazily at call site)
+GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM = _get_query_gen_system_prompt()
 
 GENERATE_ACADEMIC_SEARCH_QUERIES_USER = """Topic: {topic}
 
@@ -71,11 +87,11 @@ async def generate_search_queries(
     Returns:
         List of search queries
     """
-    # Translate system prompt if needed
-    system_prompt = GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM
+    # Build system prompt fresh (captures current year) and translate if needed
+    system_prompt = _get_query_gen_system_prompt()
     if language_config and language_config["code"] != "en":
         system_prompt = await get_translated_prompt(
-            GENERATE_ACADEMIC_SEARCH_QUERIES_SYSTEM,
+            system_prompt,
             language_code=language_config["code"],
             language_name=language_config["name"],
             prompt_name="lit_review_query_gen_system",
