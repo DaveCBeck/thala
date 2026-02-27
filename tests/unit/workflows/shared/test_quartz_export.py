@@ -1,6 +1,5 @@
 """Tests for Quartz literature review export."""
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -17,9 +16,7 @@ class TestSlugifyTopic:
     def test_topic_with_colon(self):
         from core.task_queue.workflows.shared.quartz_export import _slugify_topic
 
-        result = _slugify_topic(
-            "Forest Decline Dynamics: Drought, Fire, and Ecosystem Collapse"
-        )
+        result = _slugify_topic("Forest Decline Dynamics: Drought, Fire, and Ecosystem Collapse")
         assert result == "forest-decline-dynamics-drought-fire-and-ecosystem-collapse"
 
     def test_topic_with_special_characters(self):
@@ -105,7 +102,7 @@ class TestBuildFrontmatter:
             publication_slug="native-state",
             quality="standard",
         )
-        assert r'\"quotes\"' in result
+        assert r"\"quotes\"" in result
 
     def test_date_truncation(self):
         from core.task_queue.workflows.shared.quartz_export import _build_frontmatter
@@ -131,9 +128,7 @@ class TestExportLitReviewToQuartz:
         )
 
         content = (
-            "# Literature Review: Forest Decline\n\n"
-            "*Trees are dying from drought.*\n\n"
-            "## 1. Introduction\nBody text.\n"
+            "# Literature Review: Forest Decline\n\n*Trees are dying from drought.*\n\n## 1. Introduction\nBody text.\n"
         )
 
         with patch(
