@@ -11,6 +11,8 @@ from typing import Self
 
 import fitz
 
+fitz.TOOLS.mupdf_display_errors(False)
+
 
 @dataclass
 class ExtractionResult:

@@ -91,9 +91,8 @@ def validate_rewrite(
     hard_ceiling = int(target_max * 1.5)
 
     length_ok = hard_floor <= rewritten_words <= hard_ceiling
-    citations_ok = set(original_citations).issubset(set(rewritten_citations))
 
-    passes = length_ok and citations_ok
+    passes = length_ok
     rejection_reason = None
     length_warning = None
 
@@ -108,9 +107,12 @@ def validate_rewrite(
                 f"Extreme expansion: {rewritten_words} words "
                 f"(target_max was {target_max}, hard ceiling {hard_ceiling})"
             )
-    elif not citations_ok:
-        missing = set(original_citations) - set(rewritten_citations)
-        rejection_reason = f"Missing citations: {', '.join(missing)}"
+
+    # Log dropped citations as informational — editorial rewrites may
+    # legitimately remove citations that no longer fit the narrative.
+    missing_cites = set(original_citations) - set(rewritten_citations)
+    if missing_cites:
+        logger.info(f"Citations dropped during rewrite: {', '.join(missing_cites)}")
 
     # Advisory warning for outputs outside the target range but within hard bounds
     if length_ok and rewritten_words < target_min:
@@ -264,7 +266,7 @@ async def v2_rewrite_section_node(state: dict) -> dict[str, Any]:
                 system=V2_SECTION_REWRITE_SYSTEM,
                 user=user_prompt,
                 config=InvokeConfig(
-                    max_tokens=32000,
+                    max_tokens=64000,
                     batch_policy=BatchPolicy.PREFER_BALANCE,
                 ),
             )

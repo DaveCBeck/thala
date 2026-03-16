@@ -5,7 +5,7 @@ for backwards compatibility. All workflow code should import from here.
 """
 
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from dotenv import load_dotenv
 
@@ -15,9 +15,12 @@ from core.config import configure_langsmith
 
 configure_langsmith()
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.language_models import BaseChatModel
-from langchain_deepseek import ChatDeepSeek
+# Lazy-import langchain/transformers/torch to avoid ~500 MB RSS at module
+# load time.  These are only needed when get_llm() is actually called.
+if TYPE_CHECKING:
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.language_models import BaseChatModel
+    from langchain_deepseek import ChatDeepSeek
 
 # Re-export ModelTier and related utilities from core/types
 # This maintains backwards compatibility for existing imports
@@ -28,10 +31,10 @@ CONTEXT_1M_BETA = "context-1m-2025-08-07"
 
 
 def get_llm(
-    tier: ModelTier = ModelTier.SONNET,
+    tier: "ModelTier" = ModelTier.SONNET,
     effort: Optional[str] = None,
     max_tokens: int = 4096,
-) -> BaseChatModel:
+) -> "BaseChatModel":
     """
     Get a configured LLM instance (Claude or DeepSeek).
 
@@ -56,6 +59,9 @@ def get_llm(
         # DEPRECATED: Direct get_llm() usage
         llm = get_llm(ModelTier.SONNET)
     """
+    from langchain_anthropic import ChatAnthropic
+    from langchain_deepseek import ChatDeepSeek
+
     # DeepSeek models use native ChatDeepSeek integration
     if is_deepseek_tier(tier):
         # ChatDeepSeek auto-reads DEEPSEEK_API_KEY and sets LangSmith metadata

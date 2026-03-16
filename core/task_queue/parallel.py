@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Max publish tasks (illustrate_and_publish) per parallel run.
 # Limits Imagen spend so a failed pipeline doesn't waste downstream tokens.
-MAX_PUBLISH_TASKS = int(os.environ.get("THALA_MAX_PUBLISH_TASKS", "1"))
-
+MAX_PUBLISH_TASKS = int(os.environ.get("THALA_MAX_PUBLISH_TASKS", "2"))
 
 def _reset_task_to_pending(task: dict) -> None:
     """Reset a task to PENDING, clearing all stale run metadata."""

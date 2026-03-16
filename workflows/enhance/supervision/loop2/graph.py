@@ -284,7 +284,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             user=user_prompt,
             config=InvokeConfig(
                 effort="high",
-                max_tokens=32000,
+                max_tokens=64000,
                 cache=False,
                 batch_policy=BatchPolicy.PREFER_SPEED,
             ),
@@ -312,7 +312,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         # Note: checkpoint needs full accumulated list for resumption
         checkpoint_callback = state.get("checkpoint_callback")
         if checkpoint_callback:
-            checkpoint_callback(
+            result = checkpoint_callback(
                 iteration + 1,
                 {
                     "current_review": updated_review,
@@ -323,6 +323,8 @@ async def integrate_findings_node(state: Loop2State) -> dict:
                     "zotero_keys": merged_zotero,
                 },
             )
+            if hasattr(result, "__await__"):
+                await result
             logger.debug(f"Loop 2 checkpoint saved at iteration {iteration + 1}")
 
         # Return single-element list - the add reducer will append to existing explored_bases

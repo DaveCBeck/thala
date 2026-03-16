@@ -53,6 +53,16 @@ async def try_oa_download(
             logger.debug(f"[OA] Paywall detected for {doi}, falling back to retrieve-academic")
             return None, False, None, None
 
+        # Reject suspiciously short content — error pages, service-unavailable
+        # notices, and stub pages are never valid full-text papers.
+        MIN_FULL_TEXT_CHARS = 500
+        if len(result.content) < MIN_FULL_TEXT_CHARS:
+            logger.debug(
+                f"[OA] Content too short for {doi} ({len(result.content)} chars < {MIN_FULL_TEXT_CHARS}), "
+                f"likely an error page — falling back"
+            )
+            return None, False, None, None
+
         logger.debug(
             f"[OA] Got content for {doi}: {len(result.content)} chars "
             f"(source={result.source.value}, provider={result.provider}, "
@@ -92,6 +102,11 @@ async def try_pmc_download(
 
         if result.classification == ContentClassification.PAYWALL:
             logger.debug(f"[PMC] Unexpected paywall for {doi}")
+            return None, False, None, None
+
+        MIN_FULL_TEXT_CHARS = 500
+        if len(result.content) < MIN_FULL_TEXT_CHARS:
+            logger.debug(f"[PMC] Content too short for {doi} ({len(result.content)} chars), likely error page")
             return None, False, None, None
 
         logger.debug(
@@ -166,6 +181,11 @@ async def try_doi_download(
 
         if result.classification == ContentClassification.PAYWALL:
             logger.debug(f"[DOI] Paywall at publisher URL for {doi}")
+            return None, False, None, None
+
+        MIN_FULL_TEXT_CHARS = 500
+        if len(result.content) < MIN_FULL_TEXT_CHARS:
+            logger.debug(f"[DOI] Content too short for {doi} ({len(result.content)} chars), likely error page")
             return None, False, None, None
 
         logger.debug(

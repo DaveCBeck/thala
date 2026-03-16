@@ -226,7 +226,7 @@ async def enhance_section_worker(state: dict) -> dict[str, Any]:
         )
 
         if not within_tolerance and section_type not in ("abstract",):
-            logger.warning(
+            logger.info(
                 f"Section '{section_heading}' word count change {change_percent:.1%} "
                 f"exceeds tolerance ±{tolerance:.0%}. Keeping enhancement anyway."
             )

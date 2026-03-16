@@ -84,7 +84,7 @@ Limitations: {"; ".join(summary.get("limitations", [])[:2])}"""
             user=prompts,
             schema=ClusterAnalysisOutput,
             config=InvokeConfig(
-                max_tokens=4096,
+                max_tokens=6144,
                 batch_policy=BatchPolicy.PREFER_SPEED,
             ),
         )

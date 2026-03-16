@@ -103,7 +103,7 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
             user=user_prompt,
             config=InvokeConfig(
                 effort="high",
-                max_tokens=32000,
+                max_tokens=64000,
                 cache=False,
                 batch_policy=BatchPolicy.PREFER_BALANCE,
             ),
@@ -123,7 +123,7 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         # Call checkpoint callback if provided (N=1 for supervision loops)
         checkpoint_callback = state.get("checkpoint_callback")
         if checkpoint_callback:
-            checkpoint_callback(
+            result = checkpoint_callback(
                 iteration + 1,
                 {
                     "current_review": integrated_review,
@@ -144,6 +144,8 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
                     "zotero_keys": state.get("zotero_keys", {}),
                 },
             )
+            if hasattr(result, "__await__"):
+                await result
             logger.debug(f"Supervision checkpoint saved at iteration {iteration + 1}")
 
         return {
