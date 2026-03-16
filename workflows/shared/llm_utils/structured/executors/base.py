@@ -1,5 +1,6 @@
 """Abstract base class for structured output strategy executors."""
 
+import json
 from abc import ABC, abstractmethod
 from typing import Any, Generic, Optional, Type, TypeVar, Union, get_origin
 
@@ -42,12 +43,18 @@ def coerce_to_schema(data: dict[str, Any], schema: Type[BaseModel]) -> dict[str,
 
         # Handle list fields where LLM returned a string
         if origin is list and isinstance(value, str):
-            # Empty or whitespace-only string -> empty list
             if not value.strip():
                 coerced[field_name] = []
             else:
-                # Non-empty string -> single-item list
-                coerced[field_name] = [value]
+                # Try parsing as JSON array first (LLM sometimes stringifies lists)
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        coerced[field_name] = parsed
+                    else:
+                        coerced[field_name] = [value]
+                except (json.JSONDecodeError, ValueError):
+                    coerced[field_name] = [value]
 
     return coerced
 

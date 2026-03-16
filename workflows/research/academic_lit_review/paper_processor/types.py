@@ -14,9 +14,10 @@ from workflows.research.academic_lit_review.state import (
 from workflows.shared.language import LanguageConfig
 
 MAX_PAPER_PIPELINE_CONCURRENT = 2
-ACQUISITION_TIMEOUT = 300.0
+ACQUISITION_TIMEOUT = 420.0  # 7 min — allows for VPN rotation (~60s) on 403
 RETRY_DELAY = 5.0
 ACQUISITION_DELAY = 2.0
+SERVICE_HEALTH_RECHECK_INTERVAL = 120.0  # seconds between re-checks
 
 
 class LanguageVerificationStats(TypedDict, total=False):

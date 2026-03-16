@@ -159,12 +159,18 @@ async def resolve_input(state: dict) -> dict:
     logger.info(f"Resolving input source: {source[:100]}...")
 
     # Check if source is a local file path
-    # Guard: paths longer than 4096 chars can't be valid file paths (Linux limit)
-    # and attempting Path(source).exists() on very long strings causes ENAMETOOLONG
-    if len(source) < 4096:
-        source_path = Path(source)
-        if source_path.exists() and source_path.is_file():
-            return await _resolve_local_file(source_path, input_data, marker_input_dir)
+    # Guard against ENAMETOOLONG: Linux has a 255-byte per-component limit and
+    # 4096-byte total path limit.  Short error pages (e.g. a 250-char HTML
+    # response used as a single path component) pass a naive length check but
+    # still blow up in Path.exists(). Also reject strings containing newlines —
+    # real file paths never have them, but scraped error pages always do.
+    if len(source) < 4096 and "\n" not in source:
+        try:
+            source_path = Path(source)
+            if source_path.exists() and source_path.is_file():
+                return await _resolve_local_file(source_path, input_data, marker_input_dir)
+        except OSError:
+            pass  # Not a valid path (e.g. component > 255 bytes)
 
     # Determine source type for URLs vs markdown text
     parsed_url = urlparse(source)

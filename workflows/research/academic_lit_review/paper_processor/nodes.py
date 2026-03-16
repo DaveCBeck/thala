@@ -212,12 +212,12 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
     metadata_only_dois: list[str] = []
 
     if papers_needing_fallback:
-        failed_dois = [p.get("doi", "unknown") for p in papers_needing_fallback]
-        logger.warning(
-            f"Document processing failed for {len(papers_needing_fallback)} papers, "
-            f"using metadata-only extraction with Zotero stubs"
+        fallback_dois = [p.get("doi", "unknown") for p in papers_needing_fallback]
+        logger.info(
+            f"Full-text extraction unavailable for {len(papers_needing_fallback)} papers, "
+            f"attempting metadata-based fallback"
         )
-        logger.debug(f"Failed DOIs: {failed_dois[:5]}{'...' if len(failed_dois) > 5 else ''}")
+        logger.debug(f"Fallback DOIs: {fallback_dois[:5]}{'...' if len(fallback_dois) > 5 else ''}")
 
         paper_zotero_keys = await _create_zotero_stubs_for_papers(papers_needing_fallback)
 
@@ -233,10 +233,17 @@ async def extract_summaries_node(state: PaperProcessingState) -> dict[str, Any]:
         zotero_keys.update(paper_zotero_keys)
         metadata_only_dois = [p.get("doi") for p in papers_needing_fallback if p.get("doi")]
 
-        logger.info(
-            f"Metadata-only fallback complete: {len(metadata_summaries)} summaries, "
-            f"{len(paper_zotero_keys)} Zotero records created"
-        )
+        still_missing = len(papers_needing_fallback) - len(metadata_summaries)
+        if still_missing > 0:
+            logger.warning(
+                f"Metadata fallback recovered {len(metadata_summaries)}/{len(papers_needing_fallback)} papers; "
+                f"{still_missing} papers have no usable summary"
+            )
+        else:
+            logger.info(
+                f"Metadata fallback recovered all {len(metadata_summaries)} papers "
+                f"({len(paper_zotero_keys)} Zotero stubs created)"
+            )
 
     if not summaries:
         logger.warning("No summaries extracted")

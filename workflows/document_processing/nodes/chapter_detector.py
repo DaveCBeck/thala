@@ -307,7 +307,7 @@ When in doubt, prefer fewer, larger chunks over many small ones."""
                     }
 
                 # Final fallback: arbitrary chunking
-                logger.warning("No usable heading structure, using size-based chunking")
+                logger.info("No usable heading structure, using size-based chunking")
                 chapters = create_fallback_chunks(markdown, word_count, ChapterInfo)
                 return {
                     "chapters": chapters,

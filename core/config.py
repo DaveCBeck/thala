@@ -39,6 +39,7 @@ THIRD_PARTY_LOGGERS = [
     "huggingface_hub",
     "numba",
     "voyage",
+    "pypdf",
 ]
 
 # Loggers that should be set to WARNING to avoid race conditions during cleanup
@@ -172,12 +173,42 @@ def is_dev_mode() -> bool:
     return os.getenv("THALA_MODE", "prod").lower() == "dev"
 
 
+def _strip_bytes_from_trace(data: dict) -> dict:
+    """Strip binary data and large base64 strings from LangSmith trace payloads.
+
+    The illustrate workflow stores raw image_bytes in LangGraph state,
+    and vision comparison sends base64-encoded images as LLM inputs.
+    Both can exceed LangSmith's 20MB payload limit. This replaces bytes
+    with a size placeholder and truncates large strings (e.g. base64 data).
+    """
+    _MAX_STR = 50_000  # 50KB — keeps traces useful without the bulk
+
+    def _walk(obj: Any) -> Any:
+        if isinstance(obj, bytes):
+            return f"<binary: {len(obj):,} bytes>"
+        if isinstance(obj, str):
+            if len(obj) > _MAX_STR:
+                return obj[:200] + f"... [TRUNCATED - {len(obj):,} chars]"
+            return obj
+        if isinstance(obj, dict):
+            return {k: _walk(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_walk(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(_walk(v) for v in obj)
+        return obj
+
+    return _walk(data)
+
+
 def configure_langsmith() -> None:
     """Configure LangSmith tracing based on THALA_MODE.
 
     When THALA_MODE=dev:
         - Enables LangSmith tracing
         - Sets project to 'thala-dev'
+        - Pre-initializes the global client with byte-stripping filters
+          to prevent oversized trace payloads from image data
 
     When THALA_MODE=prod (or unset):
         - Disables LangSmith tracing
@@ -187,35 +218,59 @@ def configure_langsmith() -> None:
     if is_dev_mode():
         os.environ.setdefault("LANGSMITH_TRACING", "true")
         os.environ.setdefault("LANGSMITH_PROJECT", "thala-dev")
+        # Pre-initialize the global langsmith client with byte-stripping filters.
+        # LangGraph serializes full graph state (including image_bytes) into traces;
+        # without filtering, the illustrate workflow's ~45MB of image data exceeds
+        # LangSmith's 20MB payload limit.
+        try:
+            from langsmith.run_trees import get_cached_client
+
+            get_cached_client(
+                hide_inputs=_strip_bytes_from_trace,
+                hide_outputs=_strip_bytes_from_trace,
+            )
+        except Exception:
+            pass  # Non-critical — tracing still works, just may warn on large payloads
     else:
         os.environ["LANGSMITH_TRACING"] = "false"
 
 
-def truncate_for_trace(data: Any, max_str_len: int = 50000) -> Any:
-    """Truncate large strings in data structures for LangSmith tracing.
+def truncate_for_trace(data: Any, max_str_len: int = 50000, _depth: int = 0) -> Any:
+    """Truncate large strings/bytes in data structures for LangSmith tracing.
+
+    Uses copy-on-write: containers are only copied when a descendant value
+    actually needs truncation, avoiding allocation of hundreds of thousands
+    of identical dict/list copies on every @traceable call.
 
     Use with @traceable(process_inputs=truncate_for_trace, process_outputs=truncate_for_trace)
     to prevent oversized trace payloads that exceed LangSmith's 20MB limit.
-
-    Args:
-        data: Input/output data from a traced function
-        max_str_len: Maximum length for string fields (default 50KB)
-
-    Returns:
-        Data with large strings truncated
     """
+    if _depth > 20:
+        return repr(data)[:max_str_len]
+    if isinstance(data, bytes):
+        return f"<binary: {len(data):,} bytes>"
     if isinstance(data, str):
         if len(data) > max_str_len:
             return data[:max_str_len] + f"\n\n[TRUNCATED - {len(data):,} chars total]"
         return data
-    elif isinstance(data, dict):
-        return {k: truncate_for_trace(v, max_str_len) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [truncate_for_trace(item, max_str_len) for item in data]
-    elif hasattr(data, "__dict__"):
-        # Handle dataclasses/objects - return dict representation
-        try:
-            return {k: truncate_for_trace(v, max_str_len) for k, v in data.__dict__.items()}
-        except Exception:
-            return str(data)[:max_str_len] if len(str(data)) > max_str_len else data
+    if isinstance(data, dict):
+        changed = False
+        result = {}
+        for k, v in data.items():
+            new_v = truncate_for_trace(v, max_str_len, _depth + 1)
+            if new_v is not v:
+                changed = True
+            result[k] = new_v
+        return result if changed else data
+    if isinstance(data, (list, tuple)):
+        changed = False
+        result = []
+        for item in data:
+            new_item = truncate_for_trace(item, max_str_len, _depth + 1)
+            if new_item is not item:
+                changed = True
+            result.append(new_item)
+        return type(data)(result) if changed else data
+    # Don't recurse into arbitrary objects — too expensive and creates
+    # dict copies of every pydantic model / dataclass in the state tree.
     return data

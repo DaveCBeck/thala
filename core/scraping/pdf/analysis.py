@@ -11,6 +11,8 @@ from typing import BinaryIO
 
 import fitz  # PyMuPDF
 
+fitz.TOOLS.mupdf_display_errors(False)
+
 
 class DocumentComplexity(Enum):
     """Complexity tiers for document characteristics."""

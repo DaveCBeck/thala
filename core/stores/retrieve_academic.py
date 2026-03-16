@@ -200,7 +200,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
     async def wait_for_completion(
         self,
         job_id: str,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
         poll_interval: float = 2.0,
     ) -> RetrieveResult:
         """
@@ -257,6 +257,10 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         """
         pending = {job_id: (doi, local_path) for doi, job_id, local_path in jobs}
         start_times = {job_id: asyncio.get_event_loop().time() for _, job_id, _ in jobs}
+        # Track consecutive connection errors per job — tolerate transient
+        # failures during VPN rotation (service unreachable for ~15-60s)
+        consecutive_errors: dict[str, int] = {job_id: 0 for _, job_id, _ in jobs}
+        max_consecutive_errors = 10  # ~20s of retries at 2s poll interval
 
         while pending:
             completed_this_round = []
@@ -276,6 +280,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
 
                 try:
                     result = await self.get_job_status(job_id)
+                    consecutive_errors[job_id] = 0  # reset on success
 
                     if result.status == "completed":
                         # Download file before yielding
@@ -289,9 +294,19 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                         completed_this_round.append((doi, local_path, error))
                         pending.pop(job_id)
                 except Exception as e:
-                    logger.error(f"Error polling retrieval job for {doi}: {e}")
-                    completed_this_round.append((doi, local_path, e))
-                    pending.pop(job_id)
+                    consecutive_errors[job_id] = consecutive_errors.get(job_id, 0) + 1
+                    if consecutive_errors[job_id] >= max_consecutive_errors:
+                        logger.error(
+                            f"Giving up polling for {doi} after "
+                            f"{consecutive_errors[job_id]} consecutive errors: {e}"
+                        )
+                        completed_this_round.append((doi, local_path, e))
+                        pending.pop(job_id)
+                    else:
+                        logger.debug(
+                            f"Transient error polling {doi} "
+                            f"({consecutive_errors[job_id]}/{max_consecutive_errors}): {e}"
+                        )
 
             # Yield all completed items this round
             for item in completed_this_round:
@@ -340,7 +355,7 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         title: Optional[str] = None,
         authors: Optional[list[str]] = None,
         preferred_formats: Optional[list[str]] = None,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
     ) -> tuple[str, RetrieveResult]:
         """
         Convenience method: retrieve document and download to local path.

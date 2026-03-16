@@ -59,29 +59,29 @@ async def creative_direction_node(state: IllustrateState) -> dict:
 
     vi_override = config.visual_identity_override
 
-    try:
-        if vi_override:
-            user_prompt = CREATIVE_DIRECTION_USER_WITH_VI_OVERRIDE.format(
-                title=title,
-                document=document,
-                target_image_count=target_image_count,
-                extra_opportunity_count=extra_opportunity_count,
-                generate_header=config.generate_header_image,
-                vi_primary_style=vi_override.primary_style,
-                vi_color_palette=", ".join(vi_override.color_palette),
-                vi_mood=vi_override.mood,
-                vi_lighting=vi_override.lighting,
-                vi_avoid=", ".join(vi_override.avoid),
-            )
-        else:
-            user_prompt = CREATIVE_DIRECTION_USER.format(
-                title=title,
-                document=document,
-                target_image_count=target_image_count,
-                extra_opportunity_count=extra_opportunity_count,
-                generate_header=config.generate_header_image,
-            )
+    if vi_override:
+        user_prompt = CREATIVE_DIRECTION_USER_WITH_VI_OVERRIDE.format(
+            title=title,
+            document=document,
+            target_image_count=target_image_count,
+            extra_opportunity_count=extra_opportunity_count,
+            generate_header=config.generate_header_image,
+            vi_primary_style=vi_override.primary_style,
+            vi_color_palette=", ".join(vi_override.color_palette),
+            vi_mood=vi_override.mood,
+            vi_lighting=vi_override.lighting,
+            vi_avoid=", ".join(vi_override.avoid),
+        )
+    else:
+        user_prompt = CREATIVE_DIRECTION_USER.format(
+            title=title,
+            document=document,
+            target_image_count=target_image_count,
+            extra_opportunity_count=extra_opportunity_count,
+            generate_header=config.generate_header_image,
+        )
 
+    try:
         result = await invoke(
             tier=ModelTier.SONNET,
             system=CREATIVE_DIRECTION_SYSTEM,

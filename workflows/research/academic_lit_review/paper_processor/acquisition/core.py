@@ -55,6 +55,7 @@ from workflows.research.academic_lit_review.paper_processor.types import (
     ACQUISITION_DELAY,
     ACQUISITION_TIMEOUT,
     MAX_PAPER_PIPELINE_CONCURRENT,
+    SERVICE_HEALTH_RECHECK_INTERVAL,
 )
 
 from core.scraping.pdf import process_document_smart, MarkerProcessingError
@@ -229,7 +230,24 @@ async def run_paper_pipeline(
         Tuple of (acquired, processing_results, acquisition_failed, processing_failed, fallback_substitutions)
     """
     async with RetrieveAcademicClient() as client:
-        service_available = await client.health_check()
+        # Periodic health re-check (rechecks every SERVICE_HEALTH_RECHECK_INTERVAL)
+        _last_health_check = 0.0
+        _cached_available = False
+
+        async def check_service_available() -> bool:
+            nonlocal _last_health_check, _cached_available
+            now = asyncio.get_event_loop().time()
+            if now - _last_health_check >= SERVICE_HEALTH_RECHECK_INTERVAL:
+                was_available = _cached_available
+                _cached_available = await client.health_check()
+                _last_health_check = now
+                if _cached_available and not was_available:
+                    logger.info("Retrieve-academic service is now available")
+                elif not _cached_available and was_available:
+                    logger.warning("Retrieve-academic service became unavailable")
+            return _cached_available
+
+        service_available = await check_service_available()
         if not service_available:
             logger.warning("Retrieve-academic service unavailable, will attempt OA/PMC/DOI sources only")
 
@@ -367,7 +385,7 @@ async def run_paper_pipeline(
                         return doi, None, None
 
                     # Fall back to retrieve-academic
-                    if not service_available:
+                    if not await check_service_available():
                         raise RuntimeError("retrieve-academic service unavailable")
                     authors = [a.get("name") for a in paper.get("authors", [])[:5] if a.get("name")]
                     job = await client.retrieve(
@@ -391,6 +409,7 @@ async def run_paper_pipeline(
                 # (OA successes already pushed to queue in try_acquire_single)
                 valid_jobs = []
                 source_blocked_seen = False
+                source_blocked_count = 0
                 for i, result in enumerate(submit_results):
                     if isinstance(result, Exception):
                         doi = papers_to_acquire[i].get("doi")
@@ -439,12 +458,14 @@ async def run_paper_pipeline(
                     ):
                         if isinstance(result, Exception):
                             error_str = str(result)
-                            if "SOURCE_BLOCKED" in error_str and not source_blocked_seen:
-                                source_blocked_seen = True
-                                logger.warning(
-                                    "retrieve-academic: source is returning 403 Forbidden for all requests. "
-                                    "The VPN IP is likely blocked — try switching VPN server."
-                                )
+                            if "SOURCE_BLOCKED" in error_str:
+                                source_blocked_count += 1
+                                if not source_blocked_seen:
+                                    source_blocked_seen = True
+                                    logger.info(
+                                        "retrieve-academic: source blocked on current VPN IP, "
+                                        "auto-rotation was attempted"
+                                    )
                             logger.debug(f"Acquisition failed for {doi}: {result}")
 
                             # Try to get a fallback paper
@@ -472,6 +493,12 @@ async def run_paper_pipeline(
                             retrieve_academic_dois.add(doi)
                             logger.debug(f"[{acquired_count}/{total_to_acquire}] Acquired: {doi}")
                             await _send_to_marker((doi, local_path, papers_by_doi[doi], False))
+
+                if source_blocked_count > 0:
+                    logger.warning(
+                        f"retrieve-academic: {source_blocked_count}/{len(valid_jobs)} jobs failed "
+                        f"due to source blocking (all VPN IPs exhausted for these requests)"
+                    )
 
                 # Process retry queue items (fallback papers from marker failures).
                 # Wait for marker to finish processing before checking, to avoid
@@ -519,7 +546,7 @@ async def run_paper_pipeline(
                                 continue
 
                         # Fall back to retrieve-academic
-                        if not service_available:
+                        if not await check_service_available():
                             acquisition_failed.append(fallback_doi)
                             _acq_log(fallback_doi, "could not download", "retrieve-academic service unavailable")
                             continue

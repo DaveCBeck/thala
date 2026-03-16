@@ -8,6 +8,7 @@ import time
 from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 
+from core.config import truncate_for_trace
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
@@ -135,7 +136,7 @@ async def generate_image_prompt(
         return None
 
 
-@traceable(run_type="tool", name="Imagen_GenerateHeader")
+@traceable(run_type="tool", name="Imagen_GenerateHeader", process_outputs=truncate_for_trace)
 async def generate_article_header(
     title: str,
     content: str,
@@ -202,19 +203,40 @@ async def generate_article_header(
         await rpm_limiter.acquire(sample_count)
 
         # Wall-clock time including semaphore wait
-        t0 = time.monotonic()
-        async with get_imagen_semaphore():
-            response = await asyncio.wait_for(
-                client.aio.models.generate_images(
-                    model=model or IMAGEN_MODEL,
-                    prompt=prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=sample_count,
-                        aspect_ratio=aspect_ratio,
-                    ),
-                ),
-                timeout=GOOGLE_API_TIMEOUT,
-            )
+        # Retry on RESOURCE_EXHAUSTED (429) with cascading backoff: 30s, 2min, 10min
+        retry_delays = [30, 120, 600]
+        last_err = None
+        response = None
+
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                t0 = time.monotonic()
+                async with get_imagen_semaphore():
+                    response = await asyncio.wait_for(
+                        client.aio.models.generate_images(
+                            model=model or IMAGEN_MODEL,
+                            prompt=prompt,
+                            config=types.GenerateImagesConfig(
+                                number_of_images=sample_count,
+                                aspect_ratio=aspect_ratio,
+                            ),
+                        ),
+                        timeout=GOOGLE_API_TIMEOUT,
+                    )
+                break  # success
+            except Exception as api_err:
+                err_str = str(api_err)
+                if "RESOURCE_EXHAUSTED" in err_str and attempt < len(retry_delays):
+                    delay = retry_delays[attempt]
+                    logger.warning(
+                        f"Imagen RESOURCE_EXHAUSTED for '{title}', "
+                        f"retry {attempt + 1}/{len(retry_delays)} in {delay}s"
+                    )
+                    await asyncio.sleep(delay)
+                    last_err = api_err
+                    continue
+                raise  # non-retryable or out of retries
+
         latency_ms = int((time.monotonic() - t0) * 1000)
 
         candidates = [
@@ -280,7 +302,7 @@ DIAGRAM_PROMPT_PREFIX = (
 )
 
 
-@traceable(run_type="tool", name="Gemini_GenerateDiagram")
+@traceable(run_type="tool", name="Gemini_GenerateDiagram", process_outputs=truncate_for_trace)
 async def generate_diagram_image(
     brief: str,
     aspect_ratio: str = "3:2",
@@ -317,23 +339,38 @@ async def generate_diagram_image(
     prompt = DIAGRAM_PROMPT_PREFIX + brief
 
     async def _generate_one() -> bytes | None:
-        """Single Gemini image generation call."""
+        """Single Gemini image generation call with RESOURCE_EXHAUSTED retry."""
         from core.task_queue.rate_limits import get_imagen_semaphore
 
-        async with get_imagen_semaphore():
-            response = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=GEMINI_IMAGE_MODEL,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE", "TEXT"],
-                        image_config=types.ImageConfig(
-                            aspect_ratio=aspect_ratio,
+        retry_delays = [30, 120, 600]
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                async with get_imagen_semaphore():
+                    response = await asyncio.wait_for(
+                        client.aio.models.generate_content(
+                            model=GEMINI_IMAGE_MODEL,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                response_modalities=["IMAGE", "TEXT"],
+                                image_config=types.ImageConfig(
+                                    aspect_ratio=aspect_ratio,
+                                ),
+                            ),
                         ),
-                    ),
-                ),
-                timeout=GOOGLE_API_TIMEOUT,
-            )
+                        timeout=GOOGLE_API_TIMEOUT,
+                    )
+                break  # success
+            except Exception as api_err:
+                err_str = str(api_err)
+                if "RESOURCE_EXHAUSTED" in err_str and attempt < len(retry_delays):
+                    delay = retry_delays[attempt]
+                    logger.warning(
+                        f"Gemini diagram RESOURCE_EXHAUSTED, "
+                        f"retry {attempt + 1}/{len(retry_delays)} in {delay}s"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
 
         # Extract image bytes from response parts
         if response.candidates:

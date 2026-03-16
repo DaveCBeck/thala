@@ -73,7 +73,7 @@ class GetUrlOptions(BaseModel):
     pdf_timeout: Optional[float] = (
         None  # None = no client-side limit, uses Marker queue limits
     )
-    retrieve_academic_timeout: float = 180.0
+    retrieve_academic_timeout: float = 300.0  # allows for VPN rotation on 403
 
 
 class DoiInfo(BaseModel):

@@ -116,7 +116,7 @@ class SubstackPublisher:
                 or "6LdYbsYZAAAAAIFIRh8X_16GoFRLIReh-e-q6qSa"
             )
             if not os.getenv("SUBSTACK_RECAPTCHA_SITE_KEY") and not _extract_substack_site_key():
-                logger.warning("Using hardcoded reCAPTCHA site key — set SUBSTACK_RECAPTCHA_SITE_KEY if stale")
+                logger.info("Using hardcoded reCAPTCHA site key — set SUBSTACK_RECAPTCHA_SITE_KEY if stale")
             solver = CaptchaSolver(config)
             token = await solver.solve_recaptcha_v2(
                 website_url="https://substack.com/sign-in",

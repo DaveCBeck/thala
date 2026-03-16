@@ -44,7 +44,7 @@ async def synthesize_clusters_node(state: dict) -> dict[str, Any]:
     bertopic_good, bertopic_reason = _evaluate_bertopic_quality(bertopic_clusters, total_papers)
 
     if not bertopic_good:
-        logger.warning(f"BERTopic quality issue: {bertopic_reason}")
+        logger.info(f"BERTopic quality issue: {bertopic_reason}")
 
     if not bertopic_clusters:
         # Use LLM clusters directly (BERTopic either failed or was skipped for small corpus)

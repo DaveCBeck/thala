@@ -6,6 +6,7 @@ The main entry point is `enhance_report()` which runs:
 3. Fact-check workflow (fact verification + citation validation)
 """
 
+import asyncio
 import logging
 import re
 from typing import Any, Callable, Literal
@@ -108,6 +109,18 @@ async def _regenerate_references(document: str) -> str:
     formatted_refs, missing = await _lookup_citations(citation_keys)
     if missing:
         logger.warning(f"Missing Zotero entries for {len(missing)} citations: {missing[:5]}...")
+        # Retry missing keys after 60s — transient Zotero misses happen under load
+        logger.info(f"Retrying {len(missing)} missing citations in 60s")
+        await asyncio.sleep(60)
+        retry_refs, still_missing = await _lookup_citations(missing)
+        if still_missing:
+            logger.warning(f"Still missing after retry: {still_missing[:5]}")
+        # Replace failed entries with successful retries
+        retry_by_key = {r["key"]: r for r in retry_refs if r["found_in_zotero"]}
+        formatted_refs = [
+            retry_by_key.get(r["key"], r) for r in formatted_refs
+        ]
+        missing = still_missing
 
     # Build references section
     refs_section = _build_reference_section(formatted_refs, citation_keys)

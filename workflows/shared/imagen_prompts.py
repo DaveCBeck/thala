@@ -4,6 +4,7 @@ Converts unstructured image briefs into Imagen-optimized prompts
 with must-have elements front-loaded (per Google's Imagen prompt guide).
 """
 
+import asyncio
 import logging
 
 from langsmith import traceable
@@ -83,22 +84,36 @@ async def structure_brief_for_imagen(brief: str) -> str:
     Returns:
         Structured Imagen prompt string
     """
-    try:
-        structure = await invoke(
-            tier=ModelTier.HAIKU,
-            system=STRUCTURE_SYSTEM,
-            user=STRUCTURE_USER.format(brief=brief),
-            schema=ImagenPromptStructure,
-            config=InvokeConfig(
-                max_tokens=500,
-                batch_policy=BatchPolicy.PREFER_SPEED,
-            ),
-        )
+    retry_delays = [2, 5]
+    last_err: Exception | None = None
 
-        prompt = build_imagen_prompt(structure)
-        logger.info(f"Structured Imagen prompt: {prompt[:100]}...")
-        return prompt
+    for attempt in range(len(retry_delays) + 1):
+        try:
+            structure = await invoke(
+                tier=ModelTier.HAIKU,
+                system=STRUCTURE_SYSTEM,
+                user=STRUCTURE_USER.format(brief=brief),
+                schema=ImagenPromptStructure,
+                config=InvokeConfig(
+                    max_tokens=500,
+                    batch_policy=BatchPolicy.PREFER_SPEED,
+                ),
+            )
 
-    except Exception as e:
-        logger.warning(f"Brief structuring failed, using raw brief: {e}")
-        return brief
+            prompt = build_imagen_prompt(structure)
+            logger.info(f"Structured Imagen prompt: {prompt[:100]}...")
+            return prompt
+
+        except Exception as e:
+            last_err = e
+            if attempt < len(retry_delays):
+                delay = retry_delays[attempt]
+                logger.warning(
+                    f"Brief structuring attempt {attempt + 1} failed: {e}, "
+                    f"retrying in {delay}s"
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.warning(f"Brief structuring failed after {attempt + 1} attempts, using raw brief: {e}")
+
+    return brief

@@ -14,6 +14,7 @@ import logging
 
 from langsmith import traceable
 
+from core.config import truncate_for_trace
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ PAIR_COMPARISON_USER = """Which image better matches these criteria?
 Image A and Image B are attached. Respond with ONLY "A" or "B"."""
 
 
-@traceable(run_type="chain", name="Vision_PairSelect")
+@traceable(run_type="chain", name="Vision_PairSelect", process_inputs=truncate_for_trace)
 async def vision_pair_select(
     candidates: list[bytes],
     selection_criteria: str,
