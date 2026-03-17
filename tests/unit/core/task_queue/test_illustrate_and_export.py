@@ -1,4 +1,4 @@
-"""Tests for the illustrate_and_publish workflow."""
+"""Tests for the illustrate_and_export workflow."""
 
 import json
 from datetime import datetime, timezone
@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.task_queue.workflows.illustrate_and_publish import IllustrateAndPublishWorkflow
+from core.task_queue.workflows.illustrate_and_export import IllustrateAndExportWorkflow
 
 
 def _make_manifest(tmp_path: Path, articles: list[dict] | None = None) -> Path:
@@ -35,7 +35,7 @@ def _make_manifest(tmp_path: Path, articles: list[dict] | None = None) -> Path:
 
 
 def _make_task(tmp_path: Path, manifest_path: Path, num_articles: int = 2) -> dict:
-    """Build an illustrate_and_publish task dict."""
+    """Build an illustrate_and_export task dict."""
     articles = [
         {"id": "overview", "title": "Overview Article", "filename": "overview.md"},
         {"id": "deep_dive_1", "title": "Deep Dive 1", "filename": "deep_dive_1.md"},
@@ -48,15 +48,14 @@ def _make_task(tmp_path: Path, manifest_path: Path, num_articles: int = 2) -> di
             "source_path": str(tmp_path / a["filename"]),
             "illustrated": False,
             "illustrated_path": None,
-            "draft_id": None,
-            "draft_url": None,
+            "exported": False,
         }
         for a in articles
     ]
 
     return {
         "id": "test-task-id",
-        "task_type": "illustrate_and_publish",
+        "task_type": "illustrate_and_export",
         "status": "in_progress",
         "category": "science",
         "priority": 2,
@@ -111,25 +110,26 @@ def _mock_daily_tracker(remaining: int = 10, acquire_results: list[bool] | None 
 
 @pytest.fixture
 def workflow():
-    return IllustrateAndPublishWorkflow()
+    return IllustrateAndExportWorkflow()
 
 
-class TestIllustrateAndPublishWorkflow:
+class TestIllustrateAndExportWorkflow:
     @pytest.mark.asyncio
-    async def test_completes_when_all_articles_done(self, workflow, tmp_path):
-        """Workflow returns 'success' when all articles are illustrated and published."""
+    async def test_completes_when_all_articles_illustrated(self, workflow, tmp_path):
+        """Workflow returns 'success' when all articles are illustrated and exported."""
         manifest_path = _make_manifest(tmp_path)
         task = _make_task(tmp_path, manifest_path)
         tracker = _mock_daily_tracker(remaining=10)
 
-        async def mock_publish(item, category):
-            return {"post_id": f"draft-{item['id']}", "draft_url": f"https://example.com/{item['id']}"}
+        mock_export = MagicMock(return_value=tmp_path / "export" / "batch_0001")
+        mock_rsync = AsyncMock(return_value=True)
 
         with (
             patch("core.task_queue.rate_limits.get_imagen_daily_tracker", return_value=tracker),
             patch("workflows.output.illustrate.illustrate_graph", _mock_illustrate_graph()),
+            patch("core.task_queue.workflows.illustrate_and_export.export_batch", mock_export),
+            patch("core.task_queue.workflows.illustrate_and_export.rsync_batch", mock_rsync),
         ):
-            workflow._publish_draft = mock_publish
             result = await workflow.run(
                 task,
                 checkpoint_callback=MagicMock(),
@@ -141,7 +141,9 @@ class TestIllustrateAndPublishWorkflow:
         assert result["status"] == "success"
         for item in task["items"]:
             assert item["illustrated"] is True
-            assert item["draft_id"] is not None
+            assert item["exported"] is True
+        mock_export.assert_called_once()
+        mock_rsync.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_defers_when_budget_exhausted(self, workflow, tmp_path):
@@ -170,14 +172,10 @@ class TestIllustrateAndPublishWorkflow:
         tracker = _mock_daily_tracker(remaining=1)
         tracker.remaining = AsyncMock(side_effect=[1, 1, 0])
 
-        async def mock_publish(item, category):
-            return {"post_id": f"draft-{item['id']}", "draft_url": f"https://example.com/{item['id']}"}
-
         with (
             patch("core.task_queue.rate_limits.get_imagen_daily_tracker", return_value=tracker),
             patch("workflows.output.illustrate.illustrate_graph", _mock_illustrate_graph()),
         ):
-            workflow._publish_draft = mock_publish
             result = await workflow.run(
                 task,
                 checkpoint_callback=MagicMock(),
@@ -187,15 +185,14 @@ class TestIllustrateAndPublishWorkflow:
             )
 
         assert result["status"] == "deferred"
-        # First article should be done
+        # First article should be illustrated
         assert task["items"][0]["illustrated"] is True
-        assert task["items"][0]["draft_id"] is not None
         # Second article should not be done
         assert task["items"][1]["illustrated"] is False
 
     @pytest.mark.asyncio
-    async def test_resumes_skipping_completed_articles(self, workflow, tmp_path):
-        """On resume, already-completed articles are skipped."""
+    async def test_resumes_skipping_illustrated_articles(self, workflow, tmp_path):
+        """On resume, already-illustrated articles are skipped."""
         manifest_path = _make_manifest(tmp_path)
         task = _make_task(tmp_path, manifest_path)
 
@@ -203,19 +200,18 @@ class TestIllustrateAndPublishWorkflow:
         (tmp_path / "overview_illustrated.md").write_text("# Already illustrated")
         task["items"][0]["illustrated"] = True
         task["items"][0]["illustrated_path"] = str(tmp_path / "overview_illustrated.md")
-        task["items"][0]["draft_id"] = "existing-draft"
-        task["items"][0]["draft_url"] = "https://example.com/existing"
 
         tracker = _mock_daily_tracker(remaining=10)
 
-        async def mock_publish(item, category):
-            return {"post_id": f"draft-{item['id']}", "draft_url": f"https://example.com/{item['id']}"}
+        mock_export = MagicMock(return_value=tmp_path / "export" / "batch_0001")
+        mock_rsync = AsyncMock(return_value=True)
 
         with (
             patch("core.task_queue.rate_limits.get_imagen_daily_tracker", return_value=tracker),
             patch("workflows.output.illustrate.illustrate_graph", _mock_illustrate_graph()),
+            patch("core.task_queue.workflows.illustrate_and_export.export_batch", mock_export),
+            patch("core.task_queue.workflows.illustrate_and_export.rsync_batch", mock_rsync),
         ):
-            workflow._publish_draft = mock_publish
             result = await workflow.run(
                 task,
                 checkpoint_callback=MagicMock(),
@@ -225,11 +221,9 @@ class TestIllustrateAndPublishWorkflow:
             )
 
         assert result["status"] == "success"
-        # First article kept its existing draft_id
-        assert task["items"][0]["draft_id"] == "existing-draft"
-        # Second article was done this run
+        # Both articles illustrated
+        assert task["items"][0]["illustrated"] is True
         assert task["items"][1]["illustrated"] is True
-        assert task["items"][1]["draft_id"] is not None
 
     @pytest.mark.asyncio
     async def test_fails_when_manifest_missing(self, workflow, tmp_path):
@@ -243,6 +237,33 @@ class TestIllustrateAndPublishWorkflow:
         )
 
         assert result["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_defers_when_rsync_fails(self, workflow, tmp_path):
+        """Workflow defers when rsync to VPS fails."""
+        manifest_path = _make_manifest(tmp_path)
+        task = _make_task(tmp_path, manifest_path)
+        tracker = _mock_daily_tracker(remaining=10)
+
+        mock_export = MagicMock(return_value=tmp_path / "export" / "batch_0001")
+        mock_rsync = AsyncMock(return_value=False)
+
+        with (
+            patch("core.task_queue.rate_limits.get_imagen_daily_tracker", return_value=tracker),
+            patch("workflows.output.illustrate.illustrate_graph", _mock_illustrate_graph()),
+            patch("core.task_queue.workflows.illustrate_and_export.export_batch", mock_export),
+            patch("core.task_queue.workflows.illustrate_and_export.rsync_batch", mock_rsync),
+        ):
+            result = await workflow.run(
+                task,
+                checkpoint_callback=MagicMock(),
+                resume_from=None,
+                flush_checkpoints=AsyncMock(),
+                update_items_callback=AsyncMock(),
+            )
+
+        assert result["status"] == "deferred"
+        assert "next_run_after" in result
 
     @pytest.mark.asyncio
     async def test_caches_vi_from_first_article(self, workflow, tmp_path):
@@ -259,15 +280,16 @@ class TestIllustrateAndPublishWorkflow:
             configs_seen.append(config)
             return await original_illustrate(self_, item, output_dir, graph, config=config)
 
-        async def mock_publish(item, category):
-            return {"post_id": f"draft-{item['id']}", "draft_url": f"https://example.com/{item['id']}"}
+        mock_export = MagicMock(return_value=tmp_path / "export" / "batch_0001")
+        mock_rsync = AsyncMock(return_value=True)
 
         with (
             patch("core.task_queue.rate_limits.get_imagen_daily_tracker", return_value=tracker),
             patch("workflows.output.illustrate.illustrate_graph", _mock_illustrate_graph()),
             patch.object(type(workflow), "_illustrate_article", spy_illustrate),
+            patch("core.task_queue.workflows.illustrate_and_export.export_batch", mock_export),
+            patch("core.task_queue.workflows.illustrate_and_export.rsync_batch", mock_rsync),
         ):
-            workflow._publish_draft = mock_publish
             result = await workflow.run(
                 task,
                 checkpoint_callback=MagicMock(),
@@ -285,5 +307,5 @@ class TestIllustrateAndPublishWorkflow:
         assert configs_seen[1].visual_identity_override.primary_style == "editorial watercolor"
 
     def test_properties(self, workflow):
-        assert workflow.task_type == "illustrate_and_publish"
+        assert workflow.task_type == "illustrate_and_export"
         assert workflow.phases == ["processing", "complete"]

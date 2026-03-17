@@ -52,7 +52,7 @@ Per-article progress is stored in `task["items"]` so the task resumes where it l
 ### Workflow Returns "deferred"
 
 ```python
-# illustrate_and_publish.py
+# illustrate_and_export.py
 if await daily_tracker.remaining() < 1:
     break  # exit per-article loop
 
@@ -86,10 +86,10 @@ elif t["status"] == TaskStatus.DEFERRED.value:
 ### Resume Skips Completed Items
 
 ```python
-# illustrate_and_publish.py -- per-article loop
+# illustrate_and_export.py -- per-article loop
 for item in items:
-    if item.get("draft_id"):
-        continue  # already published in prior run
+    if item.get("illustrated"):
+        continue  # already illustrated in prior run
 ```
 
 ## Consequences
@@ -110,7 +110,7 @@ for item in items:
 
 2. **Reset `started_at=None` on defer.** Otherwise the task looks "in progress" to orphan-detection logic in the parallel supervisor's finally block.
 
-3. **Progress lives in `task["items"]`, not checkpoint `phase_outputs`.** This avoids replaying the checkpoint-resume machinery; the per-article loop simply skips items where `item.get("draft_id")` is truthy.
+3. **Progress lives in `task["items"]`, not checkpoint `phase_outputs`.** This avoids replaying the checkpoint-resume machinery; the per-article loop simply skips items where `item.get("illustrated")` is truthy.
 
 4. **Malformed `next_run_after` is treated as immediately eligible** (defensive parsing with try/except) to avoid permanently stuck tasks.
 
@@ -121,7 +121,7 @@ for item in items:
 - `core/task_queue/schemas/enums.py` -- `TaskStatus.DEFERRED`
 - `core/task_queue/workflow_executor.py` -- transitions task to DEFERRED
 - `core/task_queue/scheduler.py`, `parallel.py`, `task_selector.py` -- schedule DEFERRED tasks
-- `core/task_queue/workflows/illustrate_and_publish.py` -- returns "deferred" when budget exhausted
+- `core/task_queue/workflows/illustrate_and_export.py` -- returns "deferred" when budget exhausted
 
 ## Related
 

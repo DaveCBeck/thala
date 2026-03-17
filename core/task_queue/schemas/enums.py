@@ -11,7 +11,7 @@ class TaskType(Enum):
 
     LIT_REVIEW_FULL = "lit_review_full"  # lit_review → enhance → evening_reads → save_and_spawn
     WEB_RESEARCH = "web_research"  # deep_research → evening_reads
-    ILLUSTRATE_AND_PUBLISH = "illustrate_and_publish"  # Budget-aware illustration + draft publishing
+    ILLUSTRATE_AND_EXPORT = "illustrate_and_export"  # Budget-aware illustration + batch export to VPS
 
 
 class TaskStatus(Enum):

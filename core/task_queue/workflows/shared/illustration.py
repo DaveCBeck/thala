@@ -1,7 +1,7 @@
 """Shared article illustration engine.
 
 Moved from lit_review_full/engines/illustration_engine.py to avoid
-dependency inversion when imported from illustrate_and_publish.
+dependency inversion when imported from illustrate_and_export.
 """
 
 import logging

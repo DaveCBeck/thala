@@ -20,6 +20,7 @@ docs/quartz # Symbolic link to the Quartz content from tha.la
 .env
 .env.*
 !.env.example
+keys/
 
 # Service data directories
 services/chroma/data/

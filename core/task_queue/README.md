@@ -6,9 +6,9 @@ Persistent queue infrastructure for managing long-running workflows with budget 
 
 | Type | Pipeline | Use Case |
 |------|----------|----------|
-| `lit_review_full` | lit_review → enhance → evening_reads → illustrate → spawn_publish | Academic research with full enhancement and publishing |
+| `lit_review_full` | lit_review → enhance → evening_reads → save_and_spawn | Academic research with full enhancement and article generation |
 | `web_research` | deep_research → evening_reads | Web-based research and article generation |
-| `publish_series` | checking → publishing | Schedule-aware draft publishing to Substack |
+| `illustrate_and_export` | illustrate → batch export → rsync to VPS | Budget-aware illustration + batch export |
 
 ## Usage
 
@@ -164,40 +164,28 @@ if incomplete:
 | `query` | str | Research query |
 | `language` | str | Optional language override |
 
-### publish_series Fields
+### illustrate_and_export Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `base_date` | str | ISO datetime (Monday 3pm local) |
-| `items` | list[PublishItem] | The 5 items to publish |
-| `source_task_id` | str | ID of lit_review_full task that spawned this |
+| `source_task_id` | str | Parent lit_review_full task ID |
+| `topic` | str | Topic from parent task |
+| `manifest_path` | str | Path to manifest.json |
+| `items` | list[IllustrateExportItem] | Per-article progress tracking |
+| `not_before` | str | ISO datetime — invisible until this time |
+| `next_run_after` | str | ISO datetime for DEFERRED scheduling |
 
-### PublishItem Structure
+### IllustrateExportItem Structure
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | str | "overview", "lit_review", "deep_dive_1", etc. |
+| `id` | str | "overview", "deep_dive_1", etc. |
 | `title` | str | Article title |
-| `path` | str | Path to illustrated markdown file |
-| `day_offset` | int | Days from base_date to publish |
-| `audience` | str | "everyone" or "only_paid" |
-| `published` | bool | Has this item been published? |
-| `draft_id` | str | Substack draft ID once created |
-| `draft_url` | str | URL to draft in Substack |
-
-## Publication Schedule
-
-When a `lit_review_full` task completes, it spawns a `publish_series` task with this schedule:
-
-| Day Offset | Item | Audience |
-|------------|------|----------|
-| 0 | Overview | everyone |
-| +1 | Lit Review | only_paid |
-| +4 | Deep Dive 1 | everyone |
-| +7 | Deep Dive 2 | everyone |
-| +11 | Deep Dive 3 | everyone |
-
-The base date is calculated as the next Monday at 3pm local time that doesn't conflict with existing `publish_series` tasks in the same category.
+| `subtitle` | str | Short subtitle for Substack draft |
+| `source_path` | str | Path to unillustrated markdown |
+| `illustrated` | bool | Has illustration completed? |
+| `illustrated_path` | str | Path to illustrated markdown (once done) |
+| `exported` | bool | Whether article has been exported to batch folder |
 
 ## File Storage
 
@@ -206,13 +194,14 @@ All local state is stored under `.thala/`:
 - `.thala/queue/queue.json` - Persistent task queue (LLM-editable JSON)
 - `.thala/queue/current_work.json` - Active work with checkpoints
 - `.thala/queue/cost_cache.json` - Monthly cost aggregations (1hr TTL)
-- `.thala/queue/publications.json` - Category → Substack publication mapping
+- `.thala/queue/publications.json` - Category → publication mapping
 - `.thala/output/` - Generated reports and article series
-- `.thala/.substack-cookies.json` - Substack authentication cookies
+- `.thala/export/` - Batch-exported articles ready for rsync to VPS
+- `.thala/state/pub_counters.json` - Per-publication sequential batch IDs
 
 ### Publications Config (Source of Truth for Categories)
 
-The `.thala/queue/publications.json` file is the **source of truth for categories**. The top-level keys define which categories exist in the system, and the values map each category to its Substack publication:
+The `.thala/queue/publications.json` file is the **source of truth for categories**. The top-level keys define which categories exist in the system, and the values map each category to its publication:
 
 ```json
 {
@@ -231,7 +220,7 @@ The `.thala/queue/publications.json` file is the **source of truth for categorie
 
 **To remove a category:** Delete the key from `.thala/queue/publications.json`.
 
-Categories are loaded from this file when the queue manager initializes. The `publish_series` workflow also uses this config to route drafts to the correct Substack publication.
+Categories are loaded from this file when the queue manager initializes. The `illustrate_and_export` workflow uses this config to determine the publication slug for batch folders.
 
 ## Architecture
 
@@ -265,8 +254,8 @@ Workflows are registered in `core/task_queue/workflows/__init__.py`:
 ```python
 WORKFLOW_REGISTRY = {
     "lit_review_full": LitReviewFullWorkflow,
-    "publish_series": PublishSeriesWorkflow,
     "web_research": WebResearchWorkflow,
+    "illustrate_and_export": IllustrateAndExportWorkflow,
 }
 ```
 
@@ -274,7 +263,7 @@ Each workflow defines its own checkpoint phases.
 
 ### Zero-Cost Workflows
 
-Some workflows (like `publish_series`) make no LLM calls and can be marked as zero-cost:
+Some workflows make no LLM calls and can be marked as zero-cost:
 
 ```python
 class MyWorkflow(BaseWorkflow):
@@ -366,4 +355,5 @@ queue.set_concurrency(mode="stagger_hours", stagger_hours=24.0)
 - `workflows.enhance` - Enhancement (supervision + editing)
 - `workflows.output.evening_reads` - Article series generation
 - `workflows.output.illustrate` - Document illustration with images
-- `utils.substack_publish` - Substack draft/publish API
+- `core.task_queue.workflows.shared.batch_export` - Batch export to staging directory
+- `core.task_queue.workflows.shared.rsync_export` - Rsync batch to VPS

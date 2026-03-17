@@ -23,7 +23,7 @@ from .workflow_executor import run_task_workflow
 
 logger = logging.getLogger(__name__)
 
-# Max publish tasks (illustrate_and_publish) per parallel run.
+# Max publish tasks (illustrate_and_export) per parallel run.
 # Limits Imagen spend so a failed pipeline doesn't waste downstream tokens.
 MAX_PUBLISH_TASKS = int(os.environ.get("THALA_MAX_PUBLISH_TASKS", "2"))
 

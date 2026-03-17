@@ -68,10 +68,11 @@ class WebResearchTask(TypedDict):
     tags: list[str]  # Searchable tags
 
 
-class IllustratePublishManifest(TypedDict):
+class IllustrateExportManifest(TypedDict):
     """Schema for the manifest.json written by lit_review_full save_and_spawn phase.
 
     Makes the inter-workflow contract explicit and testable.
+    Used by the illustrate_and_export workflow to locate source articles.
     """
 
     topic: str
@@ -82,27 +83,27 @@ class IllustratePublishManifest(TypedDict):
     articles: list[dict]  # [{id, title, filename}, ...]
 
 
-class IllustratePublishItem(TypedDict):
-    """A single article in an illustrate_and_publish task."""
+class IllustrateExportItem(TypedDict):
+    """A single article in an illustrate_and_export task."""
 
     id: str  # "overview", "deep_dive_1", etc.
     title: str
+    subtitle: str  # Short subtitle for Substack draft
     source_path: str  # Path to unillustrated markdown
     illustrated: bool  # Has illustration completed?
     illustrated_path: str | None  # Path to illustrated markdown (once done)
-    draft_id: str | None  # Substack draft ID (once published)
-    draft_url: str | None  # Substack draft URL (once published)
+    exported: bool  # Has the article been exported to a batch folder?
 
 
-class IllustrateAndPublishTask(TypedDict):
-    """An illustrate-and-publish task in the queue.
+class IllustrateAndExportTask(TypedDict):
+    """An illustrate-and-export task in the queue.
 
-    Budget-aware illustration + immediate Substack draft publishing.
+    Budget-aware illustration + batch export to VPS via rsync.
     Spawned by lit_review_full after saving unillustrated articles.
     """
 
     id: str
-    task_type: str  # "illustrate_and_publish"
+    task_type: str  # "illustrate_and_export"
     status: str
     category: str
     priority: int
@@ -110,7 +111,7 @@ class IllustrateAndPublishTask(TypedDict):
     source_task_id: str  # Parent lit_review_full task ID
     topic: str
     manifest_path: str  # Path to manifest.json
-    items: list[IllustratePublishItem]
+    items: list[IllustrateExportItem]
     not_before: str | None  # ISO datetime — invisible to dispatcher until this time
     next_run_after: str | None  # ISO datetime for DEFERRED scheduling
 
@@ -130,4 +131,4 @@ class IllustrateAndPublishTask(TypedDict):
 
 
 # Union type for all task types
-Task = TopicTask | WebResearchTask | IllustrateAndPublishTask
+Task = TopicTask | WebResearchTask | IllustrateAndExportTask

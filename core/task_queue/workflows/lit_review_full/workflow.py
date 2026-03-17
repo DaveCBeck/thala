@@ -7,7 +7,7 @@ This is the complete academic research workflow that:
 2. Generates an initial literature review
 3. Enhances with supervision loops and editing
 4. Produces an evening reads article series
-5. Saves unillustrated articles and spawns illustrate_and_publish task
+5. Saves unillustrated articles and spawns illustrate_and_export task
 """
 
 import logging
@@ -112,7 +112,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
         series_result = None
         final_report = None
         illustrate_task_id = None
-        lit_review_draft_url = None
+        quartz_path = None
 
         # Phase 1: Literature review
         if "lit_review" in completed_phases:
@@ -228,10 +228,10 @@ class LitReviewFullWorkflow(BaseWorkflow):
                 errors.append({"phase": "evening_reads", "error": str(e)})
                 series_result = {"final_outputs": []}
 
-        # Phase 4: Save articles to disk, publish lit review draft, spawn illustrate_and_publish task
+        # Phase 4: Save articles to disk, export lit review to Quartz, spawn illustrate_and_export task
         if "save_and_spawn" in completed_phases:
             illustrate_task_id = phase_outputs.get("illustrate_task_id")
-            lit_review_draft_url = phase_outputs.get("lit_review_draft_url")
+            quartz_path = phase_outputs.get("quartz_path")
             logger.info("Skipping save_and_spawn phase (already complete)")
         else:
             checkpoint_callback("save_and_spawn")
@@ -246,7 +246,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
                         slugify_fn=self.slugify,
                     )
                     illustrate_task_id = spawn_result.get("illustrate_task_id")
-                    lit_review_draft_url = spawn_result.get("lit_review_draft_url")
+                    quartz_path = spawn_result.get("quartz_path")
                     checkpoint_callback(
                         "save_and_spawn",
                         phase_outputs={
@@ -255,7 +255,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
                             "final_report": final_report,
                             "series_result": series_result,
                             "illustrate_task_id": illustrate_task_id,
-                            "lit_review_draft_url": lit_review_draft_url,
+                            "quartz_path": quartz_path,
                         },
                     )
                     if flush_checkpoints:
@@ -280,7 +280,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
             "series": series_result,
             "final_report": final_report,
             "illustrate_task_id": illustrate_task_id,
-            "lit_review_draft_url": lit_review_draft_url,
+            "quartz_path": quartz_path,
             "errors": errors,
         }
 

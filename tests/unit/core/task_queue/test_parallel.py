@@ -70,7 +70,7 @@ def _make_publish_task(
     """Build a minimal publish task dict."""
     return {
         "id": task_id,
-        "task_type": "illustrate_and_publish",
+        "task_type": "illustrate_and_export",
         "category": category,
         "priority": priority,
         "status": status,

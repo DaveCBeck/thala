@@ -453,8 +453,7 @@ def _spawn_publish_task(
             "day_offset": 0,
             "audience": "everyone",
             "published": False,
-            "draft_id": None,
-            "draft_url": None,
+            "exported": False,
         },
         # ... more items ...
     ]

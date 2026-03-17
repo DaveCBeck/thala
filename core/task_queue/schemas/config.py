@@ -17,5 +17,5 @@ class TaskQueue(TypedDict):
     categories: list[str]  # Category names for research round-robin
     last_category_index: int  # For round-robin tracking
     research_tasks: list[Task]  # lit_review_full, web_research
-    publish_tasks: list[Task]  # illustrate_and_publish
+    publish_tasks: list[Task]  # illustrate_and_export
     last_updated: str  # ISO datetime

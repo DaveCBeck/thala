@@ -1,6 +1,6 @@
-"""Illustrate-and-publish workflow.
+"""Illustrate-and-export workflow.
 
-Budget-aware illustration + immediate Substack draft publishing.
+Budget-aware illustration + batch export to VPS via rsync.
 Spawned by lit_review_full after saving unillustrated articles to disk.
 
 This workflow:
@@ -8,10 +8,9 @@ This workflow:
 2. For each article (that isn't already done):
    a. Checks daily Imagen budget via try_acquire()
    b. Illustrates the article
-   c. Publishes as a Substack draft
-   d. Persists per-article progress
+   c. Persists per-article progress
 3. Defers with next_run_after when budget exhausted
-4. Completes when all articles are illustrated and drafted
+4. Once all articles are illustrated, exports a batch folder and rsyncs to VPS
 """
 
 from __future__ import annotations
@@ -25,6 +24,9 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from langsmith import traceable
 
+from core.task_queue.workflows.shared.batch_export import export_batch
+from core.task_queue.workflows.shared.rsync_export import rsync_batch
+
 if TYPE_CHECKING:
     from workflows.output.illustrate.config import IllustrateConfig
 
@@ -32,16 +34,16 @@ from .base import BaseWorkflow
 
 logger = logging.getLogger(__name__)
 
-# Hours to wait before retrying after budget exhaustion
+# Hours to wait before retrying after budget exhaustion or rsync failure
 DEFER_HOURS = 3
 
 
-class IllustrateAndPublishWorkflow(BaseWorkflow):
-    """Budget-aware illustration and draft publishing workflow."""
+class IllustrateAndExportWorkflow(BaseWorkflow):
+    """Budget-aware illustration and batch export workflow."""
 
     @property
     def task_type(self) -> str:
-        return "illustrate_and_publish"
+        return "illustrate_and_export"
 
     @property
     def phases(self) -> list[str]:
@@ -52,7 +54,7 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         topic = task.get("topic", "unknown")[:40]
         return f"illustrate({source_id}): {topic}"
 
-    @traceable(run_type="chain", name="Task_IllustrateAndPublish")
+    @traceable(run_type="chain", name="Task_IllustrateAndExport")
     async def run(
         self,
         task: dict[str, Any],
@@ -62,10 +64,10 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         flush_checkpoints: Optional[Callable[[], Awaitable[None]]] = None,
         update_items_callback: Optional[Callable[[str, list[dict]], Awaitable[None]]] = None,
     ) -> dict[str, Any]:
-        """Run the illustrate-and-publish workflow.
+        """Run the illustrate-and-export workflow.
 
         Args:
-            task: IllustrateAndPublishTask with items, manifest_path, etc.
+            task: IllustrateAndExportTask with items, manifest_path, etc.
             checkpoint_callback: Progress callback
             resume_from: Optional checkpoint for resumption
             flush_checkpoints: Async function to await pending checkpoint writes
@@ -109,67 +111,54 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
         }
         config_factory = _config_factories.get(quality)
 
-        # Per-article loop: illustrate → publish → checkpoint
+        # Per-article loop: illustrate → checkpoint
         errors = []
         progress_made = False
         cached_vi = None
 
         for item in items:
             # Skip fully completed items
-            if item.get("draft_id"):
+            if item.get("illustrated"):
                 continue
 
-            # Illustrate if not yet done
-            if not item.get("illustrated"):
-                # Non-consuming check only — the actual try_acquire() happens
-                # inside generate_article_header() (image_utils.py) which is
-                # the single source of truth for daily budget consumption.
-                if await daily_tracker.remaining() < 1:
-                    logger.info("Daily budget exhausted after illustrating some articles")
-                    break
+            # Non-consuming check only — the actual try_acquire() happens
+            # inside generate_article_header() (image_utils.py) which is
+            # the single source of truth for daily budget consumption.
+            if await daily_tracker.remaining() < 1:
+                logger.info("Daily budget exhausted after illustrating some articles")
+                break
 
-                try:
-                    vi_kwarg = {"visual_identity_override": cached_vi} if cached_vi else {}
-                    config = config_factory(**vi_kwarg) if config_factory else (
-                        IllustrateConfig(**vi_kwarg) if vi_kwarg else None
-                    )
-                    illustrated_path, article_result = await self._illustrate_article(
-                        item,
-                        output_dir,
-                        illustrate_graph,
-                        config=config,
-                    )
+            try:
+                vi_kwarg = {"visual_identity_override": cached_vi} if cached_vi else {}
+                config = config_factory(**vi_kwarg) if config_factory else (
+                    IllustrateConfig(**vi_kwarg) if vi_kwarg else None
+                )
+                illustrated_path, article_result = await self._illustrate_article(
+                    item,
+                    output_dir,
+                    illustrate_graph,
+                    config=config,
+                )
+                item["illustrated"] = True
+                item["illustrated_path"] = str(illustrated_path)
+                progress_made = True
+
+                if cached_vi is None:
+                    vi = article_result.get("visual_identity")
+                    if vi:
+                        cached_vi = vi
+                        logger.info(f"Cached visual identity: style='{vi.primary_style}'")
+            except Exception as e:
+                logger.error(f"Failed to illustrate {item['id']}: {e}")
+                errors.append({"item": item["id"], "error": str(e)})
+                # Save unillustrated version as fallback
+                source = Path(item["source_path"])
+                if source.exists():
+                    fallback_path = output_dir / f"{item['id']}_unillustrated.md"
+                    fallback_path.write_text(source.read_text())
                     item["illustrated"] = True
-                    item["illustrated_path"] = str(illustrated_path)
+                    item["illustrated_path"] = str(fallback_path)
                     progress_made = True
-
-                    if cached_vi is None:
-                        vi = article_result.get("visual_identity")
-                        if vi:
-                            cached_vi = vi
-                            logger.info(f"Cached visual identity: style='{vi.primary_style}'")
-                except Exception as e:
-                    logger.error(f"Failed to illustrate {item['id']}: {e}")
-                    errors.append({"item": item["id"], "error": str(e)})
-                    # Save unillustrated version as fallback
-                    source = Path(item["source_path"])
-                    if source.exists():
-                        fallback_path = output_dir / f"{item['id']}_unillustrated.md"
-                        fallback_path.write_text(source.read_text())
-                        item["illustrated"] = True
-                        item["illustrated_path"] = str(fallback_path)
-                        progress_made = True
-
-            # Publish (whether just illustrated or previously illustrated but not drafted)
-            if item.get("illustrated") and not item.get("draft_id"):
-                try:
-                    draft_result = await self._publish_draft(item, category)
-                    item["draft_id"] = draft_result.get("post_id")
-                    item["draft_url"] = draft_result.get("draft_url")
-                    progress_made = True
-                except Exception as e:
-                    logger.error(f"Failed to publish {item['id']}: {e}")
-                    errors.append({"item": item["id"], "error": str(e)})
 
             # Persist progress after each article
             if flush_checkpoints:
@@ -178,12 +167,12 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
                 await update_items_callback(task["id"], items)
             checkpoint_callback("processing", phase_outputs={"last_item": item["id"]})
 
-        # Status determination
-        all_done = all(i.get("draft_id") for i in items)
-        if all_done:
-            return {"status": "success", "items": items}
+        # Check if all articles are illustrated — if so, export batch + rsync
+        all_illustrated = all(i.get("illustrated") for i in items)
+        if all_illustrated:
+            return await self._export_and_sync(items, output_dir, manifest, category)
 
-        remaining_items = [i for i in items if not i.get("draft_id")]
+        remaining_items = [i for i in items if not i.get("illustrated")]
         if progress_made or not errors:
             # Still work to do — defer for later
             next_run = (datetime.now(timezone.utc) + timedelta(hours=DEFER_HOURS)).isoformat()
@@ -191,6 +180,31 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
             return {"status": "deferred", "next_run_after": next_run, "items": items}
 
         return {"status": "failed", "errors": errors, "items": items}
+
+    async def _export_and_sync(
+        self,
+        items: list[dict],
+        output_dir: Path,
+        manifest: dict,
+        category: str,
+    ) -> dict[str, Any]:
+        """Export batch folder and rsync to VPS."""
+        try:
+            batch_dir = export_batch(output_dir, manifest, items, category)
+        except Exception as e:
+            logger.error(f"Batch export failed: {e}")
+            return {"status": "failed", "errors": [{"phase": "export", "error": str(e)}]}
+
+        rsync_ok = await rsync_batch(batch_dir)
+        if not rsync_ok:
+            next_run = (datetime.now(timezone.utc) + timedelta(hours=DEFER_HOURS)).isoformat()
+            logger.warning("rsync failed, deferring")
+            return {"status": "deferred", "next_run_after": next_run, "items": items}
+
+        for item in items:
+            item["exported"] = True
+
+        return {"status": "success", "items": items, "batch_dir": str(batch_dir)}
 
     def save_outputs(
         self,
@@ -255,43 +269,3 @@ class IllustrateAndPublishWorkflow(BaseWorkflow):
 
         logger.info(f"Illustrated article: {item['title'][:50]}")
         return illustrated_path, article_result
-
-    async def _publish_draft(self, item: dict, category: str) -> dict:
-        """Publish an illustrated article as a Substack draft."""
-        import asyncio
-
-        from core.task_queue.paths import SUBSTACK_COOKIES_FILE
-        from core.task_queue.workflows.shared.publication_config import load_publication_config
-        from utils.substack_publish import SubstackConfig, SubstackPublisher
-
-        # Load publication config for this category
-        pub_config = load_publication_config(category)
-
-        # Read illustrated content
-        content_path = Path(item.get("illustrated_path", item["source_path"]))
-        content = content_path.read_text()
-
-        # Determine audience: overview is "everyone", others could vary
-        audience = "everyone"
-        if item["id"] == "lit_review":
-            audience = "only_paid"
-
-        config = SubstackConfig(
-            cookies_path=str(SUBSTACK_COOKIES_FILE),
-            publication_url=pub_config.get("publication_url"),
-            audience=audience,
-        )
-        publisher = SubstackPublisher(config)
-
-        # SubstackPublisher.create_draft is sync — run in thread
-        result = await asyncio.to_thread(
-            publisher.create_draft,
-            markdown=content,
-            title=item["title"],
-        )
-
-        if not result.get("success"):
-            raise RuntimeError(f"Draft creation failed: {result.get('error', 'unknown')}")
-
-        logger.info(f"Published draft: {item['title'][:50]} -> {result.get('draft_url')}")
-        return result

@@ -125,7 +125,7 @@ Both `THALA_IMAGEN_DAILY_LIMIT` and `THALA_IMAGEN_RPM_LIMIT` are expressed in **
 
 - `core/task_queue/rate_limits.py` -- `ImagenDailyTracker`, `ImagenRPMLimiter`, `get_imagen_semaphore()`
 - `workflows/shared/image_utils.py:generate_article_header()` -- composes all three layers
-- `core/task_queue/workflows/illustrate_and_publish.py` -- outer loop uses `remaining()` for fast-fail
+- `core/task_queue/workflows/illustrate_and_export.py` -- outer loop uses `remaining()` for fast-fail
 
 ## Related
 

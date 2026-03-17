@@ -33,7 +33,7 @@ def _make_v1_research_task(
 
 def _make_v1_publish_task(
     task_id: str = "p1",
-    task_type: str = "illustrate_and_publish",
+    task_type: str = "illustrate_and_export",
     category: str = "science",
 ) -> dict:
     """Build a minimal v1 publish task dict."""

@@ -233,6 +233,8 @@ class WebResearchWorkflow(BaseWorkflow):
                 article_path = series_dir / f"{output['id']}.md"
                 with open(article_path, "w") as f:
                     f.write(f"# {output['title']}\n\n")
+                    if output.get("subtitle"):
+                        f.write(f"*{output['subtitle']}*\n\n")
                     f.write(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
                     f.write("---\n\n")
                     f.write(output["content"])

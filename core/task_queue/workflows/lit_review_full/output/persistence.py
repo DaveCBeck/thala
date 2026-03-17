@@ -44,7 +44,7 @@ def save_workflow_outputs(
         "category": task.get("category"),
         "generated_at": datetime.now().isoformat(),
         "illustrate_task_id": result.get("illustrate_task_id"),
-        "lit_review_draft_url": result.get("lit_review_draft_url"),
+        "quartz_path": result.get("quartz_path"),
         "status": result.get("status"),
         "errors": result.get("errors"),
     }

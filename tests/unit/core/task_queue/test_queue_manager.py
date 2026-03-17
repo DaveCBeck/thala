@@ -112,7 +112,7 @@ class TestUpdateTaskAllowlist:
         assert "evil_key" not in task
 
     def test_items_field_is_mutable(self, queue_manager, task_id):
-        """The 'items' field (used by illustrate_and_publish) is in the allowlist."""
+        """The 'items' field (used by illustrate_and_export) is in the allowlist."""
         items = [{"id": "overview", "title": "Test", "illustrated": True}]
         result = queue_manager.update_task(task_id, items=items)
         assert result is True

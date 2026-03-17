@@ -9,7 +9,7 @@ Transforms academic literature reviews into a 4-part series:
 5. Overview writing
 6. Reference formatting
 
-Illustration is handled separately by the illustrate_and_publish task queue workflow.
+Illustration is handled separately by the illustrate_and_export task queue workflow.
 """
 
 from typing import Any
@@ -154,7 +154,7 @@ def create_evening_reads_graph() -> StateGraph:
     The sync_before_write node acts as a barrier between the two
     parallel phases, ensuring all fetches complete before writes begin.
 
-    Illustration is handled by the illustrate_and_publish task queue workflow,
+    Illustration is handled by the illustrate_and_export task queue workflow,
     spawned by the save_and_spawn phase after this graph completes.
     """
     builder = StateGraph(EveningReadsState)

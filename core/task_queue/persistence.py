@@ -12,7 +12,7 @@ from .schemas import TaskQueue
 logger = logging.getLogger(__name__)
 
 # Task types that belong in the publish queue
-PUBLISH_TASK_TYPES = {"illustrate_and_publish"}
+PUBLISH_TASK_TYPES = {"illustrate_and_export"}
 
 
 class QueuePersistence:

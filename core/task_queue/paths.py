@@ -3,7 +3,7 @@
 All local state is stored under .thala/:
 - .thala/queue/    - Task queue data (queue.json, checkpoints, etc.)
 - .thala/output/   - Generated reports and article series
-- .thala/.substack-cookies.json - Substack authentication cookies
+- .thala/export/   - Batch-exported articles ready for rsync to VPS
 """
 
 from pathlib import Path
@@ -31,6 +31,12 @@ STATE_DIR = THALA_DIR / "state"
 # Output directory (was: output/ and .outputs/)
 OUTPUT_DIR = THALA_DIR / "output"
 
+# Export staging directory (batch folders ready for rsync to VPS)
+EXPORT_DIR = THALA_DIR / "export"
+
+# Per-publication sequential ID counters
+PUB_COUNTERS_FILE = STATE_DIR / "pub_counters.json"
+
 # Editorial stances for publications
 EDITORIAL_STANCES_DIR = THALA_DIR / "editorial_stances"
 
@@ -47,3 +53,4 @@ def ensure_directories() -> None:
     QUEUE_DIR.mkdir(exist_ok=True)
     STATE_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
+    EXPORT_DIR.mkdir(exist_ok=True)

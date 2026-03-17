@@ -1,4 +1,4 @@
-"""Save-and-spawn phase: save unillustrated articles, publish lit review, spawn illustrate_and_publish task."""
+"""Save-and-spawn phase: save unillustrated articles, export lit review to Quartz, spawn illustrate_and_export task."""
 
 import asyncio
 import logging
@@ -18,7 +18,7 @@ async def run_save_and_spawn_phase(
     get_output_dir_fn: Callable[[], Path],
     slugify_fn: Callable[[str], str],
 ) -> dict[str, Any]:
-    """Save unillustrated articles to disk, publish lit review as draft, spawn illustrate_and_publish task.
+    """Save unillustrated articles to disk, export lit review to Quartz, spawn illustrate_and_export task.
 
     Args:
         task: Task data
@@ -28,7 +28,7 @@ async def run_save_and_spawn_phase(
         slugify_fn: Function to slugify strings
 
     Returns:
-        Dict with illustrate_task_id and lit_review_draft_url
+        Dict with illustrate_task_id, quartz_path, output_dir
     """
     task_id = task["id"]
     topic = task.get("topic", "unknown")
@@ -58,6 +58,7 @@ async def run_save_and_spawn_phase(
             {
                 "id": article_id,
                 "title": output["title"],
+                "subtitle": output.get("subtitle", ""),
                 "filename": filename,
             }
         )
@@ -75,13 +76,6 @@ async def run_save_and_spawn_phase(
     write_json_atomic(manifest_path, manifest, indent=2)
     logger.info(f"Wrote manifest with {len(articles)} articles")
 
-    # Publish lit review as Substack draft (audience: only_paid)
-    lit_review_draft_url = None
-    try:
-        lit_review_draft_url = await _publish_lit_review_draft(final_report, topic, category)
-    except Exception as e:
-        logger.error(f"Failed to publish lit review draft: {e}")
-
     # Export full review to Quartz site
     quartz_path = None
     try:
@@ -97,7 +91,7 @@ async def run_save_and_spawn_phase(
     except Exception as e:
         logger.error(f"Failed to export lit review to Quartz: {e}")
 
-    # Spawn illustrate_and_publish task
+    # Spawn illustrate_and_export task
     illustrate_task_id = await _spawn_illustrate_task(
         task=task,
         manifest_path=str(manifest_path),
@@ -108,44 +102,9 @@ async def run_save_and_spawn_phase(
 
     return {
         "illustrate_task_id": illustrate_task_id,
-        "lit_review_draft_url": lit_review_draft_url,
         "quartz_path": str(quartz_path) if quartz_path else None,
         "output_dir": str(unillust_dir),
     }
-
-
-async def _publish_lit_review_draft(content: str, topic: str, category: str) -> str | None:
-    """Publish the lit review as a Substack draft. Returns draft URL."""
-    from core.task_queue.paths import PUBLICATIONS_FILE, SUBSTACK_COOKIES_FILE
-    from utils.substack_publish import SubstackConfig, SubstackPublisher
-
-    if not PUBLICATIONS_FILE.exists():
-        logger.warning("publications.json not found, skipping lit review draft")
-        return None
-
-    from core.task_queue.workflows.shared.publication_config import load_publication_config
-
-    pub_config = load_publication_config(category)
-
-    config = SubstackConfig(
-        cookies_path=str(SUBSTACK_COOKIES_FILE),
-        publication_url=pub_config.get("publication_url"),
-        audience="only_paid",
-    )
-    publisher = SubstackPublisher(config)
-
-    result = await asyncio.to_thread(
-        publisher.create_draft,
-        markdown=content,
-        title=f"Literature Review: {topic}",
-    )
-
-    if result.get("success"):
-        logger.info(f"Published lit review draft: {result.get('draft_url')}")
-        return result.get("draft_url")
-    else:
-        logger.error(f"Lit review draft failed: {result.get('error')}")
-        return None
 
 
 async def _spawn_illustrate_task(
@@ -155,11 +114,12 @@ async def _spawn_illustrate_task(
     articles: list[dict],
     final_outputs: list[dict],
 ) -> str:
-    """Create an illustrate_and_publish task in the queue."""
+    """Create an illustrate_and_export task in the queue."""
     from core.task_queue.queue_manager import TaskQueueManager
 
-    # Build title lookup
+    # Build lookups from final outputs
     titles = {out["id"]: out["title"] for out in final_outputs}
+    subtitles = {out["id"]: out.get("subtitle", "") for out in final_outputs}
 
     # Build items list
     items = []
@@ -168,18 +128,18 @@ async def _spawn_illustrate_task(
             {
                 "id": article["id"],
                 "title": titles.get(article["id"], article["id"]),
+                "subtitle": subtitles.get(article["id"], ""),
                 "source_path": str(unillust_dir / article["filename"]),
                 "illustrated": False,
                 "illustrated_path": None,
-                "draft_id": None,
-                "draft_url": None,
+                "exported": False,
             }
         )
 
     queue = TaskQueueManager()
     return await asyncio.to_thread(
         queue.add_task,
-        task_type="illustrate_and_publish",
+        task_type="illustrate_and_export",
         category=task["category"],
         priority=task["priority"],
         quality=task.get("quality", "standard"),

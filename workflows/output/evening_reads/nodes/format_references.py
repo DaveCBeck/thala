@@ -8,8 +8,10 @@ import logging
 import re
 from typing import Any
 
+from core.llm_broker import BatchPolicy
 from core.stores.zotero import ZoteroStore
 from core.stores.zotero.schemas import ZoteroItem
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 from ..state import (
     EveningReadsState,
@@ -167,6 +169,52 @@ def _build_reference_section(formatted_refs: list[FormattedReference], citation_
     return ref_section
 
 
+async def _generate_subtitles(articles: list[dict[str, str]]) -> dict[str, str]:
+    """Generate short subtitles for all articles in a single LLM call.
+
+    Args:
+        articles: List of dicts with 'id', 'title', and first ~200 words of content.
+
+    Returns:
+        Mapping of article id to subtitle string.
+    """
+    article_descriptions = []
+    for a in articles:
+        article_descriptions.append(f"ID: {a['id']}\nTitle: {a['title']}\nOpening: {a['opening']}")
+
+    user_prompt = (
+        "Generate a short subtitle (8-15 words) for each article below. "
+        "The subtitle should hook readers and complement the title — not repeat it. "
+        "Return ONLY lines in the format: ID: subtitle\n\n"
+        + "\n\n---\n\n".join(article_descriptions)
+    )
+
+    try:
+        response = await invoke(
+            tier=ModelTier.HAIKU,
+            system="You write concise, compelling subtitles for a Substack newsletter about science and research.",
+            user=user_prompt,
+            config=InvokeConfig(max_tokens=500, batch_policy=BatchPolicy.PREFER_BALANCE),
+        )
+
+        text = response.content if isinstance(response.content, str) else str(response.content)
+        subtitles = {}
+        for line in text.strip().splitlines():
+            line = line.strip()
+            if ":" in line:
+                article_id, subtitle = line.split(":", 1)
+                article_id = article_id.strip()
+                subtitle = subtitle.strip()
+                if article_id in {a["id"] for a in articles} and subtitle:
+                    subtitles[article_id] = subtitle
+
+        return subtitles
+
+    except Exception as e:
+        logger.warning(f"Subtitle generation failed, using fallback: {e}")
+        return {}
+
+
 async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
     """Format references for all articles and produce final outputs.
 
@@ -202,6 +250,17 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
     found_count = len([r for r in formatted_refs if r["found_in_zotero"]])
     logger.info(f"Formatted {found_count}/{len(all_citation_keys)} references")
 
+    # Generate subtitles for all articles
+    subtitle_inputs = []
+    for draft in deep_dive_drafts:
+        opening = " ".join(draft["content"].split()[:200])
+        subtitle_inputs.append({"id": draft["id"], "title": draft["title"], "opening": opening})
+    if overview_draft:
+        opening = " ".join(overview_draft["content"].split()[:200])
+        subtitle_inputs.append({"id": "overview", "title": overview_draft["title"], "opening": opening})
+
+    subtitles = await _generate_subtitles(subtitle_inputs)
+
     # Build final outputs for each article
     final_outputs: list[FinalOutput] = []
 
@@ -215,6 +274,7 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
             FinalOutput(
                 id=draft["id"],
                 title=draft["title"],
+                subtitle=subtitles.get(draft["id"], ""),
                 content=final_content,
                 word_count=len(final_content.split()),
             )
@@ -230,6 +290,7 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
             FinalOutput(
                 id="overview",
                 title=overview_draft["title"],
+                subtitle=subtitles.get("overview", ""),
                 content=final_content,
                 word_count=len(final_content.split()),
             )

@@ -77,6 +77,7 @@ class FinalOutput(TypedDict):
 
     id: Literal["overview", "deep_dive_1", "deep_dive_2", "deep_dive_3"]
     title: str
+    subtitle: str  # Short subtitle for Substack draft
     content: str  # Article with references appended
     word_count: int
 

@@ -175,7 +175,7 @@ class TaskQueueManager:
                 "language": language,  # Optional for web research
             }
             identifier = query or ""
-        elif task_type == "illustrate_and_publish":
+        elif task_type == "illustrate_and_export":
             new_task: Task = {
                 **base_fields,
                 "topic": topic or "",
