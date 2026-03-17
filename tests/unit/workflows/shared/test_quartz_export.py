@@ -39,6 +39,67 @@ class TestSlugifyTopic:
         assert "--" not in result
 
 
+class TestNumberifyCitations:
+    """Test _numberify_citations helper."""
+
+    def test_single_citation(self):
+        from core.task_queue.workflows.shared.quartz_export import _numberify_citations
+
+        content = "Some text [@ABCDEF12] more text.\n\n## References\n\n[@ABCDEF12] Author (2024). Title.\n"
+        result = _numberify_citations(content)
+        assert "[1]" in result
+        assert "[@ABCDEF12]" not in result
+        assert "[1] Author (2024). Title." in result
+
+    def test_multi_citation_group(self):
+        from core.task_queue.workflows.shared.quartz_export import _numberify_citations
+
+        content = "Text [@AAAAAA11; @BBBBBB22] end.\n\n## References\n\n[@AAAAAA11] A.\n[@BBBBBB22] B.\n"
+        result = _numberify_citations(content)
+        assert "[1, 2]" in result
+        assert "[1] A." in result
+        assert "[2] B." in result
+
+    def test_order_by_first_appearance(self):
+        from core.task_queue.workflows.shared.quartz_export import _numberify_citations
+
+        content = "First [@ZZZZZZ99] then [@AAAAAA11].\n\n## References\n\n[@AAAAAA11] Alpha.\n[@ZZZZZZ99] Zeta.\n"
+        result = _numberify_citations(content)
+        # Z appears first in body → gets number 1
+        assert "[1]" in result.split("## References")[0]  # first cite
+        # References re-sorted by number
+        refs = result.split("## References\n")[1].strip().split("\n")
+        assert refs[0].startswith("[1] Zeta")
+        assert refs[1].startswith("[2] Alpha")
+
+    def test_no_citations_passthrough(self):
+        from core.task_queue.workflows.shared.quartz_export import _numberify_citations
+
+        content = "Plain text with no citations.\n"
+        assert _numberify_citations(content) == content
+
+    def test_no_references_section(self):
+        from core.task_queue.workflows.shared.quartz_export import _numberify_citations
+
+        content = "Text with [@ABCDEF12] inline but no references section.\n"
+        result = _numberify_citations(content)
+        assert "[1]" in result
+        assert "[@ABCDEF12]" not in result
+
+    def test_line_starting_citation(self):
+        from core.task_queue.workflows.shared.quartz_export import _numberify_citations
+
+        content = (
+            "[@AAAAAA11] argued something.\n"
+            "Then [@BBBBBB22] confirmed it.\n\n"
+            "## References\n\n"
+            "[@AAAAAA11] Author A.\n"
+            "[@BBBBBB22] Author B.\n"
+        )
+        result = _numberify_citations(content)
+        assert "[@" not in result
+
+
 class TestExtractAbstract:
     """Test _extract_abstract helper."""
 
