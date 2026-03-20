@@ -8,7 +8,7 @@ provenance markers.
 import logging
 from typing import Any, Optional
 
-from workflows.shared.llm_utils import ModelTier, invoke
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ async def run_combine_phase(
         tier=ModelTier.OPUS,
         system=COMBINE_SYSTEM_PROMPT,
         user=user_prompt,
-        thinking=True,
+        config=InvokeConfig(effort="high"),
     )
 
     combined_report = response.content if isinstance(response.content, str) else ""
