@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 _SEARCH_SEMAPHORE_LIMIT = 5
 
 
+def _strip_code_fences(text: str) -> str:
+    """Strip markdown code fences from LLM output before JSON parsing."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove first line (```json or ```) and last line (```)
+        if lines[-1].strip() == "```":
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        text = "\n".join(lines)
+    return text
+
+
 async def run_web_scan_phase(
     topic: str,
     research_questions: list[str],
@@ -104,6 +118,7 @@ async def _generate_search_queries(
     )
 
     content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+    content = _strip_code_fences(content)
 
     try:
         queries = json.loads(content)
@@ -149,6 +164,7 @@ async def _synthesize_results(
     )
 
     content = response.content if isinstance(response.content, str) else response.content[0].get("text", "")
+    content = _strip_code_fences(content)
 
     try:
         data = json.loads(content)
