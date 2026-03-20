@@ -1,8 +1,8 @@
 """Combine phase: merge academic lit review and web research reports.
 
-Produces a unified report with clear sourcing transparency, preserving
-academic citations intact while weaving in web findings with explicit
-provenance markers.
+Produces a unified report that integrates both academic and web research
+findings, using consistent [@ZOTERO_KEY] citation format throughout so
+downstream supervision and evening reads phases can resolve all sources.
 """
 
 import logging
@@ -13,16 +13,16 @@ from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
 logger = logging.getLogger(__name__)
 
 COMBINE_SYSTEM_PROMPT = """\
-You are a research editor merging an academic literature review with recent web research findings into a single unified report.
+You are a research editor merging an academic literature review with web research findings into a single unified report.
+
+Both reports use Pandoc-style citations in [@KEY] format. Both sets of citations are backed by a reference manager — treat them as equally valid sources.
 
 Guidelines:
-1. Use the academic lit review as the structural backbone — it has proper citations, thematic clusters, and methodology.
-2. Weave in web research findings where they add recency value, clearly marked with sourcing language:
-   - Academic sources: "Smith et al. (2025) demonstrated..."
-   - Web/recent sources: "Recent reports indicate..." / "As of March 2026..." / "[Company] announced in [month]..."
-3. Identify contradictions or updates where web findings supersede or extend academic findings.
-4. Preserve ALL academic citations intact (do not modify citation format or references).
-5. Add inline web citations as footnoted URLs, clearly marked as non-peer-reviewed.
+1. Use the academic lit review as the structural backbone — it has thematic clusters and methodology.
+2. Integrate web research findings where they add value: recency, breadth, commercial/regulatory context, or complementary evidence. Web research may surface preprints, clinical trial updates, regulatory decisions, and industry developments that academic databases haven't indexed yet — these are valuable contributions, not second-class sources.
+3. Preserve ALL [@KEY] citations from BOTH reports exactly as they appear. Do not modify, drop, or renumber any citation keys. Every [@KEY] reference in both input reports must appear in the output.
+4. When integrating web findings, keep the original [@KEY] citations inline. Do NOT convert them to footnotes, URLs, or superscript numbers.
+5. Identify contradictions or updates where findings from one source extend or challenge the other. Let the evidence speak — do not assume one source type is inherently more reliable than the other.
 6. Integrate findings naturally — do NOT simply concatenate the two reports.
 7. Target similar word count to the academic report (integrate, don't inflate).
 8. If web research adds significant recent signal, include a brief "Recent Developments" section or integrate inline depending on volume.
@@ -41,7 +41,7 @@ async def run_combine_phase(
 
     Args:
         lit_result: Academic literature review result (with final_report, paper_corpus, etc.)
-        web_result: Web research result (with final_report)
+        web_result: Web research result (with final_report, citation_keys)
         topic: Research topic
         augmented_research_questions: Research questions (from web scan phase)
         recent_landscape: Brief landscape summary from web scan
@@ -51,21 +51,26 @@ async def run_combine_phase(
         - final_report: Combined markdown report
         - paper_corpus: Passed through from lit review (unchanged)
         - paper_summaries: Passed through from lit review (unchanged)
-        - zotero_keys: Passed through from lit review (unchanged)
+        - zotero_keys: Merged from both lit review and web research
         - research_questions: Augmented questions
         - source_breakdown: Counts of academic vs web sources
     """
     academic_report = lit_result.get("final_report", "")
     web_report = web_result.get("final_report", "")
+    web_citation_keys = web_result.get("citation_keys", [])
 
     # Handle single-source graceful degradation
     if not web_report:
         logger.warning("Combine phase: no web report, using academic report only")
-        return _build_result(lit_result, academic_report, augmented_research_questions, web_sources=0)
+        return _build_result(
+            lit_result, academic_report, augmented_research_questions, web_result=web_result, web_sources=0
+        )
 
     if not academic_report:
         logger.warning("Combine phase: no academic report, using web report only")
-        return _build_result(lit_result, web_report, augmented_research_questions, academic_sources=0)
+        return _build_result(
+            lit_result, web_report, augmented_research_questions, web_result=web_result, academic_sources=0
+        )
 
     # Build context for LLM merge
     rq_text = "\n".join(f"- {q}" for q in augmented_research_questions)
@@ -103,18 +108,20 @@ async def run_combine_phase(
         logger.error("Combine phase: LLM returned empty report, falling back to academic report")
         combined_report = academic_report
 
-    academic_source_count = len(lit_result.get("paper_corpus", {}))
+    academic_source_count = len(lit_result.get("paper_corpus", {}) or {})
     web_source_count = web_result.get("source_count", 0)
 
     logger.info(
         f"Combined report: {len(combined_report)} chars "
-        f"(academic: {academic_source_count} papers, web: {web_source_count} sources)"
+        f"(academic: {academic_source_count} papers, web: {web_source_count} sources, "
+        f"web_citation_keys: {len(web_citation_keys)})"
     )
 
     return _build_result(
         lit_result,
         combined_report,
         augmented_research_questions,
+        web_result=web_result,
         academic_sources=academic_source_count,
         web_sources=web_source_count,
     )
@@ -124,18 +131,24 @@ def _build_result(
     lit_result: dict[str, Any],
     report: str,
     research_questions: list[str],
+    web_result: Optional[dict[str, Any]] = None,
     academic_sources: Optional[int] = None,
     web_sources: Optional[int] = None,
 ) -> dict[str, Any]:
     """Build the synthetic lit_result dict for downstream phases."""
     if academic_sources is None:
-        academic_sources = len(lit_result.get("paper_corpus", {}))
+        academic_sources = len(lit_result.get("paper_corpus", {}) or {})
+
+    # Merge zotero_keys from both sources
+    academic_keys = lit_result.get("zotero_keys") or []
+    web_keys = (web_result.get("citation_keys") or []) if web_result else []
+    merged_keys = list(dict.fromkeys(academic_keys + web_keys))  # dedupe, preserve order
 
     return {
         "final_report": report,
         "paper_corpus": lit_result.get("paper_corpus"),
         "paper_summaries": lit_result.get("paper_summaries"),
-        "zotero_keys": lit_result.get("zotero_keys"),
+        "zotero_keys": merged_keys,
         "research_questions": research_questions,
         "source_breakdown": {
             "academic": academic_sources,

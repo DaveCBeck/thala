@@ -225,6 +225,7 @@ async def deep_research(
         "langsmith_run_id": str(run_id),
         "errors": errors,
         "source_count": len(result.get("research_findings", [])),
+        "citation_keys": result.get("citation_keys", []),
         "started_at": initial_state.get("started_at"),
         "completed_at": result.get("completed_at"),
     }

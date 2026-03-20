@@ -224,7 +224,7 @@ class TestWebScanQueryGeneration:
 class TestCombinePhase:
     @pytest.mark.asyncio
     async def test_passes_through_academic_metadata(self):
-        """paper_corpus, paper_summaries, zotero_keys must pass through unchanged."""
+        """paper_corpus, paper_summaries must pass through; zotero_keys merged."""
         from core.task_queue.workflows.lit_review_web_augmented.phases.combine import (
             run_combine_phase,
         )
@@ -238,6 +238,7 @@ class TestCombinePhase:
         web_result = {
             "final_report": "# Web Research\n\nRecent reports indicate...",
             "source_count": 5,
+            "citation_keys": ["WK456", "WK789"],
         }
 
         mock_response = MagicMock()
@@ -257,7 +258,8 @@ class TestCombinePhase:
 
         assert result["paper_corpus"] == {"paper1": {"title": "Test Paper"}}
         assert result["paper_summaries"] == {"paper1": "Summary of test paper"}
-        assert result["zotero_keys"] == ["ZK123"]
+        # zotero_keys should be merged from both sources
+        assert result["zotero_keys"] == ["ZK123", "WK456", "WK789"]
         assert result["source_breakdown"]["academic"] == 1
         assert result["source_breakdown"]["web"] == 5
 
