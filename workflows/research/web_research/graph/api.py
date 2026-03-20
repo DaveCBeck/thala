@@ -34,8 +34,8 @@ from workflows.shared.quality_config import QualityTier
 from workflows.research.web_research.state import (
     DeepResearchState,
     DiffusionState,
-    RecencyFilter,
 )
+from workflows.research.web_research.state.input_types import RecencyFilter
 from workflows.research.web_research.config.languages import get_language_config
 from workflows.shared.workflow_state_store import save_workflow_state
 
@@ -154,8 +154,6 @@ async def deep_research(
         # Language support
         "primary_language": primary_lang,
         "primary_language_config": primary_lang_config,
-        # Recency filtering
-        "recency_filter": recency_filter,
     }
 
     recursion_limit = RECURSION_LIMITS.get(quality, 100)

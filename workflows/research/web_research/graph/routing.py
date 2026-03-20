@@ -42,7 +42,7 @@ def route_supervisor_action(state: DeepResearchState) -> str | list[Send]:
 
         # All researchers use primary language config
         language_config = state.get("primary_language_config")
-        recency_filter = state.get("recency_filter")
+        recency_filter = state.get("input", {}).get("recency_filter")
 
         # Dispatch web researchers for each pending question (up to 3 concurrent)
         max_concurrent = 3
