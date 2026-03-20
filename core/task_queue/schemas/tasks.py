@@ -22,6 +22,7 @@ class TopicTask(TypedDict):
     quality: str  # "quick", "standard", etc.
     language: str  # ISO 639-1 code
     date_range: tuple[int, int] | None  # (start_year, end_year)
+    web_scan_window_days: int | None  # How far back web scan looks (default 30, used by lit_review_web_augmented)
 
     # Timestamps (ISO format)
     created_at: str  # When added to queue

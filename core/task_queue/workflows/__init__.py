@@ -26,11 +26,13 @@ if TYPE_CHECKING:
 # Import workflow implementations
 from .illustrate_and_export import IllustrateAndExportWorkflow
 from .lit_review_full import LitReviewFullWorkflow
+from .lit_review_web_augmented import LitReviewWebAugmentedWorkflow
 from .web_research import WebResearchWorkflow
 
 # Registry mapping task_type -> workflow class
 WORKFLOW_REGISTRY: dict[str, type[BaseWorkflow]] = {
     "lit_review_full": LitReviewFullWorkflow,
+    "lit_review_web_augmented": LitReviewWebAugmentedWorkflow,
     "web_research": WebResearchWorkflow,
     "illustrate_and_export": IllustrateAndExportWorkflow,
 }
@@ -76,5 +78,6 @@ __all__ = [
     "get_available_types",
     "IllustrateAndExportWorkflow",
     "LitReviewFullWorkflow",
+    "LitReviewWebAugmentedWorkflow",
     "WebResearchWorkflow",
 ]
