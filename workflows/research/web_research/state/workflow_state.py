@@ -9,7 +9,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 from core.llm_broker import UserMode
-from .input_types import ClarificationQuestion, ResearchBrief, ResearchInput
+from .input_types import ClarificationQuestion, RecencyFilter, ResearchBrief, ResearchInput
 from .language_config import LanguageConfig
 from .researcher_state import ResearchFinding, ResearchQuestion
 from .supervisor_state import DiffusionState, DraftReport
@@ -75,3 +75,6 @@ class DeepResearchState(TypedDict):
 
     # LLM broker mode (Fast/Balanced/Economical)
     llm_mode: Optional[UserMode]
+
+    # Recency filtering for web searches
+    recency_filter: Optional[RecencyFilter]
