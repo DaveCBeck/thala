@@ -41,26 +41,26 @@ async def validate_queries(
     context = "\n".join(context_parts)
     queries_list = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(queries))
 
-    prompt = f"""Validate whether these search queries are relevant to the research task.
+    system_prompt = (
+        "Validate whether search queries are relevant to a research task.\n"
+        "For each query, determine if it's actually relevant to the research question.\n"
+        "Reject queries that:\n"
+        "- Contain system metadata (iteration counts, percentages, internal state)\n"
+        "- Are about completely unrelated topics\n"
+        "- Are too vague or generic to be useful\n\n"
+        "Accept queries that would help find information about the research topic."
+    )
 
-{context}
+    user_prompt = f"""{context}
 
 Proposed Search Queries:
-{queries_list}
-
-For each query, determine if it's actually relevant to the research question above.
-Reject queries that:
-- Contain system metadata (iteration counts, percentages, internal state)
-- Are about completely unrelated topics
-- Are too vague or generic to be useful
-
-Accept queries that would help find information about the research topic.
-"""
+{queries_list}"""
 
     try:
         result: QueryValidationBatch = await invoke(
             tier=ModelTier.DEEPSEEK_V3,
-            user=prompt,
+            system=system_prompt,
+            user=user_prompt,
             schema=QueryValidationBatch,
         )
 

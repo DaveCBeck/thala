@@ -50,26 +50,22 @@ def create_generate_queries(researcher_type: str = "web"):
         # Get researcher-specific base prompt
         base_prompt = RESEARCHER_QUERY_PROMPTS.get(researcher_type, GENERATE_WEB_QUERIES_SYSTEM)
 
-        # Build language-aware prompt
+        # Build language-aware system prompt
         if language_config and language_config["code"] != "en":
             lang_name = language_config["name"]
-            prompt = f"""{base_prompt}
-
-Generate queries in {lang_name} to find {lang_name}-language sources.
-Write queries naturally in {lang_name}.
-
-Question: {question["question"]}
-"""
+            system_prompt = (
+                f"{base_prompt}\n\n"
+                f"Generate queries in {lang_name} to find {lang_name}-language sources.\n"
+                f"Write queries naturally in {lang_name}."
+            )
         else:
-            prompt = f"""{base_prompt}
-
-Question: {question["question"]}
-"""
+            system_prompt = base_prompt
 
         try:
             result: SearchQueries = await invoke(
                 tier=ModelTier.DEEPSEEK_V3,
-                user=prompt,
+                system=system_prompt,
+                user=question["question"],
                 schema=SearchQueries,
             )
 
