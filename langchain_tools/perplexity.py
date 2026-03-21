@@ -44,10 +44,7 @@ def _get_perplexity():
 
         api_key = os.environ.get("PERPLEXITY_API_KEY")
         if not api_key:
-            raise ValueError(
-                "PERPLEXITY_API_KEY environment variable is required. "
-                "Get one at https://perplexity.ai"
-            )
+            raise ValueError("PERPLEXITY_API_KEY environment variable is required. Get one at https://perplexity.ai")
         _perplexity_client = httpx.AsyncClient(
             base_url="https://api.perplexity.ai",
             headers={
@@ -97,11 +94,22 @@ class FactCheckOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _iso_to_perplexity_date(iso_date: str) -> str:
+    """Convert ISO YYYY-MM-DD to Perplexity's M/D/YYYY format.
+
+    Example: "2026-01-15" -> "1/15/2026"
+    """
+    year, month, day = iso_date.split("-")
+    return f"{int(month)}/{int(day)}/{year}"
+
+
 @tool
 async def perplexity_search(
     query: str,
     limit: int = 5,
     domain_filter: Optional[list[str]] = None,
+    after_date: Optional[str] = None,
+    before_date: Optional[str] = None,
 ) -> dict:
     """Search the web using Perplexity AI.
 
@@ -112,6 +120,8 @@ async def perplexity_search(
         query: What to search for
         limit: Maximum number of results (default 5, max 20)
         domain_filter: Optional list of domains to restrict search to
+        after_date: Only return results after this date (ISO YYYY-MM-DD)
+        before_date: Only return results before this date (ISO YYYY-MM-DD)
 
     Returns:
         Search results with titles, URLs, and snippets.
@@ -126,6 +136,10 @@ async def perplexity_search(
         }
         if domain_filter:
             payload["search_domain_filter"] = domain_filter
+        if after_date:
+            payload["search_after_date_filter"] = _iso_to_perplexity_date(after_date)
+        if before_date:
+            payload["search_before_date_filter"] = _iso_to_perplexity_date(before_date)
 
         response = await client.post("/search", json=payload)
         response.raise_for_status()
@@ -235,9 +249,7 @@ Respond with ONLY valid JSON (no markdown):
   "explanation": "Brief explanation of the verdict based on evidence"
 }}"""
 
-        llm_response = await llm.ainvoke(
-            [{"role": "user", "content": synthesis_prompt}]
-        )
+        llm_response = await llm.ainvoke([{"role": "user", "content": synthesis_prompt}])
         content = llm_response.content.strip()
 
         # Parse JSON from response
@@ -254,9 +266,7 @@ Respond with ONLY valid JSON (no markdown):
             sources=results[:5],
         )
 
-        logger.info(
-            f"Fact check for '{claim[:50]}': {output.verdict} (confidence: {output.confidence:.2f})"
-        )
+        logger.info(f"Fact check for '{claim[:50]}': {output.verdict} (confidence: {output.confidence:.2f})")
 
         return output_dict(output)
 

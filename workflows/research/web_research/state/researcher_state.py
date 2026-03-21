@@ -4,6 +4,7 @@ from operator import add
 from typing import Annotated, Optional
 from typing_extensions import TypedDict
 
+from .input_types import RecencyFilter
 from .language_config import LanguageConfig
 
 
@@ -50,3 +51,6 @@ class ResearcherState(TypedDict):
 
     # Language configuration for multi-lingual support
     language_config: Optional[LanguageConfig]  # Language this researcher operates in
+
+    # Recency filtering
+    recency_filter: Optional[RecencyFilter]  # Date filtering for recent signal

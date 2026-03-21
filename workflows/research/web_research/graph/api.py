@@ -35,6 +35,7 @@ from workflows.research.web_research.state import (
     DeepResearchState,
     DiffusionState,
 )
+from workflows.research.web_research.state.input_types import RecencyFilter
 from workflows.research.web_research.config.languages import get_language_config
 from workflows.shared.workflow_state_store import save_workflow_state
 
@@ -51,6 +52,7 @@ async def deep_research(
     max_iterations: int = None,
     clarification_responses: dict[str, str] = None,
     language: str = None,
+    recency_filter: RecencyFilter | None = None,
 ) -> dict:
     """
     Run deep research on a topic.
@@ -70,6 +72,9 @@ async def deep_research(
         language: Run workflow in this language (ISO 639-1 code, e.g., "es", "zh").
                   All prompts, queries, and output will be in target language.
                   Default: None (English)
+        recency_filter: Optional date filtering for recent signal. When set,
+                        a fraction (quota) of search calls are date-filtered
+                        while the rest run normally for full coverage.
 
     Returns:
         Dict with:
@@ -87,6 +92,12 @@ async def deep_research(
 
         # Research in Spanish
         result = await deep_research("impacto de IA en empleos", language="es")
+
+        # With recency filtering (30% of searches date-filtered)
+        result = await deep_research(
+            "AI policy developments",
+            recency_filter={"after_date": "2026-02-01", "quota": 0.3},
+        )
     """
     # Generate a run_id for LangSmith tracing (allows inspection of runs)
     run_id = uuid.uuid4()
@@ -101,6 +112,7 @@ async def deep_research(
             "quality": quality,
             "max_iterations": max_iterations,
             "language": language,
+            "recency_filter": recency_filter,
         },
         "clarification_needed": False,
         "clarification_questions": [],
@@ -213,6 +225,7 @@ async def deep_research(
         "langsmith_run_id": str(run_id),
         "errors": errors,
         "source_count": len(result.get("research_findings", [])),
+        "citation_keys": result.get("citation_keys", []),
         "started_at": initial_state.get("started_at"),
         "completed_at": result.get("completed_at"),
     }

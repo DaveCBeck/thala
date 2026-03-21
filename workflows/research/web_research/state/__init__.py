@@ -9,7 +9,7 @@ Defines TypedDict states for:
 """
 
 from .language_config import LanguageConfig
-from .input_types import ResearchInput, ClarificationQuestion, ResearchBrief
+from .input_types import RecencyFilter, ResearchInput, ClarificationQuestion, ResearchBrief
 from .researcher_state import (
     ResearchQuestion,
     WebSearchResult,
@@ -30,6 +30,7 @@ __all__ = [
     # Language config
     "LanguageConfig",
     # Input types
+    "RecencyFilter",
     "ResearchInput",
     "ClarificationQuestion",
     "ResearchBrief",

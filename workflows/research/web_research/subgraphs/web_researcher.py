@@ -47,11 +47,22 @@ MAX_SCRAPES = 3
 MAX_RESULTS_PER_SOURCE = 5
 
 
-async def _search_firecrawl(query: str) -> list[WebSearchResult]:
-    """Search using Firecrawl."""
+async def _search_firecrawl(query: str, after_date: str | None = None) -> list[WebSearchResult]:
+    """Search using Firecrawl.
+
+    Args:
+        query: Search query
+        after_date: If set, append temporal keywords for date filtering
+                    (Firecrawl doesn't support structured date params)
+    """
     results = []
     try:
-        result = await web_search.ainvoke({"query": query, "limit": MAX_RESULTS_PER_SOURCE})
+        search_query = query
+        if after_date:
+            # Graceful degradation: append temporal hint to query
+            search_query = f"{query} after:{after_date[:7]}"
+
+        result = await web_search.ainvoke({"query": search_query, "limit": MAX_RESULTS_PER_SOURCE})
         for r in result.get("results", []):
             results.append(
                 WebSearchResult(
@@ -67,11 +78,20 @@ async def _search_firecrawl(query: str) -> list[WebSearchResult]:
     return results
 
 
-async def _search_perplexity(query: str) -> list[WebSearchResult]:
-    """Search using Perplexity."""
+async def _search_perplexity(query: str, after_date: str | None = None) -> list[WebSearchResult]:
+    """Search using Perplexity.
+
+    Args:
+        query: Search query
+        after_date: If set, pass as date filter to Perplexity API (ISO YYYY-MM-DD)
+    """
     results = []
     try:
-        result = await perplexity_search.ainvoke({"query": query, "limit": MAX_RESULTS_PER_SOURCE})
+        params: dict[str, Any] = {"query": query, "limit": MAX_RESULTS_PER_SOURCE}
+        if after_date:
+            params["after_date"] = after_date
+
+        result = await perplexity_search.ainvoke(params)
         for r in result.get("results", []):
             results.append(
                 WebSearchResult(
@@ -90,18 +110,36 @@ async def _search_perplexity(query: str) -> list[WebSearchResult]:
 async def execute_searches(state: ResearcherState) -> dict[str, Any]:
     """Execute web searches using Firecrawl and Perplexity in parallel.
 
+    When recency_filter is set, a fraction (quota) of queries use date filtering
+    while the rest run normally for full coverage.
+
     Sources:
     - Firecrawl: General web search
     - Perplexity: AI-powered web search with synthesis
     """
     queries = state.get("search_queries", [])
+    recency_filter = state.get("recency_filter")
     all_results = []
 
-    for query in queries[:MAX_SEARCHES]:
+    # Determine which queries get date filtering
+    capped_queries = queries[:MAX_SEARCHES]
+    date_filtered_indices: set[int] = set()
+    after_date: str | None = None
+
+    if recency_filter:
+        after_date = recency_filter["after_date"]
+        quota = recency_filter["quota"]
+        # Apply date filtering to the first N queries (deterministic, not random)
+        n_filtered = max(1, round(len(capped_queries) * quota))
+        date_filtered_indices = set(range(n_filtered))
+
+    for i, query in enumerate(capped_queries):
+        use_date = after_date if i in date_filtered_indices else None
+
         # Run both web sources in parallel for each query
         search_tasks = [
-            _search_firecrawl(query),
-            _search_perplexity(query),
+            _search_firecrawl(query, after_date=use_date),
+            _search_perplexity(query, after_date=use_date),
         ]
 
         results_lists = await asyncio.gather(*search_tasks, return_exceptions=True)
