@@ -467,6 +467,51 @@ async def invoke(
     """
     config = config or InvokeConfig()
 
+    # CLI backend: route Claude text/structured calls through claude -p
+    from .cli_backend import is_cli_backend_enabled
+
+    if is_cli_backend_enabled():
+        from .cli_backend import invoke_via_cli, invoke_structured_via_cli
+
+        is_multimodal = _is_multimodal_content(user)
+        can_use_cli = not is_deepseek_tier(tier) and not is_multimodal and not config.tools
+
+        if can_use_cli:
+            is_batch = isinstance(user, list) and not is_multimodal
+            user_prompts: list = user if is_batch else [user]
+
+            if schema is not None:
+                results_typed = []
+                for prompt in user_prompts:
+                    r = await invoke_structured_via_cli(
+                        tier,
+                        system,
+                        prompt,
+                        schema,
+                        effort=config.effort,
+                        max_tokens=config.max_tokens,
+                    )
+                    results_typed.append(r)
+                return results_typed if is_batch else results_typed[0]
+            else:
+                results_cli = []
+                for prompt in user_prompts:
+                    r = await invoke_via_cli(
+                        tier,
+                        system,
+                        prompt,
+                        effort=config.effort,
+                        max_tokens=config.max_tokens,
+                    )
+                    results_cli.append(r)
+                return results_cli if is_batch else results_cli[0]
+
+        # Fallthrough: DeepSeek, multimodal, tools → existing API path
+        logger.debug(
+            f"CLI backend: falling through to API "
+            f"(tier={tier.name}, multimodal={_is_multimodal_content(user)}, tools={bool(config.tools)})"
+        )
+
     # Route to structured output path if schema provided
     if schema is not None:
         return await _invoke_structured(tier, system, user, config, schema)
@@ -598,9 +643,7 @@ async def _invoke_structured_via_broker(
 
         response = await future
         if not response.success:
-            raise RuntimeError(
-                f"Broker structured request failed on retry: {response.error}"
-            )
+            raise RuntimeError(f"Broker structured request failed on retry: {response.error}")
 
         if response.batched and response.usage:
             await _trace_batch_llm_result(
