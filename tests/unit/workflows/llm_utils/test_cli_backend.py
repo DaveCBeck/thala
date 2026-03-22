@@ -39,11 +39,11 @@ def _make_proc_mock(stdout_data: dict, returncode: int = 0, stderr: str = ""):
 
 
 def _text_envelope(text: str) -> dict:
-    return {"result": {"content": [{"type": "text", "text": text}]}}
+    return {"type": "result", "subtype": "success", "result": text}
 
 
 def _structured_envelope(data: dict) -> dict:
-    return {"result": {"structured_output": data}}
+    return {"type": "result", "subtype": "success", "result": "", "structured_output": data}
 
 
 # -- is_cli_backend_enabled --

@@ -67,8 +67,17 @@ def _build_base_cmd(
     model: str,
     system: str,
     effort: str | None = None,
+    max_turns: int = 1,
 ) -> list[str]:
-    """Build the base claude -p command with common flags."""
+    """Build the base claude -p command with common flags.
+
+    Args:
+        model: Claude model alias (haiku/sonnet/opus)
+        system: System prompt
+        effort: Optional effort level
+        max_turns: Max agentic turns (1 for text, 2 for structured output
+                   which needs a tool_use round-trip)
+    """
     cmd = [
         "claude",
         "-p",
@@ -81,7 +90,7 @@ def _build_base_cmd(
         "--tools",
         "",
         "--max-turns",
-        "1",
+        str(max_turns),
         "--no-session-persistence",
         "--dangerously-skip-permissions",
     ]
@@ -116,7 +125,8 @@ async def invoke_via_cli(
     logger.debug(f"CLI backend: invoking {model} (text, effort={effort})")
     envelope = await _run_claude_cli(cmd, user_prompt)
 
-    text = envelope["result"]["content"][0]["text"]
+    # claude -p --output-format json returns {"result": "text string", ...}
+    text = envelope["result"]
     return AIMessage(content=text)
 
 
@@ -145,11 +155,13 @@ async def invoke_structured_via_cli(
     model = _TIER_TO_CLI_MODEL[tier]
     json_schema = json.dumps(schema.model_json_schema())
 
-    cmd = _build_base_cmd(model, system, effort)
+    # --json-schema uses a tool_use round-trip, needs 2 turns
+    cmd = _build_base_cmd(model, system, effort, max_turns=2)
     cmd.extend(["--json-schema", json_schema])
 
     logger.debug(f"CLI backend: invoking {model} (structured={schema.__name__}, effort={effort})")
     envelope = await _run_claude_cli(cmd, user_prompt)
 
-    raw = envelope["result"]["structured_output"]
+    # claude -p --json-schema returns {"structured_output": {...}, ...} at top level
+    raw = envelope["structured_output"]
     return schema.model_validate(raw)
