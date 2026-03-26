@@ -32,6 +32,10 @@ celery.conf.update(
     task_time_limit=14400,  # 4 hours hard limit
     # Worker prefetch (1 task at a time for GPU workloads)
     worker_prefetch_multiplier=1,
+    # Recycle worker after N tasks to reclaim memory leaked by marker/surya
+    # internals that accumulate state across conversions in loaded models.
+    # Model reload cost (~30s) is negligible amortized over 50 tasks.
+    worker_max_tasks_per_child=50,
     # Only ack task after it completes (prevents requeue on worker crash)
     task_acks_late=True,
     # Explicitly ack on failure/timeout to prevent requeue of failed tasks
