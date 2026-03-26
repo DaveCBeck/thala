@@ -18,13 +18,21 @@ Each output article is:
 
 ## Structural Approaches
 
-Each deep-dive is assigned one of three narrative approaches at planning time:
+Each deep-dive is assigned a narrative approach at planning time:
 
 - **puzzle**: Opens with mystery/anomaly, unfolds as investigation
 - **finding**: Leads with striking quantitative result, explores implications
 - **contrarian**: Steelmans assumption, then complicates with evidence
+- **mechanism**: Opens inside a process, walks through how it works
+- **narrative**: Opens with a specific person/place/moment, then zooms out
+- **comparison**: Juxtaposes two cases that illuminate each other
+- **open**: Writer devises structure from the material
 
-Each approach ends with a curated closing move (callback, telescoping, concrete scene, etc.) chosen to suit the piece, rather than a fixed "open questions" section.
+Each approach ends with a curated closing move chosen to suit the piece, rather than a fixed "open questions" section.
+
+## Editorial Stances
+
+Per-publication editorial stances live in `.thala/editorial_stances/`. A shared identity file (`_identity.md`) is automatically prepended to every publication stance, providing cross-cutting editorial values.
 
 ## Usage
 

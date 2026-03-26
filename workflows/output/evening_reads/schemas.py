@@ -14,11 +14,17 @@ class DeepDiveTopicPlan(BaseModel):
         "Examples: 'The drilling ship and the smoking gun', 'When oceans turn toxic'"
     )
     theme: str = Field(description="2-3 sentence description of what this deep-dive covers and why it's distinct")
-    structural_approach: Literal["puzzle", "finding", "contrarian"] = Field(
+    structural_approach: Literal[
+        "puzzle", "finding", "contrarian", "mechanism", "narrative", "comparison", "open"
+    ] = Field(
         description="Narrative approach that best fits this topic's content. "
-        "'puzzle': Opens with mystery/anomaly, unfolds as investigation. Best for mysteries, unexpected findings. "
-        "'finding': Leads with striking quantitative result, explores implications. Best for data-driven topics. "
-        "'contrarian': Steelmans assumption then complicates it. Best for overturning conventional wisdom."
+        "'puzzle': Opens with mystery/anomaly, unfolds as investigation. "
+        "'finding': Leads with striking quantitative result, explores implications. "
+        "'contrarian': Steelmans assumption then complicates it. "
+        "'mechanism': Opens inside a process, walks through how it works, reveals why it matters. "
+        "'narrative': Opens with a specific person/place/moment, then zooms out. "
+        "'comparison': Juxtaposes two cases that illuminate each other. "
+        "'open': The material suggests a structure not captured above."
     )
     anchor_keys: list[str] = Field(
         description="2-3 Zotero citation keys that anchor this deep-dive. "

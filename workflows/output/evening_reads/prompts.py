@@ -87,8 +87,12 @@ For each deep-dive, select the narrative approach that best fits its content:
 - **puzzle**: Opens with a mystery or anomaly, unfolds as an investigation. Best for: unexpected findings, methodological puzzles, things that don't fit.
 - **finding**: Leads with a striking quantitative result, explores implications. Best for: data-driven topics, dramatic numbers, surprising comparisons.
 - **contrarian**: Steelmans a comfortable assumption, then complicates it with evidence. Best for: overturning conventional wisdom, revealing hidden complexity.
+- **mechanism**: Opens inside a process—how something actually works at the nuts-and-bolts level—then reveals why the mechanism matters. Best for: causal chains, complex systems, "how does this actually work" questions.
+- **narrative**: Opens with a specific person, place, or moment, then zooms out. Best for: human stories within technical topics, concrete cases that illuminate a field.
+- **comparison**: Juxtaposes two cases or approaches that illuminate each other. Best for: competing methods, different contexts producing divergent outcomes.
+- **open**: The topic suggests a structure not captured above. Describe it in the theme field and the writer will devise an appropriate structure from the material.
 
-**Important**: Aim for variety across the 3 deep-dives. If you use "puzzle" for one, try "finding" or "contrarian" for another. The approaches should feel natural for each topic—don't force a fit.
+**Important**: Aim for variety across the 3 deep-dives. The approaches should feel natural for each topic—don't force a fit.
 
 ## Temporal Orientation
 If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work. For publications that prioritise the right-now, choose topics where 2026 findings (or '25 if that's not possible) drive the story, and select recent papers as anchors. For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance."""
@@ -132,8 +136,8 @@ _DEEP_DIVE_STYLE = """
 - Concrete before abstract: lead with examples, then generalize
 - Technical terms are fine; jargon without payoff is not
 - One idea per paragraph; let paragraphs breathe
-- Avoid: "In this essay...", "It is important to note...", "As we have seen..."
-- Embrace: "Here's the thing:", "The problem is:", "This matters because:"
+- Avoid: "In this essay...", "It is important to note...", "As we have seen...", "Here's a [noun] that should [verb] you" and similar rhetorical stage-setting ("Here's a comforting story", "Here's the comfortable story"). Don't announce what a piece of evidence should make the reader feel—just present it.
+- Vary your opening and closing moves. Don't default to "Here's the thing:" or "Here's a number that..." — sometimes lead with the claim, sometimes with the evidence, sometimes with a scene.
 - Keep scientific vocabulary (ectomycorrhizal, hysteresis, saprotrophic) but simplify the verbs and qualifiers around it. Prefer "is" over "represents", "shows" over "demonstrates", "buffer" over "attenuate the negative impacts of", "depends on" over "is highly contingent upon". The technical nouns earn their place; Latinate verbs and hedging adverbs usually don't.
 - Do not lightly paraphrase source abstracts—rewrite claims in your own voice. If a sentence could appear in a journal abstract unchanged, it needs rewriting.
 - Cut adverbs that don't sharpen meaning: "genuinely", "substantially", "fundamentally", "predominantly" are often padding. Use them only when they mark a real contrast (e.g., "fundamentally different" when distinguishing two things that look similar).
@@ -209,6 +213,87 @@ Structure your essay as assumption-tested-by-evidence:
    - *Concrete scene*: End with a specific person or moment who embodies the paradox—someone acting inside the contradiction
 
    Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
+"""
+    + _DEEP_DIVE_STYLE
+)
+
+
+DEEP_DIVE_MECHANISM_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
+## Approach: Inside the Mechanism
+Open inside a process—a reaction, a feedback loop, a decision chain, a biological or institutional system—and walk the reader through how it actually works. The goal is to make the reader feel the machinery turning. Only after they understand the mechanism do you reveal why it matters: what it explains, what it predicts, what breaks when it fails.
+
+Structure your essay as process-then-implications:
+1. **Entry** (1-2 paragraphs): Drop the reader into the middle of the process. Show it running.
+2. **The mechanism** (bulk of piece): Walk through how it works, step by step. Use concrete examples and specific numbers from the source material. Make each step feel inevitable given the previous one.
+3. **What it explains** (several paragraphs): Now that the reader understands the mechanism, show what it accounts for—patterns, outcomes, or anomalies that are opaque without this understanding.
+4. **Where it breaks** (1-2 paragraphs): Conditions under which the mechanism fails, stalls, or produces unexpected results.
+5. **Close** (1-2 paragraphs): Choose the closing move that best serves your piece:
+   - *The next gear*: The mechanism you've described is itself a component in something larger—end by showing where it connects.
+   - *Concrete scene*: End with a specific moment where the mechanism is visibly operating—the reader can now see what was previously invisible.
+   - *Design implication*: If we understand the mechanism, we can intervene—end on the sharpest leverage point.
+
+   Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
+"""
+    + _DEEP_DIVE_STYLE
+)
+
+
+DEEP_DIVE_NARRATIVE_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
+## Approach: Narrative Entry Through a Specific Case
+Open with a specific person, place, event, or moment from the source material—something concrete and vivid—then zoom out to the broader science or question it illuminates. The narrative case is the lens, not the subject; the essay's substance is the research it opens onto.
+
+Structure your essay as case-then-context:
+1. **The scene** (2-3 paragraphs): A specific, vivid case from or adjacent to the source material. Ground the reader in a particular time, place, or situation.
+2. **The question it raises** (1-2 paragraphs): What does this case make you wonder? What does it reveal about something larger?
+3. **The science** (bulk of piece): Work through the research, using the opening case as a recurring touchstone.
+4. **Complications** (several paragraphs): Where the evidence gets messy, contested, or incomplete.
+5. **Close** (1-2 paragraphs): Choose the closing move that best serves your piece:
+   - *Return to the scene*: Revisit the opening case with everything the reader now knows—it looks different.
+   - *A different case*: End with a second concrete moment that rhymes with the first but reveals how far the essay has traveled.
+   - *The person's next move*: If the opening featured a person making a decision, end on what they (or someone like them) faces next.
+
+   Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
+"""
+    + _DEEP_DIVE_STYLE
+)
+
+
+DEEP_DIVE_COMPARISON_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
+## Approach: Illuminating Comparison
+Juxtapose two cases, methods, systems, or contexts that illuminate each other through their differences. The comparison is the engine of the essay: each side makes the other more visible. Avoid false balance—if one approach is clearly stronger, say so, but explain what the weaker one reveals.
+
+Structure your essay as juxtaposition-then-synthesis:
+1. **The two cases** (2-3 paragraphs): Introduce both sides of the comparison quickly. Make the contrast vivid and concrete.
+2. **First case in depth** (several paragraphs): Work through one side with evidence and specifics.
+3. **Second case in depth** (several paragraphs): Work through the other. Let the reader feel the contrast building.
+4. **What the comparison reveals** (several paragraphs): What do you see by holding these two things side by side that you wouldn't see looking at either alone?
+5. **Close** (1-2 paragraphs): Choose the closing move that best serves your piece:
+   - *Convergence*: The two cases are heading toward the same place from different directions—end on where they meet.
+   - *Irreducible difference*: The comparison reveals a genuine fork—end on the choice it forces.
+   - *A third case*: Introduce a brief final example that scrambles the neat binary and opens a new question.
+
+   Avoid defaulting to: enumerate open questions → philosophical reflection → aphoristic kicker. That pattern is fine occasionally but should not be the norm.
+"""
+    + _DEEP_DIVE_STYLE
+)
+
+
+DEEP_DIVE_OPEN_PROMPT = (
+    _DEEP_DIVE_HEADER
+    + """
+## Approach: Open Structure
+The planner chose this topic because its material suggests a structure not captured by the standard approaches. Devise your own structural arc from the source material. The only requirements are:
+- A compelling opening that earns the reader's attention with something concrete
+- A clear through-line the reader can follow
+- A closing that lands—don't trail off into open questions and generalities
+
+Before writing, briefly state (in a single line prefixed with "Structure:") the arc you'll follow, then write the essay.
 """
     + _DEEP_DIVE_STYLE
 )
@@ -299,5 +384,9 @@ The complete article, ready to publish. No meta-commentary about the writing pro
 DEEP_DIVE_PUZZLE_PROMPT_FULL = DEEP_DIVE_PUZZLE_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
 DEEP_DIVE_FINDING_PROMPT_FULL = DEEP_DIVE_FINDING_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
 DEEP_DIVE_CONTRARIAN_PROMPT_FULL = DEEP_DIVE_CONTRARIAN_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
+DEEP_DIVE_MECHANISM_PROMPT_FULL = DEEP_DIVE_MECHANISM_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
+DEEP_DIVE_NARRATIVE_PROMPT_FULL = DEEP_DIVE_NARRATIVE_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
+DEEP_DIVE_COMPARISON_PROMPT_FULL = DEEP_DIVE_COMPARISON_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
+DEEP_DIVE_OPEN_PROMPT_FULL = DEEP_DIVE_OPEN_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
 
 OVERVIEW_SYSTEM_PROMPT_FULL = OVERVIEW_SYSTEM_PROMPT + CITATION_INSTRUCTION + _OUTPUT_INSTRUCTION
