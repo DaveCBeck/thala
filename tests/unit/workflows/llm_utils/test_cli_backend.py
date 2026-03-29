@@ -1,5 +1,6 @@
 """Tests for the CLI backend (claude -p) routing."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from workflows.shared.llm_utils.cli_backend import (
     _TIER_TO_CLI_MODEL,
     _build_base_cmd,
+    _run_claude_cli,
     invoke_structured_via_cli,
     invoke_via_cli,
     is_cli_backend_enabled,
@@ -17,6 +19,14 @@ from workflows.shared.llm_utils.cli_backend import (
 from workflows.shared.llm_utils.config import InvokeConfig
 from workflows.shared.llm_utils.invoke import invoke
 from workflows.shared.llm_utils.models import ModelTier
+
+
+# _run_claude_cli calls os.waitpid to reap the subprocess synchronously.
+# Mock it out for all tests that spawn a mock subprocess.
+@pytest.fixture(autouse=True)
+def _mock_waitpid():
+    with patch("workflows.shared.llm_utils.cli_backend.os.waitpid", return_value=(0, 0)):
+        yield
 
 
 # -- Test schema for structured output --
@@ -31,10 +41,29 @@ class MockAnalysis(BaseModel):
 
 
 def _make_proc_mock(stdout_data: dict, returncode: int = 0, stderr: str = ""):
-    """Create a mock subprocess result."""
+    """Create a mock subprocess result with pipe-based I/O.
+
+    Also patches os.waitpid to return the matching exit status so
+    _run_claude_cli sees the correct return code.
+    """
     proc = AsyncMock()
+    proc.pid = 99999
     proc.returncode = returncode
-    proc.communicate = AsyncMock(return_value=(json.dumps(stdout_data).encode(), stderr.encode()))
+
+    # Mock stdin (write + drain + close)
+    proc.stdin = AsyncMock()
+    proc.stdin.write = MagicMock()
+    proc.stdin.drain = AsyncMock()
+    proc.stdin.close = MagicMock()
+
+    # Mock stdout/stderr readers
+    proc.stdout = AsyncMock()
+    proc.stdout.read = AsyncMock(return_value=json.dumps(stdout_data).encode())
+    proc.stderr = AsyncMock()
+    proc.stderr.read = AsyncMock(return_value=stderr.encode())
+
+    # waitpid status: encode returncode as a normal exit status (rc << 8)
+    proc._waitpid_status = returncode << 8
     return proc
 
 
@@ -124,7 +153,11 @@ class TestInvokeViaCli:
     async def test_subprocess_failure_raises(self):
         proc = _make_proc_mock({}, returncode=1, stderr="Something broke")
 
-        with patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", return_value=proc):
+        with (
+            patch("workflows.shared.llm_utils.cli_backend._CLI_MAX_RETRIES", 1),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch("workflows.shared.llm_utils.cli_backend.os.waitpid", return_value=(99999, 1 << 8)),
+        ):
             with pytest.raises(RuntimeError, match="claude -p failed"):
                 await invoke_via_cli(ModelTier.SONNET, "System.", "Query")
 
@@ -183,7 +216,11 @@ class TestInvokeStructuredViaCli:
     async def test_subprocess_failure_raises(self):
         proc = _make_proc_mock({}, returncode=1, stderr="Schema error")
 
-        with patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", return_value=proc):
+        with (
+            patch("workflows.shared.llm_utils.cli_backend._CLI_MAX_RETRIES", 1),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch("workflows.shared.llm_utils.cli_backend.os.waitpid", return_value=(99999, 1 << 8)),
+        ):
             with pytest.raises(RuntimeError, match="claude -p failed"):
                 await invoke_structured_via_cli(ModelTier.SONNET, "Sys.", "Query", MockAnalysis)
 
@@ -304,6 +341,38 @@ class TestInvokeCliRouting:
 
         assert len(results) == 3
         assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_cli_timeout_raises(self):
+        """Subprocess hanging beyond timeout should raise TimeoutError."""
+        proc = AsyncMock()
+        proc.pid = 99999
+        proc.kill = MagicMock()
+
+        # stdin works fine
+        proc.stdin = AsyncMock()
+        proc.stdin.write = MagicMock()
+        proc.stdin.drain = AsyncMock()
+        proc.stdin.close = MagicMock()
+
+        # stdout.read never returns — simulates pipe held open by orphan child
+        async def hang_forever():
+            await asyncio.sleep(999)
+
+        proc.stdout = AsyncMock()
+        proc.stdout.read = hang_forever
+        proc.stderr = AsyncMock()
+        proc.stderr.read = AsyncMock(return_value=b"")
+
+        with (
+            patch("workflows.shared.llm_utils.cli_backend._CLI_TIMEOUT_SECONDS", 0.1),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch("workflows.shared.llm_utils.cli_backend.os.killpg") as mock_killpg,
+        ):
+            with pytest.raises(TimeoutError, match="timed out"):
+                await _run_claude_cli(["claude", "-p"], "prompt")
+
+        mock_killpg.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_api_backend_unchanged(self):

@@ -139,10 +139,21 @@ def _build_result(
     if academic_sources is None:
         academic_sources = len(lit_result.get("paper_corpus", {}) or {})
 
-    # Merge zotero_keys from both sources
-    academic_keys = lit_result.get("zotero_keys") or []
+    # Merge zotero_keys from both sources into a DOI -> key dict.
+    # Academic keys are already DOI-keyed.  Web citation keys have no real
+    # DOIs, so we use a synthetic "web:<KEY>" prefix — downstream code does
+    # safe `if doi in paper_summaries` checks before access, so these
+    # synthetic DOIs simply pass through without causing lookups.
+    academic_keys = lit_result.get("zotero_keys") or {}
+    if not isinstance(academic_keys, dict):
+        # Guard against legacy list format
+        academic_keys = {}
     web_keys = (web_result.get("citation_keys") or []) if web_result else []
-    merged_keys = list(dict.fromkeys(academic_keys + web_keys))  # dedupe, preserve order
+    merged_keys = {**academic_keys}
+    for key in web_keys:
+        synthetic_doi = f"web:{key}"
+        if synthetic_doi not in merged_keys:
+            merged_keys[synthetic_doi] = key
 
     return {
         "final_report": report,

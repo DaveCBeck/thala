@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 async def scrape_single_url(
     result: WebSearchResult,
     index: int,
-    max_content_length: int = 8000,
 ) -> tuple[int, str | None, WebSearchResult]:
     """Scrape a single URL and return the result.
 
@@ -22,7 +21,6 @@ async def scrape_single_url(
     Args:
         result: WebSearchResult containing URL and metadata
         index: Original index in results list (for preserving order)
-        max_content_length: Maximum content length before truncation
 
     Returns:
         Tuple of (index, scraped_content_str, updated_result)
@@ -44,10 +42,6 @@ async def scrape_single_url(
             ),
         )
         content = url_result.content
-
-        # Truncate very long content
-        if len(content) > max_content_length:
-            content = content[:max_content_length] + "\n\n[Content truncated...]"
 
         logger.debug(f"Scraped {len(content)} chars from: {url}")
 
