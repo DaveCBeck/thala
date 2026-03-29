@@ -195,7 +195,7 @@ PROSE QUALITY:
 - SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Use superlatives only for literal, verifiable comparisons (e.g., "the largest cohort", "the longest follow-up period"). If a finding matters, demonstrate why through the evidence and argument — do not announce it.
 - Avoid "crucially," "fundamentally," "remarkably," and "notably" as paragraph-opening intensifiers. Begin with the substance.
 - VOCABULARY SATURATION: Watch for overuse of any single content word. In particular, do not use "structural," "structure," or "structurally" as vague intensifiers meaning "important" or "deep." Use these words only when referring to literal structure (physical, organizational, molecular). When tempted to write "structural change" or "structural factor," ask whether a more precise word (systemic, architectural, organizational, compositional, mechanistic) better fits the specific claim.
-- SELF-CHECK: Before finalising, scan for any single phrase or sentence skeleton that appears more than twice. If found, rewrite the excess instances using a different rhetorical move.
+- SELF-CHECK: Before finalising, silently scan for any single phrase or sentence skeleton that appears more than twice and silently rewrite the excess instances. Do NOT include any meta-commentary, self-corrections, or editing notes in the output — the reader should see only polished final prose.
 
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
@@ -296,6 +296,7 @@ Style: Clear, definitive, direct
 Avoid: Introducing new information, hedging excessively.
 Superlative constraint: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Let the substance of each conclusion carry its own weight.
 Contrastive framing limit: Use at most ONE contrastive-frame sentence ("X rather than Y", "not X but Y") in the conclusions.
+OUTPUT HYGIENE: The output must contain only polished final prose. Do NOT include meta-commentary, self-corrections, editing notes, or internal monologue (e.g., "Wait — that sentence..." or "Let me correct..."). The reader should see only the finished text.
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
