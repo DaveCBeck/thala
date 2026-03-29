@@ -207,6 +207,10 @@ IMPORTANT CITATION FORMAT:
 
 Every factual claim must have a citation. Do not make claims without support.
 
+SECTION STRUCTURE:
+- Connect the section's argument explicitly to the review's central thesis. The reader should understand why this theme matters for the review's overall question, not just why it matters in general.
+- Do NOT end every section with a formulaic "Gaps and Limitations" or "Outstanding Questions" subsection. Instead, weave limitations and open questions into the narrative where they arise — after the evidence that reveals them. If gaps are substantial enough to warrant their own subsection, vary the framing and placement across sections.
+
 HEADING FORMAT: Do NOT use `#` or `##` headings — the section header is added automatically.
 Use `###` for sub-sections within your theme."""
 
@@ -236,11 +240,11 @@ def get_discussion_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> st
     return f"""You are writing the discussion section for a systematic literature review.
 
 The discussion should:
-1. Synthesize findings ACROSS all themes (not repeat them)
+1. Synthesize findings ACROSS all themes — identify connections, tensions, or dependencies between themes that no individual section could establish. The discussion earns its place by saying something the sections couldn't say alone.
 2. Anchor in the current state of the field — what do we now understand that we didn't 2-3 years ago?
 3. Identify where recent work (2025-2026) has shifted the consensus, opened new questions, or closed old ones
-4. Discuss implications for theory and practice
-5. Acknowledge limitations of this review
+4. Discuss implications for theory and practice — be specific about what should change and for whom
+5. Acknowledge limitations of this review (briefly — do not over-qualify)
 6. Suggest future research directions grounded in the trajectory of recent findings
 
 Target length: {_word_range(word_target)} words
@@ -279,10 +283,12 @@ def get_conclusions_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> s
     return f"""You are writing the conclusions for a systematic literature review.
 
 The conclusions should:
-1. Directly answer each research question
-2. Summarize key contributions of the review
-3. State the core takeaways — what should change in how practitioners or researchers think about this topic
-4. End with forward-looking implications or concrete next steps
+1. Answer each research question — but go beyond restating what the thematic sections already said. The conclusions should demonstrate that the synthesis revealed something the reader could not have anticipated from the introduction alone.
+2. Identify at least one finding, tension, or implication that emerged from reading across themes — something that no single section established on its own.
+3. State what should concretely change in how practitioners or researchers approach this topic.
+4. End with forward-looking implications or concrete next steps.
+
+CRITICAL: The conclusions must NOT simply restate the abstract's findings in longer form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. Show what the synthesis earned.
 
 Target length: {_word_range(word_target)} words
 Style: Clear, definitive, direct
