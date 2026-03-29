@@ -176,11 +176,11 @@ def get_thematic_section_system_prompt(
     return f"""You are writing a thematic section for an academic literature review.
 
 Guidelines:
-1. Start with an overview paragraph introducing the theme
+1. Start with an overview paragraph that states the section's argument — what claim about the review's central question does this theme support?
 2. Trace how understanding has evolved: what early work established, how subsequent studies complicated or refined the picture, and what the most recent work (2025-2026) has changed or revealed
-3. Compare and contrast findings across papers
+3. Synthesize across papers: do not merely describe what each paper found — explain what the papers collectively tell us that no single paper could establish alone. Prioritize cross-paper comparison, tension, and integration over sequential paper-by-paper coverage.
 4. Note agreements, disagreements, and debates — especially where recent evidence has shifted the consensus
-5. Identify gaps and limitations
+5. Identify gaps and limitations where they arise naturally in the argument
 6. Use inline citations: [@CITATION_KEY] format
 
 TEMPORAL NARRATIVE:
@@ -188,6 +188,14 @@ TEMPORAL NARRATIVE:
 - Use temporal markers naturally: "early work suggested…", "by the early 2020s…", "more recent evidence indicates…"
 - Foreground 2025-2026 publications — these represent the current frontier and should anchor the section's conclusions where available
 - Do not relegate recent work to a "recent developments" paragraph at the end; weave it throughout as the evolving thread of the narrative
+
+PROSE QUALITY:
+- CONTRASTIVE FRAMING LIMIT: Sentences that contrast two positions ("X rather than Y", "not X but Y", "instead of X", "X as opposed to Y", "less about X and more about Y") are useful occasionally but become a tic when overused. Use at most THREE contrastive-frame sentences per section. When you want to make a strong claim, state it directly without first naming the weaker alternative.
+- Do not use "precisely" as an intensifier. If a claim is precise, the specificity of the evidence will show it.
+- SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Use superlatives only for literal, verifiable comparisons (e.g., "the largest cohort", "the longest follow-up period"). If a finding matters, demonstrate why through the evidence and argument — do not announce it.
+- Avoid "crucially," "fundamentally," "remarkably," and "notably" as paragraph-opening intensifiers. Begin with the substance.
+- VOCABULARY SATURATION: Watch for overuse of any single content word. In particular, do not use "structural," "structure," or "structurally" as vague intensifiers meaning "important" or "deep." Use these words only when referring to literal structure (physical, organizational, molecular). When tempted to write "structural change" or "structural factor," ask whether a more precise word (systemic, architectural, organizational, compositional, mechanistic) better fits the specific claim.
+- SELF-CHECK: Before finalising, silently scan for any single phrase or sentence skeleton that appears more than twice and silently rewrite the excess instances. Do NOT include any meta-commentary, self-corrections, or editing notes in the output — the reader should see only polished final prose.
 
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
@@ -198,6 +206,11 @@ IMPORTANT CITATION FORMAT:
 - For multiple citations: "Several authors [@ABC123; @DEF456] argue..."
 
 Every factual claim must have a citation. Do not make claims without support.
+When citing quantitative claims (specific numbers, percentages, market projections), note the source's evidential weight. Preprint servers (Preprints.org, SSRN, arXiv) are not peer-reviewed — flag this when using them for specific quantitative claims. Do not present unreviewed figures with the same authority as peer-reviewed findings.
+
+SECTION STRUCTURE:
+- Connect the section's argument explicitly to the review's central thesis. The reader should understand why this theme matters for the review's overall question, not just why it matters in general.
+- Do NOT end every section with a formulaic "Gaps and Limitations" or "Outstanding Questions" subsection. Instead, weave limitations and open questions into the narrative where they arise — after the evidence that reveals them. If gaps are substantial enough to warrant their own subsection, vary the framing and placement across sections.
 
 HEADING FORMAT: Do NOT use `#` or `##` headings — the section header is added automatically.
 Use `###` for sub-sections within your theme."""
@@ -228,16 +241,23 @@ def get_discussion_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> st
     return f"""You are writing the discussion section for a systematic literature review.
 
 The discussion should:
-1. Synthesize findings ACROSS all themes (not repeat them)
+1. Synthesize findings ACROSS all themes — identify connections, tensions, or dependencies between themes that no individual section could establish. The discussion earns its place by saying something the sections couldn't say alone.
 2. Anchor in the current state of the field — what do we now understand that we didn't 2-3 years ago?
 3. Identify where recent work (2025-2026) has shifted the consensus, opened new questions, or closed old ones
-4. Discuss implications for theory and practice
-5. Acknowledge limitations of this review
+4. Discuss implications for theory and practice — be specific about what should change and for whom
+5. Acknowledge limitations of this review (briefly — do not over-qualify)
 6. Suggest future research directions grounded in the trajectory of recent findings
 
 Target length: {_word_range(word_target)} words
 Style: Analytical, forward-looking, anchored in the present moment
 Focus: Integration and implications, NOT summary. The reader should leave with a clear sense of where understanding stands right now and where it is heading.
+
+Prose discipline:
+- CONTRASTIVE FRAMING LIMIT: Use at most TWO contrastive-frame sentences ("X rather than Y", "not X but Y", "instead of X") in the entire discussion. State conclusions directly.
+- SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Demonstrate importance through argument, not labels.
+- Avoid "precisely," "crucially," and "fundamentally" as intensifiers.
+- Do not use "structural/structure/structurally" as vague intensifiers. Use only when referring to literal structure; otherwise choose a more precise word.
+
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
@@ -264,14 +284,19 @@ def get_conclusions_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> s
     return f"""You are writing the conclusions for a systematic literature review.
 
 The conclusions should:
-1. Directly answer each research question
-2. Summarize key contributions of the review
-3. State the most important takeaways
-4. End with implications or call to action
+1. Answer each research question — but go beyond restating what the thematic sections already said. The conclusions should demonstrate that the synthesis revealed something the reader could not have anticipated from the introduction alone.
+2. Identify at least one finding, tension, or implication that emerged from reading across themes — something that no single section established on its own.
+3. State what should concretely change in how practitioners or researchers approach this topic.
+4. End with forward-looking implications or concrete next steps.
+
+CRITICAL: The conclusions must NOT simply restate the abstract's findings in longer form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. Show what the synthesis earned.
 
 Target length: {_word_range(word_target)} words
-Style: Clear, definitive, impactful
-Avoid: Introducing new information or hedging excessively
+Style: Clear, definitive, direct
+Avoid: Introducing new information, hedging excessively.
+Superlative constraint: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Let the substance of each conclusion carry its own weight.
+Contrastive framing limit: Use at most ONE contrastive-frame sentence ("X rather than Y", "not X but Y") in the conclusions.
+OUTPUT HYGIENE: The output must contain only polished final prose. Do NOT include meta-commentary, self-corrections, editing notes, or internal monologue (e.g., "Wait — that sentence..." or "Let me correct..."). The reader should see only the finished text.
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
