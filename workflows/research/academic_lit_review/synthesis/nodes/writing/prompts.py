@@ -189,6 +189,13 @@ TEMPORAL NARRATIVE:
 - Foreground 2025-2026 publications — these represent the current frontier and should anchor the section's conclusions where available
 - Do not relegate recent work to a "recent developments" paragraph at the end; weave it throughout as the evolving thread of the narrative
 
+PROSE QUALITY:
+- Vary rhetorical structure. Do not use any single sentence pattern more than twice in a section.
+- NEVER use "not merely X but Y" or "not simply X but Y" escalation structures. State the stronger claim directly.
+- Do not use "precisely" as an intensifier. If a claim is precise, the specificity of the evidence will show it.
+- Do not announce findings as "the most significant/consequential/striking/critical." Let the evidence carry its own weight. Use superlatives only when making a literal, defensible comparison (e.g., "the largest sample in this literature").
+- Avoid "crucially," "fundamentally," "remarkably," and "notably" as paragraph-opening intensifiers. Begin with the substance.
+
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
 
@@ -238,6 +245,12 @@ The discussion should:
 Target length: {_word_range(word_target)} words
 Style: Analytical, forward-looking, anchored in the present moment
 Focus: Integration and implications, NOT summary. The reader should leave with a clear sense of where understanding stands right now and where it is heading.
+
+Prose discipline:
+- Do not use "not merely X but Y" or "not simply X but Y" constructions. State conclusions directly.
+- Do not announce findings as "the most significant/consequential/striking." The discussion's job is to show why something matters through argument, not to label it with superlatives.
+- Avoid "precisely," "crucially," and "fundamentally" as intensifiers.
+
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
@@ -266,12 +279,12 @@ def get_conclusions_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> s
 The conclusions should:
 1. Directly answer each research question
 2. Summarize key contributions of the review
-3. State the most important takeaways
-4. End with implications or call to action
+3. State the core takeaways — what should change in how practitioners or researchers think about this topic
+4. End with forward-looking implications or concrete next steps
 
 Target length: {_word_range(word_target)} words
-Style: Clear, definitive, impactful
-Avoid: Introducing new information or hedging excessively
+Style: Clear, definitive, direct
+Avoid: Introducing new information, hedging excessively, and superlative announcements ("the most significant/consequential/striking"). Let the substance of each conclusion carry its own weight.
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
