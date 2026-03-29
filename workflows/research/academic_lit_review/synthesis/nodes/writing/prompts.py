@@ -190,11 +190,12 @@ TEMPORAL NARRATIVE:
 - Do not relegate recent work to a "recent developments" paragraph at the end; weave it throughout as the evolving thread of the narrative
 
 PROSE QUALITY:
-- Vary rhetorical structure. Do not use any single sentence pattern more than twice in a section.
-- NEVER use "not merely X but Y" or "not simply X but Y" escalation structures. State the stronger claim directly.
+- CONTRASTIVE FRAMING LIMIT: Sentences that contrast two positions ("X rather than Y", "not X but Y", "instead of X", "X as opposed to Y", "less about X and more about Y") are useful occasionally but become a tic when overused. Use at most THREE contrastive-frame sentences per section. When you want to make a strong claim, state it directly without first naming the weaker alternative.
 - Do not use "precisely" as an intensifier. If a claim is precise, the specificity of the evidence will show it.
-- Do not announce findings as "the most significant/consequential/striking/critical." Let the evidence carry its own weight. Use superlatives only when making a literal, defensible comparison (e.g., "the largest sample in this literature").
+- SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Use superlatives only for literal, verifiable comparisons (e.g., "the largest cohort", "the longest follow-up period"). If a finding matters, demonstrate why through the evidence and argument — do not announce it.
 - Avoid "crucially," "fundamentally," "remarkably," and "notably" as paragraph-opening intensifiers. Begin with the substance.
+- VOCABULARY SATURATION: Watch for overuse of any single content word. In particular, do not use "structural," "structure," or "structurally" as vague intensifiers meaning "important" or "deep." Use these words only when referring to literal structure (physical, organizational, molecular). When tempted to write "structural change" or "structural factor," ask whether a more precise word (systemic, architectural, organizational, compositional, mechanistic) better fits the specific claim.
+- SELF-CHECK: Before finalising, scan for any single phrase or sentence skeleton that appears more than twice. If found, rewrite the excess instances using a different rhetorical move.
 
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
@@ -247,9 +248,10 @@ Style: Analytical, forward-looking, anchored in the present moment
 Focus: Integration and implications, NOT summary. The reader should leave with a clear sense of where understanding stands right now and where it is heading.
 
 Prose discipline:
-- Do not use "not merely X but Y" or "not simply X but Y" constructions. State conclusions directly.
-- Do not announce findings as "the most significant/consequential/striking." The discussion's job is to show why something matters through argument, not to label it with superlatives.
+- CONTRASTIVE FRAMING LIMIT: Use at most TWO contrastive-frame sentences ("X rather than Y", "not X but Y", "instead of X") in the entire discussion. State conclusions directly.
+- SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Demonstrate importance through argument, not labels.
 - Avoid "precisely," "crucially," and "fundamentally" as intensifiers.
+- Do not use "structural/structure/structurally" as vague intensifiers. Use only when referring to literal structure; otherwise choose a more precise word.
 
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
@@ -284,7 +286,9 @@ The conclusions should:
 
 Target length: {_word_range(word_target)} words
 Style: Clear, definitive, direct
-Avoid: Introducing new information, hedging excessively, and superlative announcements ("the most significant/consequential/striking"). Let the substance of each conclusion carry its own weight.
+Avoid: Introducing new information, hedging excessively.
+Superlative constraint: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Let the substance of each conclusion carry its own weight.
+Contrastive framing limit: Use at most ONE contrastive-frame sentence ("X rather than Y", "not X but Y") in the conclusions.
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
