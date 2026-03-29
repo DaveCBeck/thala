@@ -122,46 +122,55 @@ async def plan_briefs_node(state: IllustrateState) -> dict:
     select_count = target_count + config.overgeneration_surplus
     selected = _select_opportunities(opportunities, select_count, config)
 
-    try:
-        result = await invoke(
-            tier=ModelTier.SONNET,
-            system=PLAN_BRIEFS_SYSTEM,
-            user=PLAN_BRIEFS_USER.format(
-                document=document,
-                visual_identity_text=build_visual_identity_context(visual_identity),
-                opportunities_text=json.dumps([o.model_dump() for o in selected], indent=2),
-                editorial_notes=editorial_notes,
-            ),
-            schema=PlanBriefsResult,
-            config=InvokeConfig(max_tokens=8000, batch_policy=BatchPolicy.PREFER_BALANCE),
-        )
+    max_retries = 2
+    last_err: Exception | None = None
 
-        image_plan = _briefs_to_image_plan(result.candidate_briefs, selected, config)
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = await invoke(
+                tier=ModelTier.SONNET,
+                system=PLAN_BRIEFS_SYSTEM,
+                user=PLAN_BRIEFS_USER.format(
+                    document=document,
+                    visual_identity_text=build_visual_identity_context(visual_identity),
+                    opportunities_text=json.dumps([o.model_dump() for o in selected], indent=2),
+                    editorial_notes=editorial_notes,
+                ),
+                schema=PlanBriefsResult,
+                config=InvokeConfig(max_tokens=8000, batch_policy=BatchPolicy.PREFER_BALANCE),
+            )
 
-        planned_ids = {p.location_id for p in image_plan}
-        selected_ids = {o.location_id for o in selected}
-        missing = selected_ids - planned_ids
-        if missing:
-            logger.warning(f"LLM produced no briefs for locations: {missing}")
+            image_plan = _briefs_to_image_plan(result.candidate_briefs, selected, config)
 
-        logger.info(f"Plan briefs complete: {len(result.candidate_briefs)} briefs across {len(image_plan)} locations")
+            planned_ids = {p.location_id for p in image_plan}
+            selected_ids = {o.location_id for o in selected}
+            missing = selected_ids - planned_ids
+            if missing:
+                logger.warning(f"LLM produced no briefs for locations: {missing}")
 
-        return {
-            "candidate_briefs": result.candidate_briefs,
-            "image_plan": image_plan,
-        }
+            logger.info(f"Plan briefs complete: {len(result.candidate_briefs)} briefs across {len(image_plan)} locations")
 
-    except Exception as e:
-        logger.error(f"Plan briefs failed: {e}")
-        return {
-            "image_plan": [],
-            "errors": [
-                {
-                    "location_id": None,
-                    "severity": "error",
-                    "message": "Brief planning failed",
-                    "stage": "analysis",
-                }
-            ],
-            "status": "failed",
-        }
+            return {
+                "candidate_briefs": result.candidate_briefs,
+                "image_plan": image_plan,
+            }
+
+        except Exception as e:
+            last_err = e
+            if attempt < max_retries:
+                logger.warning(f"Plan briefs attempt {attempt}/{max_retries} failed: {e}, retrying")
+            else:
+                logger.error(f"Plan briefs failed after {max_retries} attempts: {e}")
+
+    return {
+        "image_plan": [],
+        "errors": [
+            {
+                "location_id": None,
+                "severity": "error",
+                "message": f"Brief planning failed: {last_err}",
+                "stage": "analysis",
+            }
+        ],
+        "status": "failed",
+    }
