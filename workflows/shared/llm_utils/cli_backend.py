@@ -198,7 +198,7 @@ async def invoke_via_cli(
             envelope = await _run_claude_cli(cmd, user_prompt)
             text = envelope["result"]
             return AIMessage(content=text)
-        except (TimeoutError, RuntimeError) as e:
+        except (TimeoutError, RuntimeError, KeyError) as e:
             last_err = e
             logger.warning("CLI backend: attempt %d/%d failed: %s", attempt + 1, _CLI_MAX_RETRIES, e)
             if attempt < _CLI_MAX_RETRIES - 1:
@@ -245,7 +245,7 @@ async def invoke_structured_via_cli(
             envelope = await _run_claude_cli(cmd, user_prompt)
             raw = envelope["structured_output"]
             return schema.model_validate(raw)
-        except (TimeoutError, RuntimeError) as e:
+        except (TimeoutError, RuntimeError, KeyError) as e:
             last_err = e
             logger.warning("CLI backend: attempt %d/%d failed: %s", attempt + 1, _CLI_MAX_RETRIES, e)
             if attempt < _CLI_MAX_RETRIES - 1:
