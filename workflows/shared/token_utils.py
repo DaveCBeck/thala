@@ -77,7 +77,10 @@ def count_tokens_accurate(text: str) -> int:
     if not text:
         return 0
     encoding = _get_encoding()
-    return len(encoding.encode(text))
+    # disallowed_special=() allows arbitrary document content (which may
+    # contain literal special-token strings like <|endofprompt|> from
+    # scraped PDFs) without raising.
+    return len(encoding.encode(text, disallowed_special=()))
 
 
 def estimate_tokens_fast(text: str, with_safety_margin: bool = True) -> int:

@@ -241,6 +241,23 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         new_paper_corpus = decision.get("new_paper_corpus", {})
         new_zotero_keys = decision.get("new_zotero_keys", {})
 
+        # Defensive: ensure merge operands are dicts (guards against upstream
+        # returning a list instead of a dict, which causes "'list' object is
+        # not a mapping" on the {**a, **b} merge below).
+        for name, val in [
+            ("paper_summaries", state.get("paper_summaries")),
+            ("new_paper_summaries", new_paper_summaries),
+            ("zotero_keys", state.get("zotero_keys")),
+            ("new_zotero_keys", new_zotero_keys),
+            ("paper_corpus", state.get("paper_corpus")),
+            ("new_paper_corpus", new_paper_corpus),
+        ]:
+            if not isinstance(val, dict):
+                raise TypeError(
+                    f"{name} is {type(val).__name__}, expected dict "
+                    f"(value preview: {str(val)[:200]})"
+                )
+
         # Validate mini-review before consuming iteration
         if not mini_review_text or len(mini_review_text.strip()) < 100:
             logger.warning(
@@ -338,7 +355,7 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"Integration failed: {e}")
+        logger.error(f"Integration failed: {e}", exc_info=True)
         # Return single-element list - the add reducer will append to existing errors
         return {
             "errors": [

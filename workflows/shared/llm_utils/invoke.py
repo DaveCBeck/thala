@@ -807,6 +807,9 @@ class InvokeBatch:
     Used with the invoke_batch() context manager to accumulate requests
     and signal batch boundaries to the broker.
 
+    When the broker is disabled or CLI backend is active, falls back to
+    concurrent invoke() calls with semaphore-based rate limiting.
+
     Example:
         async with invoke_batch() as batch:
             for paper in papers:
@@ -818,10 +821,11 @@ class InvokeBatch:
             results = await batch.results()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, use_broker: bool = True) -> None:
         self._requests: list[tuple[ModelTier, str, str, InvokeConfig]] = []
         self._futures: list[asyncio.Future] = []
         self._results: list[AIMessage] | None = None
+        self._use_broker = use_broker
 
     def add(
         self,
@@ -864,6 +868,32 @@ class InvokeBatch:
             )
             self._futures.append(future)
 
+    async def _submit_via_invoke(self) -> None:
+        """Fallback: execute requests concurrently via invoke()."""
+        semaphore = asyncio.Semaphore(5)
+
+        async def _run_one(tier: ModelTier, system: str, user: str, config: InvokeConfig) -> AIMessage:
+            async with semaphore:
+                return await invoke(
+                    tier=tier,
+                    system=system,
+                    user=user,
+                    config=InvokeConfig(
+                        max_tokens=config.max_tokens,
+                        effort=config.effort,
+                        tools=config.tools,
+                        tool_choice=config.tool_choice,
+                        metadata=config.metadata,
+                        cache=config.cache,
+                        # Drop batch_policy — invoke() handles routing
+                    ),
+                )
+
+        results = await asyncio.gather(
+            *(_run_one(tier, system, user, config) for tier, system, user, config in self._requests)
+        )
+        self._results = list(results)
+
     async def results(self) -> list[AIMessage]:
         """Get batch results.
 
@@ -878,7 +908,7 @@ class InvokeBatch:
         return self._results
 
     async def _collect_results(self) -> None:
-        """Collect results from all futures."""
+        """Collect results from broker futures."""
         self._results = []
         for future in self._futures:
             response = await future
@@ -891,8 +921,9 @@ class InvokeBatch:
 async def invoke_batch() -> AsyncIterator[InvokeBatch]:
     """Context manager for dynamic batch building.
 
-    Wraps broker.batch_group() to provide a simpler interface for
-    accumulating requests dynamically and signaling batch boundaries.
+    When the broker is enabled and CLI backend is not active, wraps
+    broker.batch_group() for cost-optimized batching. Otherwise falls
+    back to concurrent invoke() calls that respect the active backend.
 
     Example:
         async with invoke_batch() as batch:
@@ -911,18 +942,31 @@ async def invoke_batch() -> AsyncIterator[InvokeBatch]:
         All requests in the batch should use Anthropic models (not DeepSeek)
         since DeepSeek doesn't support the batch API.
     """
-    from core.llm_broker import get_broker
+    from .cli_backend import is_cli_backend_enabled
+    from core.llm_broker import is_broker_enabled
 
-    broker = get_broker()
-    batch = InvokeBatch()
+    use_broker = not is_cli_backend_enabled() and is_broker_enabled()
+    batch = InvokeBatch(use_broker=use_broker)
 
-    async with broker.batch_group():
+    if use_broker:
+        from core.llm_broker import get_broker
+
+        broker = get_broker()
+        async with broker.batch_group():
+            yield batch
+            await batch._submit_to_broker()
+
+        # Collect results after batch_group exits (batch has been flushed)
+        await batch._collect_results()
+    else:
+        logger.debug(
+            "invoke_batch: using fallback (cli_backend=%s, broker_enabled=%s)",
+            is_cli_backend_enabled(),
+            is_broker_enabled(),
+        )
         yield batch
-        # Submit all accumulated requests before exiting batch_group
-        await batch._submit_to_broker()
-
-    # Collect results after batch_group exits (batch has been flushed)
-    await batch._collect_results()
+        # Execute all accumulated requests via invoke() (respects CLI backend)
+        await batch._submit_via_invoke()
 
 
 __all__ = [

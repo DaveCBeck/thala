@@ -180,7 +180,7 @@ class LitReviewWebAugmentedWorkflow(BaseWorkflow):
             try:
                 combined_result = await run_combine_phase(
                     lit_result=lit_result
-                    or {"final_report": "", "paper_corpus": {}, "paper_summaries": {}, "zotero_keys": []},
+                    or {"final_report": "", "paper_corpus": {}, "paper_summaries": {}, "zotero_keys": {}},
                     web_result=web_result or {"final_report": ""},
                     topic=topic,
                     augmented_research_questions=augmented_questions,

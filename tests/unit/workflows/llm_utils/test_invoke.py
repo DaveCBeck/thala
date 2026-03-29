@@ -27,6 +27,17 @@ from workflows.shared.llm_utils.invoke import (
 from workflows.shared.llm_utils.models import ModelTier
 
 
+@pytest.fixture(autouse=True)
+def _disable_cli_backend():
+    """Ensure CLI backend is off for all invoke routing tests.
+
+    The .env may set THALA_LLM_BACKEND=cli; tests should exercise
+    the API routing paths unless explicitly testing CLI backend.
+    """
+    with patch("workflows.shared.llm_utils.cli_backend.is_cli_backend_enabled", return_value=False):
+        yield
+
+
 class TestInvokeConfig:
     """Tests for InvokeConfig dataclass validation."""
 
@@ -564,7 +575,11 @@ class TestInvokeBatchContextManager:
         mock_broker.batch_group.return_value.__aexit__ = AsyncMock()
         mock_broker.request = AsyncMock(side_effect=futures)
 
-        with patch("core.llm_broker.get_broker", return_value=mock_broker):
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.is_cli_backend_enabled", return_value=False),
+            patch("core.llm_broker.is_broker_enabled", return_value=True),
+            patch("core.llm_broker.get_broker", return_value=mock_broker),
+        ):
             async with invoke_batch() as batch:
                 batch.add(tier=ModelTier.HAIKU, system="S1", user="U1")
                 batch.add(tier=ModelTier.HAIKU, system="S2", user="U2")
@@ -596,13 +611,66 @@ class TestInvokeBatchContextManager:
         mock_broker.batch_group.return_value.__aexit__ = AsyncMock()
         mock_broker.request = AsyncMock()
 
-        with patch("core.llm_broker.get_broker", return_value=mock_broker):
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.is_cli_backend_enabled", return_value=False),
+            patch("core.llm_broker.is_broker_enabled", return_value=True),
+            patch("core.llm_broker.get_broker", return_value=mock_broker),
+        ):
             async with invoke_batch() as batch:
                 pass  # No adds
 
             results = await batch.results()
 
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_cli_backend_enabled(self):
+        """When CLI backend is active, invoke_batch should use invoke() not broker."""
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.is_cli_backend_enabled", return_value=True),
+            patch("workflows.shared.llm_utils.invoke.invoke", new_callable=AsyncMock) as mock_invoke,
+            patch("core.llm_broker.get_broker") as mock_get_broker,
+        ):
+            mock_invoke.side_effect = [
+                AIMessage(content="CLI response 1"),
+                AIMessage(content="CLI response 2"),
+            ]
+
+            async with invoke_batch() as batch:
+                batch.add(tier=ModelTier.HAIKU, system="S1", user="U1")
+                batch.add(tier=ModelTier.SONNET, system="S2", user="U2")
+
+            results = await batch.results()
+
+        assert len(results) == 2
+        assert results[0].content == "CLI response 1"
+        assert results[1].content == "CLI response 2"
+        assert mock_invoke.call_count == 2
+        mock_get_broker.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_broker_disabled(self):
+        """When broker is disabled, invoke_batch should use invoke() not broker."""
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.is_cli_backend_enabled", return_value=False),
+            patch("core.llm_broker.is_broker_enabled", return_value=False),
+            patch("workflows.shared.llm_utils.invoke.invoke", new_callable=AsyncMock) as mock_invoke,
+            patch("core.llm_broker.get_broker") as mock_get_broker,
+        ):
+            mock_invoke.side_effect = [
+                AIMessage(content="Direct 1"),
+                AIMessage(content="Direct 2"),
+            ]
+
+            async with invoke_batch() as batch:
+                batch.add(tier=ModelTier.HAIKU, system="S1", user="U1")
+                batch.add(tier=ModelTier.SONNET, system="S2", user="U2")
+
+            results = await batch.results()
+
+        assert len(results) == 2
+        assert mock_invoke.call_count == 2
+        mock_get_broker.assert_not_called()
 
 
 class TestInvokeMultimodal:
