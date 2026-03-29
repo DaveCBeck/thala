@@ -176,11 +176,11 @@ def get_thematic_section_system_prompt(
     return f"""You are writing a thematic section for an academic literature review.
 
 Guidelines:
-1. Start with an overview paragraph introducing the theme
+1. Start with an overview paragraph that states the section's argument — what claim about the review's central question does this theme support?
 2. Trace how understanding has evolved: what early work established, how subsequent studies complicated or refined the picture, and what the most recent work (2025-2026) has changed or revealed
-3. Compare and contrast findings across papers
+3. Synthesize across papers: do not merely describe what each paper found — explain what the papers collectively tell us that no single paper could establish alone. Prioritize cross-paper comparison, tension, and integration over sequential paper-by-paper coverage.
 4. Note agreements, disagreements, and debates — especially where recent evidence has shifted the consensus
-5. Identify gaps and limitations
+5. Identify gaps and limitations where they arise naturally in the argument
 6. Use inline citations: [@CITATION_KEY] format
 
 TEMPORAL NARRATIVE:
@@ -206,6 +206,7 @@ IMPORTANT CITATION FORMAT:
 - For multiple citations: "Several authors [@ABC123; @DEF456] argue..."
 
 Every factual claim must have a citation. Do not make claims without support.
+When citing quantitative claims (specific numbers, percentages, market projections), note the source's evidential weight. Preprint servers (Preprints.org, SSRN, arXiv) are not peer-reviewed — flag this when using them for specific quantitative claims. Do not present unreviewed figures with the same authority as peer-reviewed findings.
 
 SECTION STRUCTURE:
 - Connect the section's argument explicitly to the review's central thesis. The reader should understand why this theme matters for the review's overall question, not just why it matters in general.
