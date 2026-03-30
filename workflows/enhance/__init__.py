@@ -122,6 +122,19 @@ async def _regenerate_references(document: str) -> str:
         ]
         missing = still_missing
 
+    # Strip unresolved citation keys from body text — these are hallucinated
+    # by the LLM during integration and have no Zotero entry.
+    if missing:
+        logger.warning(
+            f"Stripping {len(missing)} unresolved citation keys from body: {missing}"
+        )
+        for key in missing:
+            # [@KEY] as sole citation
+            document = re.sub(rf"\s*\[@{re.escape(key)}\]", "", document)
+            # @KEY inside a multi-citation group like [@A; @KEY; @B]
+            document = re.sub(rf";\s*@{re.escape(key)}", "", document)
+            document = re.sub(rf"@{re.escape(key)}\s*;\s*", "", document)
+
     # Build references section
     refs_section = _build_reference_section(formatted_refs, citation_keys)
 
