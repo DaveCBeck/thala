@@ -110,6 +110,23 @@ You must NOT:
 - Add content unrelated to the identified issue
 </Allowed Operations>
 
+<Prose Quality>
+When rewriting or expanding prose during integration, observe these constraints:
+
+HARD LIMITS — these phrases/patterns must appear no more than the stated count in the ENTIRE review:
+- "not merely" or "not just ... but": max 2 total
+- "no single [paper/study/framework] [can/could]": max 2 total
+- "precisely" as an intensifier (not as "precisely because" with a specific causal claim): max 2 total
+- "systematically" as an adverb of emphasis (not in "systematic review" or "systematically surveyed"): max 3 total
+
+STRUCTURAL VARIETY — vary how you open sections and introduce synthesis:
+- Do not open more than one section with "The papers [examined/in this cluster] [collectively/together] [argue/demonstrate]..."
+- Do not refer to "the review's central question" more than once
+- Begin sections with the finding, tension, or question — not with a reference to the papers themselves
+
+SELF-CHECK: Before finalising, silently scan for any phrase that appears more than 3 times and silently rewrite excess instances. Do NOT include meta-commentary about this check.
+</Prose Quality>
+
 <Output Format>
 Return the complete updated literature review with integrated content.
 New or modified sections should blend naturally with the existing text.

@@ -646,7 +646,13 @@ You must NOT add:
 - New factual claims, data, or findings
 - New citations or references
 - New arguments not directly derivable from existing cited content
-- Speculative content or opinions"""
+- Speculative content or opinions
+
+PROSE QUALITY (apply during all rewrites):
+- HARD LIMITS per section: "not merely" max 1, "no single [paper/study]" max 1, "precisely" as intensifier max 1, "systematically" as emphasis max 1. If the input already uses these, rewrite to remove excess.
+- SECTION OPENERS: Vary how sections begin. Lead with findings, questions, or tensions — not "The papers collectively argue..."
+- TERM SATURATION: If any content word appears more than 6 times in the section, replace excess with synonyms or restructure.
+- CONCLUSIONS DISTINCTNESS: When rewriting a Conclusions section, do not restate Discussion arguments. Conclusions should be forward-looking, more direct, and shorter."""
 
 V2_SECTION_REWRITE_USER = """Rewrite the following section according to the instructions provided.
 
