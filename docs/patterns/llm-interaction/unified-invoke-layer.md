@@ -601,11 +601,12 @@ async def filter_papers(papers: list[Paper]) -> list[Paper]:
 | OPUS | REQUIRE_SYNC | True | Direct (sync required) |
 
 **Key routing rules:**
-1. DeepSeek tiers always route direct (no broker support)
-2. `batch_policy=None` always routes direct with caching
-3. `batch_policy` set + broker enabled → broker path
-4. `batch_policy` set + broker disabled → direct fallback
-5. Adaptive thinking (`effort`) is compatible with all routes
+1. CLI backend (`THALA_LLM_BACKEND=cli`) intercepts first — routes Claude tiers through `claude -p` subprocess (subscription billing). Supports text, structured output (`--json-schema`), and tool agents via MCP (`--mcp-config` with `mcp_server.paper_tools`). Falls through to API for DeepSeek, multimodal, or unsupported tools.
+2. DeepSeek tiers always route direct (no broker/CLI support)
+3. `batch_policy=None` always routes direct with caching
+4. `batch_policy` set + broker enabled → broker path
+5. `batch_policy` set + broker disabled → direct fallback
+6. Adaptive thinking (`effort`) is compatible with all routes
 
 ## Consequences
 

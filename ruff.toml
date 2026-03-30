@@ -13,6 +13,7 @@ ignore = ["E501"]
 # Entry points that need load_dotenv() before imports
 "langchain_tools/base.py" = ["E402"]
 "mcp_server/server.py" = ["E402"]
+"mcp_server/paper_tools/server.py" = ["E402"]
 "services/retrieve-academic/app/main.py" = ["E402"]
 
 # Files with configure_langsmith() before imports
