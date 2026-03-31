@@ -72,6 +72,7 @@ Avoid:
 - Topics that are just "overview of X" (that's what the overview is for)
 - Artificial divisions of naturally unified material
 - Topics where most sources would be shared with another deep-dive
+- **For right-now publications**: Topics where the primary evidence base is survey/review literature from pre-2025. If a topic's strongest available sources are foundational surveys, meta-analyses, or systematic reviews from 2020-2023, it belongs in the overview, not a deep-dive — deep-dives need recent primary findings to anchor them.
 
 ## Selecting Anchor Sources
 For each deep-dive, identify 2-3 citation keys that are:
@@ -135,6 +136,9 @@ Theme: {theme}
 These themes are covered elsewhere in the series. Do NOT significantly overlap with them. Brief mentions for context are fine, but the substance of your piece must be distinct.
 
 Target: 2,500-3,500 words
+
+## Recency
+When an editorial stance emphasises recency: lead with 2025-2026 findings. Your opening hook and primary evidence should come from the most recent sources available. Pre-2025 work should appear as historical context or theoretical grounding — introduce it after the recent findings, not before. The reader is here for what's new.
 """
 
 # Common style guidelines for all deep-dive prompts

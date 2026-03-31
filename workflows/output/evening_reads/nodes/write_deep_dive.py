@@ -133,6 +133,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     enriched_content: list[EnrichedContent] = state.get("enriched_content", [])
     lit_review = state.get("literature_review", "")
     editorial_stance = state.get("editorial_stance", "")
+    citation_mappings = state.get("citation_mappings", {})
 
     if not deep_dive_id:
         return {"errors": [{"node": "write_deep_dive", "error": "Missing deep_dive_id"}]}
@@ -141,7 +142,12 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     source_parts = []
     for ec in enriched_content:
         if ec["deep_dive_id"] == deep_dive_id:
-            source_parts.append(f"## Source: {ec['zotero_key']} ({ec['content_level']})\n\n{ec['content']}")
+            mapping = citation_mappings.get(ec["zotero_key"], {})
+            year = mapping.get("year")
+            year_str = f", {year}" if year else ""
+            source_parts.append(
+                f"## Source: {ec['zotero_key']} ({ec['content_level']}{year_str})\n\n{ec['content']}"
+            )
 
     source_content = "\n\n---\n\n".join(source_parts) if source_parts else "[No source content available]"
 
