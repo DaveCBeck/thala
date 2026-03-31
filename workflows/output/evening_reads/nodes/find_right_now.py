@@ -3,6 +3,10 @@
 For recency-high publications, searches for concrete recent findings
 (last 14-21 days) that deep-dive writers can anchor their openings on.
 Runs in parallel (one instance per deep-dive) alongside fetch_content.
+
+Each hook URL is processed through the document_processing workflow to
+produce proper L0/L1/L2 summaries and a Zotero key, unifying the
+citation system with the lit review's academic references.
 """
 
 import asyncio
@@ -21,18 +25,35 @@ from ..state import RightNowHook
 logger = logging.getLogger(__name__)
 
 SEARCH_LOOKBACK_DAYS = 21
+MIN_RESULTS_FOR_RETRY = 5
+
+ACADEMIC_DOMAINS = [
+    "arxiv.org",
+    "nature.com",
+    "sciencedirect.com",
+    "pmc.ncbi.nlm.nih.gov",
+    "science.org",
+    "acm.org",
+    "ieee.org",
+    "aclanthology.org",
+    "frontiersin.org",
+]
 
 
 async def _generate_queries(title: str, theme: str) -> list[str]:
-    """Generate 2 targeted search queries from a deep-dive's plan."""
+    """Generate 2 search queries: one broad, one academic-focused."""
     response = await invoke(
         tier=ModelTier.HAIKU,
         system=(
             "Generate exactly 2 web search queries to find the most recent "
-            "developments (last 2-3 weeks) related to this research topic. "
-            "Queries should target recent news, preprints, reports, or data "
-            "releases — not textbook overviews. Return ONLY the 2 queries, "
-            "one per line, no numbering or commentary."
+            "developments (last 2-3 weeks) related to this research topic.\n\n"
+            "Query 1 (BROAD): Cast a wide net — news articles, industry reports, "
+            "blog posts, government publications, think tank analyses. Include "
+            "terms like 'March 2026' or '2026' to anchor recency.\n\n"
+            "Query 2 (ACADEMIC): Target academic preprints and journal articles. "
+            "Use precise technical terminology that would appear in paper titles "
+            "or abstracts.\n\n"
+            "Return ONLY the 2 queries, one per line, no numbering or labels."
         ),
         user=f"Deep-dive title: {title}\nTheme: {theme}",
         config=InvokeConfig(max_tokens=200, batch_policy=BatchPolicy.PREFER_SPEED),
@@ -42,32 +63,72 @@ async def _generate_queries(title: str, theme: str) -> list[str]:
     return queries[:2]
 
 
-async def _search_perplexity(query: str, after_date: str) -> list[dict]:
-    """Run a single Perplexity search with date filtering."""
+async def _generate_retry_query(title: str, theme: str) -> str:
+    """Generate a broader retry query when initial results are thin."""
+    response = await invoke(
+        tier=ModelTier.HAIKU,
+        system=(
+            "The previous search for recent developments on this topic returned "
+            "very few results. Generate 1 BROADER search query that relaxes the "
+            "topic scope — look for adjacent or upstream developments that a "
+            "reader interested in this topic would find relevant. "
+            "Return ONLY the query, no commentary."
+        ),
+        user=f"Deep-dive title: {title}\nTheme: {theme}",
+        config=InvokeConfig(max_tokens=100, batch_policy=BatchPolicy.PREFER_SPEED),
+    )
+    text = response.content if isinstance(response.content, str) else str(response.content)
+    return text.strip().splitlines()[0].strip() if text.strip() else ""
+
+
+async def _search_perplexity(
+    query: str,
+    after_date: str,
+    domain_filter: list[str] | None = None,
+) -> list[dict]:
+    """Run a single Perplexity search with date filtering and optional domain filter."""
     from langchain_tools.perplexity import perplexity_search
 
     try:
-        result = await perplexity_search.ainvoke({
+        params: dict[str, Any] = {
             "query": query,
             "limit": 10,
             "after_date": after_date,
-        })
+        }
+        if domain_filter:
+            params["domain_filter"] = domain_filter
+
+        result = await perplexity_search.ainvoke(params)
         return result.get("results", [])
     except Exception as e:
         logger.warning(f"Perplexity search failed for '{query}': {e}")
         return []
 
 
-async def _fetch_url_content(url: str) -> str:
-    """Fetch full content from a URL using the unified scraping system."""
-    from core.scraping.unified import get_url
+async def _process_hook_url(url: str, title: str) -> dict[str, Any]:
+    """Process a hook URL through the document_processing workflow.
+
+    Returns dict with zotero_key and content (L2 or L1 summary).
+    Falls back to empty content if processing fails.
+    """
+    from workflows.document_processing import process_document
 
     try:
-        result = await get_url(url)
-        return result.content
+        result = await process_document(source=url, title=title)
+        zotero_key = result.get("zotero_key")
+        # Prefer L2 (10:1 summary), fall back to L1 (short summary), then L0
+        content = (
+            result.get("tenth_summary")
+            or result.get("tenth_summary_english")
+            or result.get("short_summary")
+            or result.get("short_summary_english")
+            or ""
+        )
+        logger.info(f"Processed hook URL {url} → zotero_key={zotero_key}, content={len(content)} chars")
+        return {"zotero_key": zotero_key, "content": content}
     except Exception as e:
-        logger.warning(f"Failed to fetch {url}: {e}")
-        return ""
+        logger.warning(f"Failed to process hook URL {url}: {e}")
+        return {"zotero_key": None, "content": ""}
 
 
 async def _synthesize_hooks(
@@ -162,7 +223,8 @@ async def find_right_now_node(state: dict) -> dict[str, Any]:
     """Find right-now hooks for a single deep-dive via Perplexity search.
 
     Called via Send() with assignment-specific data. Runs date-filtered
-    web searches and synthesizes concrete recent findings.
+    web searches and synthesizes concrete recent findings. Each selected
+    hook URL is processed through document_processing for proper citations.
 
     Expected state keys from Send():
         - deep_dive_id: Which deep-dive this is
@@ -181,15 +243,23 @@ async def find_right_now_node(state: dict) -> dict[str, Any]:
 
     logger.info(f"Finding right-now hooks for {deep_dive_id}: '{title}'")
 
-    # 1. Generate search queries
+    # 1. Generate search queries (one broad, one academic)
     queries = await _generate_queries(title, theme)
     if not queries:
         logger.warning(f"No queries generated for {deep_dive_id}")
         return {"right_now_hooks": []}
 
     # 2. Run Perplexity searches in parallel
+    #    Query 1 (broad): no domain filter
+    #    Query 2 (academic): academic domain filter
     after_date = (date.today() - timedelta(days=SEARCH_LOOKBACK_DAYS)).isoformat()
-    search_tasks = [_search_perplexity(q, after_date) for q in queries]
+    search_tasks = [
+        _search_perplexity(queries[0], after_date),  # broad
+    ]
+    if len(queries) > 1:
+        search_tasks.append(
+            _search_perplexity(queries[1], after_date, domain_filter=ACADEMIC_DOMAINS),
+        )
     results_lists = await asyncio.gather(*search_tasks)
 
     # Flatten and deduplicate by URL
@@ -204,22 +274,38 @@ async def find_right_now_node(state: dict) -> dict[str, Any]:
 
     logger.info(f"Found {len(all_results)} unique results for {deep_dive_id}")
 
+    # 3. Retry with broader query if results are thin
+    if len(all_results) < MIN_RESULTS_FOR_RETRY:
+        logger.info(f"Thin results ({len(all_results)}), retrying with broader query")
+        retry_query = await _generate_retry_query(title, theme)
+        if retry_query:
+            retry_results = await _search_perplexity(retry_query, after_date)
+            for r in retry_results:
+                url = r.get("url", "")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    all_results.append(r)
+            logger.info(f"After retry: {len(all_results)} unique results for {deep_dive_id}")
+
     if not all_results:
         return {"right_now_hooks": []}
 
-    # 3. Synthesize hooks with Sonnet
+    # 4. Synthesize hooks with Sonnet
     raw_hooks = await _synthesize_hooks(deep_dive_id, title, theme, all_results)
 
     if not raw_hooks:
         logger.info(f"No relevant hooks found for {deep_dive_id}")
         return {"right_now_hooks": []}
 
-    # 4. Fetch URL content for selected hooks in parallel
-    fetch_tasks = [_fetch_url_content(h["source_url"]) for h in raw_hooks]
-    contents = await asyncio.gather(*fetch_tasks)
+    # 5. Process hook URLs through document_processing for proper citations
+    process_tasks = [
+        _process_hook_url(h["source_url"], h["source_title"])
+        for h in raw_hooks
+    ]
+    processed = await asyncio.gather(*process_tasks)
 
     hooks: list[RightNowHook] = []
-    for hook_data, content in zip(raw_hooks, contents):
+    for hook_data, proc_result in zip(raw_hooks, processed):
         hooks.append(
             RightNowHook(
                 deep_dive_id=deep_dive_id,
@@ -227,9 +313,13 @@ async def find_right_now_node(state: dict) -> dict[str, Any]:
                 source_title=hook_data["source_title"],
                 source_url=hook_data["source_url"],
                 source_date=hook_data["source_date"],
-                content=content,
+                zotero_key=proc_result["zotero_key"],
+                content=proc_result["content"] or hook_data.get("finding", ""),
             )
         )
 
-    logger.info(f"Produced {len(hooks)} right-now hooks for {deep_dive_id}")
+    logger.info(
+        f"Produced {len(hooks)} right-now hooks for {deep_dive_id} "
+        f"({sum(1 for h in hooks if h.get('zotero_key'))} with Zotero keys)"
+    )
     return {"right_now_hooks": hooks}

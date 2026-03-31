@@ -258,13 +258,15 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     if right_now_hooks:
         hook_parts = []
         for hook in right_now_hooks:
+            zk = hook.get("zotero_key")
+            cite_hint = f"Cite as [@{zk}]" if zk else "Name the source and date inline"
             entry = (
                 f"### {hook['source_title']} ({hook['source_date']})\n"
-                f"URL: {hook['source_url']}\n\n"
+                f"{cite_hint}\n\n"
                 f"**Why this matters for your piece:** {hook['finding']}\n\n"
             )
             if hook.get("content"):
-                entry += f"**Full source content:**\n\n{hook['content']}\n"
+                entry += f"**Source content:**\n\n{hook['content']}\n"
             hook_parts.append(entry)
 
         hooks_section = (
@@ -272,9 +274,8 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
             "These are concrete recent findings discovered via web search. "
             "Use them to anchor your opening — lead with what just happened, "
             "then connect to the deeper literature review material.\n\n"
-            "When you reference these findings, name the source and date inline "
-            "(e.g., 'a March 2026 study by [team/org]'). These will appear in a "
-            "'Recent Sources' section at the end of the article.\n\n"
+            "Cite these sources using the [@KEY] format shown above where available. "
+            "They will appear in the References section alongside the academic sources.\n\n"
             + "\n\n---\n\n".join(hook_parts)
         )
 

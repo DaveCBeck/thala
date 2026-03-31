@@ -122,13 +122,15 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     if right_now_hooks:
         hook_lines = []
         for hook in right_now_hooks:
+            zk = hook.get("zotero_key")
+            cite = f" [@{zk}]" if zk else ""
             hook_lines.append(
-                f"- **{hook['source_title']}** ({hook['source_date']}): {hook['finding']}"
+                f"- **{hook['source_title']}** ({hook['source_date']}){cite}: {hook['finding']}"
             )
         hooks_section = (
             "\n\n## Right Now — Recent Developments (last 2-3 weeks)\n"
-            "These recent findings were discovered via web search. Reference them "
-            "where relevant to anchor the overview in the current moment.\n\n"
+            "These recent findings were discovered via web search. Cite them "
+            "using [@KEY] format where available to anchor the overview in the current moment.\n\n"
             + "\n".join(hook_lines)
         )
 

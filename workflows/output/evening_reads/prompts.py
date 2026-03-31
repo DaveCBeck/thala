@@ -109,6 +109,23 @@ For publications that value older literature, topics built around enduring quest
 
 The citation key list below includes publication years where available. Use these years to guide your anchor key selection."""
 
+REPLAN_FEEDBACK_SECTION = """
+
+## Replan Feedback
+
+A web search for recent developments (last 21 days) was run for each planned deep-dive topic.
+The results are below:
+
+{feedback}
+
+Please respond by EITHER:
+
+1. **Adjusting the zero-hook topics**: Pick a different theme angle where recent primary sources are available (2025-2026 papers with actual new findings, not surveys or reviews). You may keep the topics that already have hooks.
+
+2. **Keeping the original topics**: If you believe the original topics are the best fit for the literature review and you cannot find a viable alternative with recent hooks, you may keep them unchanged. The writer will anchor in the foundational material. This is a valid choice — not every topic has recent developments, and forcing a poor fit is worse than proceeding without a recency hook.
+
+Favour Option 1 when possible, but Option 2 is acceptable when the alternative would mean departing from the literature review's strongest material."""
+
 PLANNING_USER_TEMPLATE = """## Literature Review to Plan From:
 
 {literature_review}

@@ -48,7 +48,8 @@ class RightNowHook(TypedDict):
     source_title: str  # Title of the source article/paper
     source_url: str  # URL
     source_date: str  # Publication date (ISO or descriptive)
-    content: str  # Fetched page content (truncated)
+    zotero_key: Optional[str]  # Zotero key from process_document (None if processing failed)
+    content: str  # L2 summary from process_document, or L1/snippet fallback
 
 
 class EnrichedContent(TypedDict):
@@ -127,6 +128,9 @@ class EveningReadsState(TypedDict):
 
     # Final output
     final_outputs: list[FinalOutput]  # All 4 articles with references
+
+    # Replan tracking
+    replan_attempts: int
 
     # Workflow metadata
     status: Optional[Literal["completed", "partial", "failed"]]
