@@ -467,20 +467,50 @@ async def invoke(
     """
     config = config or InvokeConfig()
 
-    # CLI backend: route Claude text/structured calls through claude -p
+    # CLI backend: route Claude text/structured/tool-agent calls through claude -p
     from .cli_backend import is_cli_backend_enabled
 
     if is_cli_backend_enabled():
         from .cli_backend import invoke_via_cli, invoke_structured_via_cli
 
         is_multimodal = _is_multimodal_content(user)
-        can_use_cli = not is_deepseek_tier(tier) and not is_multimodal and not config.tools
+        can_use_cli = not is_deepseek_tier(tier) and not is_multimodal
 
         if can_use_cli:
             is_batch = isinstance(user, list) and not is_multimodal
             user_prompts: list = user if is_batch else [user]
 
-            if schema is not None:
+            if config.tools and schema is not None:
+                # Tool agent via CLI + MCP server, with API fallback
+                from .cli_backend import invoke_tool_agent_via_cli, _MCP_SUPPORTED_TOOLS
+
+                tool_names = {t.name for t in config.tools}
+                if tool_names <= _MCP_SUPPORTED_TOOLS:
+                    try:
+                        results_tools = []
+                        for prompt in user_prompts:
+                            r = await invoke_tool_agent_via_cli(
+                                tier,
+                                system,
+                                prompt,
+                                schema,
+                                config.tools,
+                                effort=config.effort,
+                                max_tool_calls=config.max_tool_calls,
+                            )
+                            results_tools.append(r)
+                        return results_tools if is_batch else results_tools[0]
+                    except Exception as e:
+                        logger.warning(
+                            "CLI tool agent failed, falling back to API: %s", e
+                        )
+                        # Fall through to API path below
+                else:
+                    logger.debug(
+                        "CLI backend: tools %s not all MCP-supported, falling through to API",
+                        tool_names - _MCP_SUPPORTED_TOOLS,
+                    )
+            elif schema is not None:
                 results_typed = []
                 for prompt in user_prompts:
                     r = await invoke_structured_via_cli(
@@ -493,7 +523,7 @@ async def invoke(
                     )
                     results_typed.append(r)
                 return results_typed if is_batch else results_typed[0]
-            else:
+            elif not config.tools:
                 results_cli = []
                 for prompt in user_prompts:
                     r = await invoke_via_cli(
@@ -506,7 +536,7 @@ async def invoke(
                     results_cli.append(r)
                 return results_cli if is_batch else results_cli[0]
 
-        # Fallthrough: DeepSeek, multimodal, tools → existing API path
+        # Fallthrough: DeepSeek, multimodal, unsupported tools → existing API path
         logger.debug(
             f"CLI backend: falling through to API "
             f"(tier={tier.name}, multimodal={_is_multimodal_content(user)}, tools={bool(config.tools)})"

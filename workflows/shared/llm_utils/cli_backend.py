@@ -9,9 +9,11 @@ import json
 import logging
 import os
 import signal
+import sys
 from typing import Type, TypeVar
 
 from langchain_core.messages import AIMessage
+from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from .models import ModelTier
@@ -23,7 +25,7 @@ T = TypeVar("T", bound=BaseModel)
 # claude -p subprocess timeout — generous to allow large integrations
 # (e.g. 2x12k token synthesis), but prevents indefinite hangs from
 # pipe-inheritance deadlocks where child processes hold pipes open.
-_CLI_TIMEOUT_SECONDS = int(os.getenv("THALA_CLI_TIMEOUT", "1200"))
+_CLI_TIMEOUT_SECONDS = int(os.getenv("THALA_CLI_TIMEOUT", "2700"))
 
 # Retry count for transient failures (timeouts, non-zero exit)
 _CLI_MAX_RETRIES = int(os.getenv("THALA_CLI_RETRIES", "4"))
@@ -125,8 +127,11 @@ async def _run_claude_cli(
         rc = proc.returncode if proc.returncode is not None else 0
 
     if rc != 0:
+        stderr_text = stderr_bytes.decode()[:500]
+        # Claude CLI returns JSON on stdout even on failure; include both
+        stdout_text = stdout_bytes.decode()[:300]
         raise RuntimeError(
-            f"claude -p failed (rc={rc}): {stderr_bytes.decode()[:500]}"
+            f"claude -p failed (rc={rc}): {stderr_text or stdout_text}"
         )
 
     return json.loads(stdout_bytes.decode())
@@ -248,6 +253,133 @@ async def invoke_structured_via_cli(
         except (TimeoutError, RuntimeError, KeyError) as e:
             last_err = e
             logger.warning("CLI backend: attempt %d/%d failed: %s", attempt + 1, _CLI_MAX_RETRIES, e)
+            if attempt < _CLI_MAX_RETRIES - 1:
+                await asyncio.sleep(2 ** attempt)
+    raise last_err  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# MCP-based tool agent support
+# ---------------------------------------------------------------------------
+
+# Known tool names that the paper_tools MCP server can handle
+_MCP_SUPPORTED_TOOLS = {"search_papers", "get_paper_content"}
+
+
+def _build_mcp_config(tools: list[BaseTool]) -> str:
+    """Build inline MCP config JSON for the paper tools server.
+
+    Args:
+        tools: LangChain tools requested by the caller.
+
+    Returns:
+        JSON string suitable for --mcp-config flag.
+
+    Raises:
+        ValueError: If any tool is not supported by the MCP server.
+    """
+    tool_names = {t.name for t in tools}
+    unsupported = tool_names - _MCP_SUPPORTED_TOOLS
+    if unsupported:
+        raise ValueError(
+            f"Tools not supported by MCP server: {unsupported}. "
+            f"Supported: {_MCP_SUPPORTED_TOOLS}"
+        )
+
+    # Pass through THALA_* env vars so the MCP server can reach stores/services.
+    # The server also runs load_dotenv(), but explicit env is more robust when
+    # spawned as a grandchild process via Claude CLI.
+    mcp_env = {
+        k: v for k, v in os.environ.items()
+        if k.startswith("THALA_") or k.startswith("EMBEDDING_") or k == "LANGSMITH_API_KEY"
+    }
+    mcp_env["THALA_MCP_TOOLS"] = ",".join(sorted(tool_names))
+
+    config = {
+        "mcpServers": {
+            "paper_tools": {
+                "command": sys.executable,
+                "args": ["-m", "mcp_server.paper_tools"],
+                "env": mcp_env,
+            }
+        }
+    }
+    return json.dumps(config)
+
+
+async def invoke_tool_agent_via_cli(
+    tier: ModelTier,
+    system: str,
+    user_prompt: str,
+    schema: Type[T],
+    tools: list[BaseTool],
+    *,
+    effort: str | None = None,
+    max_tool_calls: int = 12,
+) -> T:
+    """Invoke Claude with MCP tools via `claude -p` for agentic tool-calling.
+
+    Spawns a `claude -p` subprocess with --mcp-config pointing at the
+    paper_tools MCP server, which wraps the LangChain tools. Claude
+    handles the multi-turn tool loop internally and returns structured
+    output via --json-schema.
+
+    Args:
+        tier: Model tier (must be a Claude tier, not DeepSeek)
+        system: System prompt
+        user_prompt: User prompt text
+        schema: Pydantic model class for structured output
+        tools: LangChain tools to expose via MCP
+        effort: Optional effort level (low/medium/high/max)
+        max_tool_calls: Max tool calls to allow (maps to --max-turns + 8)
+
+    Returns:
+        Validated Pydantic model instance
+    """
+    model = _TIER_TO_CLI_MODEL[tier]
+    mcp_config = _build_mcp_config(tools)
+    json_schema = json.dumps(schema.model_json_schema())
+
+    # max_turns = tool calls + 8 for structured output turn + margin
+    max_turns = max_tool_calls + 8
+
+    # Build command manually instead of _build_base_cmd because the tool
+    # agent needs MCP tools enabled (no --tools "") and --allowedTools
+    # to restrict to only MCP server tools.
+    cmd = [
+        "claude",
+        "-p",
+        "--output-format", "json",
+        "--system-prompt", system,
+        "--model", model,
+        "--max-turns", str(max_turns),
+        "--no-session-persistence",
+        "--dangerously-skip-permissions",
+        "--mcp-config", mcp_config,
+        "--strict-mcp-config",
+        "--json-schema", json_schema,
+    ]
+    if effort:
+        cmd.extend(["--effort", effort])
+
+    last_err: Exception | None = None
+    for attempt in range(_CLI_MAX_RETRIES):
+        try:
+            logger.debug(
+                "CLI backend: invoking %s (tool_agent, tools=%s, schema=%s, "
+                "max_turns=%d, effort=%s, attempt=%d)",
+                model, [t.name for t in tools], schema.__name__,
+                max_turns, effort, attempt + 1,
+            )
+            envelope = await _run_claude_cli(cmd, user_prompt)
+            raw = envelope["structured_output"]
+            return schema.model_validate(raw)
+        except (TimeoutError, RuntimeError, KeyError) as e:
+            last_err = e
+            logger.warning(
+                "CLI backend: tool agent attempt %d/%d failed: %s",
+                attempt + 1, _CLI_MAX_RETRIES, e,
+            )
             if attempt < _CLI_MAX_RETRIES - 1:
                 await asyncio.sleep(2 ** attempt)
     raise last_err  # type: ignore[misc]

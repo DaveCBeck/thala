@@ -40,14 +40,32 @@ async def rsync_batch(batch_dir: Path) -> bool:
     # batch_dir is like .thala/export/arrivingfuture/batch_0003
     pub_slug = batch_dir.parent.name
     batch_name = batch_dir.name
-    remote_path = f"{remote_base.rstrip('/')}/{pub_slug}/{batch_name}/"
+    remote_pub_dir = f"{remote_base.rstrip('/')}/{pub_slug}"
+    remote_path = f"{remote_pub_dir}/{batch_name}/"
 
-    ssh_cmd = f"ssh -i {key_path} -o StrictHostKeyChecking=accept-new"
+    ssh_args = ["-i", key_path, "-o", "StrictHostKeyChecking=accept-new"]
+    ssh_cmd = f"ssh {' '.join(ssh_args)}"
 
-    # Ensure remote directory exists
+    # Defensive check: refuse to overwrite an existing remote batch
+    check_proc = await asyncio.create_subprocess_exec(
+        "ssh", *ssh_args, f"{user}@{host}",
+        f"test -d {remote_path}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await check_proc.communicate()
+    if check_proc.returncode == 0:
+        logger.error(
+            "Remote batch dir already exists: %s — refusing to overwrite. "
+            "Check pub_counters.json is in sync with the server.",
+            remote_path,
+        )
+        return False
+
+    # Ensure remote publication directory exists
     mkdir_proc = await asyncio.create_subprocess_exec(
-        "ssh", "-i", key_path, "-o", "StrictHostKeyChecking=accept-new",
-        f"{user}@{host}", f"mkdir -p {remote_path}",
+        "ssh", *ssh_args, f"{user}@{host}",
+        f"mkdir -p {remote_pub_dir}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -73,7 +91,17 @@ async def rsync_batch(batch_dir: Path) -> bool:
         logger.error("rsync failed (exit %d): %s", proc.returncode, stderr.decode())
         return False
 
-    # Write completion marker
+    # Write completion markers (local + remote)
     (batch_dir / ".complete").write_text("")
+    touch_proc = await asyncio.create_subprocess_exec(
+        "ssh", "-i", key_path, "-o", "StrictHostKeyChecking=accept-new",
+        f"{user}@{host}", f"touch {remote_path}.complete",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await touch_proc.communicate()
+    if touch_proc.returncode != 0:
+        logger.warning("Failed to write remote .complete marker (rsync itself succeeded)")
+
     logger.info("rsync complete: %s", batch_dir.name)
     return True

@@ -151,11 +151,16 @@ async def run_task_workflow(
         # Handle workflow result status
         result_status = result.get("status")
         if result_status == "success":
+            # Persist final item state (e.g. exported=True) before marking done
+            if "items" in result:
+                await asyncio.to_thread(queue_manager.update_task, task_id, items=result["items"])
             await asyncio.to_thread(queue_manager.mark_completed, task_id)
             await checkpoint_mgr.complete_work(task_id)
             logger.info(f"Task {task_id[:8]} completed successfully")
         elif result_status == "partial":
             # Partial success - mark complete but log warnings
+            if "items" in result:
+                await asyncio.to_thread(queue_manager.update_task, task_id, items=result["items"])
             await asyncio.to_thread(queue_manager.mark_completed, task_id)
             await checkpoint_mgr.complete_work(task_id)
             logger.warning(f"Task {task_id[:8]} completed with errors: {result.get('errors')}")

@@ -168,8 +168,9 @@ async def run_citation_expansion_node(state: DiffusionEngineState) -> dict[str, 
         if paper:
             candidates.append(paper)
 
-    # Deduplicate and remove existing corpus papers
-    candidates = deduplicate_papers(candidates, existing_dois)
+    # Deduplicate and remove existing corpus papers (DOI + title/author matching)
+    existing_corpus = list(state.get("paper_corpus", {}).values())
+    candidates = deduplicate_papers(candidates, existing_dois, existing_corpus)
 
     logger.info(
         f"Stage {current_stage}: Fetched {len(raw_results)} citations, "

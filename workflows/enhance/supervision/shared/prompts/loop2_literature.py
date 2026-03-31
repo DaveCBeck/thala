@@ -55,6 +55,18 @@ Principles:
 3. **Citation Integrity**: Preserve all existing citations; add new ones using [@KEY] format
 4. **Natural Flow**: New content should read as if it was always part of the review
 5. **Academic Voice**: Maintain consistent scholarly tone throughout
+
+Prose quality constraints (apply when writing or rewriting any prose):
+
+HARD LIMITS — these phrases/patterns must appear no more than the stated count in the ENTIRE review:
+- "not merely" or "not just ... but": max 2 total
+- "no single [paper/study/framework] [can/could]": max 2 total
+- "precisely" as an intensifier: max 2 total
+- "systematically" as adverb of emphasis: max 3 total
+
+STRUCTURAL VARIETY: Do not open more than one section with "The papers [collectively] [argue]..." Lead with findings or tensions. Do not refer to "the review's central question" more than once.
+
+SELF-CHECK: Silently scan for any phrase appearing more than 3 times and silently rewrite excess. No meta-commentary in output.
 """
 
 LOOP2_INTEGRATOR_USER = """Integrate the following mini-review findings into the main literature review.
@@ -70,5 +82,7 @@ LOOP2_INTEGRATOR_USER = """Integrate the following mini-review findings into the
 
 ## New Citation Keys Available
 {new_citation_keys}
+
+IMPORTANT: If the Methodology section states a corpus size (e.g., "sixty studies", "50 papers"), update that number to reflect the new total after integrating these papers. The review's stated corpus size must match the actual number of distinct sources cited.
 
 Return the complete updated literature review with the new findings integrated."""
