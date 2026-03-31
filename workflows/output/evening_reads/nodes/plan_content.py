@@ -27,9 +27,21 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
     lit_review = state["input"]["literature_review"]
     editorial_stance = state["input"].get("editorial_stance", "")
     citation_keys = state.get("extracted_citation_keys", [])
+    citation_mappings = state.get("citation_mappings", {})
 
-    # Format citation keys for the prompt
-    citation_keys_str = ", ".join(citation_keys) if citation_keys else "None found"
+    # Format citation keys with year and title for the planner
+    citation_lines = []
+    for key in citation_keys:
+        mapping = citation_mappings.get(key, {})
+        year = mapping.get("year")
+        title = mapping.get("title")
+        parts = [key]
+        if year:
+            parts.append(f"({year})")
+        if title:
+            parts.append(f"— {title}")
+        citation_lines.append(" ".join(parts))
+    citation_keys_str = "\n".join(citation_lines) if citation_lines else "None found"
 
     user_prompt = PLANNING_USER_TEMPLATE.format(
         literature_review=lit_review,

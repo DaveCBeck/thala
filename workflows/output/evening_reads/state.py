@@ -23,6 +23,7 @@ class CitationKeyMapping(TypedDict):
     zotero_key: str
     es_record_id: Optional[str]  # UUID string, None if not found in store
     title: Optional[str]
+    year: Optional[int]  # Publication year, extracted from ES metadata
 
 
 class DeepDiveAssignment(TypedDict):
@@ -31,7 +32,9 @@ class DeepDiveAssignment(TypedDict):
     id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"]
     title: str  # Evocative title for the article
     theme: str  # Brief description of the theme
-    structural_approach: Literal["puzzle", "finding", "contrarian"]  # Narrative approach
+    structural_approach: Literal[
+        "puzzle", "finding", "contrarian", "mechanism", "narrative", "comparison", "open"
+    ]  # Narrative approach
     anchor_keys: list[str]  # 2-3 Zotero keys that anchor this deep-dive
     relevant_sections: list[str]  # Section headers from lit review to focus on
 

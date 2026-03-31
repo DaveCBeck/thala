@@ -15,10 +15,10 @@ CITATION_PATTERN = r"\[@([^\]]+)\]"
 MIN_WORD_COUNT = 500
 
 
-async def _lookup_es_record_for_key(store, zotero_key: str) -> tuple[str | None, str | None]:
-    """Look up ES record ID and title for a Zotero key.
+async def _lookup_es_record_for_key(store, zotero_key: str) -> tuple[str | None, str | None, int | None]:
+    """Look up ES record ID, title, and publication year for a Zotero key.
 
-    Returns (es_record_id, title) or (None, None) if not found.
+    Returns (es_record_id, title, year) or (None, None, None) if not found.
     """
     query = {
         "bool": {
@@ -30,11 +30,19 @@ async def _lookup_es_record_for_key(store, zotero_key: str) -> tuple[str | None,
         results = await store.search(query=query, size=1, compression_level=0)
         if results:
             record = results[0]
-            title = record.metadata.get("title") if record.metadata else None
-            return str(record.id), title
+            metadata = record.metadata or {}
+            title = metadata.get("title")
+            year = None
+            date_str = metadata.get("date", "")
+            if date_str:
+                try:
+                    year = int(str(date_str)[:4])
+                except (ValueError, IndexError):
+                    pass
+            return str(record.id), title, year
     except Exception as e:
         logger.warning(f"Failed to look up ES record for {zotero_key}: {e}")
-    return None, None
+    return None, None, None
 
 
 async def validate_input_node(state: dict) -> dict[str, Any]:
@@ -90,20 +98,21 @@ async def validate_input_node(state: dict) -> dict[str, Any]:
 
     semaphore = asyncio.Semaphore(10)
 
-    async def lookup_with_semaphore(key: str) -> tuple[str, str | None, str | None]:
+    async def lookup_with_semaphore(key: str) -> tuple[str, str | None, str | None, int | None]:
         async with semaphore:
-            es_id, title = await _lookup_es_record_for_key(store, key)
-            return key, es_id, title
+            es_id, title, year = await _lookup_es_record_for_key(store, key)
+            return key, es_id, title, year
 
     results = await asyncio.gather(*[lookup_with_semaphore(k) for k in citation_keys])
 
     citation_mappings: dict[str, CitationKeyMapping] = {}
     found_count = 0
-    for key, es_id, title in results:
+    for key, es_id, title, year in results:
         citation_mappings[key] = CitationKeyMapping(
             zotero_key=key,
             es_record_id=es_id,
             title=title,
+            year=year,
         )
         if es_id:
             found_count += 1

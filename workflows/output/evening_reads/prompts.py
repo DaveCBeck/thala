@@ -95,7 +95,16 @@ For each deep-dive, select the narrative approach that best fits its content:
 **Important**: Aim for variety across the 3 deep-dives. The approaches should feel natural for each topic—don't force a fit.
 
 ## Temporal Orientation
-If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work. For publications that prioritise the right-now, choose topics where 2026 findings (or '25 if that's not possible) drive the story, and select recent papers as anchors. For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance."""
+If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work.
+
+For publications that prioritise the right-now:
+- **Anchor keys MUST be from the most recent available year** (2026 if available, otherwise 2025). Each deep-dive should have at least one 2025+ anchor paper. If no 2026 papers exist in the corpus, the 2025 papers closest to the frontier should be chosen.
+- **Topic selection should be driven by what's new**, not by what's most thoroughly covered. Ask: "What finding or development from the last 12 months makes this topic worth writing about right now?" If the answer is "nothing recent" — pick a different topic.
+- Older work (pre-2025) is valuable for grounding and context, but it should support the story, not anchor it.
+
+For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance.
+
+The citation key list below includes publication years where available. Use these years to guide your anchor key selection."""
 
 PLANNING_USER_TEMPLATE = """## Literature Review to Plan From:
 
