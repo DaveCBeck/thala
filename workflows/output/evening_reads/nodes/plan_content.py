@@ -79,10 +79,17 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
             ),
         )
 
-        # Build recency lookup and pool of recent keys
+        # Build recency lookup and pool of recent/current-year keys
+        import datetime
+
+        current_year = datetime.date.today().year
         recent_keys = {
             k for k in citation_keys
             if (citation_mappings.get(k, {}).get("year") or 0) >= 2025
+        }
+        current_year_keys = {
+            k for k in citation_keys
+            if (citation_mappings.get(k, {}).get("year") or 0) >= current_year
         }
         # Track which recent keys are already assigned as anchors
         used_recent_keys: set[str] = set()
@@ -100,26 +107,46 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
 
             anchors = valid_anchors if valid_anchors else dd.anchor_keys[:3]
 
-            # Recency gate: ensure at least 2 anchors are from 2025+
+            # Recency gate: ensure at least 2 anchors from 2025+ AND at least 1 from current year
             recent_anchors = [k for k in anchors if k in recent_keys]
-            if len(recent_anchors) < 2 and editorial_stance:
-                # Substitute: keep any recent anchors, fill remaining slots from unused recent keys
-                needed = 2 - len(recent_anchors)
+            current_year_anchors = [k for k in anchors if k in current_year_keys]
+
+            needs_fix = (len(recent_anchors) < 2 or len(current_year_anchors) < 1) and editorial_stance
+            if needs_fix:
+                old_anchors = anchors
+                # Sort available by year DESC so current-year keys come first
                 available = sorted(
                     recent_keys - used_recent_keys - set(anchors),
                     key=lambda k: citation_mappings.get(k, {}).get("year") or 0,
                     reverse=True,
                 )
-                substitutes = available[:needed]
-                if substitutes:
-                    old_anchors = anchors
-                    anchors = recent_anchors + substitutes + [
-                        k for k in anchors if k not in recent_keys
-                    ]
-                    anchors = anchors[:3]  # Keep max 3
+
+                # First priority: ensure at least 1 current-year anchor
+                if len(current_year_anchors) < 1:
+                    cy_available = [k for k in available if k in current_year_keys]
+                    if cy_available:
+                        # Replace the oldest non-recent anchor with a current-year key
+                        sub = cy_available[0]
+                        available.remove(sub)
+                        anchors = [sub] + [k for k in anchors if k != anchors[-1]]
+                        anchors = anchors[:3]
+                        current_year_anchors = [k for k in anchors if k in current_year_keys]
+
+                # Second priority: ensure at least 2 recent anchors total
+                recent_anchors = [k for k in anchors if k in recent_keys]
+                if len(recent_anchors) < 2:
+                    needed = 2 - len(recent_anchors)
+                    substitutes = available[:needed]
+                    if substitutes:
+                        anchors = recent_anchors + substitutes + [
+                            k for k in anchors if k not in recent_keys
+                        ]
+                        anchors = anchors[:3]
+
+                if anchors != old_anchors:
                     logger.warning(
                         f"Deep-dive {dd.id} recency gate: swapped anchors "
-                        f"{old_anchors} -> {anchors} (added {substitutes})"
+                        f"{old_anchors} -> {anchors}"
                     )
 
             used_recent_keys.update(k for k in anchors if k in recent_keys)
