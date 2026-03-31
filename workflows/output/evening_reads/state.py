@@ -40,6 +40,17 @@ class DeepDiveAssignment(TypedDict):
     relevant_sections: list[str]  # Section headers from lit review to focus on
 
 
+class RightNowHook(TypedDict):
+    """A recent finding from web search to anchor a deep-dive opening."""
+
+    deep_dive_id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"]
+    finding: str  # 2-3 sentence summary of a recent finding
+    source_title: str  # Title of the source article/paper
+    source_url: str  # URL
+    source_date: str  # Publication date (ISO or descriptive)
+    content: str  # Fetched page content (truncated)
+
+
 class EnrichedContent(TypedDict):
     """Content fetched from store for a deep-dive."""
 
@@ -104,6 +115,7 @@ class EveningReadsState(TypedDict):
 
     # Fetching phase (parallel aggregation via add reducer)
     enriched_content: Annotated[list[EnrichedContent], add]
+    right_now_hooks: Annotated[list[RightNowHook], add]
 
     # Writing phase (parallel aggregation via add reducer)
     deep_dive_drafts: Annotated[list[DeepDiveDraft], add]

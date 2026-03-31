@@ -172,6 +172,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     relevant_sections = state.get("relevant_sections", [])
     must_avoid = state.get("must_avoid", [])
     enriched_content: list[EnrichedContent] = state.get("enriched_content", [])
+    right_now_hooks = state.get("right_now_hooks", [])
     lit_review = state.get("literature_review", "")
     editorial_stance = state.get("editorial_stance", "")
     editorial_emphasis = state.get("editorial_emphasis", {})
@@ -252,14 +253,37 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
                     + "\n".join(f"- {o}" for o in older_in_excerpt)
                 )
 
+    # Build right-now hooks section if available
+    hooks_section = ""
+    if right_now_hooks:
+        hook_parts = []
+        for hook in right_now_hooks:
+            entry = (
+                f"### {hook['source_title']} ({hook['source_date']})\n"
+                f"URL: {hook['source_url']}\n\n"
+                f"**Why this matters for your piece:** {hook['finding']}\n\n"
+            )
+            if hook.get("content"):
+                entry += f"**Full source content:**\n\n{hook['content']}\n"
+            hook_parts.append(entry)
+
+        hooks_section = (
+            "\n\n## Right Now — Recent Developments (last 2-3 weeks)\n"
+            "These are concrete recent findings discovered via web search. "
+            "Use them to anchor your opening — lead with what just happened, "
+            "then connect to the deeper literature review material.\n\n"
+            + "\n\n---\n\n".join(hook_parts)
+        )
+
     user_prompt = DEEP_DIVE_USER_TEMPLATE.format(
         source_content=source_content,
         literature_review_excerpt=lit_review_excerpt,
-    ) + recency_note
+    ) + hooks_section + recency_note
 
     logger.info(
         f"Writing deep-dive {deep_dive_id}: '{title}' "
-        f"(approach={structural_approach}, {len(source_parts)} sources, {len(must_avoid)} themes to avoid)"
+        f"(approach={structural_approach}, {len(source_parts)} sources, "
+        f"{len(must_avoid)} themes to avoid, {len(right_now_hooks)} right-now hooks)"
     )
 
     try:

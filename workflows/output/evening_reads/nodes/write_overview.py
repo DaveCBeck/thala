@@ -78,6 +78,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     editorial_emphasis = state["input"].get("editorial_emphasis", {})
     wants_recency = editorial_emphasis.get("recency") == "high"
     deep_dive_drafts = state.get("deep_dive_drafts", [])
+    right_now_hooks = state.get("right_now_hooks", [])
     overview_scope = state.get("overview_scope", "")
     citation_mappings: dict[str, CitationKeyMapping] = state.get("citation_mappings", {})
 
@@ -116,12 +117,30 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
                 + "\n".join(f"- {r}" for r in recent_keys)
             )
 
+    # Build right-now hooks section for the overview (aggregated from all deep-dives)
+    hooks_section = ""
+    if right_now_hooks:
+        hook_lines = []
+        for hook in right_now_hooks:
+            hook_lines.append(
+                f"- **{hook['source_title']}** ({hook['source_date']}): {hook['finding']}"
+            )
+        hooks_section = (
+            "\n\n## Right Now — Recent Developments (last 2-3 weeks)\n"
+            "These recent findings were discovered via web search. Reference them "
+            "where relevant to anchor the overview in the current moment.\n\n"
+            + "\n".join(hook_lines)
+        )
+
     user_prompt = OVERVIEW_USER_TEMPLATE.format(
         literature_review=lit_review,
         deep_dive_list=deep_dive_list,
-    ) + recency_note
+    ) + hooks_section + recency_note
 
-    logger.info(f"Writing overview referencing {len(deep_dive_drafts)} deep-dives")
+    logger.info(
+        f"Writing overview referencing {len(deep_dive_drafts)} deep-dives, "
+        f"{len(right_now_hooks)} right-now hooks"
+    )
 
     try:
         response = await invoke(
