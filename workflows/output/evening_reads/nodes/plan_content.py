@@ -82,7 +82,7 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
         # Build recency lookup and pool of recent keys
         recent_keys = {
             k for k in citation_keys
-            if citation_mappings.get(k, {}).get("year", 0) >= 2025
+            if (citation_mappings.get(k, {}).get("year") or 0) >= 2025
         }
         # Track which recent keys are already assigned as anchors
         used_recent_keys: set[str] = set()
@@ -107,7 +107,7 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
                 needed = 2 - len(recent_anchors)
                 available = sorted(
                     recent_keys - used_recent_keys - set(anchors),
-                    key=lambda k: citation_mappings.get(k, {}).get("year", 0),
+                    key=lambda k: citation_mappings.get(k, {}).get("year") or 0,
                     reverse=True,
                 )
                 substitutes = available[:needed]
