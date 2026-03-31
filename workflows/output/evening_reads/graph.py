@@ -90,36 +90,37 @@ def route_to_fetch(state: EveningReadsState) -> list[Send] | str:
     return sends
 
 
-def route_after_sync(state: EveningReadsState) -> str:
+def route_after_sync(state: EveningReadsState) -> list[Send] | str:
     """Route after sync: check if replanning is needed due to missing hooks.
 
     For recency-high publications, if any deep-dive has zero hooks AND
-    we haven't replanned yet, route to replan. Otherwise proceed to write.
+    we haven't replanned yet, route to replan. Otherwise fan out to writes.
     """
     editorial_emphasis = state["input"].get("editorial_emphasis", {})
     wants_recency = editorial_emphasis.get("recency") == "high"
     replan_attempts = state.get("replan_attempts", 0)
 
-    if not wants_recency or replan_attempts >= 1:
-        return "route_to_write"
+    should_replan = False
+    if wants_recency and replan_attempts < 1:
+        assignments = state.get("deep_dive_assignments", [])
+        right_now_hooks = state.get("right_now_hooks", [])
 
-    # Check which deep-dives have hooks
-    assignments = state.get("deep_dive_assignments", [])
-    right_now_hooks = state.get("right_now_hooks", [])
+        hooks_by_id: dict[str, int] = {a["id"]: 0 for a in assignments}
+        for hook in right_now_hooks:
+            dd_id = hook.get("deep_dive_id")
+            if dd_id in hooks_by_id:
+                hooks_by_id[dd_id] += 1
 
-    hooks_by_id: dict[str, int] = {a["id"]: 0 for a in assignments}
-    for hook in right_now_hooks:
-        dd_id = hook.get("deep_dive_id")
-        if dd_id in hooks_by_id:
-            hooks_by_id[dd_id] += 1
+        hookless = [dd_id for dd_id, count in hooks_by_id.items() if count == 0]
+        if hookless:
+            logger.info(f"Deep-dives with zero hooks: {hookless}. Routing to replan.")
+            should_replan = True
 
-    hookless = [dd_id for dd_id, count in hooks_by_id.items() if count == 0]
-
-    if hookless:
-        logger.info(f"Deep-dives with zero hooks: {hookless}. Routing to replan.")
+    if should_replan:
         return "replan_content"
 
-    return "route_to_write"
+    # No replan needed — fan out to writes
+    return route_to_write(state)
 
 
 def route_to_write(state: EveningReadsState) -> list[Send] | str:
@@ -215,7 +216,6 @@ def create_evening_reads_graph() -> StateGraph:
     builder.add_node("find_right_now", find_right_now_node)
     builder.add_node("sync_before_write", sync_before_write_node)
     builder.add_node("replan_content", replan_content_node)
-    builder.add_node("route_to_write", route_to_write)
     builder.add_node("write_deep_dive", write_deep_dive_node)
     builder.add_node("write_overview", write_overview_node)
     builder.add_node("format_references", format_references_node)
@@ -241,11 +241,11 @@ def create_evening_reads_graph() -> StateGraph:
     builder.add_edge("fetch_content", "sync_before_write")
     builder.add_edge("find_right_now", "sync_before_write")
 
-    # After sync: check hooks, maybe replan
+    # After sync: check hooks, maybe replan or fan out to writes
     builder.add_conditional_edges(
         "sync_before_write",
         route_after_sync,
-        ["route_to_write", "replan_content"],
+        ["write_deep_dive", "replan_content"],
     )
 
     # Replan loops back to fetch + find_right_now
@@ -255,7 +255,7 @@ def create_evening_reads_graph() -> StateGraph:
         ["fetch_content", "find_right_now", END],
     )
 
-    # route_to_write fans out to write_deep_dive
+    # All write_deep_dive nodes converge to write_overview
     builder.add_edge("write_deep_dive", "write_overview")
 
     # Linear flow after overview
