@@ -272,6 +272,9 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
             "These are concrete recent findings discovered via web search. "
             "Use them to anchor your opening — lead with what just happened, "
             "then connect to the deeper literature review material.\n\n"
+            "When you reference these findings, name the source and date inline "
+            "(e.g., 'a March 2026 study by [team/org]'). These will appear in a "
+            "'Recent Sources' section at the end of the article.\n\n"
             + "\n\n---\n\n".join(hook_parts)
         )
 

@@ -226,6 +226,7 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
     """
     deep_dive_drafts = state.get("deep_dive_drafts", [])
     overview_draft = state.get("overview_draft")
+    right_now_hooks = state.get("right_now_hooks", [])
 
     if not deep_dive_drafts and not overview_draft:
         return {
@@ -261,6 +262,31 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
 
     subtitles = await _generate_subtitles(subtitle_inputs)
 
+    # Build right-now hooks lookup by article ID
+    hooks_by_id: dict[str, list] = {}
+    for hook in right_now_hooks:
+        hooks_by_id.setdefault(hook["deep_dive_id"], []).append(hook)
+
+    def _build_recent_sources_section(hooks: list) -> str:
+        """Build a 'Recent Sources' section from right-now hooks."""
+        if not hooks:
+            return ""
+        seen_urls: set[str] = set()
+        entries = []
+        for h in hooks:
+            url = h.get("source_url", "")
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            title = h.get("source_title", "Untitled")
+            date_str = h.get("source_date", "")
+            date_part = f" ({date_str})" if date_str else ""
+            entries.append(f"{title}{date_part}. {url}")
+        section = "\n\n## Recent Sources\n\n"
+        for entry in entries:
+            section += f"{entry}\n\n"
+        return section
+
     # Build final outputs for each article
     final_outputs: list[FinalOutput] = []
 
@@ -268,7 +294,8 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
     for draft in deep_dive_drafts:
         draft_citations = _extract_citations_from_text(draft["content"])
         ref_section = _build_reference_section(formatted_refs, draft_citations)
-        final_content = draft["content"] + ref_section
+        recent_section = _build_recent_sources_section(hooks_by_id.get(draft["id"], []))
+        final_content = draft["content"] + ref_section + recent_section
 
         final_outputs.append(
             FinalOutput(
@@ -280,11 +307,13 @@ async def format_references_node(state: EveningReadsState) -> dict[str, Any]:
             )
         )
 
-    # Process overview
+    # Process overview — aggregate all hooks
     if overview_draft:
         overview_citations = _extract_citations_from_text(overview_draft["content"])
         ref_section = _build_reference_section(formatted_refs, overview_citations)
-        final_content = overview_draft["content"] + ref_section
+        all_hooks = [h for hooks in hooks_by_id.values() for h in hooks]
+        recent_section = _build_recent_sources_section(all_hooks)
+        final_content = overview_draft["content"] + ref_section + recent_section
 
         final_outputs.append(
             FinalOutput(
