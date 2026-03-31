@@ -79,7 +79,15 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
             ),
         )
 
-        # Convert to state format
+        # Build recency lookup and pool of recent keys
+        recent_keys = {
+            k for k in citation_keys
+            if citation_mappings.get(k, {}).get("year", 0) >= 2025
+        }
+        # Track which recent keys are already assigned as anchors
+        used_recent_keys: set[str] = set()
+
+        # Convert to state format with recency validation
         deep_dive_assignments: list[DeepDiveAssignment] = []
         for dd in planning_result.deep_dives:
             # Validate anchor keys exist in our citation list
@@ -90,13 +98,39 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
                     f"Deep-dive {dd.id} has invalid anchor keys: {invalid}. Using only valid keys: {valid_anchors}"
                 )
 
+            anchors = valid_anchors if valid_anchors else dd.anchor_keys[:3]
+
+            # Recency gate: ensure at least 2 anchors are from 2025+
+            recent_anchors = [k for k in anchors if k in recent_keys]
+            if len(recent_anchors) < 2 and editorial_stance:
+                # Substitute: keep any recent anchors, fill remaining slots from unused recent keys
+                needed = 2 - len(recent_anchors)
+                available = sorted(
+                    recent_keys - used_recent_keys - set(anchors),
+                    key=lambda k: citation_mappings.get(k, {}).get("year", 0),
+                    reverse=True,
+                )
+                substitutes = available[:needed]
+                if substitutes:
+                    old_anchors = anchors
+                    anchors = recent_anchors + substitutes + [
+                        k for k in anchors if k not in recent_keys
+                    ]
+                    anchors = anchors[:3]  # Keep max 3
+                    logger.warning(
+                        f"Deep-dive {dd.id} recency gate: swapped anchors "
+                        f"{old_anchors} -> {anchors} (added {substitutes})"
+                    )
+
+            used_recent_keys.update(k for k in anchors if k in recent_keys)
+
             deep_dive_assignments.append(
                 DeepDiveAssignment(
                     id=dd.id,
                     title=dd.title,
                     theme=dd.theme,
                     structural_approach=dd.structural_approach,
-                    anchor_keys=valid_anchors if valid_anchors else dd.anchor_keys[:3],
+                    anchor_keys=anchors,
                     relevant_sections=dd.relevant_sections,
                 )
             )
