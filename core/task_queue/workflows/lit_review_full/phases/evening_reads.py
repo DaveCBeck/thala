@@ -20,16 +20,18 @@ async def run_evening_reads_phase(
         Series result with final_outputs
     """
     from workflows.output.evening_reads import evening_reads
-    from workflows.output.evening_reads.editorial import load_editorial_stance
+    from workflows.output.evening_reads.editorial import load_editorial_emphasis, load_editorial_stance
 
     logger.info("Phase 3: Generating evening reads series")
 
-    # Load editorial stance for the publication
+    # Load editorial stance and emphasis for the publication
     editorial_stance = load_editorial_stance(category or "")
+    slug = (category or "").lower().replace(" ", "-")
+    editorial_emphasis = load_editorial_emphasis(slug)
     if editorial_stance:
         logger.info(f"Using editorial stance for category: {category}")
 
-    series_result = await evening_reads(final_report, editorial_stance)
+    series_result = await evening_reads(final_report, editorial_stance, editorial_emphasis)
 
     if not series_result.get("final_outputs"):
         raise RuntimeError(f"Series generation failed: {series_result.get('errors', 'Unknown error')}")

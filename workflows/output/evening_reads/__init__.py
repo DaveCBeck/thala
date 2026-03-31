@@ -48,12 +48,14 @@ def _extract_topic(literature_review: str) -> str:
 async def evening_reads(
     literature_review: str,
     editorial_stance: str = "",
+    editorial_emphasis: dict | None = None,
 ) -> dict[str, Any]:
     """Run the evening reads workflow with full tracing.
 
     Args:
         literature_review: Literature review markdown to transform
         editorial_stance: Optional editorial stance to guide tone
+        editorial_emphasis: Optional emphasis config from stance frontmatter
 
     Returns:
         Evening reads state dict with final_outputs, status, etc.
@@ -65,6 +67,7 @@ async def evening_reads(
             "input": {
                 "literature_review": literature_review,
                 "editorial_stance": editorial_stance,
+                "editorial_emphasis": editorial_emphasis or {},
             }
         },
         config={

@@ -15,6 +15,7 @@ class EveningReadsInput(TypedDict, total=False):
 
     literature_review: str  # Raw markdown with [@KEY] citations (required)
     editorial_stance: str  # Optional editorial stance for publication context
+    editorial_emphasis: dict  # Optional emphasis config from stance frontmatter
 
 
 class CitationKeyMapping(TypedDict):

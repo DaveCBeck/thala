@@ -26,6 +26,8 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
     """
     lit_review = state["input"]["literature_review"]
     editorial_stance = state["input"].get("editorial_stance", "")
+    editorial_emphasis = state["input"].get("editorial_emphasis", {})
+    wants_recency = editorial_emphasis.get("recency") == "high"
     citation_keys = state.get("extracted_citation_keys", [])
     citation_mappings = state.get("citation_mappings", {})
 
@@ -47,12 +49,17 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
         else:
             older_lines.append(line)
 
-    sections = []
-    if recent_lines:
-        sections.append(f"### Recent (2025-2026) — {len(recent_lines)} sources\n" + "\n".join(recent_lines))
-    if older_lines:
-        sections.append(f"### Older (pre-2025) — {len(older_lines)} sources\n" + "\n".join(older_lines))
-    citation_keys_str = "\n\n".join(sections) if sections else "None found"
+    if wants_recency:
+        sections = []
+        if recent_lines:
+            sections.append(f"### Recent (2025-2026) — {len(recent_lines)} sources\n" + "\n".join(recent_lines))
+        if older_lines:
+            sections.append(f"### Older (pre-2025) — {len(older_lines)} sources\n" + "\n".join(older_lines))
+        citation_keys_str = "\n\n".join(sections) if sections else "None found"
+    else:
+        # Flat list with years, no recency grouping
+        all_lines = recent_lines + older_lines
+        citation_keys_str = "\n".join(all_lines) if all_lines else "None found"
 
     user_prompt = PLANNING_USER_TEMPLATE.format(
         literature_review=lit_review,
@@ -107,11 +114,11 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
 
             anchors = valid_anchors if valid_anchors else dd.anchor_keys[:3]
 
-            # Recency gate: ensure at least 2 anchors from 2025+ AND at least 1 from current year
+            # Recency gate: only for publications that want recency
             recent_anchors = [k for k in anchors if k in recent_keys]
             current_year_anchors = [k for k in anchors if k in current_year_keys]
 
-            needs_fix = (len(recent_anchors) < 2 or len(current_year_anchors) < 1) and editorial_stance
+            needs_fix = (len(recent_anchors) < 2 or len(current_year_anchors) < 1) and wants_recency
             if needs_fix:
                 old_anchors = anchors
                 # Sort available by year DESC so current-year keys come first

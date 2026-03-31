@@ -81,6 +81,7 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
     citation_mappings = state.get("citation_mappings", {})
     lit_review = state["input"]["literature_review"]
     editorial_stance = state["input"].get("editorial_stance", "")
+    editorial_emphasis = state["input"].get("editorial_emphasis", {})
 
     if not assignments:
         return END
@@ -113,6 +114,7 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
                     "enriched_content": dd_content,
                     "literature_review": lit_review,
                     "editorial_stance": editorial_stance,
+                    "editorial_emphasis": editorial_emphasis,
                     "citation_mappings": citation_mappings,
                 },
             )

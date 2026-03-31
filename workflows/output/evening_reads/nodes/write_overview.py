@@ -75,6 +75,8 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     """
     lit_review = state["input"]["literature_review"]
     editorial_stance = state["input"].get("editorial_stance", "")
+    editorial_emphasis = state["input"].get("editorial_emphasis", {})
+    wants_recency = editorial_emphasis.get("recency") == "high"
     deep_dive_drafts = state.get("deep_dive_drafts", [])
     overview_scope = state.get("overview_scope", "")
     citation_mappings: dict[str, CitationKeyMapping] = state.get("citation_mappings", {})
@@ -96,9 +98,9 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     if editorial_stance:
         system_prompt += EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
 
-    # Build recency annotation for the overview writer
+    # Build recency annotation for the overview writer (only for recency-focused publications)
     recency_note = ""
-    if citation_mappings and editorial_stance:
+    if wants_recency:
         all_keys = _extract_citations(lit_review)
         recent_keys = []
         for key in all_keys:

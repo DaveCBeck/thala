@@ -174,6 +174,8 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     enriched_content: list[EnrichedContent] = state.get("enriched_content", [])
     lit_review = state.get("literature_review", "")
     editorial_stance = state.get("editorial_stance", "")
+    editorial_emphasis = state.get("editorial_emphasis", {})
+    wants_recency = editorial_emphasis.get("recency") == "high"
     citation_mappings = state.get("citation_mappings", {})
 
     if not deep_dive_id:
@@ -196,7 +198,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     lit_review_excerpt = _extract_relevant_sections(lit_review, relevant_sections)
 
     # Append paragraphs with current-year citations not already in the excerpt
-    if citation_mappings and editorial_stance:
+    if wants_recency:
         cy_contexts = _extract_current_year_contexts(lit_review, citation_mappings, lit_review_excerpt)
         if cy_contexts:
             lit_review_excerpt += cy_contexts
@@ -221,7 +223,7 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
 
     # Build recency annotation: identify which citations in the excerpt are recent
     recency_note = ""
-    if citation_mappings and editorial_stance:
+    if wants_recency:
         excerpt_keys = _extract_citations(lit_review_excerpt)
         recent_in_excerpt = []
         older_in_excerpt = []

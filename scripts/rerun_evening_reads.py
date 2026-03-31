@@ -57,7 +57,7 @@ def _save_outputs(final_outputs: list[dict], topic: str, publication: str) -> Pa
 
 async def _run(from_file: str, publication: str) -> None:
     from workflows.output.evening_reads import evening_reads
-    from workflows.output.evening_reads.editorial import load_editorial_stance_by_slug
+    from workflows.output.evening_reads.editorial import load_editorial_stance_by_slug, load_editorial_emphasis
 
     lit_review_path = Path(from_file)
     if not lit_review_path.exists():
@@ -72,6 +72,10 @@ async def _run(from_file: str, publication: str) -> None:
     else:
         print(f"No editorial stance found for: {publication}")
 
+    editorial_emphasis = load_editorial_emphasis(publication)
+    if editorial_emphasis:
+        print(f"Editorial emphasis: {editorial_emphasis}")
+
     topic = "Untitled"
     for line in literature_review.splitlines():
         stripped = line.strip()
@@ -82,7 +86,7 @@ async def _run(from_file: str, publication: str) -> None:
     print(f"Topic: {topic}")
     print("Running evening reads workflow...")
 
-    result = await evening_reads(literature_review, editorial_stance)
+    result = await evening_reads(literature_review, editorial_stance, editorial_emphasis)
 
     final_outputs = result.get("final_outputs", [])
     status = result.get("status", "unknown")
