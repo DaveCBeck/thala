@@ -102,11 +102,18 @@ async def _synthesize_hooks(
             "restate well-known facts.\n\n"
             "For each selected result, provide:\n"
             "- The result number\n"
+            "- The actual publication date (check the URL path for year/month clues — "
+            "e.g., /2023/12/ means December 2023, not 2026. If the search-reported "
+            "date conflicts with the URL path date, use the URL path date. "
+            "If uncertain, write 'date uncertain'.)\n"
             "- A 2-3 sentence summary of the specific finding and why it matters "
             "for this deep-dive\n\n"
             "Format each as:\n"
             "HOOK <number>\n"
+            "DATE: <actual publication date>\n"
             "<summary>\n\n"
+            "Skip results whose actual publication date is more than 3 months old "
+            "(even if the search reported them as recent).\n"
             "If none of the results are genuinely relevant and recent, respond "
             "with NONE."
         ),
@@ -124,19 +131,28 @@ async def _synthesize_hooks(
     if "NONE" in text and len(text.strip()) < 20:
         return []
 
-    # Parse HOOK blocks
+    # Parse HOOK blocks (with optional DATE line)
     hooks = []
     for match in re.finditer(r"HOOK\s+(\d+)\s*\n(.*?)(?=HOOK\s+\d+|$)", text, re.DOTALL):
         idx = int(match.group(1)) - 1
-        summary = match.group(2).strip()
-        if 0 <= idx < len(search_results) and summary:
+        block = match.group(2).strip()
+        if 0 <= idx < len(search_results) and block:
             r = search_results[idx]
-            hooks.append({
-                "finding": summary,
-                "source_title": r.get("title", ""),
-                "source_url": r.get("url", ""),
-                "source_date": r.get("date", ""),
-            })
+            # Extract DATE line if present
+            date_match = re.match(r"DATE:\s*(.+)\n(.*)", block, re.DOTALL)
+            if date_match:
+                verified_date = date_match.group(1).strip()
+                summary = date_match.group(2).strip()
+            else:
+                verified_date = r.get("date", "")
+                summary = block
+            if summary:
+                hooks.append({
+                    "finding": summary,
+                    "source_title": r.get("title", ""),
+                    "source_url": r.get("url", ""),
+                    "source_date": verified_date,
+                })
 
     return hooks[:3]
 
