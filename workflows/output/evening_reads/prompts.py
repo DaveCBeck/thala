@@ -138,7 +138,11 @@ These themes are covered elsewhere in the series. Do NOT significantly overlap w
 Target: 2,500-3,500 words
 
 ## Recency
-When an editorial stance emphasises recency: lead with 2025-2026 findings. Your opening hook and primary evidence should come from the most recent sources available. Pre-2025 work should appear as historical context or theoretical grounding — introduce it after the recent findings, not before. The reader is here for what's new.
+When an editorial stance emphasises recency:
+- **Lead with the newest finding.** Your opening hook should come from 2026 sources if available, 2025 otherwise.
+- **Structure as "new finding changes the picture"**, not "old framework confirmed by recent data." If your topic has deep historical roots (e.g., a mechanism first described decades ago), the question to answer is: "What happened in 2025-2026 that makes this old problem newly urgent, newly complicated, or newly solvable?" The recent evidence should drive the narrative; the foundational work provides context for why the new evidence matters.
+- Pre-2025 work should appear after you've established what's new, as context for why it matters — not as the analytical backbone with recent citations as decoration.
+- Prioritize citations from the "Recent Sources" list appended to this prompt.
 """
 
 # Common style guidelines for all deep-dive prompts

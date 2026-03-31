@@ -57,6 +57,47 @@ def _extract_citations(text: str) -> list[str]:
     return sorted(keys)
 
 
+def _extract_current_year_contexts(
+    lit_review: str, citation_mappings: dict, already_in_excerpt: str
+) -> str:
+    """Extract paragraphs containing current-year citations not already in the excerpt.
+
+    This ensures 2026 sources are visible to the writer regardless of section boundaries.
+    """
+    import datetime
+
+    current_year = datetime.date.today().year
+    current_year_keys = {
+        k for k, m in citation_mappings.items()
+        if (m.get("year") or 0) >= current_year
+    }
+
+    if not current_year_keys:
+        return ""
+
+    # Find which current-year keys are NOT already mentioned in the excerpt
+    missing_keys = {k for k in current_year_keys if f"[@{k}]" not in already_in_excerpt}
+    if not missing_keys:
+        return ""
+
+    # Extract paragraphs containing these keys
+    paragraphs = lit_review.split("\n\n")
+    relevant_paras = []
+    for para in paragraphs:
+        for key in missing_keys:
+            if f"[@{key}]" in para or f"@{key}" in para:
+                relevant_paras.append(para.strip())
+                break
+
+    if not relevant_paras:
+        return ""
+
+    return (
+        "\n\n### Additional Recent Findings (2026)\n\n"
+        + "\n\n".join(relevant_paras)
+    )
+
+
 def _extract_relevant_sections(lit_review: str, section_names: list[str]) -> str:
     """Extract sections from the literature review that match the given names.
 
@@ -153,6 +194,13 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
 
     # Extract relevant sections from the literature review
     lit_review_excerpt = _extract_relevant_sections(lit_review, relevant_sections)
+
+    # Append paragraphs with current-year citations not already in the excerpt
+    if citation_mappings and editorial_stance:
+        cy_contexts = _extract_current_year_contexts(lit_review, citation_mappings, lit_review_excerpt)
+        if cy_contexts:
+            lit_review_excerpt += cy_contexts
+            logger.info(f"Appended {len(cy_contexts)} chars of current-year citation context to excerpt")
 
     # Build must_avoid string
     must_avoid_str = "\n".join(f"- {item}" for item in must_avoid) if must_avoid else "None specified"
