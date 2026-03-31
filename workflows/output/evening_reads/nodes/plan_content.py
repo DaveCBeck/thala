@@ -29,8 +29,9 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
     citation_keys = state.get("extracted_citation_keys", [])
     citation_mappings = state.get("citation_mappings", {})
 
-    # Format citation keys with year and title for the planner
-    citation_lines = []
+    # Group citation keys by recency for the planner
+    recent_lines = []  # 2025+
+    older_lines = []  # pre-2025 or unknown year
     for key in citation_keys:
         mapping = citation_mappings.get(key, {})
         year = mapping.get("year")
@@ -40,8 +41,18 @@ async def plan_content_node(state: EveningReadsState) -> dict[str, Any]:
             parts.append(f"({year})")
         if title:
             parts.append(f"— {title}")
-        citation_lines.append(" ".join(parts))
-    citation_keys_str = "\n".join(citation_lines) if citation_lines else "None found"
+        line = " ".join(parts)
+        if year and year >= 2025:
+            recent_lines.append(line)
+        else:
+            older_lines.append(line)
+
+    sections = []
+    if recent_lines:
+        sections.append(f"### Recent (2025-2026) — {len(recent_lines)} sources\n" + "\n".join(recent_lines))
+    if older_lines:
+        sections.append(f"### Older (pre-2025) — {len(older_lines)} sources\n" + "\n".join(older_lines))
+    citation_keys_str = "\n\n".join(sections) if sections else "None found"
 
     user_prompt = PLANNING_USER_TEMPLATE.format(
         literature_review=lit_review,

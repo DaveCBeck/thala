@@ -98,9 +98,11 @@ For each deep-dive, select the narrative approach that best fits its content:
 If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work.
 
 For publications that prioritise the right-now:
-- **Anchor keys MUST be from the most recent available year** (2026 if available, otherwise 2025). Each deep-dive should have at least one 2025+ anchor paper. If no 2026 papers exist in the corpus, the 2025 papers closest to the frontier should be chosen.
+- **Each deep-dive MUST have at least 2 anchor keys from 2025 or later.** If you cannot find 2 recent anchors for a candidate topic, do NOT select that topic — pick something else that has recent primary sources.
+- **Anchor keys MUST be from the most recent available year** (2026 if available, otherwise 2025). If no 2026 papers exist in the corpus, the 2025 papers closest to the frontier should be chosen.
 - **Topic selection should be driven by what's new**, not by what's most thoroughly covered. Ask: "What finding or development from the last 12 months makes this topic worth writing about right now?" If the answer is "nothing recent" — pick a different topic.
 - Older work (pre-2025) is valuable for grounding and context, but it should support the story, not anchor it.
+- The citation key list is grouped into "Recent (2025-2026)" and "Older (pre-2025)". Start your anchor selection from the Recent group.
 
 For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance.
 
