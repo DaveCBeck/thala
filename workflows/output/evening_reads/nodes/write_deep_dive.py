@@ -171,10 +171,41 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     if editorial_stance:
         system_prompt += EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
 
+    # Build recency annotation: identify which citations in the excerpt are recent
+    recency_note = ""
+    if citation_mappings and editorial_stance:
+        excerpt_keys = _extract_citations(lit_review_excerpt)
+        recent_in_excerpt = []
+        older_in_excerpt = []
+        for key in excerpt_keys:
+            mapping = citation_mappings.get(key, {})
+            year = mapping.get("year")
+            title_str = mapping.get("title", "")
+            label = f"[@{key}]"
+            if year:
+                label += f" ({year})"
+            if title_str:
+                label += f" {title_str[:60]}"
+            if year and year >= 2025:
+                recent_in_excerpt.append(label)
+            elif year:
+                older_in_excerpt.append(label)
+
+        if recent_in_excerpt:
+            recency_note = (
+                "\n\n## Recent Sources in This Excerpt (prioritize these)\n"
+                + "\n".join(f"- {r}" for r in recent_in_excerpt)
+            )
+            if older_in_excerpt:
+                recency_note += (
+                    "\n\n## Older Sources (use for context, not as primary evidence)\n"
+                    + "\n".join(f"- {o}" for o in older_in_excerpt)
+                )
+
     user_prompt = DEEP_DIVE_USER_TEMPLATE.format(
         source_content=source_content,
         literature_review_excerpt=lit_review_excerpt,
-    )
+    ) + recency_note
 
     logger.info(
         f"Writing deep-dive {deep_dive_id}: '{title}' "

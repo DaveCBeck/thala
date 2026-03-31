@@ -14,7 +14,7 @@ from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
 
 from ..prompts import EDITORIAL_STANCE_SECTION, OVERVIEW_SYSTEM_PROMPT_FULL, OVERVIEW_USER_TEMPLATE
-from ..state import DeepDiveDraft, OverviewDraft, EveningReadsState
+from ..state import DeepDiveDraft, OverviewDraft, EveningReadsState, CitationKeyMapping
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,7 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     editorial_stance = state["input"].get("editorial_stance", "")
     deep_dive_drafts = state.get("deep_dive_drafts", [])
     overview_scope = state.get("overview_scope", "")
+    citation_mappings: dict[str, CitationKeyMapping] = state.get("citation_mappings", {})
 
     if not deep_dive_drafts:
         logger.warning("No deep-dive drafts available for overview")
@@ -95,10 +96,28 @@ async def write_overview_node(state: EveningReadsState) -> dict[str, Any]:
     if editorial_stance:
         system_prompt += EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
 
+    # Build recency annotation for the overview writer
+    recency_note = ""
+    if citation_mappings and editorial_stance:
+        all_keys = _extract_citations(lit_review)
+        recent_keys = []
+        for key in all_keys:
+            mapping = citation_mappings.get(key, {})
+            year = mapping.get("year")
+            if year and year >= 2025:
+                title_str = (mapping.get("title") or "")[:60]
+                recent_keys.append(f"[@{key}] ({year}) {title_str}")
+
+        if recent_keys:
+            recency_note = (
+                "\n\n## Recent Sources Available (2025-2026) — prioritize these\n"
+                + "\n".join(f"- {r}" for r in recent_keys)
+            )
+
     user_prompt = OVERVIEW_USER_TEMPLATE.format(
         literature_review=lit_review,
         deep_dive_list=deep_dive_list,
-    )
+    ) + recency_note
 
     logger.info(f"Writing overview referencing {len(deep_dive_drafts)} deep-dives")
 
