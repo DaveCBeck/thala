@@ -10,7 +10,9 @@ from pydantic import BaseModel
 
 from workflows.shared.llm_utils.cli_backend import (
     _TIER_TO_CLI_MODEL,
+    _RateLimitError,
     _build_base_cmd,
+    _check_rate_limit,
     _run_claude_cli,
     invoke_structured_via_cli,
     invoke_via_cli,
@@ -73,6 +75,41 @@ def _text_envelope(text: str) -> dict:
 
 def _structured_envelope(data: dict) -> dict:
     return {"type": "result", "subtype": "success", "result": "", "structured_output": data}
+
+
+# -- _check_rate_limit parser --
+
+
+class TestCheckRateLimit:
+    def test_empty_is_noop(self):
+        _check_rate_limit("")
+        _check_rate_limit(None)  # type: ignore[arg-type]
+
+    def test_no_marker_is_noop(self):
+        _check_rate_limit("normal output from claude")
+
+    def test_epoch_form(self):
+        with pytest.raises(_RateLimitError) as exc:
+            _check_rate_limit("Claude AI usage limit reached|1774177200")
+        assert exc.value.reset_epoch == 1774177200.0
+
+    def test_epoch_with_limit_type(self):
+        """Newer format includes the limit type after a second pipe."""
+        with pytest.raises(_RateLimitError) as exc:
+            _check_rate_limit("Claude AI usage limit reached|1774177200|weekly")
+        assert exc.value.reset_epoch == 1774177200.0
+
+    def test_marker_embedded_in_larger_text(self):
+        """The result field may wrap the marker in prose."""
+        payload = 'Error: "Claude AI usage limit reached|1774177200" please retry later'
+        with pytest.raises(_RateLimitError) as exc:
+            _check_rate_limit(payload)
+        assert exc.value.reset_epoch == 1774177200.0
+
+    def test_plain_fallback_no_epoch(self):
+        with pytest.raises(_RateLimitError) as exc:
+            _check_rate_limit("Claude usage limit reached. Your limit will reset later.")
+        assert exc.value.reset_epoch is None
 
 
 # -- is_cli_backend_enabled --
@@ -373,6 +410,123 @@ class TestInvokeCliRouting:
                 await _run_claude_cli(["claude", "-p"], "prompt")
 
         mock_killpg.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_in_result_field_sleeps_then_retries(self):
+        """When a subscription limit is reported, we sleep until reset and retry."""
+        # First call: envelope.result contains the usage-limit marker with an
+        # epoch 120 seconds in the future. Second call: clean success.
+        reset_epoch = 1_800_000_000
+        limit_proc = _make_proc_mock(
+            _text_envelope(f"Claude AI usage limit reached|{reset_epoch}|5h")
+        )
+        success_proc = _make_proc_mock(_text_envelope("after sleep"))
+
+        call_count = 0
+
+        async def fake_exec(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return limit_proc if call_count == 1 else success_proc
+
+        sleep_calls: list[float] = []
+
+        async def fake_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", side_effect=fake_exec),
+            patch("workflows.shared.llm_utils.cli_backend.time.time", return_value=reset_epoch - 120),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.sleep", side_effect=fake_sleep),
+        ):
+            result = await invoke_via_cli(ModelTier.SONNET, "Sys.", "Query")
+
+        assert result.content == "after sleep"
+        assert call_count == 2
+        # Should have slept roughly 120s + 30s buffer (rate-limit sleep).
+        # No transient-retry backoff should have fired.
+        assert any(140 <= s <= 160 for s in sleep_calls), f"expected ~150s sleep, got {sleep_calls}"
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_does_not_consume_retry_budget(self):
+        """Rate-limit waits must not count against _CLI_MAX_RETRIES."""
+        reset_epoch = 1_800_000_000
+        call_count = 0
+
+        async def fake_exec(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # 5 consecutive rate-limits then success — more than _CLI_MAX_RETRIES (4).
+            if call_count <= 5:
+                return _make_proc_mock(
+                    _text_envelope(f"Claude AI usage limit reached|{reset_epoch}")
+                )
+            return _make_proc_mock(_text_envelope("finally ok"))
+
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", side_effect=fake_exec),
+            patch("workflows.shared.llm_utils.cli_backend.time.time", return_value=reset_epoch - 1),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await invoke_via_cli(ModelTier.SONNET, "Sys.", "Query")
+
+        assert result.content == "finally ok"
+        assert call_count == 6
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_in_stderr_with_rc1_is_caught(self):
+        """Rate-limit detected in stderr (rc!=0) should trigger sleep, not RuntimeError."""
+        reset_epoch = 1_800_000_000
+        limit_proc = _make_proc_mock(
+            {},  # stdout empty/invalid
+            returncode=1,
+            stderr=f"Claude AI usage limit reached|{reset_epoch}",
+        )
+        success_proc = _make_proc_mock(_text_envelope("post-limit"))
+
+        call_count = 0
+
+        async def fake_exec(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return limit_proc if call_count == 1 else success_proc
+
+        # waitpid must report rc=1 on first call, rc=0 on second.
+        waitpid_calls = 0
+
+        def fake_waitpid(pid, opts):
+            nonlocal waitpid_calls
+            waitpid_calls += 1
+            return (pid, 1 << 8) if waitpid_calls == 1 else (pid, 0)
+
+        with (
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", side_effect=fake_exec),
+            patch("workflows.shared.llm_utils.cli_backend.os.waitpid", side_effect=fake_waitpid),
+            patch("workflows.shared.llm_utils.cli_backend.time.time", return_value=reset_epoch - 1),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await invoke_via_cli(ModelTier.SONNET, "Sys.", "Query")
+
+        assert result.content == "post-limit"
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_wait_capped_raises(self):
+        """If reset is further out than the cap, we raise instead of sleeping forever."""
+        # Reset 10 days in the future, default cap is 6h.
+        reset_epoch = 1_800_000_000 + (10 * 86400)
+        proc = _make_proc_mock(
+            _text_envelope(f"Claude AI usage limit reached|{reset_epoch}|weekly")
+        )
+
+        with (
+            patch("workflows.shared.llm_utils.cli_backend._CLI_MAX_RETRIES", 1),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch("workflows.shared.llm_utils.cli_backend.time.time", return_value=1_800_000_000),
+            patch("workflows.shared.llm_utils.cli_backend.asyncio.sleep", new=AsyncMock()),
+        ):
+            with pytest.raises(_RateLimitError):
+                await invoke_via_cli(ModelTier.SONNET, "Sys.", "Query")
 
     @pytest.mark.asyncio
     async def test_api_backend_unchanged(self):

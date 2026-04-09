@@ -8,8 +8,11 @@ import asyncio
 import json
 import logging
 import os
+import re
 import signal
 import sys
+import time
+from datetime import datetime, timezone
 from typing import Type, TypeVar
 
 from langchain_core.messages import AIMessage
@@ -30,6 +33,27 @@ _CLI_TIMEOUT_SECONDS = int(os.getenv("THALA_CLI_TIMEOUT", "2700"))
 # Retry count for transient failures (timeouts, non-zero exit)
 _CLI_MAX_RETRIES = int(os.getenv("THALA_CLI_RETRIES", "4"))
 
+# Cap how long we'll sleep for a subscription rate limit before giving up.
+# Default 6h covers a 5-hour session window with slack; weekly limits reset
+# multiple days out and should fail fast rather than sleep indefinitely.
+_CLI_RATE_LIMIT_MAX_WAIT = int(os.getenv("THALA_CLI_RATE_LIMIT_MAX_WAIT", "21600"))
+
+# Seconds past the reported reset epoch before we wake up and retry,
+# to avoid racing the reset clock.
+_CLI_RATE_LIMIT_BUFFER = 30
+
+# Fallback sleep when the marker is present but no epoch can be parsed.
+_CLI_RATE_LIMIT_DEFAULT_WAIT = 3600
+
+# Matches the two forms Claude Code emits when a subscription limit trips:
+#   "Claude AI usage limit reached|<unix_epoch>"
+#   "Claude AI usage limit reached|<unix_epoch>|<limit_type>"   (5h / weekly / opus)
+# The epoch is unix seconds. Captured so we can sleep until reset.
+_USAGE_LIMIT_EPOCH_RE = re.compile(r"Claude AI usage limit reached\|(\d+)")
+
+# Fallback for the variant with no epoch ("Your limit will reset later.").
+_USAGE_LIMIT_PLAIN_RE = re.compile(r"Claude (?:AI )?usage limit reached", re.IGNORECASE)
+
 # Model tier → claude -p --model value
 _TIER_TO_CLI_MODEL: dict[ModelTier, str] = {
     ModelTier.HAIKU: "haiku",
@@ -42,6 +66,58 @@ _TIER_TO_CLI_MODEL: dict[ModelTier, str] = {
 def is_cli_backend_enabled() -> bool:
     """Check if the CLI backend is enabled via environment variable."""
     return os.getenv("THALA_LLM_BACKEND", "api").lower() == "cli"
+
+
+class _RateLimitError(Exception):
+    """Raised when claude -p surfaces a subscription usage limit.
+
+    Carries the reset epoch (unix seconds, UTC) when parseable so the
+    retry loop can sleep until the limit window reopens instead of
+    burning through the short transient-error backoff.
+    """
+
+    def __init__(self, reset_epoch: float | None, raw: str):
+        self.reset_epoch = reset_epoch
+        self.raw = raw
+        super().__init__(
+            f"Claude subscription limit reached (reset_epoch={reset_epoch})"
+        )
+
+
+def _check_rate_limit(text: str) -> None:
+    """Raise _RateLimitError if text contains a subscription-limit marker."""
+    if not text:
+        return
+    m = _USAGE_LIMIT_EPOCH_RE.search(text)
+    if m:
+        raise _RateLimitError(reset_epoch=float(m.group(1)), raw=text[:500])
+    if _USAGE_LIMIT_PLAIN_RE.search(text):
+        raise _RateLimitError(reset_epoch=None, raw=text[:500])
+
+
+async def _sleep_for_rate_limit(err: _RateLimitError, label: str) -> None:
+    """Sleep until the reset epoch (clamped), logging at the boundaries."""
+    if err.reset_epoch is not None:
+        wait = max(0.0, err.reset_epoch - time.time()) + _CLI_RATE_LIMIT_BUFFER
+        reset_str = datetime.fromtimestamp(err.reset_epoch, tz=timezone.utc).isoformat()
+    else:
+        wait = float(_CLI_RATE_LIMIT_DEFAULT_WAIT)
+        reset_str = "unknown (no epoch in message)"
+
+    if wait > _CLI_RATE_LIMIT_MAX_WAIT:
+        logger.error(
+            "CLI backend [%s]: rate-limit wait %.0fs exceeds cap %ds "
+            "(reset=%s, raw=%r) — giving up",
+            label, wait, _CLI_RATE_LIMIT_MAX_WAIT, reset_str, err.raw,
+        )
+        raise err
+
+    logger.warning(
+        "CLI backend [%s]: subscription limit reached, sleeping %.0fs until %s",
+        label, wait, reset_str,
+    )
+    await asyncio.sleep(wait)
+    logger.info("CLI backend [%s]: waking after rate-limit sleep, retrying", label)
 
 
 def _kill_process_tree(proc: asyncio.subprocess.Process) -> None:
@@ -126,15 +202,28 @@ async def _run_claude_cli(
     except ChildProcessError:
         rc = proc.returncode if proc.returncode is not None else 0
 
+    stderr_text = stderr_bytes.decode(errors="replace")
+    stdout_text = stdout_bytes.decode(errors="replace")
+
+    # Detect subscription rate limits before surfacing rc errors — the
+    # marker can appear in stderr (rc != 0) OR inside the JSON result
+    # field with rc == 0 and is_error=true.
+    _check_rate_limit(stderr_text)
+    _check_rate_limit(stdout_text)
+
     if rc != 0:
-        stderr_text = stderr_bytes.decode()[:500]
-        # Claude CLI returns JSON on stdout even on failure; include both
-        stdout_text = stdout_bytes.decode()[:300]
         raise RuntimeError(
-            f"claude -p failed (rc={rc}): {stderr_text or stdout_text}"
+            f"claude -p failed (rc={rc}): {stderr_text[:500] or stdout_text[:300]}"
         )
 
-    return json.loads(stdout_bytes.decode())
+    envelope = json.loads(stdout_text)
+    # Defensive: also inspect the parsed result field explicitly in case
+    # future Claude Code versions escape the pipe character in raw stdout.
+    if isinstance(envelope, dict):
+        result_field = envelope.get("result")
+        if isinstance(result_field, str):
+            _check_rate_limit(result_field)
+    return envelope
 
 
 def _build_base_cmd(
@@ -197,17 +286,23 @@ async def invoke_via_cli(
     cmd = _build_base_cmd(model, system, effort)
 
     last_err: Exception | None = None
-    for attempt in range(_CLI_MAX_RETRIES):
+    attempt = 0
+    while attempt < _CLI_MAX_RETRIES:
         try:
             logger.debug("CLI backend: invoking %s (text, effort=%s, attempt=%d)", model, effort, attempt + 1)
             envelope = await _run_claude_cli(cmd, user_prompt)
             text = envelope["result"]
             return AIMessage(content=text)
+        except _RateLimitError as e:
+            # Sleep until reset; do NOT count against retry budget.
+            await _sleep_for_rate_limit(e, f"invoke_via_cli[{model}]")
+            continue
         except (TimeoutError, RuntimeError, KeyError) as e:
             last_err = e
-            logger.warning("CLI backend: attempt %d/%d failed: %s", attempt + 1, _CLI_MAX_RETRIES, e)
-            if attempt < _CLI_MAX_RETRIES - 1:
-                await asyncio.sleep(2 ** attempt)
+            attempt += 1
+            logger.warning("CLI backend: attempt %d/%d failed: %s", attempt, _CLI_MAX_RETRIES, e)
+            if attempt < _CLI_MAX_RETRIES:
+                await asyncio.sleep(2 ** (attempt - 1))
     raise last_err  # type: ignore[misc]
 
 
@@ -241,7 +336,8 @@ async def invoke_structured_via_cli(
     cmd.extend(["--json-schema", json_schema])
 
     last_err: Exception | None = None
-    for attempt in range(_CLI_MAX_RETRIES):
+    attempt = 0
+    while attempt < _CLI_MAX_RETRIES:
         try:
             logger.debug(
                 "CLI backend: invoking %s (structured=%s, effort=%s, attempt=%d)",
@@ -250,11 +346,15 @@ async def invoke_structured_via_cli(
             envelope = await _run_claude_cli(cmd, user_prompt)
             raw = envelope["structured_output"]
             return schema.model_validate(raw)
+        except _RateLimitError as e:
+            await _sleep_for_rate_limit(e, f"invoke_structured_via_cli[{model}]")
+            continue
         except (TimeoutError, RuntimeError, KeyError) as e:
             last_err = e
-            logger.warning("CLI backend: attempt %d/%d failed: %s", attempt + 1, _CLI_MAX_RETRIES, e)
-            if attempt < _CLI_MAX_RETRIES - 1:
-                await asyncio.sleep(2 ** attempt)
+            attempt += 1
+            logger.warning("CLI backend: attempt %d/%d failed: %s", attempt, _CLI_MAX_RETRIES, e)
+            if attempt < _CLI_MAX_RETRIES:
+                await asyncio.sleep(2 ** (attempt - 1))
     raise last_err  # type: ignore[misc]
 
 
@@ -363,7 +463,8 @@ async def invoke_tool_agent_via_cli(
         cmd.extend(["--effort", effort])
 
     last_err: Exception | None = None
-    for attempt in range(_CLI_MAX_RETRIES):
+    attempt = 0
+    while attempt < _CLI_MAX_RETRIES:
         try:
             logger.debug(
                 "CLI backend: invoking %s (tool_agent, tools=%s, schema=%s, "
@@ -374,12 +475,16 @@ async def invoke_tool_agent_via_cli(
             envelope = await _run_claude_cli(cmd, user_prompt)
             raw = envelope["structured_output"]
             return schema.model_validate(raw)
+        except _RateLimitError as e:
+            await _sleep_for_rate_limit(e, f"invoke_tool_agent_via_cli[{model}]")
+            continue
         except (TimeoutError, RuntimeError, KeyError) as e:
             last_err = e
+            attempt += 1
             logger.warning(
                 "CLI backend: tool agent attempt %d/%d failed: %s",
-                attempt + 1, _CLI_MAX_RETRIES, e,
+                attempt, _CLI_MAX_RETRIES, e,
             )
-            if attempt < _CLI_MAX_RETRIES - 1:
-                await asyncio.sleep(2 ** attempt)
+            if attempt < _CLI_MAX_RETRIES:
+                await asyncio.sleep(2 ** (attempt - 1))
     raise last_err  # type: ignore[misc]

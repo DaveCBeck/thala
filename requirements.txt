@@ -11,6 +11,7 @@ langgraph>=1.0.6
 firecrawl-py>=1.0.0
 playwright>=1.40.0
 pypdf>=4.0.0
+pymupdf>=1.24.0
 html2text>=2024.2.26
 python-dotenv>=1.0.0
 langsmith>=0.6.4
@@ -24,3 +25,13 @@ graphviz>=0.20
 python-substack==0.1.17
 prometheus-client>=0.20.0
 python3-capsolver>=1.0.0
+# Citation graph and clustering
+networkx>=3.0
+python-louvain>=0.16
+bertopic>=0.16.0
+scikit-learn>=1.4.0
+# Translation cache
+cachetools>=5.0.0
+# Sentence embeddings (pulled in by bertopic; declared explicitly so future
+# fresh installs don't depend on transitive resolution)
+torch>=2.0.0
