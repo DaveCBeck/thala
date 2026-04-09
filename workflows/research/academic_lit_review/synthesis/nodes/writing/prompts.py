@@ -12,8 +12,8 @@ Section word targets are calculated as proportions of the total target word coun
 # Section proportions of total word count
 SECTION_PROPORTIONS = {
     "introduction": 0.08,
-    "methodology": 0.06,
-    "thematic_total": 0.70,
+    "methodology": 0.04,  # tightened from 0.06; routine search record, not analysis
+    "thematic_total": 0.72,
     "discussion": 0.09,
     "conclusions": 0.05,
     "abstract": 0.02,
@@ -35,6 +35,12 @@ BANNED SECTION FRAMES:
 FINDINGS-FIRST SENTENCE CONSTRUCTION:
 - When introducing a study, prefer findings-first construction ("Reach-scale channel assessment has been formalized through the Morphological Quality Index [@KEY]") over author-as-subject construction ("Rinaldi et al. [@KEY] formalized reach-scale channel assessment through the MQI").
 - Author-as-subject openers ("Smith et al. showed...", "Jones and Lee argued...") are permitted occasionally for emphasis, but must not be the dominant pattern in any section. If three or more paragraphs in a row open with "Author et al. [@KEY] showed/found/demonstrated/argued/reported...", rewrite them so the finding leads and the citation trails.
+
+CROSS-SECTION PHRASE UNIQUENESS:
+- Any distinctive content phrase of four or more words (not counting stop words like "the", "of", "and", "in", "to", "a") that appears in the abstract MUST NOT reappear verbatim in the conclusions, and vice versa. This includes noun phrases like "full-cycle monitoring", "credible catchment management policy", "values-rooted rather than knowledge-deficient", "at causal resolution", and any similar multi-word construction that carries a load-bearing claim. If the abstract establishes a phrase, the conclusions must land the same idea in different language.
+- The same rule applies across any pair of sections: a distinctive 4+ word content phrase should not appear in more than TWO sections of the review. If you find yourself wanting to re-use a memorable phrase to "anchor" a claim across multiple sections, treat that as a signal that the claim is being restated rather than advanced.
+- When writing any section, silently scan the context you have been given (the thematic sections, and where applicable the introduction or discussion) and avoid echoing any signature 4+ word construction you find there. Find different language for the same idea.
+- The test is positional, not semantic: identical content is fine, identical phrasing is the violation. Paraphrase freely; do not copy load-bearing multi-word phrases across sections.
 """
 
 
@@ -119,6 +125,11 @@ STRICT CONSTRAINTS:
 - Never claim PRISMA compliance or any framework compliance unless explicitly stated
 - Every number you write must come directly from the provided data; do not estimate, round, or extrapolate
 - If a pipeline stage is missing from the data, omit it; do not fabricate what happened
+
+HARD LENGTH CEILING:
+- Maximum 450 words. Not a target, a ceiling. If the content you have drafted exceeds 450 words, cut paragraphs rather than trim sentences; the methodology is a routine search-and-filter record with no analytical stakes, and length must be proportionate.
+- Cover exactly three things: (a) what was searched and how, (b) why the corpus boundaries are where they are, (c) how the thematic clusters were derived. Do NOT anticipate cross-thematic interactions, do NOT justify the inductive clustering approach separately from describing it, and do NOT write a standalone paragraph defending the inclusion of continental European or North American papers (the orienting-question scope already covers that).
+- If a pipeline stage is worth one sentence, write one sentence. If a stage would require two sentences to explain, that is a signal the stage probably does not belong in the methodology at all.
 
 PROSE QUALITY:
 - Write fluent, readable academic prose, not a mechanical enumeration of pipeline statistics
@@ -209,6 +220,7 @@ TEMPORAL NARRATIVE:
 - Do not relegate recent work to a "recent developments" paragraph at the end; weave it throughout as the evolving thread of the narrative
 
 PROSE QUALITY:
+- BANNED TOPIC-STATEMENT OPENERS: Do NOT open a section, subsection, or paragraph with meta-labelling like "This section argues that...", "In what follows, I argue...", "This section will show that...", "The argument of this section is...", or any near-variant. Also do NOT label a closing subsection "The Claim the Evidence Supports", "The Core Claim", or any near-variant. The section's argument must be carried by the substance of its opening and closing sentences, not announced with a meta-label. If your section's first sentence needs a prefix explaining that an argument is about to follow, rewrite the sentence so the argument is the first thing the reader sees.
 - CONTRASTIVE FRAMING LIMIT: Sentences that contrast two positions ("X rather than Y", "not X but Y", "instead of X", "X as opposed to Y", "less about X and more about Y") are useful occasionally but become a tic when overused. Use at most THREE contrastive-frame sentences per section. When you want to make a strong claim, state it directly without first naming the weaker alternative.
 - Do not use "precisely" as an intensifier. If a claim is precise, the specificity of the evidence will show it.
 - SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Use superlatives only for literal, verifiable comparisons (e.g., "the largest cohort", "the longest follow-up period"). If a finding matters, demonstrate why through the evidence and argument; do not announce it.
@@ -234,7 +246,7 @@ SECTION STRUCTURE:
 - Connect the section's argument explicitly to the review's central thesis. The reader should understand why this theme matters for the review's overall question, not just why it matters in general.
 - Do NOT end every section with a formulaic "Gaps and Limitations" or "Outstanding Questions" subsection. Instead, weave limitations and open questions into the narrative where they arise, after the evidence that reveals them. If gaps are substantial enough to warrant their own subsection, vary the framing and placement across sections.
 - SECTION CLOSE: End the section by restating the section's argument in its SHARPEST form: the specific, falsifiable claim the reader should carry forward into the next theme. Do NOT retreat to bland generalities like "the theoretical and empirical case for X as both ecologically coherent and operationally viable" or "these studies collectively establish the importance of Y". If the section's claim is that a synthesis literature overreaches relative to primary evidence, say so directly in the close.
-- QUANTITATIVE REMIT: Your section has its own analytical remit defined by the theme description, sub-themes, and assigned papers. If you find yourself re-staging a quantitative tension that logically belongs to a different thematic section (for example, re-citing peak-flow reduction ranges when your theme is ecosystem-engineering synthesis rather than flood hydrology, or re-citing biodiversity gain figures when your theme is governance), do NOT re-quote the numbers. Discuss HOW the synthesis literature USES such figures: selection bias, citation-chain drift, normative authority acquired in transit, optimal-site provenance, without re-staging the numerical contrast itself. Trust the primary-evidence theme to resolve its own quantitative conflicts.
+- QUANTITATIVE REMIT (section-agnostic): Your section has its own analytical remit defined by the theme description, sub-themes, and assigned papers. ANY number, percentage, ratio, or quantitative range that belongs structurally to a different thematic section must NOT be re-quoted in your section, regardless of how natural the importation feels. The test is simple: if a figure's primary analytical home is hydrology, it belongs ONLY to the hydrology section, not to biogeochemistry, biodiversity, or governance, even when those sections cite the same paper for its qualitative contribution. Specifically: do NOT re-cite peak-flow reductions, attenuation ranges, open-water area ratios, or discharge statistics outside the hydrology section; do NOT re-cite sediment, nitrogen, or carbon accumulation rates outside the biogeochemistry section; do NOT re-cite species richness, abundance, or effect-size figures outside the biodiversity section; do NOT re-cite survey percentages or attitude distributions outside the governance section. When you need to reference another section's paper for a QUALITATIVE or THEORETICAL contribution, cite the paper and describe its contribution WITHOUT the number (for example, "the comprehensive synthesis of beaver evolutionary ecology [@KEY] extends the policy rationale into climate adaptation by documenting wildfire refugia"): note what the paper adds to YOUR section's argument, and leave the sibling section to own its numbers. The rule applies whether the sibling section is upstream or downstream of yours in the document order.
 
 HEADING FORMAT: Do NOT use `#` or `##` headings; the section header is added automatically.
 Use `###` for sub-sections within your theme."""
@@ -320,7 +332,9 @@ The conclusions should:
 
 CRITICAL — QUANTITATIVE NON-RESTATEMENT: The conclusions must NOT re-quote any specific number, percentage, or quantitative range that has already appeared in the abstract or in any thematic section. This includes (but is not limited to) peak-flow reductions, attenuation ranges, coverage percentages, sample sizes, effect magnitudes, and percentile thresholds. Refer to such findings by their ARGUMENTATIVE ROLE instead: for example, "the attenuation range documented in the hydrology theme", "the topographic ceiling modelled in Section 3", "the peak-flow reductions reported at UK BACI sites". If a number is load-bearing for a recommendation, cite it once in the thematic section and reference it indirectly in the conclusions. Re-quoting figures that already appeared in the body is the single most common way conclusions fail their quality check.
 
-CRITICAL — NO COMPRESSED ABSTRACT: The conclusions must NOT simply restate the abstract's findings in longer or shorter form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. The CLOSING sentence of the conclusions must not echo the closing sentence of the abstract: if the abstract closes on a pivot claim, the conclusions should close on the consequences of that pivot (a concrete change, a named evidentiary obligation, a field-level shift the discussion has earned).
+CRITICAL — STRUCTURAL NON-RESTATEMENT: The conclusions must NOT reproduce the Discussion's cross-domain sentence skeleton. Specifically, do NOT open a paragraph with a sequence of clauses of the shape "The [domain A] evidence establishes that X; the [domain B] evidence shows that Y; the [domain C] evidence indicates that Z" when the Discussion already uses that shape. A domain-by-domain march through the thematic sections (hydrology, then biogeochemistry, then biodiversity, then governance) is BANNED in the conclusions regardless of whether the numerical content differs from the Discussion. Each paragraph in the conclusions must make a claim or recommendation that is NOT present in the Discussion in the same structural form; acknowledge the Discussion's cross-theme findings by reference ("given the alignment identified in the discussion") and advance to consequences.
+
+CRITICAL — NO COMPRESSED ABSTRACT: The conclusions must NOT simply restate the abstract's findings in longer or shorter form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. The CLOSING sentence of the conclusions must be the SHARPEST claim in the review, not a research-agenda soft pivot: it should be a specific, falsifiable, forward-looking claim (a concrete change, a named evidentiary obligation, or a field-level shift the discussion has earned). Do NOT close on "That programme would generate...", "The evidence now justifies...", or any similar research-agenda soft pivot. Close on the consequence, not the research ask.
 
 {SHARED_PROSE_CONSTRAINTS}
 
