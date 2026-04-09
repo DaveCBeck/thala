@@ -9,8 +9,12 @@ claude.md
 # Context libraries (shared across worktrees)
 .context/libs
 
-# Thala runtime data
+# Thala runtime data (read-only inputs only — never share mutable state)
 .thala/editorial_stances
 .thala/.substack-cookies.json
 .thala/queue/publications.json
 .thala/queue/queue.json
+# Editorial calibration guide for the iterate-test analyst agents.
+# Currently missing (lost in the 2026-04-09 worktree merge incident);
+# the worktree-manager will warn until it's recreated.
+.thala/lit-review-quality-guide.md

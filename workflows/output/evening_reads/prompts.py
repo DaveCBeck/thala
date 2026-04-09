@@ -137,6 +137,7 @@ _DEEP_DIVE_STYLE = """
 - Technical terms are fine; jargon without payoff is not
 - One idea per paragraph; let paragraphs breathe
 - Avoid: "In this essay...", "It is important to note...", "As we have seen...", "Here's a [noun] that should [verb] you" and similar rhetorical stage-setting ("Here's a comforting story", "Here's the comfortable story"). Don't announce what a piece of evidence should make the reader feel—just present it.
+- Don't announce honesty. Avoid "The honest conclusion is...", "honestly", "to be honest", "if I'm being honest". Framing a claim as honest implies the surrounding prose isn't—just state the claim directly. E.g., not "The honest conclusion is not that one bet is right and the other wrong" but "It's not that one bet is right and the other wrong."
 - Vary your opening and closing moves. Don't default to "Here's the thing:" or "Here's a number that..." — sometimes lead with the claim, sometimes with the evidence, sometimes with a scene.
 - Keep scientific vocabulary (ectomycorrhizal, hysteresis, saprotrophic) but simplify the verbs and qualifiers around it. Prefer "is" over "represents", "shows" over "demonstrates", "buffer" over "attenuate the negative impacts of", "depends on" over "is highly contingent upon". The technical nouns earn their place; Latinate verbs and hedging adverbs usually don't.
 - Do not lightly paraphrase source abstracts—rewrite claims in your own voice. If a sentence could appear in a journal abstract unchanged, it needs rewriting.
@@ -145,7 +146,7 @@ _DEEP_DIVE_STYLE = """
 - Use identifiers (gene names, species names, model acronyms, chemical formulas) for specificity on first mention, then refer to them by function. If the reader doesn't need to track which shorthand maps to which role, describe the role instead of repeating the shorthand.
 
 ## Tone
-Curious, direct, intellectually honest. You're thinking through material with the reader, not lecturing. Acknowledge uncertainty where it exists. Get excited about what's genuinely interesting. Precision comes from choosing the right word, not the longest one.
+Curious and direct. You're thinking through material with the reader, not lecturing. Acknowledge uncertainty where it exists, but don't label your own prose as "honest"—show it by being specific. Get excited about what's interesting. Precision comes from choosing the right word, not the longest one.
 """
 
 
@@ -351,7 +352,8 @@ If an editorial stance is provided, pay close attention to its guidance on recen
 - Concrete before abstract
 - Acknowledge complexity and uncertainty
 - Avoid: "This essay will...", academic hedging, false balance
-- Embrace: Direct claims with explicit uncertainty, genuine curiosity
+- Don't announce honesty. Avoid "The honest conclusion is...", "honestly", "to be honest", "if I'm being honest". Framing a claim as honest implies the surrounding prose isn't—just state the claim directly.
+- Embrace: Direct claims with explicit uncertainty, curiosity that shows in the specifics rather than being declared
 - Keep scientific vocabulary but simplify the verbs and qualifiers around it. Prefer "is" over "represents", "shows" over "demonstrates", "buffer" over "attenuate the negative impacts of", "depends on" over "is highly contingent upon". The technical nouns earn their place; Latinate verbs and hedging adverbs usually don't.
 - Do not lightly paraphrase source abstracts—rewrite claims in your own voice. If a sentence could appear in a journal abstract unchanged, it needs rewriting.
 - Cut adverbs that don't sharpen meaning: "genuinely", "substantially", "fundamentally", "predominantly" are often padding. Use them only when they mark a real contrast.
