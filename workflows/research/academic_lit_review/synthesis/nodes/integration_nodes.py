@@ -18,6 +18,7 @@ from ..prompts import (
     DEFAULT_TARGET_WORDS,
 )
 from ..citation_utils import extract_citations_from_text
+from .writing.drafting import _format_thematic_content
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +101,13 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
             prompt_name="lit_review_abstract_user",
         )
 
+    thematic_content = _format_thematic_content(clusters, thematic_sections)
+
     abstract_prompt = abstract_user_template.format(
         topic=topic,
         introduction=introduction,
+        thematic_content=thematic_content,
+        discussion=discussion,
         conclusions=conclusions,
     )
 

@@ -67,10 +67,27 @@ ABSTRACT_USER_TEMPLATE = """Write an abstract for this literature review.
 
 Topic: {topic}
 
+You are given the introduction, the full thematic sections, the discussion, and the conclusions. The abstract must accurately preview the review's actual findings — not generic descriptions of the topic. Read everything before writing.
+
 Introduction (for context):
 {introduction}
 
-Conclusions (for key findings):
-{conclusions}
+<thematic_sections>
+{thematic_content}
+</thematic_sections>
 
-Write a concise abstract summarizing the scope, methodology, key themes, and conclusions."""
+<discussion>
+{discussion}
+</discussion>
+
+<conclusions>
+{conclusions}
+</conclusions>
+
+Write a concise abstract that:
+- States the scope and the specific question the review answers
+- Names the key themes covered (briefly)
+- Highlights the most important findings the synthesis established (specific, not generic)
+- Notes the main implications
+
+The abstract should give a reader a clear, accurate preview of what the review actually establishes — not just what topic it covers. Do not invent findings; everything in the abstract must be supported by the sections above."""

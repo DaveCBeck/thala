@@ -261,21 +261,24 @@ Prose discipline:
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
-DISCUSSION_USER_TEMPLATE = """Write a discussion section that synthesizes across these themes:
+DISCUSSION_USER_TEMPLATE = """Write a discussion section that synthesizes across the thematic sections below.
 
 Research Questions:
 {research_questions}
 
-Themes covered:
+Themes covered (for orientation):
 {themes_summary}
 
-Key cross-cutting findings:
-{cross_cutting_findings}
-
-Research gaps identified:
+Research gaps identified during clustering:
 {research_gaps}
 
-Write a discussion that integrates these findings and discusses implications."""
+The full prose of every thematic section already written follows. Read all of it before writing the discussion. The discussion's job is to identify connections, tensions, contradictions, and dependencies BETWEEN the themes that no individual section establishes — things only visible when all sections are held together. Quote specific sub-findings when useful, but do not summarize the sections one by one. The discussion earns its place by saying something the sections could not say alone.
+
+<thematic_sections>
+{thematic_content}
+</thematic_sections>
+
+Write a discussion that integrates across these sections, surfaces cross-theme tensions, and discusses implications for theory and practice."""
 
 
 def get_conclusions_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> str:
@@ -300,18 +303,29 @@ OUTPUT HYGIENE: The output must contain only polished final prose. Do NOT includ
 Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
 
 
-CONCLUSIONS_USER_TEMPLATE = """Write conclusions for this literature review:
+CONCLUSIONS_USER_TEMPLATE = """Write conclusions for this literature review.
 
 Research Questions:
 {research_questions}
 
-Key Findings per Question:
-{findings_per_question}
+The full prose of every thematic section is below, followed by the discussion section that was just written. Read both before writing the conclusions. Your job is NOT to restate either of them. Your job is to:
 
-Main Contributions:
-{main_contributions}
+1. Answer each research question based on what the synthesis actually established (point at specific sections or sub-findings).
+2. Surface at least one finding, tension, or implication that emerged from reading across themes — something a reader who only read the introduction could not have predicted.
+3. Build on the discussion's cross-theme synthesis rather than competing with it. If the discussion already named a cross-theme tension, the conclusions should say what to DO about it, not re-describe it.
+4. State concretely what should change in how practitioners or researchers approach this topic.
 
-Write clear, actionable conclusions."""
+Do not introduce new evidence or new claims that weren't in the thematic sections or the discussion.
+
+<thematic_sections>
+{thematic_content}
+</thematic_sections>
+
+<discussion>
+{discussion}
+</discussion>
+
+Write clear, definitive, actionable conclusions."""
 
 
 # Backwards compatibility: static prompts using default target

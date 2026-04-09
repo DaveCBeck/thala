@@ -142,17 +142,46 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     }
 
 
+def _format_thematic_content(
+    clusters: list[dict],
+    thematic_section_drafts: dict[str, str],
+) -> str:
+    """Render the full thematic section drafts in cluster order for downstream prompts.
+
+    Discussion, conclusions, and abstract all need to see the actual prose that
+    was written for each theme — not just cluster labels — in order to synthesize
+    across themes rather than restate the topic.
+    """
+    if not thematic_section_drafts:
+        return "[No thematic sections available]"
+
+    parts = []
+    for i, cluster in enumerate(clusters, start=1):
+        label = cluster["label"]
+        body = thematic_section_drafts.get(label, f"[Section for {label} not available]")
+        parts.append(f"## Section {i}. {label}\n\n{body}")
+    return "\n\n".join(parts)
+
+
 async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, Any]:
-    """Write discussion and conclusions sections."""
+    """Write discussion and conclusions sections.
+
+    Discussion is written first with full thematic content so it can synthesize
+    across themes. Conclusions is written second with both the thematic content
+    AND the just-written discussion, so it can build on the synthesis rather
+    than compete with it or restate the abstract.
+    """
     input_data = state.get("input", {})
     clusters = state.get("clusters", [])
     cluster_analyses = state.get("cluster_analyses", [])
+    thematic_section_drafts = state.get("thematic_section_drafts", {})
     language_config = state.get("language_config")
     quality_settings = state.get("quality_settings", {})
 
     research_questions = input_data.get("research_questions", [])
 
     themes_summary = "\n".join(f"- {c['label']}: {c['description'][:150]}" for c in clusters)
+    thematic_content = _format_thematic_content(clusters, thematic_section_drafts)
 
     gaps = []
     for analysis in cluster_analyses:
@@ -198,22 +227,11 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
     discussion_prompt = discussion_user_template.format(
         research_questions="\n".join(f"- {q}" for q in research_questions),
         themes_summary=themes_summary,
-        cross_cutting_findings="See thematic sections for detailed findings.",
+        thematic_content=thematic_content,
         research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
     )
 
-    findings_summary = "\n".join(
-        f"Q{i + 1}: {q}\n   Finding: Based on {len(clusters)} themes covering {sum(len(c['paper_dois']) for c in clusters)} papers"
-        for i, q in enumerate(research_questions)
-    )
-
-    conclusions_prompt = conclusions_user_template.format(
-        research_questions="\n".join(f"- {q}" for q in research_questions),
-        findings_per_question=findings_summary,
-        main_contributions=f"Systematic review of {sum(len(c['paper_dois']) for c in clusters)} papers organized into {len(clusters)} themes",
-    )
-
-    discussion_coro = invoke(
+    discussion_response = await invoke(
         tier=ModelTier.SONNET,
         system=discussion_system,
         user=discussion_prompt,
@@ -223,7 +241,19 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         ),
     )
 
-    conclusions_coro = invoke(
+    discussion = (
+        discussion_response.content
+        if isinstance(discussion_response.content, str)
+        else discussion_response.content[0].get("text", "")
+    )
+
+    conclusions_prompt = conclusions_user_template.format(
+        research_questions="\n".join(f"- {q}" for q in research_questions),
+        thematic_content=thematic_content,
+        discussion=discussion,
+    )
+
+    conclusions_response = await invoke(
         tier=ModelTier.SONNET,
         system=conclusions_system,
         user=conclusions_prompt,
@@ -231,14 +261,6 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
             max_tokens=4096,
             batch_policy=BatchPolicy.PREFER_BALANCE,
         ),
-    )
-
-    discussion_response, conclusions_response = await asyncio.gather(discussion_coro, conclusions_coro)
-
-    discussion = (
-        discussion_response.content
-        if isinstance(discussion_response.content, str)
-        else discussion_response.content[0].get("text", "")
     )
 
     conclusions = (
