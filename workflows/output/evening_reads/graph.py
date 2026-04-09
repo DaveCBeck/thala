@@ -4,14 +4,16 @@ Transforms academic literature reviews into a 4-part series:
 1 overview + 3 deep-dives through:
 1. Input validation and citation mapping
 2. Content planning with structured output
-3. Parallel content fetching (3x)
-4. Parallel deep-dive writing (3x)
-5. Overview writing
-6. Reference formatting
+3. Parallel content fetching (3x) + right-now hook search (3x, recency-high only)
+4. Sync barrier + optional replan if hooks missing
+5. Parallel deep-dive writing (3x)
+6. Overview writing
+7. Reference formatting
 
 Illustration is handled separately by the illustrate_and_export task queue workflow.
 """
 
+import logging
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -22,10 +24,14 @@ from .nodes import (
     validate_input_node,
     plan_content_node,
     fetch_content_node,
+    find_right_now_node,
+    replan_content_node,
     write_deep_dive_node,
     write_overview_node,
     format_references_node,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def route_after_validation(state: EveningReadsState) -> str:
@@ -36,9 +42,11 @@ def route_after_validation(state: EveningReadsState) -> str:
 
 
 def route_to_fetch(state: EveningReadsState) -> list[Send] | str:
-    """Fan out to parallel content fetching for each deep-dive.
+    """Fan out to parallel content fetching (and right-now search for recency-high pubs).
 
-    Each Send() creates a parallel execution with the assignment details.
+    Emits 3 fetch_content Send() calls always.
+    For recency-high publications, also emits 3 find_right_now Send() calls
+    that run in parallel with the fetches.
     """
     if state.get("status") == "failed":
         return END
@@ -49,8 +57,12 @@ def route_to_fetch(state: EveningReadsState) -> list[Send] | str:
     if not assignments:
         return END
 
+    editorial_emphasis = state["input"].get("editorial_emphasis", {})
+    wants_recency = editorial_emphasis.get("recency") == "high"
+
     sends = []
     for assignment in assignments:
+        # Always fetch content
         sends.append(
             Send(
                 "fetch_content",
@@ -62,41 +74,84 @@ def route_to_fetch(state: EveningReadsState) -> list[Send] | str:
             )
         )
 
+        # For recency-high publications, also search for right-now hooks
+        if wants_recency:
+            sends.append(
+                Send(
+                    "find_right_now",
+                    {
+                        "deep_dive_id": assignment["id"],
+                        "title": assignment["title"],
+                        "theme": assignment["theme"],
+                    },
+                )
+            )
+
     return sends
+
+
+def route_after_sync(state: EveningReadsState) -> list[Send] | str:
+    """Route after sync: check if replanning is needed due to missing hooks.
+
+    For recency-high publications, if any deep-dive has zero hooks AND
+    we haven't replanned yet, route to replan. Otherwise fan out to writes.
+    """
+    editorial_emphasis = state["input"].get("editorial_emphasis", {})
+    wants_recency = editorial_emphasis.get("recency") == "high"
+    replan_attempts = state.get("replan_attempts", 0)
+
+    should_replan = False
+    if wants_recency and replan_attempts < 1:
+        assignments = state.get("deep_dive_assignments", [])
+        right_now_hooks = state.get("right_now_hooks", [])
+
+        hooks_by_id: dict[str, int] = {a["id"]: 0 for a in assignments}
+        for hook in right_now_hooks:
+            dd_id = hook.get("deep_dive_id")
+            if dd_id in hooks_by_id:
+                hooks_by_id[dd_id] += 1
+
+        hookless = [dd_id for dd_id, count in hooks_by_id.items() if count == 0]
+        if hookless:
+            logger.info(f"Deep-dives with zero hooks: {hookless}. Routing to replan.")
+            should_replan = True
+
+    if should_replan:
+        return "replan_content"
+
+    # No replan needed — fan out to writes
+    return route_to_write(state)
 
 
 def route_to_write(state: EveningReadsState) -> list[Send] | str:
     """Fan out to parallel deep-dive writing.
 
-    This is called from the sync_before_write node, which ensures all
-    fetches have completed before we fan out to writes.
-
-    Each writer gets:
-    - Its assignment details
-    - Its fetched content
-    - A list of themes to avoid (from other deep-dives)
+    Each writer gets its assignment details, fetched content, hooks,
+    and a list of themes to avoid (from other deep-dives).
     """
     assignments = state.get("deep_dive_assignments", [])
     enriched_content = state.get("enriched_content", [])
+    right_now_hooks = state.get("right_now_hooks", [])
+    citation_mappings = state.get("citation_mappings", {})
     lit_review = state["input"]["literature_review"]
     editorial_stance = state["input"].get("editorial_stance", "")
+    editorial_emphasis = state["input"].get("editorial_emphasis", {})
 
     if not assignments:
         return END
 
     # Build must_avoid lists for distinctiveness
-    # Each deep-dive should avoid the themes of the other two
     themes_by_id = {a["id"]: a["theme"] for a in assignments}
 
     sends = []
     for assignment in assignments:
-        # Themes to avoid = all themes except this one
         must_avoid = [
             f"{other_id}: {theme}" for other_id, theme in themes_by_id.items() if other_id != assignment["id"]
         ]
 
-        # Filter enriched content for this deep-dive
+        # Filter enriched content and hooks for this deep-dive
         dd_content = [ec for ec in enriched_content if ec["deep_dive_id"] == assignment["id"]]
+        dd_hooks = [h for h in right_now_hooks if h["deep_dive_id"] == assignment["id"]]
 
         sends.append(
             Send(
@@ -110,8 +165,11 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
                     "relevant_sections": assignment["relevant_sections"],
                     "must_avoid": must_avoid,
                     "enriched_content": dd_content,
+                    "right_now_hooks": dd_hooks,
                     "literature_review": lit_review,
                     "editorial_stance": editorial_stance,
+                    "editorial_emphasis": editorial_emphasis,
+                    "citation_mappings": citation_mappings,
                 },
             )
         )
@@ -120,17 +178,13 @@ def route_to_write(state: EveningReadsState) -> list[Send] | str:
 
 
 async def sync_before_write_node(state: EveningReadsState) -> dict[str, Any]:
-    """Synchronization node that waits for all fetches to complete.
-
-    This is a pass-through node that acts as a barrier between the parallel
-    fetch operations and the parallel write operations. It ensures all
-    enriched_content is collected before fanning out to writers.
-    """
-    # Just pass through - the state already has merged enriched_content
+    """Synchronization barrier between fetch/find and write phases."""
     enriched = state.get("enriched_content", [])
-    import logging
-
-    logging.getLogger(__name__).info(f"All fetches complete. Enriched content: {len(enriched)} items")
+    hooks = state.get("right_now_hooks", [])
+    logger.info(
+        f"All fetches complete. Enriched content: {len(enriched)} items, "
+        f"right-now hooks: {len(hooks)} items"
+    )
     return {}
 
 
@@ -140,22 +194,18 @@ def create_evening_reads_graph() -> StateGraph:
     Flow:
         START -> validate_input
               -> plan_content
-              -> [3 parallel fetch_content via Send()]
+              -> [3x fetch_content + 3x find_right_now via Send()]
               -> sync_before_write (barrier)
-              -> [3 parallel write_deep_dive via Send()]
+              -> route_after_sync:
+                  - all have hooks OR already replanned → route_to_write
+                  - some missing hooks → replan_content → route_to_fetch (loop)
+              -> [3x write_deep_dive via Send()]
               -> write_overview
               -> format_references
               -> END
 
-    The fetch and write nodes run in parallel using Send(),
-    then their outputs are aggregated via the add reducer on
-    enriched_content and deep_dive_drafts in EveningReadsState.
-
-    The sync_before_write node acts as a barrier between the two
-    parallel phases, ensuring all fetches complete before writes begin.
-
-    Illustration is handled by the illustrate_and_export task queue workflow,
-    spawned by the save_and_spawn phase after this graph completes.
+    The replan loop runs at most once. If the planner can't find a topic
+    with recent hooks, it proceeds with the original topic.
     """
     builder = StateGraph(EveningReadsState)
 
@@ -163,7 +213,9 @@ def create_evening_reads_graph() -> StateGraph:
     builder.add_node("validate_input", validate_input_node)
     builder.add_node("plan_content", plan_content_node)
     builder.add_node("fetch_content", fetch_content_node)
+    builder.add_node("find_right_now", find_right_now_node)
     builder.add_node("sync_before_write", sync_before_write_node)
+    builder.add_node("replan_content", replan_content_node)
     builder.add_node("write_deep_dive", write_deep_dive_node)
     builder.add_node("write_overview", write_overview_node)
     builder.add_node("format_references", format_references_node)
@@ -178,27 +230,35 @@ def create_evening_reads_graph() -> StateGraph:
         ["plan_content", END],
     )
 
-    # Conditional fan-out to fetch after planning
+    # Fan-out to fetch (and find_right_now for recency-high) after planning
     builder.add_conditional_edges(
         "plan_content",
         route_to_fetch,
-        ["fetch_content", END],
+        ["fetch_content", "find_right_now", END],
     )
 
-    # All fetch nodes converge to sync node
+    # All fetch and find_right_now nodes converge to sync node
     builder.add_edge("fetch_content", "sync_before_write")
+    builder.add_edge("find_right_now", "sync_before_write")
 
-    # Sync node fans out to writes
+    # After sync: check hooks, maybe replan or fan out to writes
     builder.add_conditional_edges(
         "sync_before_write",
-        route_to_write,
-        ["write_deep_dive", END],
+        route_after_sync,
+        ["write_deep_dive", "replan_content"],
+    )
+
+    # Replan loops back to fetch + find_right_now
+    builder.add_conditional_edges(
+        "replan_content",
+        route_to_fetch,
+        ["fetch_content", "find_right_now", END],
     )
 
     # All write_deep_dive nodes converge to write_overview
     builder.add_edge("write_deep_dive", "write_overview")
 
-    # Linear flow after overview: overview -> references -> END
+    # Linear flow after overview
     builder.add_edge("write_overview", "format_references")
     builder.add_edge("format_references", END)
 

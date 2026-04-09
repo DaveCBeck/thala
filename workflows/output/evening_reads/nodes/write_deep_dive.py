@@ -57,6 +57,47 @@ def _extract_citations(text: str) -> list[str]:
     return sorted(keys)
 
 
+def _extract_current_year_contexts(
+    lit_review: str, citation_mappings: dict, already_in_excerpt: str
+) -> str:
+    """Extract paragraphs containing current-year citations not already in the excerpt.
+
+    This ensures 2026 sources are visible to the writer regardless of section boundaries.
+    """
+    import datetime
+
+    current_year = datetime.date.today().year
+    current_year_keys = {
+        k for k, m in citation_mappings.items()
+        if (m.get("year") or 0) >= current_year
+    }
+
+    if not current_year_keys:
+        return ""
+
+    # Find which current-year keys are NOT already mentioned in the excerpt
+    missing_keys = {k for k in current_year_keys if f"[@{k}]" not in already_in_excerpt}
+    if not missing_keys:
+        return ""
+
+    # Extract paragraphs containing these keys
+    paragraphs = lit_review.split("\n\n")
+    relevant_paras = []
+    for para in paragraphs:
+        for key in missing_keys:
+            if f"[@{key}]" in para or f"@{key}" in para:
+                relevant_paras.append(para.strip())
+                break
+
+    if not relevant_paras:
+        return ""
+
+    return (
+        "\n\n### Additional Recent Findings (2026)\n\n"
+        + "\n\n".join(relevant_paras)
+    )
+
+
 def _extract_relevant_sections(lit_review: str, section_names: list[str]) -> str:
     """Extract sections from the literature review that match the given names.
 
@@ -131,8 +172,12 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     relevant_sections = state.get("relevant_sections", [])
     must_avoid = state.get("must_avoid", [])
     enriched_content: list[EnrichedContent] = state.get("enriched_content", [])
+    right_now_hooks = state.get("right_now_hooks", [])
     lit_review = state.get("literature_review", "")
     editorial_stance = state.get("editorial_stance", "")
+    editorial_emphasis = state.get("editorial_emphasis", {})
+    wants_recency = editorial_emphasis.get("recency") == "high"
+    citation_mappings = state.get("citation_mappings", {})
 
     if not deep_dive_id:
         return {"errors": [{"node": "write_deep_dive", "error": "Missing deep_dive_id"}]}
@@ -141,12 +186,24 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     source_parts = []
     for ec in enriched_content:
         if ec["deep_dive_id"] == deep_dive_id:
-            source_parts.append(f"## Source: {ec['zotero_key']} ({ec['content_level']})\n\n{ec['content']}")
+            mapping = citation_mappings.get(ec["zotero_key"], {})
+            year = mapping.get("year")
+            year_str = f", {year}" if year else ""
+            source_parts.append(
+                f"## Source: {ec['zotero_key']} ({ec['content_level']}{year_str})\n\n{ec['content']}"
+            )
 
     source_content = "\n\n---\n\n".join(source_parts) if source_parts else "[No source content available]"
 
     # Extract relevant sections from the literature review
     lit_review_excerpt = _extract_relevant_sections(lit_review, relevant_sections)
+
+    # Append paragraphs with current-year citations not already in the excerpt
+    if wants_recency:
+        cy_contexts = _extract_current_year_contexts(lit_review, citation_mappings, lit_review_excerpt)
+        if cy_contexts:
+            lit_review_excerpt += cy_contexts
+            logger.info(f"Appended {len(cy_contexts)} chars of current-year citation context to excerpt")
 
     # Build must_avoid string
     must_avoid_str = "\n".join(f"- {item}" for item in must_avoid) if must_avoid else "None specified"
@@ -165,14 +222,72 @@ async def write_deep_dive_node(state: dict) -> dict[str, Any]:
     if editorial_stance:
         system_prompt += EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
 
+    # Build recency annotation: identify which citations in the excerpt are recent
+    recency_note = ""
+    if wants_recency:
+        excerpt_keys = _extract_citations(lit_review_excerpt)
+        recent_in_excerpt = []
+        older_in_excerpt = []
+        for key in excerpt_keys:
+            mapping = citation_mappings.get(key, {})
+            year = mapping.get("year")
+            title_str = mapping.get("title", "")
+            label = f"[@{key}]"
+            if year:
+                label += f" ({year})"
+            if title_str:
+                label += f" {title_str[:60]}"
+            if year and year >= 2025:
+                recent_in_excerpt.append(label)
+            elif year:
+                older_in_excerpt.append(label)
+
+        if recent_in_excerpt:
+            recency_note = (
+                "\n\n## Recent Sources in This Excerpt (prioritize these)\n"
+                + "\n".join(f"- {r}" for r in recent_in_excerpt)
+            )
+            if older_in_excerpt:
+                recency_note += (
+                    "\n\n## Older Sources (use for context, not as primary evidence)\n"
+                    + "\n".join(f"- {o}" for o in older_in_excerpt)
+                )
+
+    # Build right-now hooks section if available
+    hooks_section = ""
+    if right_now_hooks:
+        hook_parts = []
+        for hook in right_now_hooks:
+            zk = hook.get("zotero_key")
+            cite_hint = f"Cite as [@{zk}]" if zk else "Name the source and date inline"
+            entry = (
+                f"### {hook['source_title']} ({hook['source_date']})\n"
+                f"{cite_hint}\n\n"
+                f"**Why this matters for your piece:** {hook['finding']}\n\n"
+            )
+            if hook.get("content"):
+                entry += f"**Source content:**\n\n{hook['content']}\n"
+            hook_parts.append(entry)
+
+        hooks_section = (
+            "\n\n## Right Now — Recent Developments (last 2-3 weeks)\n"
+            "These are concrete recent findings discovered via web search. "
+            "Use them to anchor your opening — lead with what just happened, "
+            "then connect to the deeper literature review material.\n\n"
+            "Cite these sources using the [@KEY] format shown above where available. "
+            "They will appear in the References section alongside the academic sources.\n\n"
+            + "\n\n---\n\n".join(hook_parts)
+        )
+
     user_prompt = DEEP_DIVE_USER_TEMPLATE.format(
         source_content=source_content,
         literature_review_excerpt=lit_review_excerpt,
-    )
+    ) + hooks_section + recency_note
 
     logger.info(
         f"Writing deep-dive {deep_dive_id}: '{title}' "
-        f"(approach={structural_approach}, {len(source_parts)} sources, {len(must_avoid)} themes to avoid)"
+        f"(approach={structural_approach}, {len(source_parts)} sources, "
+        f"{len(must_avoid)} themes to avoid, {len(right_now_hooks)} right-now hooks)"
     )
 
     try:

@@ -137,14 +137,17 @@ class WebResearchWorkflow(BaseWorkflow):
             logger.info("Phase 2: Generating evening reads series")
 
             # Load editorial stance for the publication
-            from workflows.output.evening_reads.editorial import load_editorial_stance
+            from workflows.output.evening_reads.editorial import load_editorial_emphasis, load_editorial_stance
 
-            editorial_stance = load_editorial_stance(task.get("category", ""))
+            category = task.get("category", "")
+            editorial_stance = load_editorial_stance(category)
+            slug = category.lower().replace(" ", "-")
+            editorial_emphasis = load_editorial_emphasis(slug)
             if editorial_stance:
-                logger.info(f"Using editorial stance for category: {task.get('category')}")
+                logger.info(f"Using editorial stance for category: {category}")
 
             try:
-                series_result = await evening_reads(research_result["final_report"], editorial_stance)
+                series_result = await evening_reads(research_result["final_report"], editorial_stance, editorial_emphasis)
 
                 if not series_result.get("final_outputs"):
                     raise RuntimeError(f"Series generation failed: {series_result.get('errors', 'Unknown error')}")

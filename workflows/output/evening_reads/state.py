@@ -15,6 +15,7 @@ class EveningReadsInput(TypedDict, total=False):
 
     literature_review: str  # Raw markdown with [@KEY] citations (required)
     editorial_stance: str  # Optional editorial stance for publication context
+    editorial_emphasis: dict  # Optional emphasis config from stance frontmatter
 
 
 class CitationKeyMapping(TypedDict):
@@ -23,6 +24,7 @@ class CitationKeyMapping(TypedDict):
     zotero_key: str
     es_record_id: Optional[str]  # UUID string, None if not found in store
     title: Optional[str]
+    year: Optional[int]  # Publication year, extracted from ES metadata
 
 
 class DeepDiveAssignment(TypedDict):
@@ -31,9 +33,23 @@ class DeepDiveAssignment(TypedDict):
     id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"]
     title: str  # Evocative title for the article
     theme: str  # Brief description of the theme
-    structural_approach: Literal["puzzle", "finding", "contrarian"]  # Narrative approach
+    structural_approach: Literal[
+        "puzzle", "finding", "contrarian", "mechanism", "narrative", "comparison", "open"
+    ]  # Narrative approach
     anchor_keys: list[str]  # 2-3 Zotero keys that anchor this deep-dive
     relevant_sections: list[str]  # Section headers from lit review to focus on
+
+
+class RightNowHook(TypedDict):
+    """A recent finding from web search to anchor a deep-dive opening."""
+
+    deep_dive_id: Literal["deep_dive_1", "deep_dive_2", "deep_dive_3"]
+    finding: str  # 2-3 sentence summary of a recent finding
+    source_title: str  # Title of the source article/paper
+    source_url: str  # URL
+    source_date: str  # Publication date (ISO or descriptive)
+    zotero_key: Optional[str]  # Zotero key from process_document (None if processing failed)
+    content: str  # L2 summary from process_document, or L1/snippet fallback
 
 
 class EnrichedContent(TypedDict):
@@ -100,6 +116,7 @@ class EveningReadsState(TypedDict):
 
     # Fetching phase (parallel aggregation via add reducer)
     enriched_content: Annotated[list[EnrichedContent], add]
+    right_now_hooks: Annotated[list[RightNowHook], add]
 
     # Writing phase (parallel aggregation via add reducer)
     deep_dive_drafts: Annotated[list[DeepDiveDraft], add]
@@ -111,6 +128,9 @@ class EveningReadsState(TypedDict):
 
     # Final output
     final_outputs: list[FinalOutput]  # All 4 articles with references
+
+    # Replan tracking
+    replan_attempts: int
 
     # Workflow metadata
     status: Optional[Literal["completed", "partial", "failed"]]

@@ -72,6 +72,7 @@ Avoid:
 - Topics that are just "overview of X" (that's what the overview is for)
 - Artificial divisions of naturally unified material
 - Topics where most sources would be shared with another deep-dive
+- **For right-now publications**: Topics where the primary evidence base is survey/review literature from pre-2025. If a topic's strongest available sources are foundational surveys, meta-analyses, or systematic reviews from 2020-2023, it belongs in the overview, not a deep-dive — deep-dives need recent primary findings to anchor them.
 
 ## Selecting Anchor Sources
 For each deep-dive, identify 2-3 citation keys that are:
@@ -95,7 +96,35 @@ For each deep-dive, select the narrative approach that best fits its content:
 **Important**: Aim for variety across the 3 deep-dives. The approaches should feel natural for each topic—don't force a fit.
 
 ## Temporal Orientation
-If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work. For publications that prioritise the right-now, choose topics where 2026 findings (or '25 if that's not possible) drive the story, and select recent papers as anchors. For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance."""
+If an editorial stance is provided, pay close attention to its guidance on recency — it calibrates how strongly topic selection should favour the current frontier versus durable foundational or under-appreciated work.
+
+For publications that prioritise the right-now:
+- **Each deep-dive MUST have at least 2 anchor keys from 2025 or later.** If you cannot find 2 recent anchors for a candidate topic, do NOT select that topic — pick something else that has recent primary sources.
+- **Anchor keys MUST be from the most recent available year** (2026 if available, otherwise 2025). If no 2026 papers exist in the corpus, the 2025 papers closest to the frontier should be chosen.
+- **Topic selection should be driven by what's new**, not by what's most thoroughly covered. Ask: "What finding or development from the last 12 months makes this topic worth writing about right now?" If the answer is "nothing recent" — pick a different topic.
+- Older work (pre-2025) is valuable for grounding and context, but it should support the story, not anchor it.
+- The citation key list is grouped into "Recent (2025-2026)" and "Older (pre-2025)". Start your anchor selection from the Recent group.
+
+For publications that value older literature, topics built around enduring questions or long-established mechanisms are perfectly appropriate. Let the stance guide this balance.
+
+The citation key list below includes publication years where available. Use these years to guide your anchor key selection."""
+
+REPLAN_FEEDBACK_SECTION = """
+
+## Replan Feedback
+
+A web search for recent developments (last 21 days) was run for each planned deep-dive topic.
+The results are below:
+
+{feedback}
+
+Please respond by EITHER:
+
+1. **Adjusting the zero-hook topics**: Pick a different theme angle where recent primary sources are available (2025-2026 papers with actual new findings, not surveys or reviews). You may keep the topics that already have hooks.
+
+2. **Keeping the original topics**: If you believe the original topics are the best fit for the literature review and you cannot find a viable alternative with recent hooks, you may keep them unchanged. The writer will anchor in the foundational material. This is a valid choice — not every topic has recent developments, and forcing a poor fit is worse than proceeding without a recency hook.
+
+Favour Option 1 when possible, but Option 2 is acceptable when the alternative would mean departing from the literature review's strongest material."""
 
 PLANNING_USER_TEMPLATE = """## Literature Review to Plan From:
 
@@ -124,6 +153,13 @@ Theme: {theme}
 These themes are covered elsewhere in the series. Do NOT significantly overlap with them. Brief mentions for context are fine, but the substance of your piece must be distinct.
 
 Target: 2,500-3,500 words
+
+## Recency
+When an editorial stance emphasises recency:
+- **Lead with the newest finding.** Your opening hook should come from 2026 sources if available, 2025 otherwise.
+- **Structure as "new finding changes the picture"**, not "old framework confirmed by recent data." If your topic has deep historical roots (e.g., a mechanism first described decades ago), the question to answer is: "What happened in 2025-2026 that makes this old problem newly urgent, newly complicated, or newly solvable?" The recent evidence should drive the narrative; the foundational work provides context for why the new evidence matters.
+- Pre-2025 work should appear after you've established what's new, as context for why it matters — not as the analytical backbone with recent citations as decoration.
+- Prioritize citations from the "Recent Sources" list appended to this prompt.
 """
 
 # Common style guidelines for all deep-dive prompts
