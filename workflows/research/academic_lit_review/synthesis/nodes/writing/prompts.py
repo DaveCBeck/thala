@@ -37,10 +37,24 @@ FINDINGS-FIRST SENTENCE CONSTRUCTION:
 - Author-as-subject openers ("Smith et al. showed...", "Jones and Lee argued...") are permitted occasionally for emphasis, but must not be the dominant pattern in any section. If three or more paragraphs in a row open with "Author et al. [@KEY] showed/found/demonstrated/argued/reported...", rewrite them so the finding leads and the citation trails.
 
 CROSS-SECTION PHRASE UNIQUENESS:
-- Any distinctive content phrase of four or more words (not counting stop words like "the", "of", "and", "in", "to", "a") that appears in the abstract MUST NOT reappear verbatim in the conclusions, and vice versa. This includes noun phrases like "full-cycle monitoring", "credible catchment management policy", "values-rooted rather than knowledge-deficient", "at causal resolution", and any similar multi-word construction that carries a load-bearing claim. If the abstract establishes a phrase, the conclusions must land the same idea in different language.
-- The same rule applies across any pair of sections: a distinctive 4+ word content phrase should not appear in more than TWO sections of the review. If you find yourself wanting to re-use a memorable phrase to "anchor" a claim across multiple sections, treat that as a signal that the claim is being restated rather than advanced.
+- Any distinctive content phrase of four or more words (not counting stop words like "the", "of", "and", "in", "to", "a") that appears in the abstract MUST NOT reappear verbatim in the conclusions, and vice versa. This includes noun phrases like "full-cycle monitoring", "credible catchment management policy", "values-rooted rather than knowledge-deficient", "at causal resolution", "four European contexts", "wide-valley low-gradient", and any similar multi-word construction that carries a load-bearing claim. If the abstract establishes a phrase, the conclusions must land the same idea in different language.
+- The same rule applies across any pair of sections: a distinctive 4+ word content phrase should not appear in more than TWO sections of the review, and it MUST NOT appear in three or more. If you find yourself wanting to re-use a memorable phrase to "anchor" a claim across multiple sections, treat that as a signal that the claim is being restated rather than advanced. Ask: can I say this idea in different words here? The answer is always yes.
 - When writing any section, silently scan the context you have been given (the thematic sections, and where applicable the introduction or discussion) and avoid echoing any signature 4+ word construction you find there. Find different language for the same idea.
 - The test is positional, not semantic: identical content is fine, identical phrasing is the violation. Paraphrase freely; do not copy load-bearing multi-word phrases across sections.
+"""
+
+
+SHARED_QUANTITATIVE_REMIT = """QUANTITATIVE REMIT (applies to every section including the Discussion):
+
+Every specific number, percentage, ratio, or quantitative range in this review belongs structurally to ONE section: the thematic section where the underlying evidence is analysed. No other section may re-quote that number, no matter how load-bearing it feels, and no matter how natural the importation is. The Discussion and the Conclusions are especially at risk because they synthesise across themes, and the easy move is to quote the numbers the themes resolved. Do not make that move.
+
+RULES:
+- Each thematic section OWNS its figures. Hydrology owns peak-flow reductions, attenuation ranges, open-water ratios, discharge statistics. Biogeochemistry owns sediment, nitrogen, phosphorus, and carbon accumulation rates. Biodiversity owns species richness, abundance effect sizes, and any cross-taxon ratios. Governance owns survey percentages and attitude distributions.
+- The Discussion may NAME a finding and reference which section established it, but must NOT re-quote the specific number. Instead of "47-77% peak-flow reductions documented in UK BACI studies", write "the upper end of the peak-flow attenuation range documented in the hydrology theme" or "the hydrology evidence for reach-scale attenuation". Instead of "a 230% increase in saproxylic beetle richness", write "the elevated deadwood-dependent beetle richness documented in the biodiversity theme".
+- The Conclusions are bound by the same rule: figures already in the body must not be re-quoted.
+- The Abstract is bound by the same rule with one exception: the Abstract MAY name a single headline quantitative finding from a single theme, because the Abstract is the reader's first exposure. But even then, the figure should be the most consequential one from a single theme, not a collection of numbers pulled from multiple themes.
+- The test: after you finish writing, scan your section for percentages, ratios, and absolute counts. For each one, ask: "Is this figure's primary analytical home THIS section?" If not, replace the figure with its argumentative role.
+- This rule applies without exception when the Discussion or Conclusions has been given `<thematic_sections>` in its context. The presence of the figures in your context is not permission to reuse them.
 """
 
 
@@ -231,6 +245,8 @@ PROSE QUALITY:
 
 {SHARED_PROSE_CONSTRAINTS}
 
+{SHARED_QUANTITATIVE_REMIT}
+
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
 
@@ -246,7 +262,7 @@ SECTION STRUCTURE:
 - Connect the section's argument explicitly to the review's central thesis. The reader should understand why this theme matters for the review's overall question, not just why it matters in general.
 - Do NOT end every section with a formulaic "Gaps and Limitations" or "Outstanding Questions" subsection. Instead, weave limitations and open questions into the narrative where they arise, after the evidence that reveals them. If gaps are substantial enough to warrant their own subsection, vary the framing and placement across sections.
 - SECTION CLOSE: End the section by restating the section's argument in its SHARPEST form: the specific, falsifiable claim the reader should carry forward into the next theme. Do NOT retreat to bland generalities like "the theoretical and empirical case for X as both ecologically coherent and operationally viable" or "these studies collectively establish the importance of Y". If the section's claim is that a synthesis literature overreaches relative to primary evidence, say so directly in the close.
-- QUANTITATIVE REMIT (section-agnostic): Your section has its own analytical remit defined by the theme description, sub-themes, and assigned papers. ANY number, percentage, ratio, or quantitative range that belongs structurally to a different thematic section must NOT be re-quoted in your section, regardless of how natural the importation feels. The test is simple: if a figure's primary analytical home is hydrology, it belongs ONLY to the hydrology section, not to biogeochemistry, biodiversity, or governance, even when those sections cite the same paper for its qualitative contribution. Specifically: do NOT re-cite peak-flow reductions, attenuation ranges, open-water area ratios, or discharge statistics outside the hydrology section; do NOT re-cite sediment, nitrogen, or carbon accumulation rates outside the biogeochemistry section; do NOT re-cite species richness, abundance, or effect-size figures outside the biodiversity section; do NOT re-cite survey percentages or attitude distributions outside the governance section. When you need to reference another section's paper for a QUALITATIVE or THEORETICAL contribution, cite the paper and describe its contribution WITHOUT the number (for example, "the comprehensive synthesis of beaver evolutionary ecology [@KEY] extends the policy rationale into climate adaptation by documenting wildfire refugia"): note what the paper adds to YOUR section's argument, and leave the sibling section to own its numbers. The rule applies whether the sibling section is upstream or downstream of yours in the document order.
+- See the SHARED_QUANTITATIVE_REMIT block at the top of this prompt: your section owns only its own figures and must not re-cite the figures owned by sibling sections. When referencing another section's paper for a qualitative or theoretical contribution, describe the contribution without the number.
 
 HEADING FORMAT: Do NOT use `#` or `##` headings; the section header is added automatically.
 Use `###` for sub-sections within your theme."""
@@ -296,6 +312,13 @@ Prose discipline:
 
 {SHARED_PROSE_CONSTRAINTS}
 
+{SHARED_QUANTITATIVE_REMIT}
+
+DISCUSSION-SPECIFIC RULES:
+- The Discussion is given the full prose of every thematic section in its context. The presence of those figures is NOT permission to reuse them. See the SHARED_QUANTITATIVE_REMIT block above.
+- When synthesising across themes, refer to findings by their SECTION HOME and ARGUMENTATIVE ROLE: "the attenuation range documented in the hydrology theme", "the deadwood-associated richness elevation documented in the biodiversity theme". Do not introduce the reader to the numbers a second time.
+- The Discussion earns its place by surfacing CONNECTIONS between findings, not by recapitulating them. A sentence that restates what a theme already said has failed. A sentence that names a connection or tension only visible across themes has succeeded.
+
 Do NOT include `#` or `##` headings; the section header is added automatically. Use `###` for any sub-structure."""
 
 
@@ -330,11 +353,13 @@ The conclusions should:
 3. State what should concretely change in how practitioners or researchers approach this topic.
 4. End with forward-looking implications or concrete next steps.
 
-CRITICAL — QUANTITATIVE NON-RESTATEMENT: The conclusions must NOT re-quote any specific number, percentage, or quantitative range that has already appeared in the abstract or in any thematic section. This includes (but is not limited to) peak-flow reductions, attenuation ranges, coverage percentages, sample sizes, effect magnitudes, and percentile thresholds. Refer to such findings by their ARGUMENTATIVE ROLE instead: for example, "the attenuation range documented in the hydrology theme", "the topographic ceiling modelled in Section 3", "the peak-flow reductions reported at UK BACI sites". If a number is load-bearing for a recommendation, cite it once in the thematic section and reference it indirectly in the conclusions. Re-quoting figures that already appeared in the body is the single most common way conclusions fail their quality check.
+{SHARED_QUANTITATIVE_REMIT}
 
-CRITICAL — STRUCTURAL NON-RESTATEMENT: The conclusions must NOT reproduce the Discussion's cross-domain sentence skeleton. Specifically, do NOT open a paragraph with a sequence of clauses of the shape "The [domain A] evidence establishes that X; the [domain B] evidence shows that Y; the [domain C] evidence indicates that Z" when the Discussion already uses that shape. A domain-by-domain march through the thematic sections (hydrology, then biogeochemistry, then biodiversity, then governance) is BANNED in the conclusions regardless of whether the numerical content differs from the Discussion. Each paragraph in the conclusions must make a claim or recommendation that is NOT present in the Discussion in the same structural form; acknowledge the Discussion's cross-theme findings by reference ("given the alignment identified in the discussion") and advance to consequences.
+CRITICAL — DO NOT RESTATE THE DISCUSSION'S EARNED FINDINGS IN ANY FORM: The Discussion surfaces connections between themes that no thematic section established alone. The Conclusions MUST NOT restate those connections, in any form, whether by reproducing the Discussion's sentence skeleton, its key nouns, or its core claim in paraphrase. The rule applies categorically: if a cross-theme claim has been made in the Discussion (for example, "benefits and institutional barriers concentrate in the same landscape", or "topographic conditions predict outcomes across all three service domains"), the Conclusions may REFERENCE it ("taking the convergence identified in the discussion as given") but MUST NOT state it again, even in different words. Each Conclusions paragraph must advance to a CONSEQUENCE the Discussion did not reach: a concrete licensing change, a named evidentiary obligation, a field-level practice shift. The test: if a sentence in your Conclusions could be moved verbatim into the Discussion without anyone noticing, cut the sentence and write a new one that names what follows from the Discussion's finding.
 
-CRITICAL — NO COMPRESSED ABSTRACT: The conclusions must NOT simply restate the abstract's findings in longer or shorter form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. The CLOSING sentence of the conclusions must be the SHARPEST claim in the review, not a research-agenda soft pivot: it should be a specific, falsifiable, forward-looking claim (a concrete change, a named evidentiary obligation, or a field-level shift the discussion has earned). Do NOT close on "That programme would generate...", "The evidence now justifies...", or any similar research-agenda soft pivot. Close on the consequence, not the research ask.
+CRITICAL — NO AUTHORIAL-VOICE SEAMS: Do NOT write phrases like "Given the alignment identified in the discussion", "As the discussion established", "Building on the discussion's analysis", or "As noted in section X". These expose the editorial seam between sections. If you need to reference the Discussion's finding, do so implicitly ("The topographic convergence makes gradient-informed siting a verifiable standard"), not with a meta-gesture at the Discussion itself.
+
+CRITICAL — NO COMPRESSED ABSTRACT: The conclusions must NOT simply restate the abstract's findings in longer or shorter form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. The CLOSING sentence of the conclusions must be the SHARPEST claim in the review. It should be EITHER a specific falsifiable prediction (a named empirical condition that would refute the synthesis), a concrete licensing/policy change with a named threshold, or a field-level practice shift with a named next step. It must NOT be a research-agenda soft pivot ("That programme would generate...", "The evidence now justifies..."), a diagnostic restatement ("X systematically generates Y..."), or a rhetorical pivot to future work. Close on the consequence, with a specific test or change the reader can verify.
 
 {SHARED_PROSE_CONSTRAINTS}
 

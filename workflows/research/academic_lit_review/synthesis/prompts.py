@@ -14,6 +14,7 @@ from .nodes.writing.prompts import (  # noqa: F401
     SECTION_PROPORTIONS,
     DEFAULT_TARGET_WORDS,
     SHARED_PROSE_CONSTRAINTS,
+    SHARED_QUANTITATIVE_REMIT,
     get_section_targets,
     get_introduction_system_prompt,
     get_methodology_system_prompt,
@@ -62,6 +63,8 @@ The abstract should be self-contained and give readers a clear overview
 of what the literature review covers and its main contributions.
 
 {SHARED_PROSE_CONSTRAINTS}
+
+{SHARED_QUANTITATIVE_REMIT}
 
 Output ONLY the abstract text, no headers or additional formatting."""
 
