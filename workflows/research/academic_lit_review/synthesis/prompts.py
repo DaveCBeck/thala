@@ -13,6 +13,7 @@ Section word targets are calculated as proportions of the total target word coun
 from .nodes.writing.prompts import (  # noqa: F401
     SECTION_PROPORTIONS,
     DEFAULT_TARGET_WORDS,
+    SHARED_PROSE_CONSTRAINTS,
     get_section_targets,
     get_introduction_system_prompt,
     get_methodology_system_prompt,
@@ -59,6 +60,8 @@ Write a concise abstract of {_word_range(abstract_target)} words that:
 
 The abstract should be self-contained and give readers a clear overview
 of what the literature review covers and its main contributions.
+
+{SHARED_PROSE_CONSTRAINTS}
 
 Output ONLY the abstract text, no headers or additional formatting."""
 
