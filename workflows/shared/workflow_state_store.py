@@ -28,6 +28,7 @@ Usage:
 import gzip
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -73,8 +74,11 @@ def _deserialize_hook(obj: dict) -> Any:
 def should_persist_state() -> bool:
     """Check if workflow state should be persisted to disk.
 
-    State is only persisted in dev/test mode to avoid disk I/O in production.
+    Enabled when THALA_PERSIST_STATE=1 or THALA_MODE=dev.
     """
+    explicit = os.getenv("THALA_PERSIST_STATE", "").strip()
+    if explicit:
+        return explicit == "1"
     return is_dev_mode()
 
 
@@ -116,7 +120,7 @@ def save_workflow_state(
         Path to saved state file, or None if persistence is disabled
     """
     if not should_persist_state():
-        logger.debug("State persistence disabled (THALA_MODE != dev)")
+        logger.debug("State persistence disabled (THALA_PERSIST_STATE not set and THALA_MODE != dev)")
         return None
 
     try:
