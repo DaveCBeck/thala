@@ -379,3 +379,6 @@ class AcademicLitReviewState(TypedDict):
 
     # LLM broker mode (flows from input.llm_mode)
     llm_mode: Optional[UserMode]
+
+    # Editorial stance (loaded from .thala/editorial_stances/ when task has a publication)
+    editorial_stance: Optional[str]

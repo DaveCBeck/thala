@@ -60,6 +60,7 @@ async def synthesis_phase_node(state: AcademicLitReviewState) -> dict[str, Any]:
         quality_settings=quality_settings,
         zotero_keys=zotero_keys,
         transparency_report=transparency_report,
+        editorial_stance=state.get("editorial_stance"),
     )
 
     final_review = synthesis_result.get("final_review", "")

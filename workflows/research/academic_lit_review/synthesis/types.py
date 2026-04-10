@@ -97,6 +97,7 @@ class SynthesisState(TypedDict):
     cluster_analyses: list[ClusterAnalysis]
     zotero_keys: dict[str, str]
     transparency_report: Optional[TransparencyReport]
+    editorial_stance: Optional[str]
     introduction_draft: str
     methodology_draft: str
     thematic_section_drafts: dict[str, str]

@@ -127,6 +127,7 @@ class LitReviewFullWorkflow(BaseWorkflow):
                     quality=quality,
                     language=language,
                     date_range=date_range,
+                    category=task.get("category"),
                 )
                 checkpoint_callback("lit_review", phase_outputs={"lit_result": lit_result})
                 # Flush to ensure phase_outputs are persisted before next phase

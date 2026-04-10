@@ -18,6 +18,7 @@ from .prompts import (
     DISCUSSION_USER_TEMPLATE,
     get_conclusions_system_prompt,
     CONCLUSIONS_USER_TEMPLATE,
+    EDITORIAL_STANCE_SECTION,
     DEFAULT_TARGET_WORDS,
 )
 
@@ -231,6 +232,12 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
     )
 
+    # Append editorial stance to user prompts when present (priors, not mandates)
+    editorial_stance = state.get("editorial_stance")
+    if editorial_stance:
+        stance_block = EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
+        discussion_prompt += f"\n\n{stance_block}"
+
     discussion_response = await invoke(
         tier=ModelTier.SONNET,
         system=discussion_system,
@@ -252,6 +259,10 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         thematic_content=thematic_content,
         discussion=discussion,
     )
+
+    if editorial_stance:
+        stance_block = EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
+        conclusions_prompt += f"\n\n{stance_block}"
 
     conclusions_response = await invoke(
         tier=ModelTier.SONNET,

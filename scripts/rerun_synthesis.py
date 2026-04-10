@@ -80,7 +80,7 @@ def _save_output(report: str, topic: str) -> Path:
     return output_path
 
 
-async def _run(task_id_prefix: str, quality: str, enhance: bool) -> None:
+async def _run(task_id_prefix: str, quality: str, enhance: bool, category_override: str | None = None) -> None:
     from workflows.research.academic_lit_review.clustering.api import run_clustering
     from workflows.research.academic_lit_review.synthesis.api import run_synthesis
     from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
@@ -89,9 +89,19 @@ async def _run(task_id_prefix: str, quality: str, enhance: bool) -> None:
     topic = task["topic"]
     research_questions = task.get("research_questions", [])
 
+    # Load editorial stance from task category (or --category override)
+    category = category_override or task.get("category")
+    editorial_stance = None
+    if category:
+        from workflows.output.evening_reads.editorial import load_editorial_stance
+
+        editorial_stance = load_editorial_stance(category)
+
     print(f"Topic: {topic}")
     print(f"Quality: {quality}")
     print(f"Enhance: {enhance}")
+    print(f"Category: {category or '(none)'}")
+    print(f"Editorial stance: {'loaded' if editorial_stance else 'none'}")
 
     # Load frozen state
     state = _load_workflow_state(topic)
@@ -131,6 +141,7 @@ async def _run(task_id_prefix: str, quality: str, enhance: bool) -> None:
         research_questions=research_questions,
         quality_settings=quality_settings,
         zotero_keys=zotero_keys,
+        editorial_stance=editorial_stance,
     )
 
     final_report = synthesis_result.get("final_review", "")
@@ -165,7 +176,7 @@ async def main(args: argparse.Namespace) -> None:
         await get_broker().start()
 
     try:
-        await _run(args.task_id_prefix, args.quality, args.enhance)
+        await _run(args.task_id_prefix, args.quality, args.enhance, args.category)
     finally:
         await cleanup_supervisor_resources()
 
@@ -188,6 +199,11 @@ def _parse_args() -> argparse.Namespace:
         "--enhance",
         action="store_true",
         help="Also run supervision + editing after synthesis",
+    )
+    parser.add_argument(
+        "--category",
+        default=None,
+        help="Publication category override (default: from task in queue.json)",
     )
     return parser.parse_args()
 

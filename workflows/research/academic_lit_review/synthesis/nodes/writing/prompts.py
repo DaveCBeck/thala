@@ -22,6 +22,27 @@ SECTION_PROPORTIONS = {
 # Default total word count if not specified
 DEFAULT_TARGET_WORDS = 12000
 
+# Appended to discussion/conclusions user prompts when a publication stance is set.
+# Modelled on workflows/output/evening_reads/prompts.py:EDITORIAL_STANCE_SECTION.
+EDITORIAL_STANCE_SECTION = """
+## Editorial Stance (priors, not mandates)
+
+This review is written for a publication with a specific intellectual identity. The stance below represents the publication's priors. Use them to:
+- Inform which cross-theme connections you foreground
+- Shape what counts as an interesting implication vs. a routine observation
+- Flag where evidence in this review updates, confirms, or challenges these priors
+
+Do NOT:
+- Force evidence to fit the frame
+- Suppress findings that challenge the stance
+- Announce the stance by name or refer to it as "the editorial stance"
+- Add a standalone "Editorial Perspective" or "Stance" section
+
+If findings challenge a prior, engage honestly: express genuine curiosity or note the tension explicitly. The most valuable moments in a stance-informed review are where the evidence pushes back.
+
+{editorial_stance}
+"""
+
 
 def _word_range(target: int, variance: float = 0.15) -> str:
     """Format a word count target as a range (e.g., '850-1050')."""
@@ -252,13 +273,19 @@ Target length: {_word_range(word_target)} words
 Style: Analytical, forward-looking, anchored in the present moment
 Focus: Integration and implications, NOT summary. The reader should leave with a clear sense of where understanding stands right now and where it is heading.
 
+EDITORIAL STANCE ENGAGEMENT (applies only when an editorial stance section is present in the user prompt):
+- Name at least one moment where the synthesis updates or complicates a stance prior. This is the most valuable kind of finding for the publication's readers.
+- Use the stance to select which cross-theme connections to foreground; not all connections are equally interesting given the publication's commitments.
+- If a finding flatly contradicts a prior, say so directly; that is the most interesting kind of finding.
+- Do NOT name the stance, announce that you are applying priors, or use phrases like "the editorial stance" or "the publication's perspective". The stance should be invisible scaffolding that shapes what you choose to foreground; the reader sees only the argument.
+
 Prose discipline:
 - CONTRASTIVE FRAMING LIMIT: Use at most TWO contrastive-frame sentences ("X rather than Y", "not X but Y", "instead of X") in the entire discussion. State conclusions directly.
 - SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Demonstrate importance through argument, not labels.
 - Avoid "precisely," "crucially," and "fundamentally" as intensifiers.
 - Do not use "structural/structure/structurally" as vague intensifiers. Use only when referring to literal structure; otherwise choose a more precise word.
 
-Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
+Do NOT include `#` or `##` headings; the section header is added automatically. Use `###` for any sub-structure."""
 
 
 DISCUSSION_USER_TEMPLATE = """Write a discussion section that synthesizes across the thematic sections below.
@@ -294,13 +321,18 @@ The conclusions should:
 
 CRITICAL: The conclusions must NOT simply restate the abstract's findings in longer form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. Show what the synthesis earned.
 
+EDITORIAL STANCE ENGAGEMENT (applies only when an editorial stance section is present in the user prompt):
+- State concretely what this review's evidence means for readers who hold the publication's priors.
+- If a prior survives the evidence intact, note that briefly; but spend more words on priors that were complicated or updated by the synthesis.
+- Do NOT name the stance or use phrases like "the editorial stance", "the publication's perspective", or "readers who share these priors". The stance shapes what you emphasise; the reader sees only the conclusions.
+
 Target length: {_word_range(word_target)} words
 Style: Clear, definitive, direct
 Avoid: Introducing new information, hedging excessively.
 Superlative constraint: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Let the substance of each conclusion carry its own weight.
 Contrastive framing limit: Use at most ONE contrastive-frame sentence ("X rather than Y", "not X but Y") in the conclusions.
-OUTPUT HYGIENE: The output must contain only polished final prose. Do NOT include meta-commentary, self-corrections, editing notes, or internal monologue (e.g., "Wait — that sentence..." or "Let me correct..."). The reader should see only the finished text.
-Do NOT include `#` or `##` headings — the section header is added automatically. Use `###` for any sub-structure."""
+OUTPUT HYGIENE: The output must contain only polished final prose. Do NOT include meta-commentary, self-corrections, editing notes, or internal monologue (for example, "Wait, that sentence..." or "Let me correct..."). The reader should see only the finished text.
+Do NOT include `#` or `##` headings; the section header is added automatically. Use `###` for any sub-structure."""
 
 
 CONCLUSIONS_USER_TEMPLATE = """Write conclusions for this literature review.

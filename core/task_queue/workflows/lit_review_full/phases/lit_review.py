@@ -12,6 +12,7 @@ async def run_lit_review_phase(
     quality: str,
     language: str,
     date_range: Optional[dict],
+    category: Optional[str] = None,
 ) -> dict[str, Any]:
     """Run academic literature review phase.
 
@@ -21,6 +22,7 @@ async def run_lit_review_phase(
         quality: Quality level
         language: Language code
         date_range: Optional date range filter
+        category: Optional publication category (loads editorial stance)
 
     Returns:
         Literature review result with final_report and paper_corpus
@@ -35,6 +37,7 @@ async def run_lit_review_phase(
         quality=quality,
         language=language,
         date_range=date_range,
+        category=category,
     )
 
     if not lit_result.get("final_report"):
