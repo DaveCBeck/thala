@@ -13,6 +13,8 @@ Section word targets are calculated as proportions of the total target word coun
 from .nodes.writing.prompts import (  # noqa: F401
     SECTION_PROPORTIONS,
     DEFAULT_TARGET_WORDS,
+    SHARED_PROSE_CONSTRAINTS,
+    SHARED_QUANTITATIVE_REMIT,
     get_section_targets,
     get_introduction_system_prompt,
     get_methodology_system_prompt,
@@ -60,6 +62,10 @@ Write a concise abstract of {_word_range(abstract_target)} words that:
 The abstract should be self-contained and give readers a clear overview
 of what the literature review covers and its main contributions.
 
+{SHARED_PROSE_CONSTRAINTS}
+
+{SHARED_QUANTITATIVE_REMIT}
+
 Output ONLY the abstract text, no headers or additional formatting."""
 
 
@@ -67,7 +73,7 @@ ABSTRACT_USER_TEMPLATE = """Write an abstract for this literature review.
 
 Topic: {topic}
 
-You are given the introduction, the full thematic sections, the discussion, and the conclusions. The abstract must accurately preview the review's actual findings — not generic descriptions of the topic. Read everything before writing.
+You are given the introduction and the full thematic sections. You are NOT given the discussion or the conclusions, because the abstract must not preview cross-theme findings that the Discussion is responsible for earning. Read everything before writing.
 
 Introduction (for context):
 {introduction}
@@ -76,18 +82,15 @@ Introduction (for context):
 {thematic_content}
 </thematic_sections>
 
-<discussion>
-{discussion}
-</discussion>
-
-<conclusions>
-{conclusions}
-</conclusions>
-
 Write a concise abstract that:
 - States the scope and the specific question the review answers
 - Names the key themes covered (briefly)
-- Highlights the most important findings the synthesis established (specific, not generic)
-- Notes the main implications
+- Highlights the headline findings established within individual thematic sections (specific, not generic)
+- Notes one or two implications that follow directly from the thematic evidence
 
-The abstract should give a reader a clear, accurate preview of what the review actually establishes — not just what topic it covers. Do not invent findings; everything in the abstract must be supported by the sections above."""
+What the abstract MUST NOT do:
+- Do NOT state cross-theme findings that require reading two or more thematic sections together. Those belong to the Discussion. Example: if ecological benefits appear in one thematic section and institutional resistance appears in another, do NOT state their spatial or temporal coincidence here. The Discussion earns that.
+- Do NOT announce an integration argument, a structural alignment, a geographic inversion, or a temporal inversion between themes. If a finding would only be visible to a reader who had read multiple thematic sections, it is not an abstract finding.
+- Do NOT invent findings; everything in the abstract must be supported by the introduction or the thematic sections above.
+
+The abstract should give the reader an honest preview of what each theme establishes on its own, leaving the cross-theme synthesis to be discovered in the Discussion."""

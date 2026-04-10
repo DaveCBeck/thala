@@ -12,8 +12,8 @@ Section word targets are calculated as proportions of the total target word coun
 # Section proportions of total word count
 SECTION_PROPORTIONS = {
     "introduction": 0.08,
-    "methodology": 0.06,
-    "thematic_total": 0.70,
+    "methodology": 0.04,  # tightened from 0.06; routine search record, not analysis
+    "thematic_total": 0.72,
     "discussion": 0.09,
     "conclusions": 0.05,
     "abstract": 0.02,
@@ -41,6 +41,41 @@ Do NOT:
 If findings challenge a prior, engage honestly: express genuine curiosity or note the tension explicitly. The most valuable moments in a stance-informed review are where the evidence pushes back.
 
 {editorial_stance}
+"""
+
+
+SHARED_PROSE_CONSTRAINTS = """PROSE CONSTRAINTS (apply to every sentence you write):
+
+PUNCTUATION:
+- Do NOT use em-dashes (the character —, U+2014) anywhere in the output. This is an absolute ban with no exceptions: not in prose, not in headings, not in lists, not in parentheticals, not in quotations you paraphrase. Replace every em-dash with one of: a colon, a semicolon, a comma, parentheses, or by splitting the sentence. En-dashes (the character –, U+2013) in number and date ranges like "47-77%" or "1998-2025" are allowed but prefer a hyphen or the word "to" where it reads naturally. Hyphens in compound modifiers ("catchment-scale", "low-gradient") are allowed.
+
+BANNED SECTION FRAMES:
+- Do NOT open or close any paragraph, subsection, or section with "Taken together,", "Collectively,", "Together,", "Held together,", "What these [N] papers establish collectively...", or any near-variant. These phrases are banned as openers and closers. The synthesis must be carried by the claim itself, not by announcing that a synthesis has occurred.
+- Do NOT write meta-synthesis commentary of the form "no single paper/study/section could establish X", "visible only when [X] are read together", "a finding no single [X] could produce alone", or any near-variant that tells the reader that a synthesis has been performed. Show the synthesis by stating what it shows. At most ONE such meta-commentary sentence is permitted in the entire review; prefer zero.
+
+FINDINGS-FIRST SENTENCE CONSTRUCTION:
+- When introducing a study, prefer findings-first construction ("Reach-scale channel assessment has been formalized through the Morphological Quality Index [@KEY]") over author-as-subject construction ("Rinaldi et al. [@KEY] formalized reach-scale channel assessment through the MQI").
+- Author-as-subject openers ("Smith et al. showed...", "Jones and Lee argued...") are permitted occasionally for emphasis, but must not be the dominant pattern in any section. If three or more paragraphs in a row open with "Author et al. [@KEY] showed/found/demonstrated/argued/reported...", rewrite them so the finding leads and the citation trails.
+
+CROSS-SECTION PHRASE UNIQUENESS:
+- Any distinctive content phrase of four or more words (not counting stop words like "the", "of", "and", "in", "to", "a") that appears in the abstract MUST NOT reappear verbatim in the conclusions, and vice versa. This includes noun phrases like "full-cycle monitoring", "credible catchment management policy", "values-rooted rather than knowledge-deficient", "at causal resolution", "four European contexts", "wide-valley low-gradient", and any similar multi-word construction that carries a load-bearing claim. If the abstract establishes a phrase, the conclusions must land the same idea in different language.
+- The same rule applies across any pair of sections: a distinctive 4+ word content phrase should not appear in more than TWO sections of the review, and it MUST NOT appear in three or more. If you find yourself wanting to re-use a memorable phrase to "anchor" a claim across multiple sections, treat that as a signal that the claim is being restated rather than advanced. Ask: can I say this idea in different words here? The answer is always yes.
+- When writing any section, silently scan the context you have been given (the thematic sections, and where applicable the introduction or discussion) and avoid echoing any signature 4+ word construction you find there. Find different language for the same idea.
+- The test is positional, not semantic: identical content is fine, identical phrasing is the violation. Paraphrase freely; do not copy load-bearing multi-word phrases across sections.
+"""
+
+
+SHARED_QUANTITATIVE_REMIT = """QUANTITATIVE REMIT (applies to every section including the Discussion):
+
+Every specific number, percentage, ratio, or quantitative range in this review belongs structurally to ONE section: the thematic section where the underlying evidence is analysed. No other section may re-quote that number, no matter how load-bearing it feels, and no matter how natural the importation is. The Discussion and the Conclusions are especially at risk because they synthesise across themes, and the easy move is to quote the numbers the themes resolved. Do not make that move.
+
+RULES:
+- Each thematic section OWNS its figures. Hydrology owns peak-flow reductions, attenuation ranges, open-water ratios, discharge statistics. Biogeochemistry owns sediment, nitrogen, phosphorus, and carbon accumulation rates. Biodiversity owns species richness, abundance effect sizes, and any cross-taxon ratios. Governance owns survey percentages and attitude distributions.
+- The Discussion may NAME a finding and reference which section established it, but must NOT re-quote the specific number. Instead of "47-77% peak-flow reductions documented in UK BACI studies", write "the upper end of the peak-flow attenuation range documented in the hydrology theme" or "the hydrology evidence for reach-scale attenuation". Instead of "a 230% increase in saproxylic beetle richness", write "the elevated deadwood-dependent beetle richness documented in the biodiversity theme".
+- The Conclusions are bound by the same rule: figures already in the body must not be re-quoted.
+- The Abstract is bound by the same rule with one exception: the Abstract MAY name a single headline quantitative finding from a single theme, because the Abstract is the reader's first exposure. But even then, the figure should be the most consequential one from a single theme, not a collection of numbers pulled from multiple themes.
+- The test: after you finish writing, scan your section for percentages, ratios, and absolute counts. For each one, ask: "Is this figure's primary analytical home THIS section?" If not, replace the figure with its argumentative role.
+- This rule applies without exception when the Discussion or Conclusions has been given `<thematic_sections>` in its context. The presence of the figures in your context is not permission to reuse them.
 """
 
 
@@ -85,15 +120,17 @@ Write a compelling introduction that:
 3. States the research questions being addressed
 4. Outlines the scope and boundaries of the review
 5. Previews the thematic structure
-6. Conveys where the field stands right now — what makes this moment in the literature distinctive or consequential
+6. Conveys where the field stands right now: what makes this moment in the literature distinctive or consequential
+
+{SHARED_PROSE_CONSTRAINTS}
 
 Target length: {_word_range(word_target)} words
 Style: Academic, third-person, objective tone
 Include: Brief preview of each major theme that will be covered
-Framing: Orient the reader to the current state of understanding. The introduction should make clear why a review at this point in time is warranted — what has recently shifted, emerged, or been called into question.
+Framing: Orient the reader to the current state of understanding. The introduction should make clear why a review at this point in time is warranted: what has recently shifted, emerged, or been called into question.
 
-Do NOT include citations in the introduction - it should frame the review.
-Do NOT include markdown headings — your output is section body text only. Use `###` for any sub-structure."""
+Do NOT include citations in the introduction; it should frame the review.
+Do NOT include markdown headings; your output is section body text only. Use `###` for any sub-structure."""
 
 
 INTRODUCTION_USER_TEMPLATE = """Write an introduction for a literature review on:
@@ -121,20 +158,27 @@ STRICT CONSTRAINTS:
 - Never mention databases that are not listed in the data (no Web of Science, Scopus, PubMed, Google Scholar unless explicitly provided)
 - Never invent Boolean search queries, supplementary searches, or screening processes not described in the data
 - Never claim PRISMA compliance or any framework compliance unless explicitly stated
-- Every number you write must come directly from the provided data — do not estimate, round, or extrapolate
-- If a pipeline stage is missing from the data, omit it — do not fabricate what happened
+- Every number you write must come directly from the provided data; do not estimate, round, or extrapolate
+- If a pipeline stage is missing from the data, omit it; do not fabricate what happened
+
+HARD LENGTH CEILING:
+- Maximum 450 words. Not a target, a ceiling. If the content you have drafted exceeds 450 words, cut paragraphs rather than trim sentences; the methodology is a routine search-and-filter record with no analytical stakes, and length must be proportionate.
+- Cover exactly three things: (a) what was searched and how, (b) why the corpus boundaries are where they are, (c) how the thematic clusters were derived. Do NOT anticipate cross-thematic interactions, do NOT justify the inductive clustering approach separately from describing it, and do NOT write a standalone paragraph defending the inclusion of continental European or North American papers (the orienting-question scope already covers that).
+- If a pipeline stage is worth one sentence, write one sentence. If a stage would require two sentences to explain, that is a signal the stage probably does not belong in the methodology at all.
 
 PROSE QUALITY:
-- Write fluent, readable academic prose — not a mechanical enumeration of pipeline statistics
+- Write fluent, readable academic prose, not a mechanical enumeration of pipeline statistics
 - Foreground the search logic and rationale; weave numbers in naturally as supporting detail
-- You do not need to include every number from the data — omit figures that add no analytical value
+- You do not need to include every number from the data; omit figures that add no analytical value
 - Vary sentence structure; avoid listing every query or parameter in a single run-on sentence
 - The methodology should read as though written by the paper's author, not generated from a template
+
+{SHARED_PROSE_CONSTRAINTS}
 
 Target length: {_word_range(word_target)} words
 Style: Precise, process-honest, AI-neutral academic tone
 Structure: Search strategy, selection and filtering, processing, thematic organisation
-Do NOT include top-level markdown headings (`#` or `##`) — your output is section body text only. Use `###` for any sub-structure."""
+Do NOT include top-level markdown headings (`#` or `##`); your output is section body text only. Use `###` for any sub-structure."""
 
 
 METHODOLOGY_USER_TEMPLATE = """<instructions>
@@ -211,12 +255,18 @@ TEMPORAL NARRATIVE:
 - Do not relegate recent work to a "recent developments" paragraph at the end; weave it throughout as the evolving thread of the narrative
 
 PROSE QUALITY:
+- BANNED TOPIC-STATEMENT OPENERS: Do NOT open a section, subsection, or paragraph with meta-labelling like "This section argues that...", "In what follows, I argue...", "This section will show that...", "The argument of this section is...", or any near-variant. Also do NOT label a closing subsection "The Claim the Evidence Supports", "The Core Claim", or any near-variant. The section's argument must be carried by the substance of its opening and closing sentences, not announced with a meta-label. If your section's first sentence needs a prefix explaining that an argument is about to follow, rewrite the sentence so the argument is the first thing the reader sees.
 - CONTRASTIVE FRAMING LIMIT: Sentences that contrast two positions ("X rather than Y", "not X but Y", "instead of X", "X as opposed to Y", "less about X and more about Y") are useful occasionally but become a tic when overused. Use at most THREE contrastive-frame sentences per section. When you want to make a strong claim, state it directly without first naming the weaker alternative.
 - Do not use "precisely" as an intensifier. If a claim is precise, the specificity of the evidence will show it.
-- SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Use superlatives only for literal, verifiable comparisons (e.g., "the largest cohort", "the longest follow-up period"). If a finding matters, demonstrate why through the evidence and argument — do not announce it.
+- SUPERLATIVE CONSTRAINT: Never write "the most" followed by an evaluative adjective (significant, consequential, striking, critical, important, compelling, notable, comprehensive, promising). Use superlatives only for literal, verifiable comparisons (e.g., "the largest cohort", "the longest follow-up period"). If a finding matters, demonstrate why through the evidence and argument; do not announce it.
 - Avoid "crucially," "fundamentally," "remarkably," and "notably" as paragraph-opening intensifiers. Begin with the substance.
 - VOCABULARY SATURATION: Watch for overuse of any single content word. In particular, do not use "structural," "structure," or "structurally" as vague intensifiers meaning "important" or "deep." Use these words only when referring to literal structure (physical, organizational, molecular). When tempted to write "structural change" or "structural factor," ask whether a more precise word (systemic, architectural, organizational, compositional, mechanistic) better fits the specific claim.
-- SELF-CHECK: Before finalising, silently scan for any single phrase or sentence skeleton that appears more than twice and silently rewrite the excess instances. Do NOT include any meta-commentary, self-corrections, or editing notes in the output — the reader should see only polished final prose.
+- Do not over-rely on "substantially" as a magnitude intensifier; use a specific figure or omit the word.
+- SELF-CHECK: Before finalising, silently scan for any single phrase or sentence skeleton that appears more than twice and silently rewrite the excess instances. Do NOT include any meta-commentary, self-corrections, or editing notes in the output; the reader should see only polished final prose.
+
+{SHARED_PROSE_CONSTRAINTS}
+
+{SHARED_QUANTITATIVE_REMIT}
 
 Target length: {_word_range(word_target)} words
 Style: Academic, analytical, synthesizing (not just summarizing)
@@ -231,9 +281,11 @@ When citing quantitative claims (specific numbers, percentages, market projectio
 
 SECTION STRUCTURE:
 - Connect the section's argument explicitly to the review's central thesis. The reader should understand why this theme matters for the review's overall question, not just why it matters in general.
-- Do NOT end every section with a formulaic "Gaps and Limitations" or "Outstanding Questions" subsection. Instead, weave limitations and open questions into the narrative where they arise — after the evidence that reveals them. If gaps are substantial enough to warrant their own subsection, vary the framing and placement across sections.
+- Do NOT end every section with a formulaic "Gaps and Limitations" or "Outstanding Questions" subsection. Instead, weave limitations and open questions into the narrative where they arise, after the evidence that reveals them. If gaps are substantial enough to warrant their own subsection, vary the framing and placement across sections.
+- SECTION CLOSE: End the section by restating the section's argument in its SHARPEST form: the specific, falsifiable claim the reader should carry forward into the next theme. Do NOT retreat to bland generalities like "the theoretical and empirical case for X as both ecologically coherent and operationally viable" or "these studies collectively establish the importance of Y". If the section's claim is that a synthesis literature overreaches relative to primary evidence, say so directly in the close.
+- See the SHARED_QUANTITATIVE_REMIT block at the top of this prompt: your section owns only its own figures and must not re-cite the figures owned by sibling sections. When referencing another section's paper for a qualitative or theoretical contribution, describe the contribution without the number.
 
-HEADING FORMAT: Do NOT use `#` or `##` headings — the section header is added automatically.
+HEADING FORMAT: Do NOT use `#` or `##` headings; the section header is added automatically.
 Use `###` for sub-sections within your theme."""
 
 
@@ -285,6 +337,15 @@ Prose discipline:
 - Avoid "precisely," "crucially," and "fundamentally" as intensifiers.
 - Do not use "structural/structure/structurally" as vague intensifiers. Use only when referring to literal structure; otherwise choose a more precise word.
 
+{SHARED_PROSE_CONSTRAINTS}
+
+{SHARED_QUANTITATIVE_REMIT}
+
+DISCUSSION-SPECIFIC RULES:
+- The Discussion is given the full prose of every thematic section in its context. The presence of those figures is NOT permission to reuse them. See the SHARED_QUANTITATIVE_REMIT block above.
+- When synthesising across themes, refer to findings by their SECTION HOME and ARGUMENTATIVE ROLE: "the attenuation range documented in the hydrology theme", "the deadwood-associated richness elevation documented in the biodiversity theme". Do not introduce the reader to the numbers a second time.
+- The Discussion earns its place by surfacing CONNECTIONS between findings, not by recapitulating them. A sentence that restates what a theme already said has failed. A sentence that names a connection or tension only visible across themes has succeeded.
+
 Do NOT include `#` or `##` headings; the section header is added automatically. Use `###` for any sub-structure."""
 
 
@@ -314,12 +375,20 @@ def get_conclusions_system_prompt(target_words: int = DEFAULT_TARGET_WORDS) -> s
     return f"""You are writing the conclusions for a systematic literature review.
 
 The conclusions should:
-1. Answer each research question — but go beyond restating what the thematic sections already said. The conclusions should demonstrate that the synthesis revealed something the reader could not have anticipated from the introduction alone.
-2. Identify at least one finding, tension, or implication that emerged from reading across themes — something that no single section established on its own.
+1. Answer each research question, but go beyond restating what the thematic sections already said. The conclusions should demonstrate that the synthesis revealed something the reader could not have anticipated from the introduction alone.
+2. Identify at least one finding, tension, or implication that emerged from reading across themes, something that no single section established on its own.
 3. State what should concretely change in how practitioners or researchers approach this topic.
 4. End with forward-looking implications or concrete next steps.
 
-CRITICAL: The conclusions must NOT simply restate the abstract's findings in longer form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. Show what the synthesis earned.
+{SHARED_QUANTITATIVE_REMIT}
+
+CRITICAL — DO NOT RESTATE THE DISCUSSION'S EARNED FINDINGS IN ANY FORM: The Discussion surfaces connections between themes that no thematic section established alone. The Conclusions MUST NOT restate those connections, in any form, whether by reproducing the Discussion's sentence skeleton, its key nouns, or its core claim in paraphrase. The rule applies categorically: if a cross-theme claim has been made in the Discussion (for example, "benefits and institutional barriers concentrate in the same landscape", or "topographic conditions predict outcomes across all three service domains"), the Conclusions may REFERENCE it ("taking the convergence identified in the discussion as given") but MUST NOT state it again, even in different words. Each Conclusions paragraph must advance to a CONSEQUENCE the Discussion did not reach: a concrete licensing change, a named evidentiary obligation, a field-level practice shift. The test: if a sentence in your Conclusions could be moved verbatim into the Discussion without anyone noticing, cut the sentence and write a new one that names what follows from the Discussion's finding.
+
+CRITICAL — NO AUTHORIAL-VOICE SEAMS: Do NOT write phrases like "Given the alignment identified in the discussion", "As the discussion established", "Building on the discussion's analysis", or "As noted in section X". These expose the editorial seam between sections. If you need to reference the Discussion's finding, do so implicitly ("The topographic convergence makes gradient-informed siting a verifiable standard"), not with a meta-gesture at the Discussion itself.
+
+CRITICAL — NO COMPRESSED ABSTRACT: The conclusions must NOT simply restate the abstract's findings in longer or shorter form. If a reader who read only the abstract could predict every conclusion, the conclusions have failed. The CLOSING sentence of the conclusions must be the SHARPEST claim in the review. It should be EITHER a specific falsifiable prediction (a named empirical condition that would refute the synthesis), a concrete licensing/policy change with a named threshold, or a field-level practice shift with a named next step. It must NOT be a research-agenda soft pivot ("That programme would generate...", "The evidence now justifies..."), a diagnostic restatement ("X systematically generates Y..."), or a rhetorical pivot to future work. Close on the consequence, with a specific test or change the reader can verify.
+
+{SHARED_PROSE_CONSTRAINTS}
 
 EDITORIAL STANCE ENGAGEMENT (applies only when an editorial stance section is present in the user prompt):
 - State concretely what this review's evidence means for readers who hold the publication's priors.

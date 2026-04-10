@@ -82,7 +82,11 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     topic = input_data.get("topic", "Literature Review")
     target_words = quality_settings.get("target_word_count", DEFAULT_TARGET_WORDS)
 
-    # Step 1: Generate abstract using LLM (only ~250 words output)
+    # Step 1: Generate abstract using LLM (only ~250 words output).
+    # The abstract is written from the introduction and the thematic sections
+    # only. Discussion and conclusions are intentionally withheld so the abstract
+    # cannot pre-spoil cross-theme findings the Discussion is responsible for
+    # earning.
     abstract_target = int(target_words * SECTION_PROPORTIONS["abstract"])
     abstract_system = get_abstract_system_prompt(abstract_target)
     abstract_user_template = ABSTRACT_USER_TEMPLATE
@@ -107,8 +111,6 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
         topic=topic,
         introduction=introduction,
         thematic_content=thematic_content,
-        discussion=discussion,
-        conclusions=conclusions,
     )
 
     response = await invoke(
