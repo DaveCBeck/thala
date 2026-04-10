@@ -16,6 +16,9 @@ from workflows.research.academic_lit_review.state import (
     PaperAuthor,
     PaperMetadata,
 )
+from workflows.research.academic_lit_review.synthesis.citation_utils import (
+    sanitize_metadata_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +54,13 @@ def convert_to_paper_metadata(
     # Normalize DOI (remove https://doi.org/ prefix)
     doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
 
-    # Parse authors
+    # Parse authors (sanitize names to catch mojibake from OpenAlex metadata)
     authors = []
     for author_data in work_dict.get("authors", []):
         if isinstance(author_data, dict):
             authors.append(
                 PaperAuthor(
-                    name=author_data.get("name", "Unknown"),
+                    name=sanitize_metadata_text(author_data.get("name", "Unknown")),
                     author_id=author_data.get("author_id"),
                     institution=author_data.get("institution"),
                     orcid=author_data.get("orcid"),
@@ -81,7 +84,7 @@ def convert_to_paper_metadata(
 
     return PaperMetadata(
         doi=doi_clean,
-        title=work_dict.get("title", "Untitled"),
+        title=sanitize_metadata_text(work_dict.get("title", "Untitled")),
         authors=authors,
         publication_date=pub_date,
         year=year,

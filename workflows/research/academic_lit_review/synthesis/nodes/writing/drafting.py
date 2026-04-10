@@ -18,6 +18,7 @@ from .prompts import (
     DISCUSSION_USER_TEMPLATE,
     get_conclusions_system_prompt,
     CONCLUSIONS_USER_TEMPLATE,
+    EDITORIAL_STANCE_SECTION,
     DEFAULT_TARGET_WORDS,
 )
 
@@ -93,13 +94,23 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
         prompt_vars["topic"] = topic
         method_prompt = method_user_template.format(**prompt_vars)
     else:
-        # Backwards-compatible fallback when transparency_report is not available
+        # Fallback when no transparency report is available (e.g. re-runs against
+        # older saved states). The model must NOT invent search details it was not
+        # given, so we explicitly authorise a short descriptive placeholder.
         total_papers = len(paper_summaries)
         logger.debug("No transparency_report in state, using basic methodology prompt")
         method_prompt = (
-            f"Document the methodology for this literature review on: {topic}\n\n"
-            f"Total corpus: {total_papers} papers organized into {len(clusters)} themes.\n"
-            f"Date range: {actual_range}"
+            f"Write a brief methodology placeholder (maximum 120 words, one short paragraph) "
+            f"for this literature review on: {topic}\n\n"
+            f"AVAILABLE FACTS (use only these):\n"
+            f"- Final corpus: {total_papers} papers organised into {len(clusters)} thematic clusters\n"
+            f"- Date range of literature: {actual_range}\n\n"
+            f"No upstream search log is available in this run. Acknowledge that the search "
+            f"and screening record is not reproducible here, describe the corpus size and "
+            f"date range honestly, and state that thematic clusters were derived by the "
+            f"reviewer from the assembled corpus. Do NOT invent databases, Boolean queries, "
+            f"screening counts, or PRISMA steps. Do NOT reach the 450-word ceiling; stay "
+            f"well under 120 words."
         )
 
     intro_coro = invoke(
@@ -231,6 +242,12 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         research_gaps="\n".join(f"- {g}" for g in gaps[:10]) or "None explicitly identified",
     )
 
+    # Append editorial stance to user prompts when present (priors, not mandates)
+    editorial_stance = state.get("editorial_stance")
+    if editorial_stance:
+        stance_block = EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
+        discussion_prompt += f"\n\n{stance_block}"
+
     discussion_response = await invoke(
         tier=ModelTier.SONNET,
         system=discussion_system,
@@ -252,6 +269,10 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         thematic_content=thematic_content,
         discussion=discussion,
     )
+
+    if editorial_stance:
+        stance_block = EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
+        conclusions_prompt += f"\n\n{stance_block}"
 
     conclusions_response = await invoke(
         tier=ModelTier.SONNET,

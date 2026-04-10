@@ -21,6 +21,7 @@ async def academic_lit_review(
     quality: QualityTier = "standard",
     language: str = "en",
     date_range: Optional[tuple[int, int]] = None,
+    category: Optional[str] = None,
 ) -> dict[str, Any]:
     """Run a complete academic literature review workflow.
 
@@ -32,6 +33,7 @@ async def academic_lit_review(
         quality: Quality tier - "quick", "standard", "comprehensive", "high_quality"
         language: ISO 639-1 language code (default: "en")
         date_range: Optional (start_year, end_year) filter
+        category: Optional publication category (e.g., "gaias web"); loads editorial stance
 
     Returns:
         Dict containing:
@@ -71,6 +73,15 @@ async def academic_lit_review(
 
     quality_settings = QUALITY_PRESETS[quality].copy()
 
+    # Load editorial stance if task has a publication category
+    editorial_stance = None
+    if category:
+        from workflows.output.evening_reads.editorial import load_editorial_stance
+
+        editorial_stance = load_editorial_stance(category)
+        if editorial_stance:
+            logger.info(f"Loaded editorial stance for category '{category}' ({len(editorial_stance)} chars)")
+
     # Build input
     input_data = LitReviewInput(
         topic=topic,
@@ -81,7 +92,7 @@ async def academic_lit_review(
     )
 
     # Initialize state
-    initial_state = build_initial_state(input_data, quality_settings)
+    initial_state = build_initial_state(input_data, quality_settings, editorial_stance=editorial_stance)
 
     logger.info(
         f"Starting academic literature review: '{topic}' "

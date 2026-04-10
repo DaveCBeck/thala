@@ -15,6 +15,6 @@ claude.md
 .thala/queue/publications.json
 .thala/queue/queue.json
 # Editorial calibration guide for the iterate-test analyst agents.
-# Currently missing (lost in the 2026-04-09 worktree merge incident);
-# the worktree-manager will warn until it's recreated.
 .thala/lit-review-quality-guide.md
+# Worked markup examples the analysts can reference for calibration.
+.thala/lit-review-examples

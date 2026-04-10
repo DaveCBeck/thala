@@ -1,9 +1,41 @@
 """Citation utilities for synthesis subgraph."""
 
 import re
+import unicodedata
 
 from workflows.research.academic_lit_review.state import PaperSummary
 from .types import QualityMetrics
+
+
+# Characters that appear inside words as corrupted ligatures in PDF extraction.
+# Bullet (U+2022) commonly replaces ff/fi/fl ligatures in Marker output and
+# sometimes propagates through OpenAlex metadata scraped from publisher PDFs.
+_MOJIBAKE_LIGATURE_PATTERN = re.compile(
+    r"(?<=[a-zA-Z])\u2022(?=[a-zA-Z])"  # bullet between letters
+)
+
+
+def sanitize_metadata_text(text: str) -> str:
+    """Clean common PDF/metadata encoding artifacts from text.
+
+    Handles three classes of corruption that appear in OpenAlex metadata
+    and Marker-extracted text:
+    1. Unicode ligatures (ﬀ ﬁ ﬂ ﬃ ﬄ) — resolved by NFKC normalization
+    2. Dotless-i (ı) and dotted-I (İ) — Turkish characters that replace
+       ASCII i/I in corrupted metadata
+    3. Bullet (•) replacing ligatures inside words — PDF extraction artifact
+       where the ff/fi/fl glyph is misread as a bullet character
+    """
+    if not text:
+        return text
+    # NFKC: decomposes ligatures (ﬀ→ff, ﬁ→fi, ﬂ→fl) and recomposes
+    text = unicodedata.normalize("NFKC", text)
+    # Dotless-i → i, dotted-I → I (common in corrupted author names)
+    text = text.replace("\u0131", "i").replace("\u0130", "I")
+    # Word-internal bullet → ff (most common corrupted ligature by far;
+    # covers "e•ects"→"effects", "di•erent"→"different", "o•er"→"offer")
+    text = _MOJIBAKE_LIGATURE_PATTERN.sub("ff", text)
+    return text
 
 
 def format_papers_with_keys(
@@ -32,9 +64,13 @@ def format_papers_with_keys(
                 f"Check logs for processing errors."
             )
 
+        title = sanitize_metadata_text(summary.get("title", "Unknown"))
+        authors_str = ", ".join(
+            sanitize_metadata_text(a) for a in summary.get("authors", [])[:3]
+        )
         paper_text = f"""
-[@{key}] {summary.get("title", "Unknown")} ({summary.get("year", "n.d.")})
-  Authors: {", ".join(summary.get("authors", [])[:3])}
+[@{key}] {title} ({summary.get("year", "n.d.")})
+  Authors: {authors_str}
   Key Findings: {"; ".join(summary.get("key_findings", [])[:2])}
   Methodology: {summary.get("methodology", "N/A")[:100]}"""
 

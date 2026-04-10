@@ -5,7 +5,7 @@ from typing import Any
 
 from workflows.research.academic_lit_review.state import FormattedCitation
 from ..types import SynthesisState
-from ..citation_utils import extract_citations_from_text
+from ..citation_utils import extract_citations_from_text, sanitize_metadata_text
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +26,18 @@ async def process_citations_node(state: SynthesisState) -> dict[str, Any]:
         if doi and doi in paper_summaries:
             summary = paper_summaries[doi]
             authors = summary.get("authors", [])
-            authors_str = ", ".join(authors[:3])
+            authors_str = ", ".join(
+                sanitize_metadata_text(a) for a in authors[:3]
+            )
             if len(authors) > 3:
                 authors_str += " et al."
 
+            title = sanitize_metadata_text(summary.get("title", "Untitled"))
+            venue = sanitize_metadata_text(summary.get("venue", "Unknown venue") or "Unknown venue")
+
             citation_text = (
                 f"{authors_str} ({summary.get('year', 'n.d.')}). "
-                f"{summary.get('title', 'Untitled')}. "
-                f"{summary.get('venue', 'Unknown venue')}."
+                f"{title}. {venue}."
             )
 
             references.append(

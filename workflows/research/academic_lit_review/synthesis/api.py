@@ -23,6 +23,7 @@ async def run_synthesis(
     quality_settings: QualitySettings,
     zotero_keys: Optional[dict[str, str]] = None,
     transparency_report: Optional[TransparencyReport] = None,
+    editorial_stance: Optional[str] = None,
 ) -> dict[str, Any]:
     """Run synthesis/writing as a standalone operation.
 
@@ -34,6 +35,7 @@ async def run_synthesis(
         research_questions: List of research questions
         quality_settings: Quality tier settings
         zotero_keys: Optional DOI -> Zotero key mapping
+        editorial_stance: Optional editorial stance markdown (from publication config)
 
     Returns:
         Dict with final_review, references, quality_metrics, prisma_documentation
@@ -65,6 +67,7 @@ async def run_synthesis(
         cluster_analyses=cluster_analyses,
         zotero_keys=zotero_keys,
         transparency_report=transparency_report,
+        editorial_stance=editorial_stance,
         introduction_draft="",
         methodology_draft="",
         thematic_section_drafts={},

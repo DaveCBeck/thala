@@ -14,6 +14,7 @@ from workflows.shared.language import get_language_config
 def build_initial_state(
     input_data: LitReviewInput,
     quality_settings: dict,
+    editorial_stance: str | None = None,
 ) -> AcademicLitReviewState:
     """Build initial state for the literature review workflow."""
     language_code = input_data.get("language_code", "en")
@@ -69,4 +70,5 @@ def build_initial_state(
         current_status="Starting literature review",
         langsmith_run_id=str(uuid.uuid4()),
         errors=[],
+        editorial_stance=editorial_stance,
     )
