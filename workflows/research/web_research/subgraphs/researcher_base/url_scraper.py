@@ -2,12 +2,53 @@
 
 import asyncio
 import logging
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 from core.scraping import get_url, GetUrlOptions
 from workflows.research.web_research.state import ResearcherState, WebSearchResult
 
 logger = logging.getLogger(__name__)
+
+# File extensions that are never useful web pages to scrape
+_JUNK_EXTENSIONS = frozenset({
+    ".txt", ".csv", ".tsv", ".json", ".xml", ".gz", ".zip", ".tar",
+    ".bz2", ".xz", ".7z", ".rar", ".parquet", ".feather", ".arrow",
+    ".sqlite", ".db", ".sql", ".log", ".dat", ".bin", ".exe",
+    ".whl", ".egg", ".rpm", ".deb", ".xls", ".xlsx",
+})
+
+# URL path patterns indicating raw data / archive indexes rather than articles
+_JUNK_PATH_PATTERNS = re.compile(
+    r"(?:"
+    r"/download/"
+    r"|/raw/"
+    r"|/archive/?$"
+    r"|/dataset[s]?/"
+    r"|/bulk/"
+    r"|/dump[s]?/"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_scrapable_url(url: str) -> bool:
+    """Return False for URLs that are obviously not web pages worth scraping."""
+    try:
+        parsed = urlparse(url)
+        path_lower = parsed.path.lower()
+
+        for ext in _JUNK_EXTENSIONS:
+            if path_lower.endswith(ext):
+                return False
+
+        if _JUNK_PATH_PATTERNS.search(parsed.path):
+            return False
+
+        return True
+    except Exception:
+        return True  # Fail open on parse errors
 
 
 async def scrape_single_url(

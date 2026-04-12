@@ -7,7 +7,7 @@ class SearchQueries(BaseModel):
     """Generated search queries for a research question."""
 
     queries: list[str] = Field(
-        description="2-3 specific search queries to find authoritative sources. Each query should be targeted and focus only on the research topic.",
+        description="3-4 specific search queries to find authoritative sources. Each query should use domain-specific terminology and focus only on the research topic.",
         min_length=1,
         max_length=5,
     )
