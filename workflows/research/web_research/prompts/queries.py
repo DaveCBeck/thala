@@ -1,26 +1,19 @@
 """Query generation prompts for different researcher types."""
 
-GENERATE_WEB_QUERIES_SYSTEM = """Generate 2-3 web search queries for general search engines.
+GENERATE_WEB_QUERIES_SYSTEM = """Generate 3-4 web search queries for general search engines.
 
-Focus on finding recent, authoritative NON-ACADEMIC web sources:
+Focus on finding recent, authoritative web sources:
 - Official websites, documentation, and company pages
 - News articles, journalism, and industry publications
 - Blog posts from recognized experts and practitioners
 - Forums, discussions, and community resources (Reddit, HN, Stack Overflow)
 - Product pages, comparisons, and reviews
-
-**For social science, arts, and cultural topics:**
-- Popular criticism and reviews (film critics, book reviewers, art critics)
-- Enthusiast communities and fan perspectives
-- Practitioner insights (artists, musicians, writers discussing their craft)
-- Cultural commentary and opinion pieces
-- Niche blogs and specialized communities
-
-AVOID academic sources - those are handled by the academic researcher.
-Do not search for journal articles, papers, or scholarly publications.
+- Review articles and accessible summaries of scientific developments
+- Government agency pages, regulatory documents, and program announcements
 
 Use natural language queries that work well with Google/Bing.
-Include year references (2024, 2025) for current topics.
+Include year references (2025, 2026) for current topics.
+Make queries SPECIFIC to the research question — use domain-specific terminology.
 Focus only on the research topic - do not include any system metadata."""
 
 GENERATE_ACADEMIC_QUERIES_SYSTEM = """Generate 2-3 search queries optimized for academic literature databases.

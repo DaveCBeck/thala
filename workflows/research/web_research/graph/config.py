@@ -32,14 +32,14 @@ QUALITY_PRESETS: dict[QualityTier, WebResearchQualitySettings] = {
         description="Minimal testing with 1 iteration (~1 min)",
     ),
     "quick": WebResearchQualitySettings(
-        max_iterations=2,
+        max_iterations=3,
         recursion_limit=50,
-        description="Fast research with 2 iterations (~5 min)",
+        description="Fast research with 3 iterations (~8 min)",
     ),
     "standard": WebResearchQualitySettings(
-        max_iterations=4,
+        max_iterations=5,
         recursion_limit=100,
-        description="Balanced research with 4 iterations (~15 min)",
+        description="Balanced research with 5 iterations (~20 min)",
     ),
     "comprehensive": WebResearchQualitySettings(
         max_iterations=8,

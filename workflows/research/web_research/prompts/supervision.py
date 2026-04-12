@@ -30,33 +30,15 @@ Focus purely on the actual research subject matter.
 Rules:
 - Generate diverse questions covering different angles
 - Respect the customized plan - focus on GAPS, not what user knows
+- Always dispatch at least 2 research questions per iteration to maximize coverage
+- When composing research questions, ensure they span DIFFERENT key questions from the brief — do not send multiple questions about the same sub-topic in one iteration
 - Complete when completeness > 85% OR max_iterations reached
 - Always cite sources in draft updates
 </Instructions>
 
 <Researcher Allocation>
-When choosing "conduct_research", allocate researchers based on topic suitability.
+When choosing "conduct_research", all researchers are web-type (Firecrawl + Perplexity).
 Total allocation must not exceed 3 researchers.
-
-**Web researchers** (Firecrawl + Perplexity): Current events, technology trends,
-product comparisons, tools/software, company info, news, practitioner blogs.
-NOT for academic papers - those go to academic researcher.
-
-**Academic researchers** (OpenAlex): Peer-reviewed research across ALL disciplines:
-STEM, social sciences, humanities, arts. Includes journals in literature, philosophy,
-musicology, art history, linguistics, etc.
-
-**Book researchers** (book_search): Foundational theory, historical context,
-comprehensive overviews, classic works, textbooks, literary criticism,
-philosophy, art history, author studies.
-
-Allocation guidelines:
-- Current tech/tools/products → Favor web (e.g., web=2, academic=1, book=0)
-- Scientific/clinical/medical → Favor academic (e.g., web=1, academic=2, book=0)
-- Humanities/arts/literature → Academic + books (e.g., web=0, academic=2, book=1)
-- Historical/theoretical/foundational → Include books (e.g., web=1, academic=1, book=1)
-- Mixed or general topics → Balanced allocation (web=1, academic=1, book=1)
-- Breaking news/current events → Web only (e.g., web=3, academic=0, book=0)
 </Researcher Allocation>
 
 <Output Format>
@@ -159,6 +141,8 @@ Focus purely on the actual research subject matter.
 Rules:
 - Generate diverse questions covering different angles
 - Respect the customized plan - focus on GAPS, not what user knows
+- Always dispatch at least 2 research questions per iteration to maximize coverage
+- When composing research questions, ensure they span DIFFERENT key questions from the brief — do not send multiple questions about the same sub-topic in one iteration
 - Maximum {max_concurrent_research_units} parallel research tasks per iteration
 - Complete when completeness > 85% OR max_iterations reached
 - Always cite sources in draft updates

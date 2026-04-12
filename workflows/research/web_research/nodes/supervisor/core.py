@@ -64,11 +64,11 @@ async def supervisor(state: DeepResearchState) -> dict[str, Any]:
         quality = state["input"].get("quality", "standard")
         max_iters = state["input"].get("max_iterations") or {
             "test": 1,
-            "quick": 2,
-            "standard": 4,
+            "quick": 3,
+            "standard": 5,
             "comprehensive": 8,
             "high_quality": 12,
-        }.get(quality, 4)
+        }.get(quality, 5)
 
         diffusion = DiffusionState(
             iteration=0,

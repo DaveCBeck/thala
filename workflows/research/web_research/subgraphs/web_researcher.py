@@ -37,14 +37,26 @@ from workflows.research.web_research.subgraphs.researcher_base import (
     create_generate_queries,
     scrape_pages as base_scrape_pages,
 )
+from workflows.research.web_research.subgraphs.researcher_base.url_scraper import (
+    is_scrapable_url,
+)
 from workflows.shared.llm_utils import ModelTier, invoke
 
 logger = logging.getLogger(__name__)
 
 # Web researcher constants
 MAX_SEARCHES = 5
-MAX_SCRAPES = 3
+MAX_SCRAPES = 5
 MAX_RESULTS_PER_SOURCE = 5
+
+
+def _relevance_score(result: WebSearchResult, question_terms: set[str]) -> float:
+    """Score a search result's relevance using title + description keyword overlap."""
+    text = f"{result.get('title', '')} {result.get('description', '')}".lower()
+    if not text.strip():
+        return 0.0
+    matches = sum(1 for term in question_terms if term in text)
+    return matches / max(len(question_terms), 1)
 
 
 async def _search_firecrawl(query: str, after_date: str | None = None) -> list[WebSearchResult]:
@@ -160,11 +172,22 @@ async def execute_searches(state: ResearcherState) -> dict[str, Any]:
             seen_urls.add(url)
             unique_results.append(r)
 
+    # Stage 1: Remove URLs that are obviously not web pages
+    scrapable = [r for r in unique_results if is_scrapable_url(r["url"])]
+    rejected_count = len(unique_results) - len(scrapable)
+    if rejected_count:
+        logger.info(f"URL filter rejected {rejected_count} non-webpage URLs")
+
+    # Stage 2: Rank by relevance to research question
+    question_text = state["question"]["question"].lower()
+    question_terms = {w for w in question_text.split() if len(w) > 3}
+    scrapable.sort(key=lambda r: _relevance_score(r, question_terms), reverse=True)
+
     logger.debug(
-        f"Web researcher: found {len(unique_results)} unique results from {len(queries)} queries "
-        f"across Firecrawl/Perplexity"
+        f"Web researcher: {len(scrapable)} scrapable results from {len(queries)} queries "
+        f"across Firecrawl/Perplexity ({rejected_count} rejected)"
     )
-    return {"search_results": unique_results[:15]}
+    return {"search_results": scrapable[:15]}
 
 
 async def scrape_pages(state: ResearcherState) -> dict[str, Any]:

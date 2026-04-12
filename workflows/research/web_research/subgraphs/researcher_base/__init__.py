@@ -9,7 +9,7 @@ Contains:
 For MD5-based PDF retrieval, use core.scraping.process_pdf_by_md5.
 """
 
-from .url_scraper import scrape_single_url, scrape_pages
+from .url_scraper import scrape_single_url, scrape_pages, is_scrapable_url
 from .query_validator import validate_queries
 from .query_generator import (
     create_generate_queries,
@@ -20,6 +20,7 @@ from .query_generator import (
 __all__ = [
     "scrape_single_url",
     "scrape_pages",
+    "is_scrapable_url",
     "validate_queries",
     "create_generate_queries",
     "generate_queries",
