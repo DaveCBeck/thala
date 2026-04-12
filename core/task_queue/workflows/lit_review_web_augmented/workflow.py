@@ -367,8 +367,7 @@ class LitReviewWebAugmentedWorkflow(BaseWorkflow):
         """
         from datetime import datetime, timedelta
 
-        from workflows.research.web_research import deep_research
-        from workflows.research.web_research.state import RecencyFilter
+        from workflows.research.web_research_team.api import deep_research_team
 
         from ..lit_review_full.phases.lit_review import run_lit_review_phase
 
@@ -378,9 +377,9 @@ class LitReviewWebAugmentedWorkflow(BaseWorkflow):
 
         # Build recency filter for web research
         after_date = (datetime.now() - timedelta(days=web_scan_window_days)).strftime("%Y-%m-%d")
-        recency_filter = RecencyFilter(after_date=after_date, quota=0.3)
+        recency_filter = {"after_date": after_date, "quota": 0.3}
 
-        # Format questions as a query string for deep_research
+        # Format questions as a query string for deep_research_team
         questions_query = f"{topic}\n\nResearch questions:\n" + "\n".join(f"- {q}" for q in augmented_questions)
 
         async def _run_lit_leg() -> Optional[dict]:
@@ -410,10 +409,9 @@ class LitReviewWebAugmentedWorkflow(BaseWorkflow):
                 logger.info("Web research leg: using cached result from checkpoint")
                 return existing_web
             try:
-                result = await deep_research(
+                result = await deep_research_team(
                     query=questions_query,
                     quality=quality,
-                    language=language,
                     recency_filter=recency_filter,
                 )
                 checkpoint_callback(
