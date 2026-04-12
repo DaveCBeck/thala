@@ -6,6 +6,7 @@ downstream supervision and evening reads phases can resolve all sources.
 """
 
 import logging
+import re
 from typing import Any, Optional
 
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
@@ -15,19 +16,48 @@ logger = logging.getLogger(__name__)
 COMBINE_SYSTEM_PROMPT = """\
 You are a research editor merging an academic literature review with web research findings into a single unified report.
 
-Both reports use Pandoc-style citations in [@KEY] format. Both sets of citations are backed by a reference manager — treat them as equally valid sources.
+The academic report uses Pandoc-style citations in [@KEY] format. The web research report may use either [@KEY] format or numbered [N] format. Both sets of citations are backed by a reference manager — treat them as equally valid sources. Maintain whichever format each citation originally uses; do NOT convert between formats. If the same paper appears in both reports under different citation keys (e.g., as both [@SOMEKEY] and [N]), keep only the [@KEY] version and drop the [N] duplicate.
 
 Guidelines:
 1. Use the academic lit review as the structural backbone — it has thematic clusters and methodology.
 2. Integrate web research findings where they add value: recency, breadth, commercial/regulatory context, or complementary evidence. Web research may surface preprints, clinical trial updates, regulatory decisions, and industry developments that academic databases haven't indexed yet — these are valuable contributions, not second-class sources.
-3. Preserve ALL [@KEY] citations from BOTH reports exactly as they appear. Do not modify, drop, or renumber any citation keys. Every [@KEY] reference in both input reports must appear in the output.
-4. When integrating web findings, keep the original [@KEY] citations inline. Do NOT convert them to footnotes, URLs, or superscript numbers.
+3. Preserve ALL citations from BOTH reports exactly as they appear — both [@KEY] and [N] format. Do not modify, drop, or renumber any citation keys. Every citation in both input reports must appear in the output.
+4. Keep all citations inline in their original format. Do NOT convert citations to footnotes, URLs, or superscript numbers. Do NOT convert [N] citations to [@KEY] or vice versa.
 5. Identify contradictions or updates where findings from one source extend or challenge the other. Let the evidence speak — do not assume one source type is inherently more reliable than the other.
 6. Integrate findings naturally — do NOT simply concatenate the two reports.
-7. Target similar word count to the academic report (integrate, don't inflate).
-8. If web research adds significant recent signal, include a brief "Recent Developments" section or integrate inline depending on volume.
+7. The combined report MUST be longer than the academic report alone — you are adding a second source, not replacing the first. Every academic section should retain its full analytical depth; web findings are added alongside, not in place of, academic arguments. A combined report shorter than the academic report is a failure.
+8. Integrate ALL web findings into the academic report's existing section structure. Do NOT create a standalone "Recent Developments" section — this produces bolt-on artifacts. If a web finding does not fit naturally into any existing section, create a new thematic section with a specific title (e.g., "SimCells and the Regulatory Classification Frontier"), not a generic recency bucket.
+9. CRITICAL — Discussion and Conclusions preservation: The academic report's Discussion and Conclusions contain cross-theme synthesis and analytical arguments that are NOT recoverable from the thematic sections. You MUST:
+   a. Preserve every named analytical argument from the academic Discussion (e.g., barrier classification frameworks, demand-side policy analysis, innovation systems diagnosis, efficacy-in-deployment arguments). These are the most valuable parts of the academic report.
+   b. Integrate web findings INTO the academic Discussion's existing argumentative structure — add new subsections or extend existing ones, do not replace the academic Discussion with a web-framed rewrite.
+   c. The combined Discussion must contain BOTH the academic analytical arguments AND the web research's updated evidence. If the academic Discussion has 6 subsections and the web adds 3 new themes, the combined Discussion should have ~9 subsections.
+   d. The combined Conclusions must preserve the academic report's forward-looking judgements and policy recommendations alongside any web-sourced updates.
+10. Preserve epistemic hedges and uncertainty qualifications from BOTH sources. If either report flags a claim as uncertain, contested, lacking independent validation, or based on stale comparisons, that hedge MUST appear in the combined report at the point where the claim is stated. Dropping uncertainty qualifications makes the combined report less honest than its inputs — this is never acceptable. If the web report contains a "Remaining Uncertainties" or equivalent section, integrate those hedges inline at the relevant claims rather than collecting them in a separate section.
 
 Output the merged report as markdown. Do NOT include any JSON wrapper or metadata — output ONLY the report text."""
+
+
+def _build_section_inventory(report: str) -> str:
+    """Extract section headings and word counts from a markdown report."""
+    lines = report.split("\n")
+    sections: list[tuple[str, int]] = []
+    current_heading = None
+    current_words = 0
+
+    for line in lines:
+        heading_match = re.match(r"^(#{1,3})\s+(.+)", line)
+        if heading_match:
+            if current_heading:
+                sections.append((current_heading, current_words))
+            current_heading = heading_match.group(2).strip()
+            current_words = 0
+        else:
+            current_words += len(line.split())
+
+    if current_heading:
+        sections.append((current_heading, current_words))
+
+    return "\n".join(f"- {heading}: ~{words} words" for heading, words in sections if words > 50)
 
 
 async def run_combine_phase(
@@ -76,10 +106,14 @@ async def run_combine_phase(
     rq_text = "\n".join(f"- {q}" for q in augmented_research_questions)
     landscape_section = f"\n\nRecent landscape context:\n{recent_landscape}" if recent_landscape else ""
 
+    # Build section inventory from academic report
+    section_inventory = _build_section_inventory(academic_report)
+
     user_prompt = (
         f"Topic: {topic}\n\n"
         f"Research questions:\n{rq_text}"
         f"{landscape_section}\n\n"
+        f"Academic report section inventory (preserve ALL sections at similar or greater depth):\n{section_inventory}\n\n"
         f"--- ACADEMIC LITERATURE REVIEW ---\n\n{academic_report}\n\n"
         f"--- WEB RESEARCH FINDINGS ---\n\n{web_report}"
     )
@@ -88,7 +122,7 @@ async def run_combine_phase(
         tier=ModelTier.OPUS,
         system=COMBINE_SYSTEM_PROMPT,
         user=user_prompt,
-        config=InvokeConfig(effort="high"),
+        config=InvokeConfig(effort="high", max_tokens=32768),
     )
 
     combined_report = response.content if isinstance(response.content, str) else ""
