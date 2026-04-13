@@ -2,7 +2,7 @@
 
 # Static system prompt (cached) - ~200 tokens, saves 90% on cache hits
 # Opus at $15/MTok base means cache hits at $1.50/MTok = 90% savings
-CHAPTER_SUMMARIZATION_SYSTEM = """You are an expert summarizer specializing in condensing academic and technical content while preserving essential meaning.
+CHAPTER_SUMMARIZATION_SYSTEM = """You are an expert summarizer for an academic research platform. You summarize chapters from published, peer-reviewed books and journal articles for a personal research library. The content you receive is from legitimately obtained scholarly works.
 
 Your task is to create a summary that captures:
 - The main arguments and thesis of the chapter

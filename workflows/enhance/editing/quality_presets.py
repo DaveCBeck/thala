@@ -68,7 +68,7 @@ EDITING_QUALITY_PRESETS: dict[str, EditingQualitySettings] = {
         max_structure_iterations=3,
         max_polish_edits=10,
         use_opus_for_analysis=True,
-        use_opus_for_generation=False,
+        use_opus_for_generation=True,
         analysis_effort="high",
         min_coherence_threshold=0.75,
         # Enhancement phase

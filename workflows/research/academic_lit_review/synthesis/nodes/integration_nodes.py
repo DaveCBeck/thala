@@ -8,7 +8,8 @@ import logging
 from typing import Any
 
 from core.llm_broker import BatchPolicy
-from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
+from workflows.shared.llm_utils import invoke, InvokeConfig
+from .writing.drafting import _writing_tier
 from workflows.shared.language import get_translated_prompt
 from ..types import SynthesisState
 from ..prompts import (
@@ -114,7 +115,7 @@ async def integrate_sections_node(state: SynthesisState) -> dict[str, Any]:
     )
 
     response = await invoke(
-        tier=ModelTier.SONNET,
+        tier=_writing_tier(quality_settings),
         system=abstract_system,
         user=abstract_prompt,
         config=InvokeConfig(

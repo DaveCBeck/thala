@@ -8,7 +8,8 @@ from typing import Any
 
 from core.llm_broker import BatchPolicy
 from workflows.shared.language import get_translated_prompt
-from workflows.shared.llm_utils import ModelTier, invoke_batch, InvokeConfig
+from workflows.shared.llm_utils import invoke_batch, InvokeConfig
+from .drafting import _writing_tier
 from workflows.shared.llm_utils.response_parsing import extract_response_content
 
 from ...citation_utils import format_papers_with_keys
@@ -60,6 +61,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             prompt_name="lit_review_thematic_user",
         )
 
+    tier = _writing_tier(quality_settings)
     cluster_labels = []
 
     logger.info(f"Submitting {len(clusters)} thematic sections")
@@ -86,7 +88,7 @@ async def write_thematic_sections_node(state: SynthesisState) -> dict[str, Any]:
             )
 
             batch.add(
-                tier=ModelTier.SONNET,
+                tier=tier,
                 system=thematic_system,
                 user=user_prompt,
                 config=InvokeConfig(

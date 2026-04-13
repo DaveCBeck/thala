@@ -15,6 +15,7 @@ class QualitySettings(TypedDict):
     recency_years: int  # Primary recent window in years (default: 1 → 2025+)
     recency_years_fallback: int  # Fallback if primary yields too few (default: 2 → 2024+)
     recency_quota: float  # Target fraction of recent papers (default: 0.35)
+    use_opus_for_writing: bool  # Use Opus for drafting, revision, and integration
 
 
 QUALITY_PRESETS: dict[str, QualitySettings] = {
@@ -28,6 +29,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         recency_years=1,
         recency_years_fallback=2,
         recency_quota=0.0,  # Skip recency quota for test tier
+        use_opus_for_writing=False,
     ),
     "quick": QualitySettings(
         max_stages=2,
@@ -39,6 +41,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         recency_years=1,
         recency_years_fallback=2,
         recency_quota=0.35,
+        use_opus_for_writing=False,
     ),
     "standard": QualitySettings(
         max_stages=3,
@@ -50,6 +53,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         recency_years=1,
         recency_years_fallback=2,
         recency_quota=0.35,
+        use_opus_for_writing=True,
     ),
     "comprehensive": QualitySettings(
         max_stages=4,
@@ -61,6 +65,7 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         recency_years=1,
         recency_years_fallback=2,
         recency_quota=0.35,
+        use_opus_for_writing=True,
     ),
     "high_quality": QualitySettings(
         max_stages=5,
@@ -72,5 +77,6 @@ QUALITY_PRESETS: dict[str, QualitySettings] = {
         recency_years=1,
         recency_years_fallback=2,
         recency_quota=0.35,
+        use_opus_for_writing=True,
     ),
 }

@@ -25,6 +25,11 @@ from .prompts import (
 logger = logging.getLogger(__name__)
 
 
+def _writing_tier(quality_settings: dict) -> ModelTier:
+    """Resolve model tier for writing nodes based on quality preset."""
+    return ModelTier.OPUS if quality_settings.get("use_opus_for_writing") else ModelTier.SONNET
+
+
 async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     """Write introduction and methodology sections."""
     input_data = state.get("input", {})
@@ -113,8 +118,10 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
             f"well under 120 words."
         )
 
+    tier = _writing_tier(quality_settings)
+
     intro_coro = invoke(
-        tier=ModelTier.SONNET,
+        tier=tier,
         system=intro_system,
         user=intro_prompt,
         config=InvokeConfig(
@@ -124,7 +131,7 @@ async def write_intro_methodology_node(state: SynthesisState) -> dict[str, Any]:
     )
 
     method_coro = invoke(
-        tier=ModelTier.SONNET,
+        tier=tier,
         system=method_system,
         user=method_prompt,
         config=InvokeConfig(
@@ -248,8 +255,10 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         stance_block = EDITORIAL_STANCE_SECTION.format(editorial_stance=editorial_stance)
         discussion_prompt += f"\n\n{stance_block}"
 
+    tier = _writing_tier(quality_settings)
+
     discussion_response = await invoke(
-        tier=ModelTier.SONNET,
+        tier=tier,
         system=discussion_system,
         user=discussion_prompt,
         config=InvokeConfig(
@@ -275,7 +284,7 @@ async def write_discussion_conclusions_node(state: SynthesisState) -> dict[str, 
         conclusions_prompt += f"\n\n{stance_block}"
 
     conclusions_response = await invoke(
-        tier=ModelTier.SONNET,
+        tier=tier,
         system=conclusions_system,
         user=conclusions_prompt,
         config=InvokeConfig(
