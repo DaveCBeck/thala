@@ -6,7 +6,8 @@ from typing import Any
 from langsmith import traceable
 
 from core.llm_broker import BatchPolicy
-from workflows.shared.llm_utils import invoke, InvokeConfig, ModelTier
+from workflows.shared.llm_utils import InvokeConfig, ModelTier
+from workflows.shared.llm_utils.integration_guard import call_text_with_guards
 from workflows.enhance.supervision.shared.prompts import (
     INTEGRATOR_SYSTEM,
     INTEGRATOR_USER,
@@ -23,21 +24,12 @@ logger = logging.getLogger(__name__)
 async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     """Integrate expansion findings into the literature review.
 
-    Uses Opus to intelligently integrate new theoretical content into
-    the existing review, following the supervisor's integration guidance.
+    Uses Opus to integrate new theoretical content into the existing review,
+    following the supervisor's integration guidance.
 
-    Args:
-        state: Current supervision state containing:
-            - current_review: The current literature review text
-            - decision: Supervisor decision with issue details and guidance
-            - expansion_result: Results from focused expansion
-            - iteration: Current iteration number
-
-    Returns:
-        State updates including:
-            - current_review: Updated review with integrated content
-            - supervision_expansions: Record of this integration
-            - iteration: Incremented iteration counter
+    On unrecoverable shrinkage or any integrator error, the exception
+    propagates so the task fails (the incremental checkpoint is retained
+    for manual recovery). No soft-fail path.
     """
     current_review = state.get("current_review", "")
     decision = state.get("decision", {})
@@ -47,9 +39,7 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     issue = decision.get("issue", {})
     if not issue:
         logger.warning("No issue details for integration, skipping")
-        return {
-            "iteration": iteration + 1,
-        }
+        return {"iteration": iteration + 1}
 
     topic = issue.get("topic", "")
     issue_type = issue.get("issue_type", "")
@@ -77,13 +67,9 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
             ],
         }
 
-    # Format paper summaries for the integrator (with zotero keys inline)
     summaries_text = _format_paper_summaries(paper_summaries, zotero_keys)
-
-    # Format citation keys as quick reference (also inline in summaries above)
     citation_keys_text = _format_citation_keys(zotero_keys)
 
-    # Build the user prompt
     user_prompt = INTEGRATOR_USER.format(
         current_review=current_review,
         topic=topic,
@@ -95,99 +81,76 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         new_citation_keys=citation_keys_text,
     )
 
-    # Use Opus for complex integration with large output capacity
-    try:
-        response = await invoke(
-            tier=ModelTier.OPUS,
-            system=INTEGRATOR_SYSTEM,
-            user=user_prompt,
-            config=InvokeConfig(
-                effort="high",
-                max_tokens=64000,
-                cache=False,
-                batch_policy=BatchPolicy.PREFER_BALANCE,
-            ),
-        )
+    # call_text_with_guards handles both (a) stop_reason=max_tokens
+    # continuations and (b) self-condensation retries. Raises
+    # IntegrationShrinkageError if the review can't be preserved — we do
+    # NOT catch it: the task should fail cleanly rather than produce a
+    # silently-truncated review that downstream loops then build on.
+    integrated_review = await call_text_with_guards(
+        input_content=current_review,
+        tier=ModelTier.OPUS,
+        system=INTEGRATOR_SYSTEM,
+        user=user_prompt,
+        config=InvokeConfig(
+            effort="high",
+            max_tokens=64000,
+            cache=False,
+            batch_policy=BatchPolicy.PREFER_BALANCE,
+        ),
+        label=f"loop1_integrator[{topic[:40]}]",
+    )
 
-        # Extract the integrated review from response
-        integrated_review = _extract_review_content(response)
+    duplicates = detect_duplicate_headers(integrated_review)
+    if duplicates:
+        logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
+        integrated_review = remove_duplicate_headers(integrated_review, duplicates)
 
-        # Clean up any duplicate headers introduced during integration
-        duplicates = detect_duplicate_headers(integrated_review)
-        if duplicates:
-            logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
-            integrated_review = remove_duplicate_headers(integrated_review, duplicates)
+    logger.info(
+        f"Integration complete for '{topic}': {len(processed_dois)} papers integrated "
+        f"(input={len(current_review)} chars, output={len(integrated_review)} chars)"
+    )
 
-        logger.info(f"Integration complete for '{topic}': {len(processed_dois)} papers integrated")
-
-        # Call checkpoint callback if provided (N=1 for supervision loops)
-        checkpoint_callback = state.get("checkpoint_callback")
-        if checkpoint_callback:
-            result = checkpoint_callback(
-                iteration + 1,
-                {
-                    "current_review": integrated_review,
-                    "iteration": iteration + 1,
-                    "supervision_expansions": state.get("supervision_expansions", [])
-                    + [
-                        {
-                            "iteration": iteration,
-                            "topic": topic,
-                            "issue_type": issue_type,
-                            "research_query": issue.get("research_query", ""),
-                            "papers_added": processed_dois,
-                            "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
-                        }
-                    ],
-                    "paper_corpus": state.get("paper_corpus", {}),
-                    "paper_summaries": state.get("paper_summaries", {}),
-                    "zotero_keys": state.get("zotero_keys", {}),
-                },
-            )
-            if hasattr(result, "__await__"):
-                await result
-            logger.debug(f"Supervision checkpoint saved at iteration {iteration + 1}")
-
-        return {
-            "current_review": integrated_review,
-            "iteration": iteration + 1,
-            "supervision_expansions": [
-                {
-                    "iteration": iteration,
-                    "topic": topic,
-                    "issue_type": issue_type,
-                    "research_query": issue.get("research_query", ""),
-                    "papers_added": processed_dois,
-                    "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
-                }
-            ],
-        }
-
-    except Exception as e:
-        logger.error(f"Integration failed: {e}")
-        # On error, keep current review but DON'T increment iteration
-        return {
-            "integration_failed": True,
-            "supervision_expansions": [
-                {
-                    "iteration": iteration,
-                    "topic": topic,
-                    "issue_type": issue_type,
-                    "research_query": issue.get("research_query", ""),
-                    "papers_added": [],
-                    "integration_summary": f"Integration failed: {e}",
-                    "failed": True,
-                }
-            ],
-            "loop_error": {
-                "loop_number": 1,
-                "iteration": iteration,
-                "node_name": "integrate_content",
-                "error_type": "integration_error",
-                "error_message": str(e),
-                "recoverable": True,
+    checkpoint_callback = state.get("checkpoint_callback")
+    if checkpoint_callback:
+        result = checkpoint_callback(
+            iteration + 1,
+            {
+                "current_review": integrated_review,
+                "iteration": iteration + 1,
+                "supervision_expansions": state.get("supervision_expansions", [])
+                + [
+                    {
+                        "iteration": iteration,
+                        "topic": topic,
+                        "issue_type": issue_type,
+                        "research_query": issue.get("research_query", ""),
+                        "papers_added": processed_dois,
+                        "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
+                    }
+                ],
+                "paper_corpus": state.get("paper_corpus", {}),
+                "paper_summaries": state.get("paper_summaries", {}),
+                "zotero_keys": state.get("zotero_keys", {}),
             },
-        }
+        )
+        if hasattr(result, "__await__"):
+            await result
+        logger.debug(f"Supervision checkpoint saved at iteration {iteration + 1}")
+
+    return {
+        "current_review": integrated_review,
+        "iteration": iteration + 1,
+        "supervision_expansions": [
+            {
+                "iteration": iteration,
+                "topic": topic,
+                "issue_type": issue_type,
+                "research_query": issue.get("research_query", ""),
+                "papers_added": processed_dois,
+                "integration_summary": f"Integrated {len(processed_dois)} papers on {topic}",
+            }
+        ],
+    }
 
 
 def _format_paper_summaries(
@@ -212,10 +175,8 @@ def _format_paper_summaries(
         short_summary = summary.get("short_summary", "")
         key_findings = summary.get("key_findings", [])
 
-        # Get zotero key - from dict or from summary field
         zotero_key = zotero_keys.get(doi) or summary.get("zotero_key", "")
 
-        # Header with citation key prominently displayed
         if zotero_key:
             lines.append(f"### [@{zotero_key}] {title} ({year})")
         else:
@@ -246,21 +207,3 @@ def _format_citation_keys(zotero_keys: dict[str, str]) -> str:
         lines.append(f"  - {doi}: [@{key}]")
 
     return "\n".join(lines)
-
-
-def _extract_review_content(response: Any) -> str:
-    """Extract review text from LLM response."""
-    if hasattr(response, "content"):
-        content = response.content
-        # Handle list of content blocks (e.g., with thinking)
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    return block.get("text", "")
-                elif isinstance(block, str):
-                    return block
-        elif isinstance(content, str):
-            return content
-
-    # Fallback
-    return str(response)

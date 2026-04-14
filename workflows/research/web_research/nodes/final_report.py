@@ -14,11 +14,9 @@ from workflows.research.web_research.prompts import (
     FINAL_REPORT_USER_TEMPLATE,
     get_today_str,
 )
-from workflows.research.web_research.utils import (
-    load_prompts_with_translation,
-    extract_text_from_response,
-)
-from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
+from workflows.research.web_research.utils import load_prompts_with_translation
+from workflows.shared.llm_utils import InvokeConfig, ModelTier
+from workflows.shared.llm_utils.integration_guard import call_text_with_guards
 
 logger = logging.getLogger(__name__)
 
@@ -119,49 +117,31 @@ async def final_report(state: DeepResearchState) -> dict[str, Any]:
         memory_context=memory_context or "No prior knowledge available.",
     )
 
-    try:
-        # Use cached invocation - system prompt is cached, user content is dynamic
-        response = await invoke(
-            tier=ModelTier.OPUS,
-            system=system_prompt,
-            user=user_prompt,
-            config=InvokeConfig(max_tokens=8192),
-        )
+    # Guarded generation: handles max_tokens continuation + shrinkage
+    # retry against the draft. max_tokens bumped to 32k to give room for
+    # thinking + regurgitation on long drafts. Errors propagate — we no
+    # longer fall back to the unprocessed draft, which masked real
+    # integration failures. Last incremental checkpoint is retained.
+    report = await call_text_with_guards(
+        input_content=draft_content,
+        tier=ModelTier.OPUS,
+        system=system_prompt,
+        user=user_prompt,
+        config=InvokeConfig(max_tokens=32000),
+        label="web_research_final_report",
+    )
 
-        report = extract_text_from_response(response)
+    citations = _extract_citations(report, findings)
+    logger.info(
+        f"Generated final report: {len(report)} chars, {len(citations)} citations "
+        f"(draft was {len(draft_content)} chars)"
+    )
 
-        # Extract citations from report
-        citations = _extract_citations(report, findings)
-
-        logger.info(f"Generated final report: {len(report)} chars, {len(citations)} citations")
-
-        return {
-            "final_report": report,
-            "citations": citations,
-            "current_status": "saving_findings",
-        }
-
-    except Exception as e:
-        logger.error(f"Final report generation failed: {e}")
-
-        # Fallback: use draft as report
-        fallback_report = f"""# Research Report: {brief.get("topic", "Unknown Topic")}
-
-## Note
-Final report generation encountered an error. Below is the draft report.
-
-{draft_content}
-
-## Error Details
-{str(e)}
-"""
-
-        return {
-            "final_report": fallback_report,
-            "citations": [],
-            "errors": [{"node": "final_report", "error": str(e)}],
-            "current_status": "saving_findings",
-        }
+    return {
+        "final_report": report,
+        "citations": citations,
+        "current_status": "saving_findings",
+    }
 
 
 def _extract_citations(report: str, findings: list) -> list[dict]:

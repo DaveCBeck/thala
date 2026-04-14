@@ -22,7 +22,8 @@ from workflows.research.academic_lit_review.state import (
     QualitySettings,
 )
 from core.llm_broker import BatchPolicy
-from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig, extract_response_content
+from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
+from workflows.shared.llm_utils.integration_guard import call_text_with_guards
 
 from workflows.enhance.supervision.shared.mini_review import (
     run_mini_review,
@@ -294,8 +295,11 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             new_citation_keys=citation_keys or "None",
         )
 
-        # Use large max_tokens for full output capacity on large reviews
-        response = await invoke(
+        # Guarded integrator: handles max_tokens continuations and retries
+        # if the model self-condenses. Raises IntegrationShrinkageError on
+        # unrecoverable shrinkage — we let it propagate (see except below).
+        updated_review = await call_text_with_guards(
+            input_content=state["current_review"],
             tier=ModelTier.OPUS,
             system=LOOP2_INTEGRATOR_SYSTEM,
             user=user_prompt,
@@ -305,9 +309,8 @@ async def integrate_findings_node(state: Loop2State) -> dict:
                 cache=False,
                 batch_policy=BatchPolicy.PREFER_SPEED,
             ),
+            label=f"loop2_integrator[{literature_base.name[:40]}]",
         )
-
-        updated_review = extract_response_content(response)
 
         merged_summaries = {**state["paper_summaries"], **new_paper_summaries}
         merged_zotero = {**state["zotero_keys"], **new_zotero_keys}
@@ -355,22 +358,11 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"Integration failed: {e}", exc_info=True)
-        # Return single-element list - the add reducer will append to existing errors
-        return {
-            "errors": [
-                {
-                    "loop_number": 2,
-                    "iteration": iteration,
-                    "node_name": "integrate_findings",
-                    "error_type": "integration_error",
-                    "error_message": str(e),
-                    "recoverable": True,
-                }
-            ],
-            "iterations_failed": iterations_failed + 1,
-            "integration_failed": True,
-        }
+        # Error-fail: propagate so the task fails cleanly rather than
+        # continuing through Loop 2 with a corrupt/shrunken review. The
+        # last incremental checkpoint is retained for manual recovery.
+        logger.error(f"Loop 2 integration failed, failing task: {e}", exc_info=True)
+        raise
 
 
 async def finalize_node(state: Loop2State) -> dict:

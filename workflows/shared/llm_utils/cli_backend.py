@@ -262,6 +262,48 @@ def _build_base_cmd(
     return cmd
 
 
+def _envelope_to_message(envelope: dict, text: str, model: str) -> AIMessage:
+    """Build an AIMessage from a Claude Code JSON envelope.
+
+    Propagates stop_reason, usage, and model into response_metadata and
+    usage_metadata so callers can detect truncation (max_tokens) and
+    measure cost, matching the broker path's metadata shape.
+    """
+    stop_reason = envelope.get("stop_reason")
+    usage_raw = envelope.get("usage") or {}
+    input_tokens = usage_raw.get("input_tokens", 0) or 0
+    output_tokens = usage_raw.get("output_tokens", 0) or 0
+
+    usage: dict = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+    if "cache_creation_input_tokens" in usage_raw:
+        usage["cache_creation_input_tokens"] = usage_raw["cache_creation_input_tokens"]
+    if "cache_read_input_tokens" in usage_raw:
+        usage["cache_read_input_tokens"] = usage_raw["cache_read_input_tokens"]
+
+    if stop_reason == "max_tokens":
+        logger.warning(
+            f"CLI response truncated (max_tokens): model={model} output_tokens={output_tokens}"
+        )
+    else:
+        logger.debug(
+            f"CLI response: model={model} stop_reason={stop_reason} output_tokens={output_tokens}"
+        )
+
+    return AIMessage(
+        content=text,
+        response_metadata={
+            "stop_reason": stop_reason,
+            "usage": usage,
+            "model": envelope.get("model") or model,
+        },
+        usage_metadata={
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        },
+    )
+
+
 async def invoke_via_cli(
     tier: ModelTier,
     system: str,
@@ -292,7 +334,7 @@ async def invoke_via_cli(
             logger.debug("CLI backend: invoking %s (text, effort=%s, attempt=%d)", model, effort, attempt + 1)
             envelope = await _run_claude_cli(cmd, user_prompt)
             text = envelope["result"]
-            return AIMessage(content=text)
+            return _envelope_to_message(envelope, text, model)
         except _RateLimitError as e:
             # Sleep until reset; do NOT count against retry budget.
             await _sleep_for_rate_limit(e, f"invoke_via_cli[{model}]")

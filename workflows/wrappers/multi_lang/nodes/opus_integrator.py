@@ -5,6 +5,10 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from workflows.shared.llm_utils import ModelTier, invoke, InvokeConfig
+from workflows.shared.llm_utils.integration_guard import (
+    IntegrationShrinkageError,
+    with_shrinkage_guard,
+)
 from workflows.wrappers.multi_lang.prompts.integration import (
     INITIAL_SYNTHESIS_SYSTEM,
     INITIAL_SYNTHESIS_USER,
@@ -93,12 +97,21 @@ async def _integrate_language(
         language_findings=language_findings,
     )
 
-    result: IntegrationOutput = await invoke(
-        tier=ModelTier.OPUS,
-        system=system_prompt,
-        user=user_prompt,
-        schema=IntegrationOutput,
-        config=InvokeConfig(max_tokens=64000),
+    async def _one_call() -> tuple[IntegrationOutput, str, str | None]:
+        r: IntegrationOutput = await invoke(
+            tier=ModelTier.OPUS,
+            system=system_prompt,
+            user=user_prompt,
+            schema=IntegrationOutput,
+            config=InvokeConfig(max_tokens=64000),
+        )
+        # Structured output — no access to stop_reason; rely on length floor.
+        return r, r.updated_document, None
+
+    result: IntegrationOutput = await with_shrinkage_guard(
+        _one_call,
+        input_chars=len(current_document),
+        label=f"multi_lang_integrate[{language_code}]",
     )
 
     integration_step: OpusIntegrationStep = {
@@ -136,12 +149,20 @@ async def _finalize_synthesis(
         integration_notes=integration_notes_formatted,
     )
 
-    result: FinalEnhancementOutput = await invoke(
-        tier=ModelTier.OPUS,
-        system=FINAL_ENHANCEMENT_SYSTEM,
-        user=user_prompt,
-        schema=FinalEnhancementOutput,
-        config=InvokeConfig(max_tokens=64000),
+    async def _one_call() -> tuple[FinalEnhancementOutput, str, str | None]:
+        r: FinalEnhancementOutput = await invoke(
+            tier=ModelTier.OPUS,
+            system=FINAL_ENHANCEMENT_SYSTEM,
+            user=user_prompt,
+            schema=FinalEnhancementOutput,
+            config=InvokeConfig(max_tokens=64000),
+        )
+        return r, r.finalized_document, None
+
+    result: FinalEnhancementOutput = await with_shrinkage_guard(
+        _one_call,
+        input_chars=len(current_document),
+        label="multi_lang_finalize",
     )
 
     return result.finalized_document
@@ -202,6 +223,11 @@ async def run_opus_integration(state: MultiLangState) -> dict:
                 integration_steps.append(step)
                 logger.debug(f"Integrated {language_result['language_name']}")
 
+            except IntegrationShrinkageError:
+                # Error-fail: systematic shrinkage across languages means
+                # the prompt/model is wrong, not a transient per-language
+                # blip. Don't swallow — let the task fail.
+                raise
             except Exception as e:
                 logger.error(f"Failed to integrate {language_code}: {e}")
                 error_dict = {
@@ -234,6 +260,11 @@ async def run_opus_integration(state: MultiLangState) -> dict:
             "current_status": "Synthesis complete",
         }
 
+    except IntegrationShrinkageError:
+        # Error-fail: propagate so the task fails with its checkpoint
+        # retained rather than persisting a silently-truncated synthesis.
+        logger.error("Multi-lang integration shrank below floor; failing task")
+        raise
     except Exception as e:
         logger.error(f"Opus integration failed: {e}")
         error_dict = {

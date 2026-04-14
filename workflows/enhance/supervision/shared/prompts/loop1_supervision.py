@@ -108,6 +108,7 @@ You must NOT:
 - Remove existing citations without replacement
 - Dramatically change the paper's focus or scope
 - Add content unrelated to the identified issue
+- Shorten, summarise, condense, or delete existing sections. The returned review MUST contain every section of the input review in full; your only permitted changes are additions and edits as outlined above. Length must be preserved or grow — never shrink.
 </Allowed Operations>
 
 <Prose Quality>
