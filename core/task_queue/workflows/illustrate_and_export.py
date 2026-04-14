@@ -170,7 +170,10 @@ class IllustrateAndExportWorkflow(BaseWorkflow):
         # Check if all articles are illustrated — if so, export batch + rsync
         all_illustrated = all(i.get("illustrated") for i in items)
         if all_illustrated:
-            return await self._export_and_sync(items, output_dir, manifest, category)
+            return await self._export_and_sync(
+                items, output_dir, manifest, category,
+                forget_uncited=bool(task.get("forget_uncited")),
+            )
 
         remaining_items = [i for i in items if not i.get("illustrated")]
         if progress_made or not errors:
@@ -187,6 +190,7 @@ class IllustrateAndExportWorkflow(BaseWorkflow):
         output_dir: Path,
         manifest: dict,
         category: str,
+        forget_uncited: bool = False,
     ) -> dict[str, Any]:
         """Export batch folder and rsync to VPS."""
         try:
@@ -204,7 +208,60 @@ class IllustrateAndExportWorkflow(BaseWorkflow):
         for item in items:
             item["exported"] = True
 
+        if forget_uncited:
+            await self._forget_uncited()
+
         return {"status": "success", "items": items, "batch_dir": str(batch_dir)}
+
+    async def _forget_uncited(self) -> None:
+        """GC stores against the union of citations across all exported batches.
+
+        Uses every markdown file under EXPORT_DIR as the keep-set, so citations
+        from earlier batches are preserved even though only the current batch
+        just finished. Failures are logged but do not break the workflow.
+        """
+        from core.stores.chroma import ChromaStore
+        from core.stores.elasticsearch.client import ElasticsearchStores
+        from core.stores.gc import (
+            build_inventory,
+            build_plan,
+            collect_cited_keys_from_dir,
+            execute_plan,
+        )
+        from core.stores.zotero import ZoteroStore
+        from core.task_queue.paths import EXPORT_DIR
+
+        try:
+            cited, files = collect_cited_keys_from_dir(EXPORT_DIR)
+            if not cited:
+                logger.warning("GC skipped: no cited keys found under %s", EXPORT_DIR)
+                return
+            logger.info("GC: %d unique citation keys across %d exported files",
+                        len(cited), len(files))
+
+            zotero = ZoteroStore()
+            try:
+                async with ElasticsearchStores() as es:
+                    chroma = ChromaStore(es_stores=es)
+                    inv = await build_inventory(zotero, es, chroma)
+                    plan = build_plan(cited, inv)
+                    logger.info(
+                        "GC plan: drop zotero=%d l0=%d l1=%d l2=%d chroma=%d",
+                        len(plan.drop_zotero), len(plan.drop_l0),
+                        len(plan.drop_l1), len(plan.drop_l2), len(plan.drop_chroma),
+                    )
+                    if plan.total_dropped == 0:
+                        logger.info("GC: nothing to drop")
+                        return
+                    await execute_plan(
+                        plan, zotero, es, chroma,
+                        reason="GC: not cited by any exported batch",
+                    )
+                    logger.info("GC: forgot %d records", plan.total_dropped)
+            finally:
+                await zotero.close()
+        except Exception as e:
+            logger.exception(f"GC step failed (non-fatal): {e}")
 
     def save_outputs(
         self,

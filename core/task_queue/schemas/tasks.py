@@ -115,6 +115,7 @@ class IllustrateAndExportTask(TypedDict):
     items: list[IllustrateExportItem]
     not_before: str | None  # ISO datetime — invisible to dispatcher until this time
     next_run_after: str | None  # ISO datetime for DEFERRED scheduling
+    forget_uncited: bool  # Opt-in: after successful rsync, GC stores against cited-in-exports keep-set
 
     # Timestamps (ISO format)
     created_at: str
