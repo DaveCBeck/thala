@@ -38,6 +38,59 @@ python3 -m core.task_queue.cli config --mode stagger_hours --stagger-hours 24
 # Start/stop daemon
 python3 -m core.task_queue.cli start
 python3 -m core.task_queue.cli stop
+
+# Pause/resume: block running workflows at their next checkpoint
+# (see "Pause / Resume" section below)
+python3 -m core.task_queue.cli pause --reason "peak-hours US"
+python3 -m core.task_queue.cli resume
+```
+
+### Pause / Resume
+
+Holds running workflows at their next natural checkpoint without killing
+the process — useful for dodging peak hours on the Claude Max subscription
+(Opus is more prone to truncation/compaction during US peak load) or any
+time you want to step aside briefly without losing an in-flight iteration.
+
+**Mechanism.** `pause` writes a flag file at `.thala/queue/paused`.
+Runners call `await wait_if_paused()` at two hook points:
+
+1. **After every incremental checkpoint save** (`IncrementalStateManager.save_progress`). In practice this means: after each supervision-loop iteration completes and is persisted, the runner blocks — the current integration always finishes and its state is on disk before anything stops.
+2. **Before each task starts** (`run_task_workflow`). A paused runner won't begin selecting or launching new tasks.
+
+Blocked callers poll the flag every 30 s. `resume` (or manually deleting
+the flag file) lets them proceed within that window.
+
+**Usage:**
+
+```bash
+# Pause — safe to run at any time; current LLM call will complete first
+python3 -m core.task_queue.cli pause --reason "back at 22:00"
+
+# Inspect
+cat .thala/queue/paused          # shows timestamp + reason
+
+# Resume
+python3 -m core.task_queue.cli resume
+```
+
+**What pause does NOT do:**
+
+- Does not interrupt an in-flight LLM call. An ongoing ~30-min Opus
+  integration runs to completion; blocking happens afterwards.
+- Does not affect tasks that don't call `save_progress` between phases
+  (e.g. a single-shot workflow mid-call).
+- Does not persist across `pause --reason` calls — subsequent pauses
+  overwrite the marker.
+
+**Automating off-peak runs.** Combine with `at` / cron:
+
+```bash
+# 13:00 UK: pause
+echo 'cd /home/dave/thala && .venv/bin/python -m core.task_queue.cli pause --reason cron' | at 13:00
+
+# 22:00 UK: resume
+echo 'cd /home/dave/thala && .venv/bin/python -m core.task_queue.cli resume' | at 22:00
 ```
 
 ### Programmatic Usage

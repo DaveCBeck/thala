@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .paths import INCREMENTAL_DIR
+from .pause import wait_if_paused
 from .schemas import IncrementalState
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,10 @@ class IncrementalStateManager:
             partial_results,
             checkpoint_interval,
         )
+        # Pause point: block here if operator has set the pause flag.
+        # Placed AFTER save so we always pause at a clean checkpointed
+        # state — never mid-iteration.
+        await wait_if_paused(label=f"incremental[{task_id[:8]} {phase}]")
 
     def _load_progress_sync(
         self,

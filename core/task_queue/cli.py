@@ -34,7 +34,16 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 from core.config import configure_logging  # noqa: E402
 
-from .commands import cmd_add, cmd_list, cmd_parallel, cmd_reorder, cmd_run, cmd_status  # noqa: E402
+from .commands import (  # noqa: E402
+    cmd_add,
+    cmd_list,
+    cmd_parallel,
+    cmd_pause,
+    cmd_reorder,
+    cmd_resume,
+    cmd_run,
+    cmd_status,
+)
 from .daemon import cmd_daemon, cmd_start, cmd_stop  # noqa: E402
 from .workflows import DEFAULT_WORKFLOW_TYPE, get_available_types  # noqa: E402
 
@@ -122,6 +131,17 @@ def main():
         "--stagger", type=float, default=3.0, help="Minutes between workflow starts (default: 3.0)"
     )
     parallel_parser.set_defaults(func=cmd_parallel)
+
+    # pause / resume: hold running workflows at the next checkpoint
+    pause_parser = subparsers.add_parser(
+        "pause",
+        help="Block workflows at their next checkpoint (until `resume` is called)",
+    )
+    pause_parser.add_argument("--reason", help="Optional note stored in the flag file")
+    pause_parser.set_defaults(func=cmd_pause)
+
+    resume_parser = subparsers.add_parser("resume", help="Clear the pause flag")
+    resume_parser.set_defaults(func=cmd_resume)
 
     args = parser.parse_args()
     args.func(args)

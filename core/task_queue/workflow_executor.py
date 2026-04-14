@@ -18,6 +18,7 @@ from core.logging import end_run, start_run
 
 from .budget_tracker import BudgetTracker
 from .checkpoint import CheckpointManager
+from .pause import wait_if_paused
 from .task_context import clear_task_context, set_task_context
 from .queue_manager import TaskQueueManager
 from .schemas import Task, TaskStatus, WorkflowCheckpoint
@@ -78,6 +79,10 @@ async def run_task_workflow(
     )
 
     try:
+        # Pre-task pause point: if the operator has paused the runner,
+        # block here before claiming the task's run_id or starting work.
+        await wait_if_paused(label=f"task[{task_id[:8]}]")
+
         # Generate langsmith_run_id (or use existing if resuming)
         if resume_from:
             langsmith_run_id = resume_from["langsmith_run_id"]
