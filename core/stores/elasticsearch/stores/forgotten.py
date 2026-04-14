@@ -43,6 +43,7 @@ class ForgottenStore(BaseElasticsearchStore):
         forgotten = ForgottenRecord(
             source_type=record.source_type,
             zotero_key=record.zotero_key,
+            content=record.content,
             forgotten_reason=reason,
             original_store=original_store,
             previous_data=previous_data or record.model_dump(mode="json"),
