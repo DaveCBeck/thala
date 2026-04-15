@@ -178,7 +178,9 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
         response = await client.post("/retrieve", json=payload)
         response.raise_for_status()
 
-        return RetrieveJobResponse.model_validate(response.json())
+        job = RetrieveJobResponse.model_validate(response.json())
+        logger.info(f"[retrieve-academic] submitted {doi} (job_id={job.job_id})")
+        return job
 
     async def get_job_status(self, job_id: str) -> RetrieveResult:
         """
@@ -269,8 +271,9 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                 # Check timeout
                 elapsed = asyncio.get_event_loop().time() - start_times[job_id]
                 if elapsed > timeout:
-                    logger.warning(
-                        f"Retrieval job for {doi} timed out after {timeout}s"
+                    logger.info(
+                        f"[retrieve-academic] failure {doi} "
+                        f"(job_id={job_id}, code=timeout): exceeded {timeout}s"
                     )
                     completed_this_round.append(
                         (doi, local_path, asyncio.TimeoutError(f"Timeout: {doi}"))
@@ -285,12 +288,18 @@ class RetrieveAcademicClient(BaseAsyncHttpClient):
                     if result.status == "completed":
                         # Download file before yielding
                         await self.download_file(job_id, local_path)
-                        logger.debug(f"Acquired full text for {doi}: {local_path}")
+                        logger.info(
+                            f"[retrieve-academic] success {doi} "
+                            f"(job_id={job_id}, path={local_path})"
+                        )
                         completed_this_round.append((doi, local_path, result))
                         pending.pop(job_id)
                     elif result.status == "failed":
                         error = Exception(f"{result.error_code}: {result.error}")
-                        logger.debug(f"Retrieval failed for {doi}: {result.error}")
+                        logger.info(
+                            f"[retrieve-academic] failure {doi} "
+                            f"(job_id={job_id}, code={result.error_code}): {result.error}"
+                        )
                         completed_this_round.append((doi, local_path, error))
                         pending.pop(job_id)
                 except Exception as e:
