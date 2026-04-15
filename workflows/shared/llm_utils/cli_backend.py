@@ -216,7 +216,17 @@ async def _run_claude_cli(
             f"claude -p failed (rc={rc}): {stderr_text[:500] or stdout_text[:300]}"
         )
 
-    envelope = json.loads(stdout_text)
+    try:
+        envelope = json.loads(stdout_text)
+    except json.JSONDecodeError as e:
+        # Truncated/malformed stdout is a transient subprocess flake (pipe
+        # buffering, SIGPIPE, partial write). Log enough context to diagnose
+        # and re-raise so invoke_via_cli's retry loop handles it.
+        logger.warning(
+            "claude -p stdout not valid JSON (%s): len=%d, head=%r, tail=%r",
+            e, len(stdout_text), stdout_text[:200], stdout_text[-200:],
+        )
+        raise
     # Defensive: also inspect the parsed result field explicitly in case
     # future Claude Code versions escape the pipe character in raw stdout.
     if isinstance(envelope, dict):
@@ -339,7 +349,7 @@ async def invoke_via_cli(
             # Sleep until reset; do NOT count against retry budget.
             await _sleep_for_rate_limit(e, f"invoke_via_cli[{model}]")
             continue
-        except (TimeoutError, RuntimeError, KeyError) as e:
+        except (TimeoutError, RuntimeError, KeyError, json.JSONDecodeError) as e:
             last_err = e
             attempt += 1
             logger.warning("CLI backend: attempt %d/%d failed: %s", attempt, _CLI_MAX_RETRIES, e)
@@ -391,7 +401,7 @@ async def invoke_structured_via_cli(
         except _RateLimitError as e:
             await _sleep_for_rate_limit(e, f"invoke_structured_via_cli[{model}]")
             continue
-        except (TimeoutError, RuntimeError, KeyError) as e:
+        except (TimeoutError, RuntimeError, KeyError, json.JSONDecodeError) as e:
             last_err = e
             attempt += 1
             logger.warning("CLI backend: attempt %d/%d failed: %s", attempt, _CLI_MAX_RETRIES, e)
@@ -520,7 +530,7 @@ async def invoke_tool_agent_via_cli(
         except _RateLimitError as e:
             await _sleep_for_rate_limit(e, f"invoke_tool_agent_via_cli[{model}]")
             continue
-        except (TimeoutError, RuntimeError, KeyError) as e:
+        except (TimeoutError, RuntimeError, KeyError, json.JSONDecodeError) as e:
             last_err = e
             attempt += 1
             logger.warning(
