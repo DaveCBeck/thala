@@ -47,12 +47,17 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
     )
 
     if result.errors:
-        raise RuntimeError(
-            f"Loop 1 finished with {len(result.errors)} error(s): "
-            f"{result.errors[0].get('error_message') or result.errors[0]}"
+        # Don't raise — inner nodes caught the exception and preserved
+        # the last-good current_review. Surface errors via state so
+        # enhance_result.status becomes "partial" and workflow_executor
+        # logs "completed with errors". Discarding result.current_review
+        # (which contains all successful iterations' work) would be worse.
+        logger.warning(
+            f"Loop 1 finished with {len(result.errors)} error(s); "
+            f"first: {result.errors[0].get('error_message') or result.errors[0]}"
         )
-
-    logger.info(f"Loop 1 complete: {result.changes_summary}")
+    else:
+        logger.info(f"Loop 1 complete: {result.changes_summary}")
 
     return {
         "current_review": result.current_review,
@@ -60,14 +65,17 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
         "loop1_result": {
             "changes_summary": result.changes_summary,
             "issues_explored": result.issues_explored,
+            "errors": result.errors,
         },
         "loop_progress": [
             {
                 "loop": "loop1",
                 "changes_summary": result.changes_summary,
                 "issues_explored": result.issues_explored,
+                "errors": result.errors,
             }
         ],
+        "errors": [{"loop": "loop1", **err} for err in result.errors],
     }
 
 
@@ -117,15 +125,19 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
 
     inner_errors = result.get("errors", []) or []
     if inner_errors:
-        raise RuntimeError(
-            f"Loop 2 finished with {len(inner_errors)} error(s): "
-            f"{inner_errors[0].get('error_message') or inner_errors[0]}"
+        # Don't raise — inner nodes caught the exception and preserved
+        # the last-good current_review (e.g. Loop 2 iter 1 output after
+        # iter 2 failed). Surface via state so enhance_result.status is
+        # "partial" and workflow_executor logs "completed with errors".
+        logger.warning(
+            f"Loop 2 finished with {len(inner_errors)} error(s); "
+            f"first: {inner_errors[0].get('error_message') or inner_errors[0]}"
         )
-
-    logger.info(
-        f"Loop 2 complete: explored {len(result.get('explored_bases', []))} literature bases, "
-        f"{len(result.get('paper_corpus', {}))} papers in corpus"
-    )
+    else:
+        logger.info(
+            f"Loop 2 complete: explored {len(result.get('explored_bases', []))} literature bases, "
+            f"{len(result.get('paper_corpus', {}))} papers in corpus"
+        )
 
     return {
         "current_review": result.get("current_review", current_review),
@@ -136,14 +148,17 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
         "loop2_result": {
             "explored_bases": result.get("explored_bases", []),
             "iteration": result.get("iteration", 0),
+            "errors": inner_errors,
         },
         "loop_progress": [
             {
                 "loop": "loop2",
                 "explored_bases": result.get("explored_bases", []),
                 "iteration": result.get("iteration", 0),
+                "errors": inner_errors,
             }
         ],
+        "errors": [{"loop": "loop2", **err} for err in inner_errors],
     }
 
 

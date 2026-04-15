@@ -108,24 +108,54 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # call_text_with_guards handles both (a) stop_reason=max_tokens
     # continuations and (b) self-condensation retries. Raises
-    # IntegrationShrinkageError if the review can't be preserved — we do
-    # NOT catch it: the task should fail cleanly rather than produce a
-    # silently-truncated review that downstream loops then build on.
-    # Note: shrinkage floor is measured on BODY length; references are
-    # excluded from both sides of the comparison.
-    integrated_body = await call_text_with_guards(
-        input_content=body,
-        tier=ModelTier.OPUS,
-        system=INTEGRATOR_SYSTEM,
-        user=user_prompt,
-        config=InvokeConfig(
-            effort="high",
-            max_tokens=64000,
-            cache=False,
-            batch_policy=BatchPolicy.PREFER_BALANCE,
-        ),
-        label=f"loop1_integrator[{topic[:40]}]",
-    )
+    # IntegrationShrinkageError on unrecoverable shrinkage, and may raise
+    # other exceptions from the underlying CLI/LLM path. We catch here
+    # and return a failure flag so the loop finalises with the last-good
+    # current_review (the prior iteration's output) instead of losing
+    # all supervision work. Note: shrinkage floor is measured on BODY
+    # length; references are excluded from both sides of the comparison.
+    try:
+        integrated_body = await call_text_with_guards(
+            input_content=body,
+            tier=ModelTier.OPUS,
+            system=INTEGRATOR_SYSTEM,
+            user=user_prompt,
+            config=InvokeConfig(
+                effort="high",
+                max_tokens=64000,
+                cache=False,
+                batch_policy=BatchPolicy.PREFER_BALANCE,
+            ),
+            label=f"loop1_integrator[{topic[:40]}]",
+        )
+    except Exception as e:
+        logger.error(
+            f"Loop 1 integration failed on '{topic}': {e}. "
+            f"Preserving current review (iteration {iteration}).",
+            exc_info=True,
+        )
+        return {
+            "integration_failed": True,
+            "loop_error": {
+                "loop_number": 1,
+                "iteration": iteration,
+                "node_name": "integrate_content",
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "recoverable": False,
+            },
+            "supervision_expansions": [
+                {
+                    "iteration": iteration,
+                    "topic": topic,
+                    "issue_type": issue_type,
+                    "research_query": issue.get("research_query", ""),
+                    "papers_added": [],
+                    "integration_summary": f"Integration failed: {type(e).__name__}: {e}",
+                    "failed": True,
+                }
+            ],
+        }
 
     # Reattach references: append entries for newly-integrated papers.
     updated_refs = append_new_references(

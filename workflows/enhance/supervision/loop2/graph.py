@@ -396,11 +396,32 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         }
 
     except Exception as e:
-        # Error-fail: propagate so the task fails cleanly rather than
-        # continuing through Loop 2 with a corrupt/shrunken review. The
-        # last incremental checkpoint is retained for manual recovery.
-        logger.error(f"Loop 2 integration failed, failing task: {e}", exc_info=True)
-        raise
+        # Catch at the lowest level so the last-good current_review (the
+        # prior iteration's output) is preserved in state. The loop
+        # routing sees integration_failed and finalises; the partial
+        # state flows back through run_loop2_node to enhance_report,
+        # which then hands it to editing. Errors are surfaced via the
+        # errors list and ultimately appear in the task-level
+        # "completed with errors" log in workflow_executor.
+        logger.error(
+            f"Loop 2 integration failed on '{literature_base.name}': {e}. "
+            f"Preserving current review (iteration {iteration}).",
+            exc_info=True,
+        )
+        return {
+            "integration_failed": True,
+            "iterations_failed": iterations_failed + 1,
+            "errors": [
+                {
+                    "loop_number": 2,
+                    "iteration": iteration,
+                    "node_name": "integrate_findings",
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "recoverable": False,
+                }
+            ],
+        }
 
 
 async def finalize_node(state: Loop2State) -> dict:
@@ -434,17 +455,18 @@ def check_continue(state: Loop2State) -> str:
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 3)
 
-    # Check for failures that didn't increment iteration
+    # Check for failures that didn't increment iteration. On any
+    # integration/mini-review failure we finalize immediately — the
+    # last-good current_review is already preserved in state, and
+    # retrying often costs another expensive Opus call without
+    # changing the underlying condition (e.g. JSONDecodeError from
+    # truncated CLI stdout that already retried 4x at the CLI layer).
     integration_failed = state.get("integration_failed", False)
     mini_review_failed = state.get("mini_review_failed", False)
-    consecutive_failures = state.get("consecutive_failures", 0)
 
     if integration_failed or mini_review_failed:
-        if consecutive_failures >= 2:
-            logger.warning("Too many consecutive failures, completing Loop 2")
-            return "finalize"
-        # Allow retry
-        return "analyze_for_bases"
+        logger.warning("Loop 2 failure detected, finalizing with preserved state")
+        return "finalize"
 
     if iteration >= max_iterations:
         logger.debug(f"Max iterations ({max_iterations}) reached")

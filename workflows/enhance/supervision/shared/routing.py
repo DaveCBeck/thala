@@ -51,19 +51,18 @@ def should_continue_supervision(state: dict[str, Any]) -> str:
     Returns:
         "continue" to loop back, "complete" to exit
     """
-    # Check for failures
+    # Check for failures. On any loop-level error, finalize with the
+    # preserved current_review — retrying the inner node without state
+    # feedback tends to be wasteful (the CLI/LLM already retried its
+    # own transient failures upstream). The last-good review flows back
+    # through the outer wrapper to enhance_report.
     loop_error = state.get("loop_error")
     expansion_failed = state.get("expansion_failed", False)
     integration_failed = state.get("integration_failed", False)
 
     if loop_error or expansion_failed or integration_failed:
-        consecutive_failures = state.get("consecutive_failures", 0) + 1
-        if consecutive_failures >= 2:
-            logger.warning("Too many consecutive failures, completing Loop 1")
-            return "complete"
-        # Allow retry - don't mark complete, continue to next iteration
-        logger.info(f"Failure detected, allowing retry (consecutive: {consecutive_failures})")
-        return "continue"
+        logger.warning("Loop 1 failure detected, completing with preserved state")
+        return "complete"
 
     # Check if marked complete (pass-through was hit in a previous iteration)
     if state.get("is_complete", False):

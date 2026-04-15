@@ -128,9 +128,17 @@ Under `standard` (target 12,000) this yields: Phase 1 ≤ 12k → combine ≤ 14
 
 Every integration call operates on **prose only**. `split_references()` (from `workflows/shared/reference_utils.py`) strips the trailing `## References` / `## Sources` / `## Bibliography` block before the LLM call; the block is reattached afterwards with entries for newly-integrated papers appended deterministically. The integrator prompts explicitly forbid emitting a references section. This saves ~1,300 output tokens per integrator call and removes the risk of the LLM corrupting citation keys.
 
-### Fail-out on loop errors
+### Error handling — preserve last-good state, mark task `partial`
 
-`run_loop1_node` and `run_loop2_node` in `nodes.py` raise `RuntimeError` if the underlying loop returns with any errors or an inner node exception propagates. This turns silent Loop-2 failures (e.g. yesterday's stale `name 'invoke' is not defined` issue) into task-level failures, so the workflow executor marks the task as failed rather than reporting "success" with a no-op supervision phase.
+Inner nodes (`analyze_review`, `integrate_content` in Loop 1; `analyze_for_bases`, `integrate_findings` in Loop 2) catch exceptions, log them at ERROR, and return a state update with `integration_failed` / `loop_error` / `errors` flags set — **without** updating `current_review`. Loop routing then finalises with the last-good review from prior iterations.
+
+Errors bubble up as `Annotated[list[dict], add]` via `EnhanceState.errors`, land in `enhance_result.errors`, drive `status=partial`, and surface in `workflow_executor` as:
+
+```
+WARNING [task_id] Task xxx completed with errors: [...]
+```
+
+This replaces an earlier design that raised to fail-out the whole task. Raising discarded successful iterations' work (e.g. a Loop 2 iter 2 failure threw away Loop 1's two iterations and Loop 2 iter 1 output). Preserve-and-partial keeps the value of what ran; silent success is still prevented because the error is visible in logs and in `enhance_result.errors`.
 
 ## Quality Settings
 
