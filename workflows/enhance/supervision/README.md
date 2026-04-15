@@ -110,6 +110,28 @@ Broadens the document's perspective by discovering adjacent literature bases:
 
 Each iteration explores one new literature base, building a more comprehensive argument.
 
+## Integrator Behaviour
+
+### Word budgets
+
+Integration LLM calls are given an explicit per-step budget. Body word counts exclude the trailing `## References` block (see "References handling" below). The LLM is told it may condense existing prose ONLY when necessary to fit the budget AND only when the new material better answers the research questions than the detail it displaces.
+
+| Step | Budget |
+|---|---|
+| Combine phase (web_augmented only) | `target_word_count + 2000` |
+| Loop 1 per integration | `body_words_in + 3000` |
+| Loop 2 per iteration | `body_words_in + 2000` |
+
+Under `standard` (target 12,000) this yields: Phase 1 ≤ 12k → combine ≤ 14k → Loop 1 ≤ 17k → Loop 2 iter 1 ≤ 19k → Loop 2 iter 2 ≤ 21k, all before the editing phase. Helper: `workflows.enhance.supervision.shared.prompts.build_word_budget_guidance`.
+
+### References handling
+
+Every integration call operates on **prose only**. `split_references()` (from `workflows/shared/reference_utils.py`) strips the trailing `## References` / `## Sources` / `## Bibliography` block before the LLM call; the block is reattached afterwards with entries for newly-integrated papers appended deterministically. The integrator prompts explicitly forbid emitting a references section. This saves ~1,300 output tokens per integrator call and removes the risk of the LLM corrupting citation keys.
+
+### Fail-out on loop errors
+
+`run_loop1_node` and `run_loop2_node` in `nodes.py` raise `RuntimeError` if the underlying loop returns with any errors or an inner node exception propagates. This turns silent Loop-2 failures (e.g. yesterday's stale `name 'invoke' is not defined` issue) into task-level failures, so the workflow executor marks the task as failed rather than reporting "success" with a no-op supervision phase.
+
 ## Quality Settings
 
 Quality affects the underlying literature review parameters:

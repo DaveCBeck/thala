@@ -33,6 +33,12 @@ from workflows.enhance.supervision.shared.prompts import (
     LOOP2_ANALYZER_USER,
     LOOP2_INTEGRATOR_SYSTEM,
     LOOP2_INTEGRATOR_USER,
+    build_word_budget_guidance,
+)
+from workflows.shared.reference_utils import (
+    append_new_references,
+    reattach,
+    split_references,
 )
 from workflows.enhance.supervision.shared.types import (
     LiteratureBase,
@@ -40,6 +46,10 @@ from workflows.enhance.supervision.shared.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Allowance applied per Loop 2 iteration — see LOOP1_WORD_ALLOWANCE in
+# shared/nodes/integrate_content.py for the overall budget rationale.
+LOOP2_WORD_ALLOWANCE_PER_ITER = 2000
 
 
 # =============================================================================
@@ -287,8 +297,23 @@ async def integrate_findings_node(state: Loop2State) -> dict:
             if doi in new_paper_summaries
         )
 
+        # Operate on prose only: strip trailing references block, let the
+        # LLM integrate into the body, then reattach with new entries
+        # deterministically appended.
+        body, refs_block = split_references(state["current_review"])
+
+        current_words = len(body.split())
+        target_words = current_words + LOOP2_WORD_ALLOWANCE_PER_ITER
+        word_budget = build_word_budget_guidance(
+            current_words=current_words,
+            target_words=target_words,
+            allowance=LOOP2_WORD_ALLOWANCE_PER_ITER,
+            phase_label=f"Loop 2 literature-expansion integration (iteration {iteration + 1})",
+        )
+
         user_prompt = LOOP2_INTEGRATOR_USER.format(
-            current_review=state["current_review"],
+            word_budget=word_budget,
+            current_review=body,
             literature_base_name=literature_base.name,
             mini_review=mini_review_text,
             integration_strategy=literature_base.integration_strategy,
@@ -298,8 +323,9 @@ async def integrate_findings_node(state: Loop2State) -> dict:
         # Guarded integrator: handles max_tokens continuations and retries
         # if the model self-condenses. Raises IntegrationShrinkageError on
         # unrecoverable shrinkage — we let it propagate (see except below).
-        updated_review = await call_text_with_guards(
-            input_content=state["current_review"],
+        # Note: shrinkage floor is measured on BODY length.
+        updated_body = await call_text_with_guards(
+            input_content=body,
             tier=ModelTier.OPUS,
             system=LOOP2_INTEGRATOR_SYSTEM,
             user=user_prompt,
@@ -323,8 +349,20 @@ async def integrate_findings_node(state: Loop2State) -> dict:
                 merged_corpus[doi] = paper_metadata
                 new_papers_added += 1
 
+        # Reattach references, appending entries for newly-discovered papers.
+        # Uses the merged summaries/keys so newly added papers resolve.
+        updated_refs = append_new_references(
+            refs_block,
+            list(new_paper_corpus.keys()),
+            merged_summaries,
+            merged_zotero,
+        )
+        updated_review = reattach(updated_body, updated_refs)
+
         logger.info(
-            f"Integration complete: {len(updated_review)} chars, "
+            f"Integration complete: body {len(body)}→{len(updated_body)} chars "
+            f"({current_words}→{len(updated_body.split())} words), "
+            f"total_with_refs {len(updated_review)} chars, "
             f"{len(merged_summaries)} total papers, {new_papers_added} new papers"
         )
 

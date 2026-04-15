@@ -160,6 +160,9 @@ async def academic_lit_review(
             "langsmith_run_id": initial_state["langsmith_run_id"],
             "errors": errors,
             "source_count": len(result.get("paper_corpus", {})),
+            "paper_corpus": result.get("paper_corpus", {}),
+            "paper_summaries": result.get("paper_summaries", {}),
+            "zotero_keys": result.get("zotero_keys", {}),
             "started_at": initial_state["started_at"],
             "completed_at": result.get("completed_at"),
         }
@@ -172,6 +175,9 @@ async def academic_lit_review(
             "langsmith_run_id": initial_state["langsmith_run_id"],
             "errors": [{"phase": "unknown", "error": str(e)}],
             "source_count": 0,
+            "paper_corpus": {},
+            "paper_summaries": {},
+            "zotero_keys": {},
             "started_at": initial_state["started_at"],
             "completed_at": None,
         }

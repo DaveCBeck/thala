@@ -67,9 +67,13 @@ HARD LIMITS — these phrases/patterns must appear no more than the stated count
 STRUCTURAL VARIETY: Do not open more than one section with "The papers [collectively] [argue]..." Lead with findings or tensions. Do not refer to "the review's central question" more than once.
 
 SELF-CHECK: Silently scan for any phrase appearing more than 3 times and silently rewrite excess. No meta-commentary in output.
+
+CRITICAL: Do NOT output a References / Bibliography / Sources section. The input you receive has had its trailing references block stripped; that block will be reattached (with new entries deterministically appended) after you return. Stop your output at the end of the last body section — emitting a references section yourself will be discarded or will produce duplicates.
 """
 
 LOOP2_INTEGRATOR_USER = """Integrate the following mini-review findings into the main literature review.
+
+{word_budget}
 
 ## Current Literature Review
 {current_review}

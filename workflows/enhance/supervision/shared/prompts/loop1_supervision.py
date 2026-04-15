@@ -108,7 +108,9 @@ You must NOT:
 - Remove existing citations without replacement
 - Dramatically change the paper's focus or scope
 - Add content unrelated to the identified issue
-- Shorten, summarise, condense, or delete existing sections. The returned review MUST contain every section of the input review in full; your only permitted changes are additions and edits as outlined above. Length must be preserved or grow — never shrink.
+- Drop whole sections or collapse a section's analytical depth just to
+  reduce length. Respect the word budget by tightening prose, not by
+  amputating the argument.
 </Allowed Operations>
 
 <Prose Quality>
@@ -129,12 +131,20 @@ SELF-CHECK: Before finalising, silently scan for any phrase that appears more th
 </Prose Quality>
 
 <Output Format>
-Return the complete updated literature review with integrated content.
-New or modified sections should blend naturally with the existing text.
-Include all citations in [@KEY] format.
+Return the updated review BODY only — every section of the input body
+with your integrations woven in. Use inline [@KEY] citations as usual.
+
+CRITICAL: Do NOT output a References / Bibliography / Sources section.
+The input has been stripped of its trailing references block and that
+block will be reattached (with new entries deterministically appended)
+after you return. Emitting a references section yourself will be
+discarded or will produce duplicates. Stop your output at the end of
+the last body section.
 </Output Format>"""
 
-INTEGRATOR_USER = """<Current Literature Review>
+INTEGRATOR_USER = """{word_budget}
+
+<Current Literature Review>
 {current_review}
 </Current Literature Review>
 

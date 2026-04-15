@@ -10,8 +10,20 @@ import re
 from typing import Any, Optional
 
 from workflows.shared.llm_utils import InvokeConfig, ModelTier, invoke
+from workflows.shared.reference_utils import (
+    merge_references_blocks,
+    reattach,
+    split_references,
+)
+from workflows.research.academic_lit_review.quality_presets import QUALITY_PRESETS
 
 logger = logging.getLogger(__name__)
+
+# Combine allowance: combined report targets target_word_count + this
+# value (i.e. the standard tier aims at ~14k words post-combine for a 12k
+# academic target). See shared/nodes/integrate_content.py LOOP1_WORD_ALLOWANCE
+# for the rest of the enhancement budget chain.
+COMBINE_WORD_ALLOWANCE = 2000
 
 COMBINE_SYSTEM_PROMPT = """\
 You are a research editor merging an academic literature review with web research findings into a single unified report.
@@ -21,11 +33,11 @@ The academic report uses Pandoc-style citations in [@KEY] format. The web resear
 Guidelines:
 1. Use the academic lit review as the structural backbone — it has thematic clusters and methodology.
 2. Integrate web research findings where they add value: recency, breadth, commercial/regulatory context, or complementary evidence. Web research may surface preprints, clinical trial updates, regulatory decisions, and industry developments that academic databases haven't indexed yet — these are valuable contributions, not second-class sources.
-3. Preserve ALL citations from BOTH reports exactly as they appear — both [@KEY] and [N] format. Do not modify, drop, or renumber any citation keys. Every citation in both input reports must appear in the output. The merged References section MUST contain BOTH the academic bibliography (@KEY entries) AND the web sources bibliography ([N] entries). If the academic report has a "References" section and the web report has a "Sources" or "References" section, both sets of entries must appear in the merged output's References — use a "### Academic References" and "### Web Sources" subsection structure if needed.
+3. Preserve ALL INLINE citations from BOTH reports exactly as they appear — both [@KEY] and [N] format. Do not modify, drop, or renumber any inline citation keys. Every inline citation in both input reports must appear in the output body. If the same paper appears in both reports under different keys, keep the [@KEY] version and drop the [N] duplicate inline.
 4. Keep all citations inline in their original format. Do NOT convert citations to footnotes, URLs, or superscript numbers. Do NOT convert [N] citations to [@KEY] or vice versa.
 5. Identify contradictions or updates where findings from one source extend or challenge the other. Let the evidence speak — do not assume one source type is inherently more reliable than the other.
 6. Integrate findings naturally — do NOT simply concatenate the two reports.
-7. The combined report MUST be longer than the academic report alone — you are adding a second source, not replacing the first. Every academic section should retain its full analytical depth; web findings are added alongside, not in place of, academic arguments. A combined report shorter than the academic report is a failure.
+7. Respect the Word Budget block in the user message. The combined report should hit that target — not the sum of the two inputs. Integrate web material by weaving it into existing sections; where the budget requires, tighten academic prose to make room, but ONLY if the web content answers the research questions better than the academic detail it would displace. Preserving analytical depth and citations takes priority over adding tangential web material. A combined report markedly longer than the budget is as much a failure as one markedly shorter.
 8. Integrate ALL web findings into the academic report's existing section structure. Do NOT create a standalone "Recent Developments" section — this produces bolt-on artifacts. If a web finding does not fit naturally into any existing section, create a new thematic section with a specific title (e.g., "SimCells and the Regulatory Classification Frontier"), not a generic recency bucket.
 9. CRITICAL — Discussion and Conclusions preservation: The academic report's Discussion and Conclusions contain cross-theme synthesis and analytical arguments that are NOT recoverable from the thematic sections. You MUST:
    a. Preserve every named analytical argument from the academic Discussion (e.g., barrier classification frameworks, demand-side policy analysis, innovation systems diagnosis, efficacy-in-deployment arguments). These are the most valuable parts of the academic report.
@@ -35,7 +47,9 @@ Guidelines:
    e. CITATION ANCHORING: When the Discussion or Conclusions restate or build on an argument from the academic report, the academic [@KEY] citations that supported that argument MUST be carried forward. A Discussion paragraph that presents an academic finding without its [@KEY] citation has severed the evidentiary anchor — the reader cannot trace the claim back to its source. Every analytical conclusion in the Discussion and Conclusions that originated in the academic report must retain at least the primary [@KEY] citation(s) from the academic original. The same applies to the Introduction: when the Introduction frames the review's analytical questions using concepts from the academic literature, those framing claims must carry their [@KEY] citations. Aim for at least 8-12 academic [@KEY] citations distributed across the Discussion and Conclusions combined, and at least 2-3 in the Introduction.
 10. Preserve epistemic hedges and uncertainty qualifications from BOTH sources. If either report flags a claim as uncertain, contested, lacking independent validation, or based on stale comparisons, that hedge MUST appear in the combined report at the point where the claim is stated. Dropping uncertainty qualifications makes the combined report less honest than its inputs — this is never acceptable. If the web report contains a "Remaining Uncertainties" or equivalent section, integrate those hedges inline at the relevant claims rather than collecting them in a separate section.
 
-Output the merged report as markdown. Do NOT include any JSON wrapper or metadata — output ONLY the report text."""
+Output the merged report BODY as markdown. Do NOT include any JSON wrapper or metadata — output ONLY the report text.
+
+CRITICAL: Do NOT output a References / Bibliography / Sources section. Both input reports have had their trailing references/sources blocks stripped before being shown to you, and a merged references block will be reattached deterministically after you return. Stop your output at the end of the last body section. Emitting your own references section will be discarded or produce duplicates."""
 
 
 def _build_section_inventory(report: str) -> str:
@@ -67,6 +81,7 @@ async def run_combine_phase(
     topic: str,
     augmented_research_questions: list[str],
     recent_landscape: str = "",
+    quality: str = "standard",
 ) -> dict[str, Any]:
     """Merge academic and web research into a unified report.
 
@@ -76,6 +91,8 @@ async def run_combine_phase(
         topic: Research topic
         augmented_research_questions: Research questions (from web scan phase)
         recent_landscape: Brief landscape summary from web scan
+        quality: Quality tier key from QUALITY_PRESETS; drives target_word_count
+            used to set the combine-phase word budget (target + COMBINE_WORD_ALLOWANCE).
 
     Returns:
         Synthetic lit_result dict containing:
@@ -103,20 +120,46 @@ async def run_combine_phase(
             lit_result, web_report, augmented_research_questions, web_result=web_result, academic_sources=0
         )
 
+    # Operate on prose only: strip trailing references blocks from both
+    # inputs; the merged references block is reconstructed programmatically
+    # after the LLM returns.
+    academic_body, academic_refs = split_references(academic_report)
+    web_body, web_refs = split_references(web_report)
+
     # Build context for LLM merge
     rq_text = "\n".join(f"- {q}" for q in augmented_research_questions)
     landscape_section = f"\n\nRecent landscape context:\n{recent_landscape}" if recent_landscape else ""
 
-    # Build section inventory from academic report
-    section_inventory = _build_section_inventory(academic_report)
+    # Build section inventory from academic body
+    section_inventory = _build_section_inventory(academic_body)
+
+    preset = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["standard"])
+    base_target = preset["target_word_count"] if isinstance(preset, dict) else preset.target_word_count
+    target_words = base_target + COMBINE_WORD_ALLOWANCE
+    academic_words = len(academic_body.split())
+    web_words = len(web_body.split())
+    word_budget = (
+        "<Word Budget>\n"
+        f"Academic report body: ~{academic_words:,} words (refs excluded)\n"
+        f"Web findings body: ~{web_words:,} words (sources excluded)\n"
+        f"Target combined body: ~{target_words:,} words "
+        f"(quality tier '{quality}' base {base_target:,} + combine allowance {COMBINE_WORD_ALLOWANCE:,})\n\n"
+        "Aim for the target. Weave web findings into the academic structure. "
+        "Where the budget requires, tighten academic prose — but ONLY if the "
+        "displaced detail is worth less to the research questions than the web "
+        "content taking its place. Default bias: preserve academic analytical "
+        "depth and citations; trim web padding first.\n"
+        "</Word Budget>"
+    )
 
     user_prompt = (
         f"Topic: {topic}\n\n"
         f"Research questions:\n{rq_text}"
         f"{landscape_section}\n\n"
+        f"{word_budget}\n\n"
         f"Academic report section inventory (preserve ALL sections at similar or greater depth):\n{section_inventory}\n\n"
-        f"--- ACADEMIC LITERATURE REVIEW ---\n\n{academic_report}\n\n"
-        f"--- WEB RESEARCH FINDINGS ---\n\n{web_report}"
+        f"--- ACADEMIC LITERATURE REVIEW (body, references stripped) ---\n\n{academic_body}\n\n"
+        f"--- WEB RESEARCH FINDINGS (body, sources stripped) ---\n\n{web_body}"
     )
 
     response = await invoke(
@@ -126,7 +169,7 @@ async def run_combine_phase(
         config=InvokeConfig(effort="high", max_tokens=32768),
     )
 
-    combined_report = response.content if isinstance(response.content, str) else ""
+    combined_body = response.content if isinstance(response.content, str) else ""
     # Handle list-type content (extended thinking returns list of blocks)
     if isinstance(response.content, list):
         text_parts = []
@@ -137,19 +180,28 @@ async def run_combine_phase(
                 text_parts.append(block)
             elif hasattr(block, "text"):
                 text_parts.append(block.text)
-        combined_report = "\n".join(text_parts)
+        combined_body = "\n".join(text_parts)
 
-    if not combined_report.strip():
-        logger.error("Combine phase: LLM returned empty report, falling back to academic report")
-        combined_report = academic_report
+    if not combined_body.strip():
+        logger.warning("Combine phase: LLM returned empty report, falling back to academic body")
+        combined_body = academic_body
+
+    # Reattach a merged references block programmatically. Inputs were
+    # split upstream; this splice guarantees the final report has exactly
+    # one references section sourced from the original inputs.
+    merged_refs = merge_references_blocks(academic_refs, web_refs)
+    combined_report = reattach(combined_body, merged_refs)
 
     academic_source_count = len(lit_result.get("paper_corpus", {}) or {})
     web_source_count = web_result.get("source_count", 0)
 
+    combined_body_words = len(combined_body.split())
     logger.info(
-        f"Combined report: {len(combined_report)} chars "
-        f"(academic: {academic_source_count} papers, web: {web_source_count} sources, "
-        f"web_citation_keys: {len(web_citation_keys)})"
+        f"Combined report: body {len(combined_body)} chars / {combined_body_words} words "
+        f"(target {target_words} words, academic body input {academic_words} words); "
+        f"total_with_refs {len(combined_report)} chars; "
+        f"academic: {academic_source_count} papers, web: {web_source_count} sources, "
+        f"web_citation_keys: {len(web_citation_keys)}"
     )
 
     return _build_result(

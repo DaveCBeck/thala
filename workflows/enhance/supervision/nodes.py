@@ -34,48 +34,41 @@ async def run_loop1_node(state: EnhanceState, config: RunnableConfig) -> dict[st
 
     logger.info(f"Running Loop 1 (theoretical depth) on {len(current_review)} char review")
 
-    try:
-        result = await run_loop1_standalone(
-            review=current_review,
-            topic=input_data.get("topic", ""),
-            research_questions=input_data.get("research_questions", []),
-            max_iterations=max_iterations,
-            source_count=len(paper_corpus),
-            quality_settings=quality_settings,
-            config=config,
-            checkpoint_callback=checkpoint_callback,
-            incremental_state=incremental_state,
+    result = await run_loop1_standalone(
+        review=current_review,
+        topic=input_data.get("topic", ""),
+        research_questions=input_data.get("research_questions", []),
+        max_iterations=max_iterations,
+        source_count=len(paper_corpus),
+        quality_settings=quality_settings,
+        config=config,
+        checkpoint_callback=checkpoint_callback,
+        incremental_state=incremental_state,
+    )
+
+    if result.errors:
+        raise RuntimeError(
+            f"Loop 1 finished with {len(result.errors)} error(s): "
+            f"{result.errors[0].get('error_message') or result.errors[0]}"
         )
 
-        logger.info(f"Loop 1 complete: {result.changes_summary}")
+    logger.info(f"Loop 1 complete: {result.changes_summary}")
 
-        return {
-            "current_review": result.current_review,
-            "review_loop1": result.current_review,
-            "loop1_result": {
+    return {
+        "current_review": result.current_review,
+        "review_loop1": result.current_review,
+        "loop1_result": {
+            "changes_summary": result.changes_summary,
+            "issues_explored": result.issues_explored,
+        },
+        "loop_progress": [
+            {
+                "loop": "loop1",
                 "changes_summary": result.changes_summary,
                 "issues_explored": result.issues_explored,
-            },
-            "loop_progress": [
-                {
-                    "loop": "loop1",
-                    "changes_summary": result.changes_summary,
-                    "issues_explored": result.issues_explored,
-                }
-            ],
-        }
-
-    except Exception as e:
-        logger.error(f"Loop 1 failed: {e}")
-        return {
-            "review_loop1": current_review,  # Keep original on failure
-            "errors": [
-                {
-                    "loop": "loop1",
-                    "error": str(e),
-                }
-            ],
-        }
+            }
+        ],
+    }
 
 
 @traceable(run_type="chain", name="SupervisionLoop2Node")
@@ -109,57 +102,49 @@ async def run_loop2_node(state: EnhanceState, config: RunnableConfig) -> dict[st
         "language_code": "en",
     }
 
-    try:
-        result = await run_loop2_standalone(
-            review=current_review,
-            paper_corpus=paper_corpus,
-            paper_summaries=paper_summaries,
-            zotero_keys=zotero_keys,
-            input_data=lit_review_input,
-            quality_settings=quality_settings,
-            max_iterations=max_iterations,
-            config=config,
-            checkpoint_callback=checkpoint_callback,
-            incremental_state=incremental_state,
+    result = await run_loop2_standalone(
+        review=current_review,
+        paper_corpus=paper_corpus,
+        paper_summaries=paper_summaries,
+        zotero_keys=zotero_keys,
+        input_data=lit_review_input,
+        quality_settings=quality_settings,
+        max_iterations=max_iterations,
+        config=config,
+        checkpoint_callback=checkpoint_callback,
+        incremental_state=incremental_state,
+    )
+
+    inner_errors = result.get("errors", []) or []
+    if inner_errors:
+        raise RuntimeError(
+            f"Loop 2 finished with {len(inner_errors)} error(s): "
+            f"{inner_errors[0].get('error_message') or inner_errors[0]}"
         )
 
-        logger.info(
-            f"Loop 2 complete: explored {len(result.get('explored_bases', []))} literature bases, "
-            f"{len(result.get('paper_corpus', {}))} papers in corpus"
-        )
+    logger.info(
+        f"Loop 2 complete: explored {len(result.get('explored_bases', []))} literature bases, "
+        f"{len(result.get('paper_corpus', {}))} papers in corpus"
+    )
 
-        return {
-            "current_review": result.get("current_review", current_review),
-            "review_loop2": result.get("current_review", current_review),
-            "paper_corpus": result.get("paper_corpus", paper_corpus),
-            "paper_summaries": result.get("paper_summaries", paper_summaries),
-            "zotero_keys": result.get("zotero_keys", zotero_keys),
-            "loop2_result": {
+    return {
+        "current_review": result.get("current_review", current_review),
+        "review_loop2": result.get("current_review", current_review),
+        "paper_corpus": result.get("paper_corpus", paper_corpus),
+        "paper_summaries": result.get("paper_summaries", paper_summaries),
+        "zotero_keys": result.get("zotero_keys", zotero_keys),
+        "loop2_result": {
+            "explored_bases": result.get("explored_bases", []),
+            "iteration": result.get("iteration", 0),
+        },
+        "loop_progress": [
+            {
+                "loop": "loop2",
                 "explored_bases": result.get("explored_bases", []),
                 "iteration": result.get("iteration", 0),
-                "errors": result.get("errors", []),
-            },
-            "loop_progress": [
-                {
-                    "loop": "loop2",
-                    "explored_bases": result.get("explored_bases", []),
-                    "iteration": result.get("iteration", 0),
-                    "errors": result.get("errors", []),
-                }
-            ],
-        }
-
-    except Exception as e:
-        logger.error(f"Loop 2 failed: {e}")
-        return {
-            "review_loop2": current_review,  # Keep current on failure
-            "errors": [
-                {
-                    "loop": "loop2",
-                    "error": str(e),
-                }
-            ],
-        }
+            }
+        ],
+    }
 
 
 @traceable(run_type="chain", name="SupervisionFinalizeNode")

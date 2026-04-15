@@ -10,7 +10,7 @@ and routing from the original supervised_lit_review location.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from operator import add
 from typing import Annotated, Any, Optional
 
@@ -86,6 +86,7 @@ class Loop1Result:
     current_review: str
     changes_summary: str
     issues_explored: list[str]
+    errors: list[dict] = field(default_factory=list)
 
 
 def finalize_loop1_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -284,8 +285,17 @@ async def run_loop1_standalone(
         },
     )
 
+    errors: list[dict] = []
+    if final_state.get("loop_error"):
+        errors.append(final_state["loop_error"])
+    errors.extend(
+        exp for exp in expansions
+        if isinstance(exp, dict) and exp.get("failed")
+    )
+
     return Loop1Result(
         current_review=final_state.get("final_review", review),
         changes_summary=changes_summary,
         issues_explored=issues_explored,
+        errors=errors,
     )

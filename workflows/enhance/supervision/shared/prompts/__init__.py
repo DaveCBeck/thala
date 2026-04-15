@@ -12,6 +12,7 @@ from .loop2_literature import (
     LOOP2_INTEGRATOR_SYSTEM,
     LOOP2_INTEGRATOR_USER,
 )
+from .shared import build_word_budget_guidance
 
 __all__ = [
     # Loop 1: Supervision
@@ -24,4 +25,6 @@ __all__ = [
     "LOOP2_ANALYZER_USER",
     "LOOP2_INTEGRATOR_SYSTEM",
     "LOOP2_INTEGRATOR_USER",
+    # Shared helpers
+    "build_word_budget_guidance",
 ]

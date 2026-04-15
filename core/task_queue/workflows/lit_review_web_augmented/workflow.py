@@ -185,6 +185,7 @@ class LitReviewWebAugmentedWorkflow(BaseWorkflow):
                     topic=topic,
                     augmented_research_questions=augmented_questions,
                     recent_landscape=web_scan_result.get("recent_landscape", ""),
+                    quality=quality,
                 )
                 checkpoint_callback(
                     "combine",

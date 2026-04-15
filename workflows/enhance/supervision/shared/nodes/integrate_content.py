@@ -8,9 +8,15 @@ from langsmith import traceable
 from core.llm_broker import BatchPolicy
 from workflows.shared.llm_utils import InvokeConfig, ModelTier
 from workflows.shared.llm_utils.integration_guard import call_text_with_guards
+from workflows.shared.reference_utils import (
+    append_new_references,
+    reattach,
+    split_references,
+)
 from workflows.enhance.supervision.shared.prompts import (
     INTEGRATOR_SYSTEM,
     INTEGRATOR_USER,
+    build_word_budget_guidance,
 )
 from workflows.enhance.supervision.shared.utils import (
     detect_duplicate_headers,
@@ -18,6 +24,11 @@ from workflows.enhance.supervision.shared.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Allowance applied per Loop 1 integration call — aligned with overall
+# enhancement budgets set in docs/patterns.md (standard tier: base 12k →
+# combine 14k → loop1 17k → loop2 +2k per iter → editing unbounded).
+LOOP1_WORD_ALLOWANCE = 3000
 
 
 @traceable(run_type="chain", name="SupervisionIntegrateContent")
@@ -70,8 +81,22 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     summaries_text = _format_paper_summaries(paper_summaries, zotero_keys)
     citation_keys_text = _format_citation_keys(zotero_keys)
 
+    # Operate on prose only: strip trailing references block before the LLM
+    # call, reattach with new entries appended deterministically afterwards.
+    body, refs_block = split_references(current_review)
+
+    current_words = len(body.split())
+    target_words = current_words + LOOP1_WORD_ALLOWANCE
+    word_budget = build_word_budget_guidance(
+        current_words=current_words,
+        target_words=target_words,
+        allowance=LOOP1_WORD_ALLOWANCE,
+        phase_label=f"Loop 1 theoretical-depth integration (iteration {iteration + 1})",
+    )
+
     user_prompt = INTEGRATOR_USER.format(
-        current_review=current_review,
+        word_budget=word_budget,
+        current_review=body,
         topic=topic,
         issue_type=issue_type,
         rationale=rationale,
@@ -86,8 +111,10 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
     # IntegrationShrinkageError if the review can't be preserved — we do
     # NOT catch it: the task should fail cleanly rather than produce a
     # silently-truncated review that downstream loops then build on.
-    integrated_review = await call_text_with_guards(
-        input_content=current_review,
+    # Note: shrinkage floor is measured on BODY length; references are
+    # excluded from both sides of the comparison.
+    integrated_body = await call_text_with_guards(
+        input_content=body,
         tier=ModelTier.OPUS,
         system=INTEGRATOR_SYSTEM,
         user=user_prompt,
@@ -100,6 +127,15 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
         label=f"loop1_integrator[{topic[:40]}]",
     )
 
+    # Reattach references: append entries for newly-integrated papers.
+    updated_refs = append_new_references(
+        refs_block,
+        processed_dois,
+        paper_summaries,
+        zotero_keys,
+    )
+    integrated_review = reattach(integrated_body, updated_refs)
+
     duplicates = detect_duplicate_headers(integrated_review)
     if duplicates:
         logger.info(f"Removing {len(duplicates)} duplicate headers after Loop 1 integration")
@@ -107,7 +143,9 @@ async def integrate_content_node(state: dict[str, Any]) -> dict[str, Any]:
 
     logger.info(
         f"Integration complete for '{topic}': {len(processed_dois)} papers integrated "
-        f"(input={len(current_review)} chars, output={len(integrated_review)} chars)"
+        f"(input_body={len(body)} chars / {current_words} words, "
+        f"output_body={len(integrated_body)} chars / {len(integrated_body.split())} words, "
+        f"total_with_refs={len(integrated_review)} chars)"
     )
 
     checkpoint_callback = state.get("checkpoint_callback")
