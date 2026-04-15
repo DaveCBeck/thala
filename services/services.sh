@@ -199,14 +199,15 @@ cmd_up() {
 
     cmd_status
 
-    # Start dev mode monitoring (metrics + logs) if THALA_MODE=dev
+    # Always collect docker logs to files (prod + dev).
+    # Metrics monitoring is dev-only.
+    start_log_collector
     log "Checking dev mode (THALA_MODE=$THALA_MODE)..."
     if is_dev_mode; then
-        log "Dev mode detected - starting monitoring..."
+        log "Dev mode detected - starting metrics monitor..."
         start_background_monitor
-        start_log_collector
     else
-        log "Not in dev mode - skipping monitoring"
+        log "Not in dev mode - skipping metrics monitor"
     fi
 }
 
@@ -480,10 +481,9 @@ stop_background_monitor() {
 }
 
 start_log_collector() {
-    # Only run in dev mode
-    if ! is_dev_mode; then
-        return 0
-    fi
+    # Runs in both dev and prod — docker log files are always useful for
+    # post-hoc debugging. Metrics monitoring (start_background_monitor) is
+    # the dev-only piece.
 
     # Check if already running
     if [[ -f "$LOG_COLLECTOR_PID_FILE" ]]; then
